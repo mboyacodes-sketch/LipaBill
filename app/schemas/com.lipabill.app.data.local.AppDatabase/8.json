@@ -1,0 +1,538 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 8,
+    "identityHash": "cacbe217bf543b83fd0667f7aabd5c3c",
+    "entities": [
+      {
+        "tableName": "transactions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `code` TEXT NOT NULL, `type` TEXT NOT NULL, `amount` REAL, `counterpartyName` TEXT, `counterpartyPhone` TEXT, `timestampMillis` INTEGER NOT NULL, `balance` REAL, `cost` REAL, `rawBody` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amount",
+            "columnName": "amount",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "counterpartyName",
+            "columnName": "counterpartyName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "counterpartyPhone",
+            "columnName": "counterpartyPhone",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "timestampMillis",
+            "columnName": "timestampMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "balance",
+            "columnName": "balance",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "cost",
+            "columnName": "cost",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "rawBody",
+            "columnName": "rawBody",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_transactions_code",
+            "unique": true,
+            "columnNames": [
+              "code"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_transactions_code` ON `${TABLE_NAME}` (`code`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "repeat_attempts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `createdAtMillis` INTEGER NOT NULL, `sourceTransactionId` INTEGER NOT NULL, `sourceTransactionCode` TEXT NOT NULL, `counterpartyName` TEXT, `counterpartyPhone` TEXT, `amount` REAL, `outcome` TEXT NOT NULL, `detail` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMillis",
+            "columnName": "createdAtMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceTransactionId",
+            "columnName": "sourceTransactionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceTransactionCode",
+            "columnName": "sourceTransactionCode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "counterpartyName",
+            "columnName": "counterpartyName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "counterpartyPhone",
+            "columnName": "counterpartyPhone",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "amount",
+            "columnName": "amount",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "outcome",
+            "columnName": "outcome",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detail",
+            "columnName": "detail",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "merchants",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `type` TEXT NOT NULL, `identifier` TEXT NOT NULL, `accountHint` TEXT, `displayName` TEXT NOT NULL, `normalizedName` TEXT NOT NULL, `lastUsedMillis` INTEGER NOT NULL, `useCount` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "identifier",
+            "columnName": "identifier",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountHint",
+            "columnName": "accountHint",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "normalizedName",
+            "columnName": "normalizedName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUsedMillis",
+            "columnName": "lastUsedMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "useCount",
+            "columnName": "useCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_merchants_type_identifier",
+            "unique": true,
+            "columnNames": [
+              "type",
+              "identifier"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_merchants_type_identifier` ON `${TABLE_NAME}` (`type`, `identifier`)"
+          },
+          {
+            "name": "index_merchants_normalizedName",
+            "unique": false,
+            "columnNames": [
+              "normalizedName"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_merchants_normalizedName` ON `${TABLE_NAME}` (`normalizedName`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "pending_merchant_payments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `type` TEXT NOT NULL, `identifier` TEXT NOT NULL, `accountCode` TEXT, `amount` REAL NOT NULL, `createdAtMillis` INTEGER NOT NULL, `consumed` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "identifier",
+            "columnName": "identifier",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountCode",
+            "columnName": "accountCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "amount",
+            "columnName": "amount",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMillis",
+            "columnName": "createdAtMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "consumed",
+            "columnName": "consumed",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "tickets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, `venue` TEXT, `startsAtMillis` INTEGER, `seatOrTier` TEXT, `barcodeFormat` TEXT NOT NULL, `barcodeValue` TEXT NOT NULL, `orderId` TEXT, `source` TEXT NOT NULL, `status` TEXT NOT NULL, `createdAtMillis` INTEGER NOT NULL, `notes` TEXT, `expectsBoardingPass` INTEGER NOT NULL, `hasBoardingPass` INTEGER NOT NULL, `boardingBarcodeValue` TEXT, `boardingBarcodeFormat` TEXT, `boardingTitle` TEXT, `boardingVenue` TEXT, `boardingStartsAtMillis` INTEGER, `boardingSeatOrTier` TEXT, `boardingNotes` TEXT, `hasReturnBoardingPass` INTEGER NOT NULL, `returnBoardingBarcodeValue` TEXT, `returnBoardingBarcodeFormat` TEXT, `returnBoardingTitle` TEXT, `returnBoardingVenue` TEXT, `returnBoardingStartsAtMillis` INTEGER, `returnBoardingSeatOrTier` TEXT, `returnBoardingNotes` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "venue",
+            "columnName": "venue",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "startsAtMillis",
+            "columnName": "startsAtMillis",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "seatOrTier",
+            "columnName": "seatOrTier",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "barcodeFormat",
+            "columnName": "barcodeFormat",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "barcodeValue",
+            "columnName": "barcodeValue",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "orderId",
+            "columnName": "orderId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMillis",
+            "columnName": "createdAtMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "expectsBoardingPass",
+            "columnName": "expectsBoardingPass",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hasBoardingPass",
+            "columnName": "hasBoardingPass",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "boardingBarcodeValue",
+            "columnName": "boardingBarcodeValue",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "boardingBarcodeFormat",
+            "columnName": "boardingBarcodeFormat",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "boardingTitle",
+            "columnName": "boardingTitle",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "boardingVenue",
+            "columnName": "boardingVenue",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "boardingStartsAtMillis",
+            "columnName": "boardingStartsAtMillis",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "boardingSeatOrTier",
+            "columnName": "boardingSeatOrTier",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "boardingNotes",
+            "columnName": "boardingNotes",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "hasReturnBoardingPass",
+            "columnName": "hasReturnBoardingPass",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "returnBoardingBarcodeValue",
+            "columnName": "returnBoardingBarcodeValue",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "returnBoardingBarcodeFormat",
+            "columnName": "returnBoardingBarcodeFormat",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "returnBoardingTitle",
+            "columnName": "returnBoardingTitle",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "returnBoardingVenue",
+            "columnName": "returnBoardingVenue",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "returnBoardingStartsAtMillis",
+            "columnName": "returnBoardingStartsAtMillis",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "returnBoardingSeatOrTier",
+            "columnName": "returnBoardingSeatOrTier",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "returnBoardingNotes",
+            "columnName": "returnBoardingNotes",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_tickets_barcodeValue",
+            "unique": true,
+            "columnNames": [
+              "barcodeValue"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_tickets_barcodeValue` ON `${TABLE_NAME}` (`barcodeValue`)"
+          },
+          {
+            "name": "index_tickets_boardingBarcodeValue",
+            "unique": true,
+            "columnNames": [
+              "boardingBarcodeValue"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_tickets_boardingBarcodeValue` ON `${TABLE_NAME}` (`boardingBarcodeValue`)"
+          },
+          {
+            "name": "index_tickets_returnBoardingBarcodeValue",
+            "unique": true,
+            "columnNames": [
+              "returnBoardingBarcodeValue"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_tickets_returnBoardingBarcodeValue` ON `${TABLE_NAME}` (`returnBoardingBarcodeValue`)"
+          },
+          {
+            "name": "index_tickets_orderId",
+            "unique": false,
+            "columnNames": [
+              "orderId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tickets_orderId` ON `${TABLE_NAME}` (`orderId`)"
+          },
+          {
+            "name": "index_tickets_createdAtMillis",
+            "unique": false,
+            "columnNames": [
+              "createdAtMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tickets_createdAtMillis` ON `${TABLE_NAME}` (`createdAtMillis`)"
+          }
+        ],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'cacbe217bf543b83fd0667f7aabd5c3c')"
+    ]
+  }
+}
