@@ -1,0 +1,45 @@
+# Built artifacts
+/.gradle/
+/build/
+/app/build/
+/local.properties
+*.iml
+.idea/
+.DS_Store
+/captures/
+*.apk
+*.aab
+*.ap_
+*.dex
+.kotlin/
+*.log
+*.hprof
+.env
+.env.*
+secrets.properties
+
+# Release signing — never commit (cannot rebuild signed APK without these)
+/keystore.properties
+/keystore/
+*.jks
+*.keystore
+
+# --- Private IP: keep on this machine only (repo must not be enough to clone the product) ---
+# USSD dial / accessibility automation / PIN overlay / dialer adapters
+/app/src/main/java/com/lipabill/app/ussd/
+/app/src/main/res/xml/ussd_accessibility_service.xml
+# M-Pesa SMS → transaction parsing (core ingest logic)
+/app/src/main/java/com/lipabill/app/data/parser/
+# At-rest seal used for merchant backup blob
+/app/src/main/java/com/lipabill/app/security/AppAtRestCrypto.kt
+
+# Brag / launch-video artifacts
+brag-output/
+*brag*
+
+# Markdown — keep README only
+*.md
+!README.md
+
+# R8 mapping (local only — never ship)
+/app/build/outputs/mapping/
