@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LipaBill</string>
+    <string name="accessibility_service_description">
+        LipaBill Repeat Payment fills M-Pesa USSD menu choices for a payment you already
+        confirmed in the app. It only runs while a payment is in progress. Your M-Pesa PIN
+        is entered on LipaBill’s secure keypad, sent once into the PIN prompt, and is not stored.
+    </string>
+    <string name="accessibility_service_label">LipaBill Repeat Payment</string>
+</resources>
