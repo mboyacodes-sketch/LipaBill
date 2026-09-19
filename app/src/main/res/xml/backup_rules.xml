@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Only the sealed merchant learning blob is backed up.
+  SQLCipher DB + Keystore-wrapped passphrase cannot be opened after reinstall
+  (Keystore keys are wiped) — do not include them.
+-->
+<full-backup-content>
+    <include domain="file" path=".lb_m" />
+    <!-- Legacy plaintext snapshot (migrated on next open, then deleted) -->
+    <include domain="file" path="merchant_directory.json" />
+</full-backup-content>
