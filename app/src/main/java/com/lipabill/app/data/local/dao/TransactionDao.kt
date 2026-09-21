@@ -55,6 +55,38 @@ interface TransactionDao {
     @Query("SELECT EXISTS(SELECT 1 FROM transactions WHERE code = :code)")
     suspend fun existsByCode(code: String): Boolean
 
+    @Query("SELECT id, amount, balance, cost, rawBody, timestampMillis FROM transactions")
+    suspend fun getAllForAmountRepair(): List<AmountRepairRow>
+
+    @Query(
+        """
+        UPDATE transactions
+        SET amount = :amount, balance = :balance, cost = :cost
+        WHERE id = :id
+        """
+    )
+    suspend fun updateParsedMoney(
+        id: Long,
+        amount: Double?,
+        balance: Double?,
+        cost: Double?
+    ): Int
+
+    @Query(
+        """
+        UPDATE transactions
+        SET amount = :amount, balance = :balance, cost = :cost, rawBody = :rawBody
+        WHERE code = :code
+        """
+    )
+    suspend fun updateParsedMoneyByCode(
+        code: String,
+        amount: Double?,
+        balance: Double?,
+        cost: Double?,
+        rawBody: String
+    ): Int
+
     @Query("SELECT id, code, rawBody FROM transactions")
     suspend fun getAllForPurge(): List<TransactionPurgeRow>
 
@@ -88,6 +120,15 @@ data class TransactionPurgeRow(
     val id: Long,
     val code: String,
     val rawBody: String
+)
+
+data class AmountRepairRow(
+    val id: Long,
+    val amount: Double?,
+    val balance: Double?,
+    val cost: Double?,
+    val rawBody: String,
+    val timestampMillis: Long
 )
 
 data class NamedCounterpartyRow(
