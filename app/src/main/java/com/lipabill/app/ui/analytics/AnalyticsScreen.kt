@@ -597,7 +597,7 @@ private fun MetricTile(
     ) {
         Text(title, style = HomeType.label, color = Mute)
         Spacer(modifier = Modifier.height(Space.gap))
-        Text(value, style = HomeType.amount, color = valueColor)
+        Text(value, style = HomeType.amount, color = valueColor, maxLines = 1, softWrap = false)
     }
 }
 
@@ -628,7 +628,9 @@ private fun MetricStatCard(
         Text(
             text = formatKes(amount),
             style = HomeType.rowTitle,
-            color = tint
+            color = tint,
+            maxLines = 1,
+            softWrap = false
         )
     }
 }
