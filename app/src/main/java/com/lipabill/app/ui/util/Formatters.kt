@@ -8,17 +8,17 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private val kesFormat: NumberFormat = NumberFormat.getNumberInstance(Locale.US).apply {
-    minimumFractionDigits = 2
-    maximumFractionDigits = 2
-}
-
 private val dateTimeFormat: DateTimeFormatter =
     DateTimeFormatter.ofPattern("d MMM yyyy · HH:mm", Locale.UK)
 
 fun formatKes(amount: Double?): String {
     if (amount == null) return "—"
-    return kesFormat.format(amount)
+    // NumberFormat is not thread-safe — allocate per call (amounts are infrequent UI work).
+    val format = NumberFormat.getNumberInstance(Locale.US).apply {
+        minimumFractionDigits = 2
+        maximumFractionDigits = 2
+    }
+    return format.format(amount)
 }
 
 fun formatTimestamp(millis: Long): String {
