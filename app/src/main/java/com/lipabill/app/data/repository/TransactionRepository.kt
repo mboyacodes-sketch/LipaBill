@@ -5,6 +5,7 @@ import com.lipabill.app.data.local.entity.TransactionEntity
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.prefs.SecurePreferences
+import com.lipabill.app.data.parser.MpesaSmsParser
 import com.lipabill.app.data.sms.MpesaSmsFilter
 import com.lipabill.app.data.sms.SmsInboxReader
 import com.lipabill.app.ussd.UssdMenuBuilder
@@ -88,7 +89,16 @@ class TransactionRepository(
         val enriched = merchantDirectory.enrichIncomingSms(tx)
         val withPhone = enrichSingleFromDirectory(enriched)
         val rowId = dao.insertIgnore(TransactionEntity.fromDomain(withPhone))
-        rowId != -1L
+        if (rowId != -1L) return@withContext true
+        // Already present — refresh money fields from the latest parse (fixes bad amounts).
+        dao.updateParsedMoneyByCode(
+            code = withPhone.code,
+            amount = withPhone.amount,
+            balance = withPhone.balance,
+            cost = withPhone.cost,
+            rawBody = withPhone.rawBody
+        )
+        false
     }
 
     suspend fun rememberMerchantPayment(tx: MpesaTransaction, amount: Double) {
@@ -101,6 +111,7 @@ class TransactionRepository(
      */
     suspend fun rescanInbox(): Int = withContext(Dispatchers.IO) {
         purgeNonConfirmationsIfNeeded()
+        repairParsedAmountsIfNeeded()
         val parsed = inboxReader.parseAll(maxMessages = SMS_SCAN_LIMIT)
         if (parsed.isEmpty()) {
             securePreferences.smsBackfillDone = true
@@ -118,11 +129,51 @@ class TransactionRepository(
 
     suspend fun backfillIfNeeded(): Int {
         purgeNonConfirmationsIfNeeded()
+        repairParsedAmountsIfNeeded()
         if (securePreferences.smsBackfillDone && dao.count() > 0) {
             linkPhonesByName()
             return 0
         }
         return rescanInbox()
+    }
+
+    /**
+     * Re-parse [TransactionEntity.rawBody] and fix stored amount/balance/cost when thousand
+     * separators were previously misread (e.g. space/NBSP grouped amounts).
+     */
+    suspend fun repairParsedAmountsIfNeeded(): Int = withContext(Dispatchers.IO) {
+        if (securePreferences.amountParseRepairDone) return@withContext 0
+        val fixed = repairParsedAmounts()
+        securePreferences.amountParseRepairDone = true
+        fixed
+    }
+
+    suspend fun repairParsedAmounts(): Int = withContext(Dispatchers.IO) {
+        val rows = dao.getAllForAmountRepair()
+        var fixed = 0
+        for (row in rows) {
+            if (row.rawBody.isBlank()) continue
+            if (!MpesaSmsFilter.isTransactionConfirmation(row.rawBody)) continue
+            val reparsed = MpesaSmsParser.parse(row.rawBody, row.timestampMillis)
+            val amountChanged = !moneyEquals(row.amount, reparsed.amount)
+            val balanceChanged = !moneyEquals(row.balance, reparsed.balance)
+            val costChanged = !moneyEquals(row.cost, reparsed.cost)
+            if (!amountChanged && !balanceChanged && !costChanged) continue
+            dao.updateParsedMoney(
+                id = row.id,
+                amount = reparsed.amount ?: row.amount,
+                balance = reparsed.balance ?: row.balance,
+                cost = reparsed.cost ?: row.cost
+            )
+            fixed++
+        }
+        fixed
+    }
+
+    private fun moneyEquals(a: Double?, b: Double?): Boolean {
+        if (a == null && b == null) return true
+        if (a == null || b == null) return false
+        return kotlin.math.abs(a - b) < 0.005
     }
 
     /**
