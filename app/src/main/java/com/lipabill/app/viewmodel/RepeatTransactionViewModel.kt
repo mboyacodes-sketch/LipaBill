@@ -179,7 +179,7 @@ class RepeatTransactionViewModel(
 
     companion object {
         fun parseAmount(raw: String): Double? {
-            val trimmed = raw.trim()
+            val trimmed = raw.trim().replace(",", "").replace(" ", "")
             if (trimmed.isEmpty()) return null
             val value = trimmed.toDoubleOrNull() ?: return null
             return value.takeIf { it > 0 }
