@@ -116,7 +116,8 @@ object ETicketTextParser {
         ).replace(t) { m ->
             "${m.groupValues[1]} Terminus"
         }
-        t = Regex("""(?i)K\s*SH\.?\s*([0-9]+)\s*[.,]\s*([0-9]{2})""").replace(t) { m ->
+        // Only fix spaced decimals like "700. 00" / "700, 00" — not thousands "10,000.00"
+        t = Regex("""(?i)K\s*SH\.?\s*([0-9]{1,6})\s+[.,]\s*([0-9]{2})\b""").replace(t) { m ->
             "KSH ${m.groupValues[1]}.${m.groupValues[2]}"
         }
         t = Regex("""(?i)Ticket\s*No\.?\s*\R\s*(\d{6,8})\b""").replace(t) { m ->
@@ -228,10 +229,14 @@ object ETicketTextParser {
             ?: labeled(text, "ticket no", "ticket number", "ticket")
         val serial = firstMatch(text, Regex("""(?i)\bSerial\s*:?\s*(\d{10,16})\b"""))
             ?: Regex("""\b(0\d{10,15})\b""").find(text)?.groupValues?.getOrNull(1)
-        val fare = firstMatch(text, Regex("""(?i)\bK\s*SH\.?\s*([0-9]+(?:\s*[.,]\s*[0-9]{2})?)\b"""))
-            ?.replace(Regex("""\s+"""), "")
-            ?: firstMatch(text, Regex("""(?i)\bKES\.?\s*([0-9]+(?:\s*[.,]\s*[0-9]{2})?)\b"""))
-                ?.replace(Regex("""\s+"""), "")
+        val fare = firstMatch(
+            text,
+            Regex("""(?i)\bK\s*SH\.?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)\b""")
+        )?.replace(",", "")?.replace(Regex("""\s+"""), "")
+            ?: firstMatch(
+                text,
+                Regex("""(?i)\bKES\.?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)\b""")
+            )?.replace(",", "")?.replace(Regex("""\s+"""), "")
         val passenger = labeledAfter(text, "Name", "Passenger", "Passenger Name")
             ?.takeIf { it.length >= 2 && !it.equals("ID", ignoreCase = true) }
         val idNo = labeledAfter(text, "ID/P NO", "ID/P No", "ID No", "Passport")
