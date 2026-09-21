@@ -173,7 +173,7 @@ private fun scaledStyle(
 fun appTypeScale(baseSp: Int): AppTypeScale {
     val scale = (baseSp.coerceIn(8, 18) / UI_FONT_BASELINE_SP.toFloat())
     return AppTypeScale(
-        balance = scaledStyle(60f, scale, FontWeight.Normal, line = 68f, tracking = -0.6f),
+        balance = scaledStyle(44f, scale, FontWeight.Normal, line = 52f, tracking = -0.4f),
         greeting = scaledStyle(17f, scale, FontWeight.SemiBold, line = 22f),
         section = scaledStyle(15f, scale, FontWeight.SemiBold, line = 20f),
         rowTitle = scaledStyle(14f, scale, FontWeight.SemiBold, line = 18f),
