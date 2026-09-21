@@ -424,8 +424,7 @@ private fun BalanceSection(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .background(CardWhite)
+            .background(CardWhite, RoundedCornerShape(22.dp))
             .padding(horizontal = Space.card, vertical = Space.cardH),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -696,7 +695,9 @@ private fun TransactionRow(
         Text(
             text = "$sign${formatKes(tx.amount)}",
             style = HomeType.amount,
-            color = amountColor
+            color = amountColor,
+            maxLines = 1,
+            softWrap = false
         )
     }
 }
