@@ -74,6 +74,11 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_CONFIRMATION_PURGE_DONE, false)
         set(value) = prefs.edit().putBoolean(KEY_CONFIRMATION_PURGE_DONE, value).apply()
 
+    /** When true, stored amounts have been re-parsed with the hardened thousand-separator logic. */
+    var amountParseRepairDone: Boolean
+        get() = prefs.getBoolean(KEY_AMOUNT_PARSE_REPAIR_DONE, false)
+        set(value) = prefs.edit().putBoolean(KEY_AMOUNT_PARSE_REPAIR_DONE, value).apply()
+
     companion object {
         private const val PREFS_FILE = "lipabill_secure_prefs"
         private const val KEY_AUTH_REQUIRED = "auth_required"
@@ -81,6 +86,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_LAST_BACKGROUNDED = "last_backgrounded_at"
         private const val KEY_BACKFILL_DONE = "sms_backfill_done"
         private const val KEY_CONFIRMATION_PURGE_DONE = "confirmation_filter_purge_v1"
+        private const val KEY_AMOUNT_PARSE_REPAIR_DONE = "amount_parse_repair_v2"
         private const val KEY_REPEAT_ENABLED = "repeat_feature_enabled"
         private const val KEY_A11Y_ONBOARDING_SEEN = "a11y_onboarding_seen"
         private const val KEY_PREFERRED_SIM_SUB_ID = "preferred_sim_subscription_id"
