@@ -92,6 +92,7 @@ class LipaBillApp : Application() {
                     try {
                         merchantDirectory.restoreFromSnapshotIfEmpty()
                         repository.purgeNonConfirmationsIfNeeded()
+                        repository.repairParsedAmountsIfNeeded()
                         repository.rescanInbox()
                         repository.linkPhonesByName()
                     } catch (_: Exception) {
