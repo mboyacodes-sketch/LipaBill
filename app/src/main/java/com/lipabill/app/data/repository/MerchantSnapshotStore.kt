@@ -10,7 +10,7 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Encrypted mirror of learned paybill/till ↔ name mappings.
+ * Encrypted mirror of learned paybill / till / Pochi ↔ name mappings.
  *
  * Room merchants live in SQLCipher (device Keystore). After uninstall that key is gone,
  * so Auto Backup of the encrypted DB alone cannot restore learning. This sealed file is
