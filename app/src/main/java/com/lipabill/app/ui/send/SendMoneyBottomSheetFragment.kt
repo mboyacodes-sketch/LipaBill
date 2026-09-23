@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.activityViewModels
@@ -41,6 +42,8 @@ import com.lipabill.app.ui.sheet.formatSheetAmount
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.LipaBillTheme
 import com.lipabill.app.ui.theme.Mute
+import com.lipabill.app.ui.util.hideKeyboard
+import com.lipabill.app.ui.util.rememberKeyboardDismissActions
 import com.lipabill.app.ussd.UssdMenuBuilder
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
 import com.lipabill.app.viewmodel.SendMoneyViewModel
@@ -121,7 +124,11 @@ fun SendMoneySheetContent(
     val listState by listVm.uiState.collectAsStateWithLifecycle()
     var step by remember {
         mutableStateOf(
-            if (sendVm.uiState.value.selected != null) SendSheetStep.Amount else SendSheetStep.Recipient
+            when {
+                sendVm.consumeResumeOnAmountStep() -> SendSheetStep.Amount
+                sendVm.uiState.value.selected != null -> SendSheetStep.Amount
+                else -> SendSheetStep.Recipient
+            }
         )
     }
     var showConfirm by remember { mutableStateOf(false) }
@@ -137,22 +144,19 @@ fun SendMoneySheetContent(
         sendVm.refreshGates()
         if (state.selected != null) {
             step = SendSheetStep.Amount
-            focusManager.clearFocus(force = true)
-            keyboard?.hide()
+            hideKeyboard(focusManager, keyboard)
         }
     }
 
     LaunchedEffect(step) {
         if (step == SendSheetStep.Amount) {
-            focusManager.clearFocus(force = true)
-            keyboard?.hide()
+            hideKeyboard(focusManager, keyboard)
         }
     }
 
     fun goToAmount() {
         if (!state.detailsValid) return
-        focusManager.clearFocus(force = true)
-        keyboard?.hide()
+        hideKeyboard(focusManager, keyboard)
         step = SendSheetStep.Amount
     }
 
@@ -217,8 +221,7 @@ fun SendMoneySheetContent(
                                 contact.fromPhoneBook == state.selected?.fromPhoneBook,
                             onClick = {
                                 sendVm.select(contact)
-                                focusManager.clearFocus(force = true)
-                                keyboard?.hide()
+                                hideKeyboard(focusManager, keyboard)
                                 step = SendSheetStep.Amount
                             }
                         )
@@ -236,7 +239,11 @@ fun SendMoneySheetContent(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     textStyle = SheetInputStyle,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = rememberKeyboardDismissActions(),
                     shape = RoundedCornerShape(14.dp),
                     placeholder = {
                         Text("Name or phone number", style = HomeType.body, color = Mute)
