@@ -18,6 +18,16 @@
 .env.*
 secrets.properties
 
+# Firebase — real client config (API key / project ids). Keep the .example only.
+/app/google-services.json
+google-services.json
+!**/google-services.json.example
+
+# Google / Firebase service accounts & similar (App Distribution, CI)
+*service-account*.json
+*-firebase-adminsdk*.json
+firebase-adminsdk*.json
+
 # Release signing — never commit (cannot rebuild signed APK without these)
 /keystore.properties
 /keystore/
