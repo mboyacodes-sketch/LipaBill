@@ -20,6 +20,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -32,12 +33,15 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lipabill.app.ui.permissions.AccessibilityRestrictedSteps
+import com.lipabill.app.ui.permissions.SideloadRestrictedSettings
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.viewmodel.SettingsViewModel
 import kotlin.math.roundToInt
@@ -148,7 +152,7 @@ fun SettingsScreen(
             Text("Balance privacy", style = MaterialTheme.typography.titleLarge)
             Spacer(modifier = Modifier.height(Space.tight))
             Text(
-                text = "When off, balance stays hidden until you tap the eye — then hides again after a few seconds.",
+                text = "When off, balance stays hidden as asterisks until you tap it — then hides again after a few seconds.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -165,6 +169,30 @@ fun SettingsScreen(
                 Switch(
                     checked = state.alwaysShowBalance,
                     onCheckedChange = viewModel::setAlwaysShowBalance
+                )
+            }
+
+            Spacer(modifier = Modifier.height(Space.section))
+            Text("Favourites", style = MaterialTheme.typography.titleLarge)
+            Spacer(modifier = Modifier.height(Space.tight))
+            Text(
+                text = "When on, the Frequent contacts row appears on the home screen.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(Space.block))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Show favourites",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Switch(
+                    checked = state.favouritesSectionEnabled,
+                    onCheckedChange = viewModel::setFavouritesSectionEnabled
                 )
             }
 
@@ -209,7 +237,8 @@ fun SettingsScreen(
             Text("Default SIM", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(Space.tight))
             Text(
-                text = "Set once — LipaBill always uses this line for payments until you change it here.",
+                text = "LipaBill dials M-Pesa on your Safaricom SIM automatically. " +
+                    "Other SIMs are listed but can’t be used for Send, Pay, or Repeat.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -230,32 +259,73 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            } else if (state.simLines.none { it.isSafaricom }) {
+                Text(
+                    text = "No Safaricom SIM found. You can still browse LipaBill — " +
+                        "insert a Safaricom line to Send, Pay, or Repeat.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.height(Space.gap))
+                state.simLines.forEach { line ->
+                    Text(
+                        text = line.label,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = Space.tight)
+                    )
+                }
             } else {
                 state.simLines.forEach { line ->
                     val selected = state.preferredSimSubscriptionId == line.subscriptionId
+                    val enabled = line.isSafaricom
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .selectable(
-                                selected = selected,
-                                onClick = { viewModel.setPreferredSim(line.subscriptionId) },
-                                role = Role.RadioButton
+                            .then(
+                                if (enabled) {
+                                    Modifier.selectable(
+                                        selected = selected,
+                                        onClick = { viewModel.setPreferredSim(line.subscriptionId) },
+                                        role = Role.RadioButton
+                                    )
+                                } else {
+                                    Modifier
+                                }
                             )
                             .padding(vertical = Space.gap)
                     ) {
                         RadioButton(
                             selected = selected,
-                            onClick = { viewModel.setPreferredSim(line.subscriptionId) }
+                            onClick = if (enabled) {
+                                { viewModel.setPreferredSim(line.subscriptionId) }
+                            } else {
+                                null
+                            },
+                            enabled = enabled
                         )
                         Spacer(modifier = Modifier.width(Space.gap))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(line.label, style = MaterialTheme.typography.bodyLarge)
-                            if (selected) {
-                                Text(
-                                    text = "Default — used for every repeat",
+                            Text(
+                                text = line.label,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (enabled) {
+                                    MaterialTheme.colorScheme.onSurface
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                            when {
+                                selected -> Text(
+                                    text = "Default — used for M-Pesa payments",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.primary
+                                )
+                                !enabled -> Text(
+                                    text = "Not Safaricom — can’t dial M-Pesa",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -279,18 +349,46 @@ fun SettingsScreen(
                     MaterialTheme.colorScheme.error
                 }
             )
-            Spacer(modifier = Modifier.height(Space.block))
-            Button(
-                onClick = { viewModel.openAccessibilitySettings() },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    if (state.lipaBillA11yEnabled) {
-                        "Open LipaBill Accessibility toggle"
-                    } else {
-                        "Turn on LipaBill Accessibility"
-                    }
-                )
+            val needsRestrictedUnlock =
+                SideloadRestrictedSettings.accessibilityUnlockNeeded(LocalContext.current)
+            if (needsRestrictedUnlock && !state.lipaBillA11yEnabled) {
+                Spacer(modifier = Modifier.height(Space.block))
+                AccessibilityRestrictedSteps()
+                Spacer(modifier = Modifier.height(Space.block))
+                Button(
+                    onClick = { viewModel.openAccessibilitySettings() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("1 · Open Accessibility")
+                }
+                Spacer(modifier = Modifier.height(Space.gap))
+                Button(
+                    onClick = { viewModel.openAppInfoForRestrictedSettings() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("2 · Open App info (unlock)")
+                }
+                Spacer(modifier = Modifier.height(Space.gap))
+                OutlinedButton(
+                    onClick = { viewModel.openAccessibilitySettings() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("3 · Open Accessibility again")
+                }
+            } else {
+                Spacer(modifier = Modifier.height(Space.block))
+                Button(
+                    onClick = { viewModel.openAccessibilitySettings() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (state.lipaBillA11yEnabled) {
+                            "Open LipaBill Accessibility toggle"
+                        } else {
+                            "Turn on LipaBill Accessibility"
+                        }
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(Space.section))
