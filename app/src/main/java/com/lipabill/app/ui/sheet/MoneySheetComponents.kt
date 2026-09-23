@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -54,6 +53,8 @@ import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.LocalAppType
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
+import com.lipabill.app.ui.util.imeAndNavBarsPadding
 
 private val SheetCanvas = Color(0xFFF7F7F8)
 private val SoftFill = Color(0xFFF2F3F5)
@@ -121,7 +122,8 @@ fun MoneySheetScaffold(
             .fillMaxSize()
             .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
             .background(CardWhite)
-            .navigationBarsPadding()
+            .hideKeyboardOnOutsideTap()
+            .imeAndNavBarsPadding()
             .padding(horizontal = Space.page)
             .padding(top = Space.gap, bottom = Space.block)
     ) {
@@ -201,7 +203,8 @@ fun MoneySheetScaffold(
                     Spacer(modifier = Modifier.height(Space.block))
                     extraAboveKeypad()
                 }
-                Spacer(modifier = Modifier.height(Space.gap))
+                // Extra room so the focused field can scroll above the CTA while IME is open.
+                Spacer(modifier = Modifier.height(Space.section + Space.section))
             }
         }
 
@@ -274,9 +277,7 @@ private fun AmountStage(
                         balance = balance,
                         alwaysShow = alwaysShowBalance,
                         pendingDeduction = null,
-                        amountStyle = HomeType.caption,
-                        eyeTint = Mute,
-                        horizontalArrangement = Arrangement.Center
+                        amountStyle = HomeType.caption
                     )
                 }
             }
@@ -375,8 +376,7 @@ fun BalanceCard(
                 balance = balance,
                 alwaysShow = alwaysShowBalance,
                 pendingDeduction = pendingDeduction,
-                amountStyle = HomeType.greeting,
-                eyeTint = Mute
+                amountStyle = HomeType.greeting
             )
         }
         Box(
