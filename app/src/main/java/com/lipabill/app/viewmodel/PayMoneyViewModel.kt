@@ -136,24 +136,20 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
         contactsAccess.value = PhoneBookSearcher.hasPermission(ctx)
         val needsPerm = !SimLineHelper.hasPhoneStatePermission(ctx)
         val lines = if (needsPerm) emptyList() else SimLineHelper.listActiveLines(ctx)
-        val preferredRaw = app.securePreferences.preferredSimSubscriptionId
-        if (preferredRaw < 0 && lines.size == 1) {
-            app.securePreferences.preferredSimSubscriptionId = lines.first().subscriptionId
+        val selected = if (needsPerm) {
+            null
+        } else {
+            SimLineHelper.ensureSafaricomPreferred(app.securePreferences, lines)
         }
         val preferred = app.securePreferences.preferredSimSubscriptionId
-        val selected = if (preferred >= 0) {
-            lines.firstOrNull { it.subscriptionId == preferred }?.subscriptionId
-                ?: preferred.takeIf { lines.isEmpty() }
-        } else {
-            null
-        }
         _ui.update { state ->
             state.copy(
                 featureEnabled = coordinator.isFeatureEnabled(),
                 accessibilityEnabled = AccessibilityHelper.isLipaBillServiceEnabled(ctx),
                 simLines = lines,
                 selectedSubscriptionId = selected,
-                hasSavedSimPreference = preferred >= 0,
+                hasSavedSimPreference = preferred >= 0 &&
+                    lines.any { line -> line.subscriptionId == preferred && line.isSafaricom },
                 needsPhoneStatePermission = needsPerm
             )
         }
@@ -198,6 +194,78 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
     /** Full reset when the sheet is dismissed. */
     fun resetSession() {
         clearMethod()
+        resumeOnAmountStep = false
+    }
+
+    /**
+     * Re-open Pay on the amount step after the user cancels the M-Pesa PIN pad.
+     */
+    fun restoreAmountEntry(
+        method: PayMethod,
+        amountInput: String,
+        businessNumber: String = "",
+        accountNumber: String = "",
+        tillNumber: String = "",
+        pochiPhone: String? = null,
+        pochiName: String? = null
+    ) {
+        selectMethod(method)
+        when (method) {
+            PayMethod.PAYBILL -> {
+                merchantQuery.value = businessNumber
+                _ui.update {
+                    it.copy(
+                        businessNumber = businessNumber,
+                        accountNumber = accountNumber,
+                        amountInput = sanitizeAmountInput(amountInput),
+                        dialStarted = false,
+                        statusMessage = null
+                    )
+                }
+            }
+            PayMethod.TILL -> {
+                merchantQuery.value = tillNumber
+                _ui.update {
+                    it.copy(
+                        tillNumber = tillNumber,
+                        amountInput = sanitizeAmountInput(amountInput),
+                        dialStarted = false,
+                        statusMessage = null
+                    )
+                }
+            }
+            PayMethod.POCHI -> {
+                val phone = pochiPhone.orEmpty()
+                if (phone.isNotBlank()) {
+                    selectPochiContact(
+                        SendContact(
+                            transactionId = 0L,
+                            name = pochiName,
+                            phone = phone,
+                            normalizedPhone = phone
+                        )
+                    )
+                }
+                _ui.update {
+                    it.copy(
+                        amountInput = sanitizeAmountInput(amountInput),
+                        dialStarted = false,
+                        statusMessage = null
+                    )
+                }
+            }
+        }
+        resumeOnAmountStep = true
+    }
+
+    /** True once after [restoreAmountEntry]; sheet should land on Amount. */
+    var resumeOnAmountStep: Boolean = false
+        private set
+
+    fun consumeResumeOnAmountStep(): Boolean {
+        val value = resumeOnAmountStep
+        resumeOnAmountStep = false
+        return value
     }
 
     fun setMerchantQuery(value: String) {
