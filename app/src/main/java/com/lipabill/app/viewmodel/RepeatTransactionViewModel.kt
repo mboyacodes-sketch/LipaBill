@@ -11,6 +11,7 @@ import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.ussd.SimLineHelper
 import com.lipabill.app.ussd.UssdMenuBuilder
+import com.lipabill.app.ui.util.formatKesMoney
 import com.lipabill.app.ui.util.sanitizeAmountInput
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -164,7 +165,12 @@ class RepeatTransactionViewModel(
             if (line != null) appendLine("Use line: ${line.label}")
             appendLine("Type: ${tx.type}")
             appendLine("To: ${tx.counterpartyName ?: "—"} ${tx.counterpartyPhone ?: ""}")
-            appendLine("Amount: ${amount ?: tx.amount}")
+            val shownAmount = amount ?: tx.amount
+            if (shownAmount != null) {
+                appendLine("Amount: ${formatKesMoney(shownAmount)}")
+            } else {
+                appendLine("Amount: —")
+            }
             if (plan != null) {
                 appendLine("Plan: ${plan.describe()}")
             }
