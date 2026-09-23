@@ -22,15 +22,23 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import com.lipabill.app.ui.permissions.AccessibilityDisclosure
+import com.lipabill.app.ui.permissions.AccessibilityRestrictedSteps
+import com.lipabill.app.ui.permissions.SideloadRestrictedSettings
 import com.lipabill.app.ui.theme.Space
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccessibilityOnboardingScreen(
     onOpenSettings: () -> Unit,
+    onOpenAppInfo: () -> Unit,
     onContinue: () -> Unit,
     onCancel: () -> Unit
 ) {
+    val context = LocalContext.current
+    val showRestrictedUnlock = SideloadRestrictedSettings.accessibilityUnlockNeeded(context)
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -57,43 +65,86 @@ fun AccessibilityOnboardingScreen(
                 modifier = Modifier.padding(bottom = Space.block)
             )
             Text(
-                text = "LipaBill needs Accessibility access",
+                text = AccessibilityDisclosure.TITLE,
                 style = MaterialTheme.typography.headlineMedium
             )
             Spacer(modifier = Modifier.height(Space.block))
             Text(
-                text = "Android requires you to turn this on yourself. " +
-                    "We’ll open the LipaBill Accessibility screen — just flip the switch.",
+                text = if (showRestrictedUnlock) {
+                    "Firebase App Distribution installs are treated as sideloads. " +
+                        "Android blocks Accessibility until you allow restricted settings, " +
+                        "then turn on LipaBill Repeat Payment."
+                } else {
+                    "You turn Accessibility on yourself in system Settings. " +
+                        "LipaBill will open the LipaBill service screen — flip the switch only " +
+                        "if you agree with the disclosure below."
+                },
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.height(Space.pageV + Space.block))
-            Text("What it will do", style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(Space.gap))
-            Text(
-                text = "• Only while you start a confirmed payment\n" +
-                    "• Read M-Pesa USSD menu screens\n" +
-                    "• Type the next menu number, phone, or amount you already approved\n" +
-                    "• Show a secure keypad for your M-Pesa PIN (hidden digits, not stored)",
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Spacer(modifier = Modifier.height(Space.block))
-            Text("What it will not do", style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(Space.gap))
-            Text(
-                text = "• Never store your M-Pesa PIN\n" +
-                    "• Never watch other apps when no payment is in progress\n" +
-                    "• Never send money without your Confirm tap and PIN\n" +
-                    "• Never claim a payment succeeded without a new M-Pesa SMS",
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Spacer(modifier = Modifier.height(Space.section))
-            Button(
-                onClick = onOpenSettings,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Turn on LipaBill Accessibility")
+
+            if (showRestrictedUnlock) {
+                Spacer(modifier = Modifier.height(Space.section))
+                AccessibilityRestrictedSteps()
+                Spacer(modifier = Modifier.height(Space.section))
+                Text("What Accessibility will do", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(Space.gap))
+                Text(
+                    text = AccessibilityDisclosure.WHAT_IT_DOES,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Spacer(modifier = Modifier.height(Space.block))
+                Text("What it will not do", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(Space.gap))
+                Text(
+                    text = AccessibilityDisclosure.WHAT_IT_DOES_NOT,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Spacer(modifier = Modifier.height(Space.section))
+                Button(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("1 · Open Accessibility")
+                }
+                Spacer(modifier = Modifier.height(Space.gap))
+                Button(
+                    onClick = onOpenAppInfo,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("2 · Open App info (unlock)")
+                }
+                Spacer(modifier = Modifier.height(Space.gap))
+                OutlinedButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("3 · Open Accessibility again")
+                }
+            } else {
+                Spacer(modifier = Modifier.height(Space.pageV + Space.block))
+                Text("What it will do", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(Space.gap))
+                Text(
+                    text = AccessibilityDisclosure.WHAT_IT_DOES,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Spacer(modifier = Modifier.height(Space.block))
+                Text("What it will not do", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(Space.gap))
+                Text(
+                    text = AccessibilityDisclosure.WHAT_IT_DOES_NOT,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Spacer(modifier = Modifier.height(Space.section))
+                Button(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Turn on LipaBill Accessibility")
+                }
             }
+
             Spacer(modifier = Modifier.height(Space.gap))
             OutlinedButton(
                 onClick = onContinue,
