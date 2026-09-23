@@ -25,7 +25,7 @@ data class MerchantHit(
 )
 
 /**
- * Learns paybill/till number ↔ SMS business-name mappings from payments the user makes.
+ * Learns paybill / till / Pochi identifier ↔ SMS name mappings from payments the user makes.
  * Mirrors the directory to a plain JSON snapshot so learning survives reinstall when
  * Auto Backup restores the file but SQLCipher’s Keystore key is gone.
  */
@@ -68,10 +68,10 @@ class MerchantDirectory(
     }
 
     /**
-     * Called when dialing a Lipa na M-Pesa payment so the next matching SMS can learn the name.
+     * Called when dialing Lipa na M-Pesa / Pochi so the next matching SMS can learn the name.
      */
     suspend fun rememberOutgoing(tx: MpesaTransaction, amount: Double) = withContext(Dispatchers.IO) {
-        if (tx.type != TransactionType.PAYBILL && tx.type != TransactionType.BUY_GOODS) return@withContext
+        if (!isLearnableType(tx.type)) return@withContext
         val identifier = digitsOnly(tx.counterpartyPhone) ?: return@withContext
         val account = if (tx.type == TransactionType.PAYBILL) {
             extractAccount(tx.rawBody)
@@ -89,9 +89,9 @@ class MerchantDirectory(
                 createdAtMillis = now
             )
         )
-        // Seed directory immediately so number search works before SMS arrives.
+        // Seed directory immediately so search works before SMS arrives.
         val placeholder = tx.counterpartyName?.takeIf { it.isNotBlank() }
-            ?: if (tx.type == TransactionType.PAYBILL) "Paybill $identifier" else "Till $identifier"
+            ?: placeholderName(tx.type, identifier)
         upsertMerchant(
             type = tx.type,
             identifier = identifier,
@@ -103,32 +103,65 @@ class MerchantDirectory(
     }
 
     /**
-     * When a paid-to SMS arrives with only a name, match a recent pending dial and enrich the row.
+     * When a confirmation SMS arrives with only a name, match a recent pending dial and enrich.
+     * Pochi SMS is often parsed as SENT / BUY_GOODS without a phone — bridge via amount + TTL.
      */
     suspend fun enrichIncomingSms(tx: MpesaTransaction): MpesaTransaction = withContext(Dispatchers.IO) {
-        if (tx.type != TransactionType.PAYBILL && tx.type != TransactionType.BUY_GOODS) return@withContext tx
         val amount = tx.amount ?: return@withContext tx
         val now = System.currentTimeMillis()
         dao.prunePending(now - PENDING_TTL_MS)
 
+        if (tx.type == TransactionType.PAYBILL || tx.type == TransactionType.BUY_GOODS) {
+            val pending = dao.findMatchingPending(
+                type = tx.type,
+                amount = amount,
+                sinceMillis = now - PENDING_TTL_MS
+            )
+            if (pending != null) {
+                return@withContext applyPendingEnrichment(tx, pending, now)
+            }
+        }
+
+        enrichPochiIncoming(tx, amount, now)
+    }
+
+    /**
+     * Attach a pending Pochi dial (phone known at dial time) to a name-only confirmation SMS.
+     */
+    private suspend fun enrichPochiIncoming(
+        tx: MpesaTransaction,
+        amount: Double,
+        now: Long
+    ): MpesaTransaction {
         val pending = dao.findMatchingPending(
-            type = tx.type,
+            type = TransactionType.POCHI,
             amount = amount,
             sinceMillis = now - PENDING_TTL_MS
-        ) ?: return@withContext tx
+        ) ?: return tx
 
+        val smsPhone = digitsOnly(tx.counterpartyPhone)
+        // If the SMS already has a different phone, this is likely Send Money — leave it alone.
+        if (smsPhone != null && smsPhone != pending.identifier) return tx
+
+        return applyPendingEnrichment(
+            tx = tx.copy(type = TransactionType.POCHI),
+            pending = pending,
+            now = now
+        )
+    }
+
+    private suspend fun applyPendingEnrichment(
+        tx: MpesaTransaction,
+        pending: PendingMerchantPaymentEntity,
+        now: Long
+    ): MpesaTransaction {
         dao.consumePending(pending.id)
         val smsName = tx.counterpartyName?.trim()?.takeIf { it.isNotBlank() }
         upsertMerchant(
             type = pending.type,
             identifier = pending.identifier,
             accountHint = pending.accountCode,
-            displayName = smsName
-                ?: if (pending.type == TransactionType.PAYBILL) {
-                    "Paybill ${pending.identifier}"
-                } else {
-                    "Till ${pending.identifier}"
-                },
+            displayName = smsName ?: placeholderName(pending.type, pending.identifier),
             now = now,
             preferIncomingName = smsName != null
         )
@@ -138,7 +171,8 @@ class MerchantDirectory(
             tx.rawBody.contains("Account", ignoreCase = true) -> tx.rawBody
             else -> "${tx.rawBody} Account ${pending.accountCode}"
         }
-        tx.copy(
+        return tx.copy(
+            type = pending.type,
             counterpartyPhone = pending.identifier,
             counterpartyName = smsName ?: tx.counterpartyName,
             rawBody = enrichedRaw
@@ -200,12 +234,27 @@ class MerchantDirectory(
         displayName = displayName
     )
 
+    private fun isLearnableType(type: TransactionType): Boolean =
+        type == TransactionType.PAYBILL ||
+            type == TransactionType.BUY_GOODS ||
+            type == TransactionType.POCHI
+
+    private fun placeholderName(type: TransactionType, identifier: String): String = when (type) {
+        TransactionType.PAYBILL -> "Paybill $identifier"
+        TransactionType.BUY_GOODS -> "Till $identifier"
+        TransactionType.POCHI -> "Pochi $identifier"
+        else -> identifier
+    }
+
     private fun isPlaceholderName(name: String, identifier: String): Boolean {
         val n = name.trim().lowercase(Locale.US)
         return n == "paybill $identifier" ||
             n == "till $identifier" ||
+            n == "pochi $identifier" ||
+            n == "pochi la biashara $identifier" ||
             n.startsWith("paybill ") && n.endsWith(identifier) ||
-            n.startsWith("till ") && n.endsWith(identifier)
+            n.startsWith("till ") && n.endsWith(identifier) ||
+            n.startsWith("pochi ") && n.endsWith(identifier)
     }
 
     private fun normalizeName(name: String): String =
