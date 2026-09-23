@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Personal / sideload use — not intended for Play Store SMS policy distribution -->
+    <!--
+      READ_SMS / RECEIVE_SMS: ingest Safaricom M-Pesa confirmation messages for the
+      on-device transaction ledger (money management). SEND_SMS is not used.
+      Details: docs/play-store-sms-permission-review.md
+    -->
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
@@ -10,7 +15,12 @@
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Firebase Analytics (metrics only) + ML Kit model delivery -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- Phone/SMS required for M-Pesa; keep optional so Chrome OS / tablets can install. -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
     <queries>
         <package android:name="com.android.settings" />
@@ -38,12 +48,20 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.LipaBill">
 
+        <!-- Metrics only: disable advertising ID collection -->
+        <meta-data
+            android:name="google_analytics_adid_collection_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="google_analytics_default_allow_ad_personalization_signals"
+            android:value="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.LipaBill"
             android:screenOrientation="portrait"
-            android:windowSoftInputMode="adjustResize"
+            android:windowSoftInputMode="adjustNothing"
             android:enableOnBackInvokedCallback="false"
             android:launchMode="singleTop">
             <intent-filter>
@@ -57,10 +75,10 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:mimeType="application/vnd.apple.pkpass" />
             </intent-filter>
-            <intent-filter>
+            <intent-filter tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
+                <!-- content/file .pkpass opens — not http(s) App Links -->
                 <data
                     android:scheme="content"
                     android:mimeType="*/*"
