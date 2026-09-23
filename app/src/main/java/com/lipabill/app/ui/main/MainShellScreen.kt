@@ -2,13 +2,14 @@ package com.lipabill.app.ui.main
 
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.ui.list.TransactionListScreen
+import com.lipabill.app.ui.util.imeAndNavBarsPadding
 import com.lipabill.app.viewmodel.TransactionListViewModel
 
 @Composable
@@ -26,14 +27,15 @@ fun MainShellScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
-    ) { _ ->
+    ) { innerPadding ->
         TransactionListScreen(
             viewModel = listVm,
             onOpenTransaction = onOpenTransaction,
             onRepeatTransaction = onRepeatTransaction,
             modifier = Modifier
                 .fillMaxSize()
-                .navigationBarsPadding(),
+                .padding(innerPadding)
+                .imeAndNavBarsPadding(),
             onSend = onOpenSend,
             onSendTo = onOpenSendTo,
             onReceive = onOpenPay,
