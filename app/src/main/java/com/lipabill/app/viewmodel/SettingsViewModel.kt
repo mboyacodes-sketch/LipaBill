@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.local.entity.RepeatAttemptEntity
 import com.lipabill.app.ussd.AccessibilityHelper
+import com.lipabill.app.ui.permissions.SideloadRestrictedSettings
 import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.ussd.SimLineHelper
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +19,7 @@ data class SettingsUiState(
     val timeoutMinutes: Int = 2,
     val fontSizeSp: Int = 12,
     val alwaysShowBalance: Boolean = false,
+    val favouritesSectionEnabled: Boolean = true,
     val repeatEnabled: Boolean = true,
     val lipaBillA11yEnabled: Boolean = false,
     val simLines: List<SimLine> = emptyList(),
@@ -56,12 +58,20 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         refresh()
     }
 
+    fun setFavouritesSectionEnabled(enabled: Boolean) {
+        app.setFavouritesSectionEnabled(enabled)
+        refresh()
+    }
+
     fun setRepeatEnabled(enabled: Boolean) {
         app.repeatCoordinator.setFeatureEnabled(enabled)
         refresh()
     }
 
     fun setPreferredSim(subscriptionId: Int) {
+        val lines = SimLineHelper.listActiveLines(getApplication())
+        val line = lines.firstOrNull { it.subscriptionId == subscriptionId } ?: return
+        if (!line.isSafaricom) return
         app.securePreferences.preferredSimSubscriptionId = subscriptionId
         refresh()
     }
@@ -74,22 +84,26 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         AccessibilityHelper.openAppAccessibilityDetails(getApplication())
     }
 
+    fun openAppInfoForRestrictedSettings() {
+        SideloadRestrictedSettings.openAppInfo(getApplication())
+    }
+
     private fun buildState(): SettingsUiState {
         val ctx = getApplication<Application>()
         val needsPerm = !SimLineHelper.hasPhoneStatePermission(ctx)
         val lines = if (needsPerm) emptyList() else SimLineHelper.listActiveLines(ctx)
-        val preferredRaw = app.securePreferences.preferredSimSubscriptionId
-        // Auto-lock single SIM as permanent default
-        if (preferredRaw < 0 && lines.size == 1) {
-            app.securePreferences.preferredSimSubscriptionId = lines.first().subscriptionId
+        if (!needsPerm) {
+            SimLineHelper.ensureSafaricomPreferred(app.securePreferences, lines)
         }
         val preferred = app.securePreferences.preferredSimSubscriptionId
-        val selected = lines.firstOrNull { it.subscriptionId == preferred }?.subscriptionId
-            ?: preferred.takeIf { it >= 0 }
+        val selected = lines.firstOrNull { it.subscriptionId == preferred && it.isSafaricom }
+            ?.subscriptionId
+            ?: SimLineHelper.findSafaricom(lines)?.subscriptionId
         return SettingsUiState(
             timeoutMinutes = auth.timeoutMinutes(),
             fontSizeSp = app.securePreferences.uiFontSizeSp,
             alwaysShowBalance = app.securePreferences.alwaysShowBalance,
+            favouritesSectionEnabled = app.securePreferences.favouritesSectionEnabled,
             repeatEnabled = app.securePreferences.repeatFeatureEnabled,
             lipaBillA11yEnabled = AccessibilityHelper.isLipaBillServiceEnabled(ctx),
             simLines = lines,
