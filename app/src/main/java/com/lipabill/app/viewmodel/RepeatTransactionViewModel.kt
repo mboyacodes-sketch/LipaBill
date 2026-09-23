@@ -96,17 +96,12 @@ class RepeatTransactionViewModel(
         val ctx = getApplication<Application>()
         val needsPerm = !SimLineHelper.hasPhoneStatePermission(ctx)
         val lines = if (needsPerm) emptyList() else SimLineHelper.listActiveLines(ctx)
-        val preferredRaw = app.securePreferences.preferredSimSubscriptionId
-        if (preferredRaw < 0 && lines.size == 1) {
-            app.securePreferences.preferredSimSubscriptionId = lines.first().subscriptionId
+        val selected = if (needsPerm) {
+            null
+        } else {
+            SimLineHelper.ensureSafaricomPreferred(app.securePreferences, lines)
         }
         val preferred = app.securePreferences.preferredSimSubscriptionId
-        val selected = if (preferred >= 0) {
-            lines.firstOrNull { it.subscriptionId == preferred }?.subscriptionId
-                ?: preferred.takeIf { lines.isEmpty() }
-        } else {
-            null
-        }
         _ui.value = RepeatConfirmUiState(
             transaction = tx,
             plan = plan,
@@ -119,7 +114,8 @@ class RepeatTransactionViewModel(
             dialStarted = _ui.value.dialStarted,
             simLines = lines,
             selectedSubscriptionId = selected,
-            hasSavedSimPreference = preferred >= 0,
+            hasSavedSimPreference = preferred >= 0 &&
+                lines.any { line -> line.subscriptionId == preferred && line.isSafaricom },
             needsPhoneStatePermission = needsPerm
         )
     }
