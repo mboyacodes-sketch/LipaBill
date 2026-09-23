@@ -150,7 +150,6 @@ data class AppTypeScale(
     val nav: TextStyle,
     val sheetAmount: TextStyle,
     val sheetHeroAmount: TextStyle,
-    val sheetTitle: TextStyle,
     /** Pay/Send text fields — regular weight, larger than body. */
     val sheetInput: TextStyle,
     val scale: Float
@@ -184,7 +183,6 @@ fun appTypeScale(baseSp: Int): AppTypeScale {
         nav = scaledStyle(10f, scale, FontWeight.Medium, line = 13f),
         sheetAmount = scaledStyle(30f, scale, FontWeight.Normal, line = 34f, tracking = -0.3f),
         sheetHeroAmount = scaledStyle(48f, scale, FontWeight.Normal, line = 54f, tracking = -0.8f),
-        sheetTitle = scaledStyle(18f, scale, FontWeight.SemiBold, line = 22f, tracking = -0.2f),
         sheetInput = scaledStyle(17f, scale, FontWeight.Normal, line = 22f),
         scale = scale
     )
