@@ -7,7 +7,6 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -16,14 +15,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -34,16 +32,20 @@ import com.lipabill.app.R
 import com.lipabill.app.security.AppSecurity
 import com.lipabill.app.ui.sheet.HorizontalRecipient
 import com.lipabill.app.ui.sheet.HorizontalRecipientRow
+import com.lipabill.app.ui.sheet.InAppKeyboard
 import com.lipabill.app.ui.sheet.MoneyConfirmDialog
 import com.lipabill.app.ui.sheet.MoneySheetScaffold
+import com.lipabill.app.ui.sheet.SheetFeedbackTone
 import com.lipabill.app.ui.sheet.SheetInputStyle
 import com.lipabill.app.ui.sheet.expandForComposeContent
 import com.lipabill.app.ui.sheet.formatSheetAmount
+import com.lipabill.app.ui.sheet.resolveSheetFeedback
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.LipaBillTheme
 import com.lipabill.app.ui.theme.Mute
+import com.lipabill.app.ui.util.InterceptSystemIme
+import com.lipabill.app.ui.util.bringIntoViewOnFocus
 import com.lipabill.app.ui.util.hideKeyboard
-import com.lipabill.app.ui.util.rememberKeyboardDismissActions
 import com.lipabill.app.ussd.UssdMenuBuilder
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
 import com.lipabill.app.viewmodel.SendMoneyViewModel
@@ -132,6 +134,7 @@ fun SendMoneySheetContent(
         )
     }
     var showConfirm by remember { mutableStateOf(false) }
+    var queryFocused by remember { mutableStateOf(false) }
     val app = LocalContext.current.applicationContext as LipaBillApp
     val alwaysShowBalance by app.alwaysShowBalance.collectAsStateWithLifecycle()
     val pendingAmount = remember(state.amountInput) {
@@ -150,12 +153,14 @@ fun SendMoneySheetContent(
 
     LaunchedEffect(step) {
         if (step == SendSheetStep.Amount) {
+            queryFocused = false
             hideKeyboard(focusManager, keyboard)
         }
     }
 
     fun goToAmount() {
         if (!state.detailsValid) return
+        queryFocused = false
         hideKeyboard(focusManager, keyboard)
         step = SendSheetStep.Amount
     }
@@ -173,15 +178,33 @@ fun SendMoneySheetContent(
         ?: UssdMenuBuilder.normalizePhoneNumber(state.query)?.let { "@$it" }
 
     val onAmountStep = step == SendSheetStep.Amount
+    val availableBalance = listState.latestBalance
+    val exceedsBalance = availableBalance != null &&
+        pendingAmount != null &&
+        pendingAmount > 0.0 &&
+        pendingAmount > availableBalance
+    val feedback = resolveSheetFeedback(
+        status = state.statusMessage,
+        guidance = when {
+            onAmountStep && exceedsBalance ->
+                "That amount is more than your available balance."
+            onAmountStep && state.amountInput.isBlank() ->
+                "Enter an amount to continue."
+            onAmountStep && !state.amountValid ->
+                "Enter a valid amount to continue."
+            onAmountStep -> null
+            else -> state.guidanceMessage
+        }
+    )
 
     MoneySheetScaffold(
-        title = "Send",
         balance = listState.latestBalance,
         alwaysShowBalance = alwaysShowBalance,
         pendingDeduction = pendingAmount,
         selectedName = selectedName,
         selectedSubtitle = selectedSubtitle,
         amountDisplay = formatSheetAmount(state.amountInput),
+        amountInput = state.amountInput,
         selectedSelected = state.detailsValid,
         recipientsHeader = if (onAmountStep) "Change recipient" else "Frequent",
         onRecipientsHeaderClick = if (onAmountStep) {
@@ -192,20 +215,7 @@ fun SendMoneySheetContent(
         showKeypad = onAmountStep,
         showRecipients = !onAmountStep,
         recipientsContent = {
-            if (state.contacts.isEmpty()) {
-                Text(
-                    text = when {
-                        state.query.isBlank() ->
-                            "No past contacts — enter a name or phone below."
-                        !state.hasContactsPermission ->
-                            "No past matches. Allow Contacts to search your phone book."
-                        else ->
-                            "No matches — keep typing a phone number to continue."
-                    },
-                    style = HomeType.caption,
-                    color = Mute
-                )
-            } else {
+            if (state.contacts.isNotEmpty()) {
                 HorizontalRecipientRow {
                     state.contacts.take(12).forEach { contact ->
                         val name = contact.name ?: contact.normalizedPhone
@@ -221,6 +231,7 @@ fun SendMoneySheetContent(
                                 contact.fromPhoneBook == state.selected?.fromPhoneBook,
                             onClick = {
                                 sendVm.select(contact)
+                                queryFocused = false
                                 hideKeyboard(focusManager, keyboard)
                                 step = SendSheetStep.Amount
                             }
@@ -233,23 +244,44 @@ fun SendMoneySheetContent(
             null
         } else {
             {
-                OutlinedTextField(
-                    value = state.query,
-                    onValueChange = sendVm::setQuery,
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    textStyle = SheetInputStyle,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = rememberKeyboardDismissActions(),
-                    shape = RoundedCornerShape(14.dp),
-                    placeholder = {
-                        Text("Name or phone number", style = HomeType.body, color = Mute)
+                InterceptSystemIme {
+                    OutlinedTextField(
+                        value = state.query,
+                        onValueChange = sendVm::setQuery,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .bringIntoViewOnFocus(delayMs = 80L)
+                            .onFocusChanged { queryFocused = it.isFocused },
+                        singleLine = true,
+                        readOnly = true,
+                        textStyle = SheetInputStyle,
+                        shape = RoundedCornerShape(14.dp),
+                        placeholder = {
+                            Text("Name or phone number", style = HomeType.body, color = Mute)
+                        }
+                    )
+                }
+            }
+        },
+        inAppTextKeyboard = if (!onAmountStep && queryFocused) {
+            {
+                InAppKeyboard(
+                    startOnDigits = state.query.any { it.isDigit() } &&
+                        state.query.none { it.isLetter() },
+                    onChar = { ch ->
+                        sendVm.setQuery(state.query + ch)
+                    },
+                    onBackspace = {
+                        sendVm.setQuery(state.query.dropLast(1))
+                    },
+                    onDone = {
+                        queryFocused = false
+                        focusManager.clearFocus(force = true)
                     }
                 )
             }
+        } else {
+            null
         },
         ctaLabel = if (onAmountStep) "Send Now" else "Continue",
         ctaEnabled = if (onAmountStep) {
@@ -266,6 +298,10 @@ fun SendMoneySheetContent(
         },
         onKey = sendVm::appendAmountKey,
         onBackspace = sendVm::deleteAmountKey,
+        onApplyAddUpAmount = sendVm::setAmountInput,
+        onClearAmount = { sendVm.setAmountInput("") },
+        feedbackMessage = feedback?.first,
+        feedbackTone = feedback?.second ?: SheetFeedbackTone.Hint,
         modifier = Modifier.fillMaxWidth()
     )
 
