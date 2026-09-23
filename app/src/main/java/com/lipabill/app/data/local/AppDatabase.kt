@@ -1,6 +1,8 @@
 package com.lipabill.app.data.local
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import androidx.room.Database
 import androidx.room.Room
@@ -58,9 +60,10 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
-         * After uninstall + Auto Backup, encrypted DB/passphrase files may restore
-         * without the Keystore key that wrapped them. Recreate a fresh cipher DB;
-         * merchant learning is re-imported from the sealed merchant snapshot.
+         * Opens the SQLCipher DB. On **app updates**, never wipe existing files — a
+         * failed open surfaces as an error so we do not silently delete transactions.
+         * Wipe + recreate is only allowed on a fresh install (or Clear storage), when
+         * Auto Backup may have restored cipher files without the Keystore wrap key.
          */
         private fun openOrRecreate(context: Context): AppDatabase {
             val first = tryBuild(context)
@@ -68,8 +71,20 @@ abstract class AppDatabase : RoomDatabase() {
                 first.openHelper.writableDatabase
                 first
             } catch (t: Throwable) {
-                Log.w(TAG, "cipher_open_failed_recreating", t)
+                Log.w(TAG, "cipher_open_failed", t)
                 runCatching { first.close() }
+                if (!isFreshInstall(context)) {
+                    Log.e(
+                        TAG,
+                        "cipher_open_failed_on_update — preserving DB/passphrase " +
+                            "(uninstall or Clear storage is required to reset)"
+                    )
+                    // Retry once without rotating passphrase; then surface the failure.
+                    val retry = tryBuild(context)
+                    retry.openHelper.writableDatabase
+                    return retry
+                }
+                Log.w(TAG, "cipher_open_failed_on_fresh_install_recreating", t)
                 wipeCipherArtifacts(context)
                 val fresh = tryBuild(context)
                 fresh.openHelper.writableDatabase
@@ -89,6 +104,25 @@ abstract class AppDatabase : RoomDatabase() {
                 // learned merchants / tickets / transactions.
                 .fallbackToDestructiveMigrationFrom(1, 2, 3, 4, 5, 6, 7)
                 .build()
+        }
+
+        /** True only when this package has never been updated on the device. */
+        private fun isFreshInstall(context: Context): Boolean {
+            return try {
+                val pm = context.packageManager
+                val info = if (Build.VERSION.SDK_INT >= 33) {
+                    pm.getPackageInfo(
+                        context.packageName,
+                        PackageManager.PackageInfoFlags.of(0)
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    pm.getPackageInfo(context.packageName, 0)
+                }
+                info.firstInstallTime == info.lastUpdateTime
+            } catch (_: Throwable) {
+                false
+            }
         }
 
         private fun wipeCipherArtifacts(context: Context) {
@@ -112,20 +146,37 @@ abstract class AppDatabase : RoomDatabase() {
             val file = File(context.filesDir, PASSPHRASE_FILE)
             if (file.exists()) {
                 return try {
-                    val encryptedFile = EncryptedFile.Builder(
-                        context,
-                        file,
-                        masterKey,
-                        EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
-                    ).build()
-                    encryptedFile.openFileInput().use { it.readBytes() }
+                    readPassphrase(context, masterKey, file)
                 } catch (t: Throwable) {
-                    Log.w(TAG, "passphrase_unreadable_rotating", t)
+                    Log.w(TAG, "passphrase_unreadable", t)
+                    // On updates, never rotate the key — that would orphan the existing DB.
+                    if (!isFreshInstall(context)) {
+                        throw IllegalStateException(
+                            "Cannot read DB passphrase after app update; " +
+                                "refusing to rotate key (would wipe transactions)",
+                            t
+                        )
+                    }
+                    Log.w(TAG, "passphrase_unreadable_rotating_fresh_install", t)
                     file.delete()
                     createPassphrase(context, masterKey, file)
                 }
             }
             return createPassphrase(context, masterKey, file)
+        }
+
+        private fun readPassphrase(
+            context: Context,
+            masterKey: MasterKey,
+            file: File
+        ): ByteArray {
+            val encryptedFile = EncryptedFile.Builder(
+                context,
+                file,
+                masterKey,
+                EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
+            ).build()
+            return encryptedFile.openFileInput().use { it.readBytes() }
         }
 
         private fun createPassphrase(
