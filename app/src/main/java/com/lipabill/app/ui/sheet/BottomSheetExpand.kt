@@ -10,18 +10,17 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 /**
  * Expands a bottom sheet to nearly full screen and re-applies after layout so
  * Compose content that measures late (Pay/Send) still fills on first open.
- * Soft keyboard overlays (adjustNothing) — no page resize/scroll when it opens.
  */
 fun BottomSheetDialog.expandForComposeContent() {
     window?.let { win ->
         WindowCompat.setDecorFitsSystemWindows(win, false)
-        win.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+        win.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     }
     setOnShowListener { dlg ->
         val dialog = dlg as BottomSheetDialog
         dialog.window?.let { win ->
             WindowCompat.setDecorFitsSystemWindows(win, false)
-            win.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+            win.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
         val sheet = dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
             ?: return@setOnShowListener
