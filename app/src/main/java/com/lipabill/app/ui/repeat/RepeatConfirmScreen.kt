@@ -22,17 +22,25 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lipabill.app.ui.sheet.AmountAddUpDialog
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.util.MoneyAmountVisualTransformation
+import com.lipabill.app.ui.util.bringIntoViewOnFocus
 import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
-import com.lipabill.app.ui.util.imeAndNavBarsPadding
 import com.lipabill.app.ui.util.rememberKeyboardDismissActions
+import com.lipabill.app.ui.util.sheetKeyboardPadding
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,6 +55,8 @@ fun RepeatConfirmScreen(
     onConfirm: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var showAddUp by remember { mutableStateOf(false) }
+    var addUpSeed by remember { mutableStateOf("") }
     val tx = state.transaction
     val needsSimSetup = state.simLines.size > 1 && !state.hasSavedSimPreference
     val missingSafaricom = !state.needsPhoneStatePermission &&
@@ -71,7 +81,7 @@ fun RepeatConfirmScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .imeAndNavBarsPadding()
+                .sheetKeyboardPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(Space.page)
         ) {
@@ -110,9 +120,13 @@ fun RepeatConfirmScreen(
             OutlinedTextField(
                 value = state.amountInput,
                 onValueChange = viewModel::setAmountInput,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .bringIntoViewOnFocus(),
                 label = { Text("Amount") },
+                prefix = { Text("KES ") },
                 singleLine = true,
+                visualTransformation = MoneyAmountVisualTransformation,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Decimal,
                     imeAction = ImeAction.Done
@@ -125,6 +139,15 @@ fun RepeatConfirmScreen(
                     null
                 }
             )
+            TextButton(
+                onClick = {
+                    addUpSeed = state.amountInput
+                    showAddUp = true
+                },
+                modifier = Modifier.align(Alignment.Start)
+            ) {
+                Text("Add up items")
+            }
 
             // Only show blockers that require action — hide USSD/SIM explanation otherwise.
             when {
@@ -212,4 +235,19 @@ fun RepeatConfirmScreen(
             }
         }
     }
+
+    if (showAddUp) {
+        AmountAddUpDialog(
+            initialAmountInput = addUpSeed,
+            onDismiss = {
+                viewModel.setAmountInput(addUpSeed)
+                showAddUp = false
+            },
+            onUseTotal = { amountInput ->
+                viewModel.setAmountInput(amountInput)
+                showAddUp = false
+            }
+        )
+    }
+
 }
