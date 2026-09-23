@@ -1,0 +1,660 @@
+# LipaBill — Firebase App Distribution QA test specification
+# Upload this file with the release (or paste sections into tester notes).
+# Channel: Firebase App Distribution (sideload). Expect restricted-settings unlocks.
+#
+# App:       com.lipabill.app
+# Version:   1.0.3 (versionCode 4)
+# minSdk:    26 | targetSdk: 36
+# Build:     LipaBill-1.0.3.apk / LipaBill-1.0.3.aab
+
+meta:
+  product: LipaBill
+  package: com.lipabill.app
+  version_name: "1.0.3"
+  version_code: 4
+  distribution: firebase_app_distribution
+  install_source: sideload
+  primary_device_hint: Samsung Galaxy S22 Ultra (SM-S908E) / Android 15–16
+  purpose: >
+    Full functional + gate + sideload unlock coverage for Send / Pay / Repeat
+    (Accessibility dial), SMS import, tickets, analytics, and settings.
+  how_to_use: >
+    Testers check each case Pass/Fail/Blocked. Mark environment tags that apply
+    (android_15_24, sideload, multi_sim, safaricom). Blocked = OS/permission
+    prevented the step; note which unlock was missing.
+
+environment_matrix:
+  required_tags:
+    - sideload          # Firebase App Distribution / APK install
+    - safaricom_sim     # At least one Safaricom line for dial cases
+  optional_tags:
+    - android_15_24     # SMS restricted-settings path
+    - android_13_plus   # Accessibility restricted-settings path (API 33+)
+    - multi_sim
+    - no_safaricom
+    - no_sim
+    - contacts_denied
+    - play_protect_on
+
+prerequisites:
+  - id: PRE-01
+    title: Install from Firebase App Distribution
+    steps:
+      - Install the invited build via Firebase App Tester (not Play Store).
+      - Confirm package com.lipabill.app and version 1.0.3.
+    expected:
+      - App opens to auth gate or first-run setup (fresh install).
+
+  - id: PRE-02
+    title: Unlock Accessibility restricted settings (REQUIRED for dial)
+    applies_when: [sideload, android_13_plus]
+    why: >
+      Send / Pay / Repeat dial *334# via LipaBill Accessibility. Sideloaded
+      installs grey out the Accessibility toggle until Allow restricted settings.
+    steps:
+      - In LipaBill, open Accessibility setup (first-run Step 4, Profile, or Enable Repeat Payment).
+      - Tap "1 · Open Accessibility" and try turning on "LipaBill Repeat Payment".
+      - Expect "Restricted setting" / unavailable — that is expected.
+      - Tap "2 · Open App info" → ⋮ or More → Allow restricted settings → confirm PIN/biometrics.
+      - Tap "3 · Open Accessibility again" → Installed apps → LipaBill Repeat Payment → On.
+      - Return to LipaBill → "I've enabled it — continue".
+    expected:
+      - Profile / setup shows "LipaBill Accessibility is on" / "LipaBill Repeat Payment is enabled."
+      - Send and Pay are no longer grey solely due to Accessibility.
+
+  - id: PRE-03
+    title: Unlock SMS restricted settings (Android 15–24)
+    applies_when: [sideload, android_15_24]
+    steps:
+      - Request SMS from first-run or SMS screen (Allow / Allow SMS).
+      - Open App info → ⋮ or More → Allow restricted settings (if not already).
+      - Permissions → SMS → Allow.
+      - Return to LipaBill.
+    expected:
+      - SMS permission granted; Rescan SMS can import M-Pesa confirmations.
+
+  - id: PRE-04
+    title: Runtime permissions for dial
+    steps:
+      - Allow Phone (CALL_PHONE) and Phone state (READ_PHONE_STATE).
+      - On multi-SIM, pick Safaricom as default in Profile → Default SIM.
+    expected:
+      - Preferred Safaricom SIM saved; Send/Pay not blocked for SIM reasons.
+
+# ---------------------------------------------------------------------------
+suites:
+
+  - id: AUTH
+    name: App unlock / auth gate
+    cases:
+      - id: AUTH-01
+        title: Unlock with biometrics or device PIN
+        priority: P0
+        steps:
+          - Launch app while locked.
+          - Tap Open LipaBill.
+          - Complete fingerprint / face / device PIN.
+        expected:
+          - Auth gate dismisses; first-run or home appears.
+
+      - id: AUTH-02
+        title: No screen lock enrolled
+        priority: P2
+        steps:
+          - On a device with no lock, open app.
+          - Follow Continue without lock / I understand the risk if shown.
+        expected:
+          - App remains usable with risk acknowledgement.
+
+      - id: AUTH-03
+        title: Lock now + re-auth timeout
+        priority: P1
+        steps:
+          - Unlock app → Profile → Lock now.
+          - Confirm Open LipaBill gate returns.
+          - Change re-auth timeout to 1 min; background app past timeout; reopen.
+        expected:
+          - Gate requires unlock again after Lock now and after timeout.
+
+  - id: SETUP
+    name: First-run setup wizard
+    cases:
+      - id: SETUP-01
+        title: Fresh install starts at Set up LipaBill
+        priority: P0
+        steps:
+          - Fresh install (or clear app data) → unlock.
+        expected:
+          - Screen title "Set up LipaBill", Step 1 of 4 · Permissions.
+
+      - id: SETUP-02
+        title: Step 1 — Allow permissions
+        priority: P0
+        steps:
+          - Read permission bullets (SMS, Phone, Phone state, Contacts, Camera, Notifications if API 33+).
+          - Tap Allow permissions and grant all.
+          - Tap Continue when already granted.
+        expected:
+          - Advances toward SIM (or SMS unlock on Android 15–24 if SMS still denied).
+
+      - id: SETUP-03
+        title: Step 2 — SMS unlock (15–24 only)
+        priority: P0
+        applies_when: [android_15_24]
+        steps:
+          - If SMS still denied, complete Open App info → restricted settings → SMS Allow.
+          - Tap I've unlocked SMS — continue (or Skip for now for negative path).
+        expected:
+          - Continues to SIM; Skip leaves SMS off but wizard progresses.
+
+      - id: SETUP-04
+        title: Step 3 — Safaricom SIM selection
+        priority: P0
+        applies_when: [safaricom_sim]
+        steps:
+          - Select Safaricom radio option.
+          - Tap Continue.
+        expected:
+          - Preference saved; advances to Accessibility.
+
+      - id: SETUP-05
+        title: Step 3 — No Safaricom / empty SIM
+        priority: P1
+        applies_when: [no_safaricom, no_sim]
+        steps:
+          - Observe warning copy.
+          - Tap Continue anyway.
+        expected:
+          - Wizard continues; later Send/Pay remain blocked for SIM.
+
+      - id: SETUP-06
+        title: Step 4 — Accessibility unlock (sideload)
+        priority: P0
+        applies_when: [sideload, android_13_plus]
+        steps:
+          - Follow numbered 1 / 2 / 3 unlock buttons (see PRE-02).
+          - Tap I've enabled it — continue.
+        expected:
+          - Status shows Accessibility on; Done step appears.
+
+      - id: SETUP-07
+        title: Skip Accessibility
+        priority: P1
+        steps:
+          - On Step 4, tap Skip for now → Open LipaBill.
+        expected:
+          - Home opens; Send/Pay gated until Accessibility enabled.
+
+      - id: SETUP-08
+        title: Done — Open LipaBill
+        priority: P0
+        steps:
+          - On You’re ready, tap Open LipaBill.
+        expected:
+          - firstRunSetupDone persists; next cold start does not show wizard.
+
+  - id: SMS
+    name: SMS permission & inbox import
+    cases:
+      - id: SMS-01
+        title: Grant SMS and Rescan
+        priority: P0
+        steps:
+          - Ensure SMS allowed (PRE-03 if needed).
+          - Home → Rescan SMS (or pull to refresh).
+        expected:
+          - M-Pesa confirmation SMS appear as transactions; balance updates when present.
+
+      - id: SMS-02
+        title: Continue without SMS
+        priority: P1
+        steps:
+          - On SMS screen, tap Continue without SMS.
+        expected:
+          - Home opens; empty / SMS permission off messaging; no inbox import.
+
+      - id: SMS-03
+        title: Search transactions
+        priority: P2
+        steps:
+          - With history present, search Name or number; Clear search.
+        expected:
+          - Matches filter; clear restores full list.
+
+      - id: SMS-04
+        title: Receipt popup
+        priority: P1
+        steps:
+          - Tap a confirmed transaction.
+          - Copy tx ID; Share; dismiss.
+        expected:
+          - Confirmed receipt shows payment + transaction details; copy/share work.
+
+  - id: GATES
+    name: Send / Pay hard gates
+    cases:
+      - id: GATES-01
+        title: Send/Pay grey when Accessibility off
+        priority: P0
+        steps:
+          - Disable LipaBill Accessibility in system settings.
+          - Return to home; tap dimmed Send or Pay.
+        expected:
+          - Toast about enabling LipaBill Accessibility; sheet does not dial.
+
+      - id: GATES-02
+        title: Automation off in Profile
+        priority: P0
+        steps:
+          - Profile → turn off Enable repeat automation.
+          - Tap Send / Pay on home.
+        expected:
+          - Toast to turn on payment automation in Profile.
+
+      - id: GATES-03
+        title: Missing CALL_PHONE
+        priority: P1
+        steps:
+          - Revoke Phone permission in App info.
+          - Attempt Send/Pay.
+        expected:
+          - Toast requiring Phone permission to send and pay.
+
+      - id: GATES-04
+        title: Missing READ_PHONE_STATE
+        priority: P1
+        steps:
+          - Revoke Phone state; attempt Send/Pay.
+        expected:
+          - Toast / prompt to allow Phone state to pick a SIM.
+
+      - id: GATES-05
+        title: No Safaricom SIM
+        priority: P0
+        applies_when: [no_safaricom]
+        steps:
+          - With only non-Safaricom SIMs, tap Send/Pay.
+        expected:
+          - Blocked with Safaricom required messaging.
+
+      - id: GATES-06
+        title: Multi-SIM without preferred line
+        priority: P0
+        applies_when: [multi_sim]
+        steps:
+          - Clear preferred SIM if possible; Confirm a Send/Pay.
+        expected:
+          - Redirects to Settings / Set SIM before dial.
+
+  - id: SEND
+    name: Send money
+    cases:
+      - id: SEND-01
+        title: Happy path — Send to contact/phone
+        priority: P0
+        requires: [PRE-02, PRE-04, safaricom_sim]
+        steps:
+          - Home → Send (enabled).
+          - Search Name or phone number → select recipient → Continue.
+          - Enter amount → Send Now → confirm.
+          - Complete app step-up auth if prompted.
+          - On M-Pesa PIN overlay, enter PIN (or Cancel payment for SEND-03).
+        expected:
+          - USSD *334# flow starts on Safaricom; Accessibility fills menus; processing screen shown; success only after new M-Pesa SMS sync.
+
+      - id: SEND-02
+        title: Change recipient
+        priority: P2
+        steps:
+          - In Send sheet after recipient picked, tap Change recipient; pick another.
+        expected:
+          - Recipient updates; amount step continues.
+
+      - id: SEND-03
+        title: Cancel payment on M-Pesa PIN returns to amount
+        priority: P0
+        requires: [PRE-02]
+        steps:
+          - Start Send through confirm to M-Pesa PIN screen.
+          - Tap Cancel payment.
+        expected:
+          - Returns to enter-amount / Send sheet (not home wipe); can edit amount and retry.
+
+      - id: SEND-04
+        title: Step-up auth cancel
+        priority: P1
+        steps:
+          - Confirm Send; cancel biometric/device PIN prompt.
+        expected:
+          - Toast Payment cancelled; no dial.
+
+  - id: PAY
+    name: Pay money (Paybill / Till / Pochi)
+    cases:
+      - id: PAY-01
+        title: Paybill happy path
+        priority: P0
+        requires: [PRE-02, PRE-04, safaricom_sim]
+        steps:
+          - Home → Pay → Paybill.
+          - Enter business number + account → Continue → amount → Pay Now → confirm → auth → PIN.
+        expected:
+          - Dial + Accessibility automation; processing; SMS confirms success.
+
+      - id: PAY-02
+        title: Till happy path
+        priority: P0
+        requires: [PRE-02, PRE-04]
+        steps:
+          - Pay → Till → enter till → amount → Pay Now → confirm.
+        expected:
+          - Same dial/automation behaviour as Paybill.
+
+      - id: PAY-03
+        title: Pochi La Biashara happy path
+        priority: P1
+        requires: [PRE-02, PRE-04]
+        steps:
+          - Pay → Pochi → phone → amount → Pay Now → confirm.
+        expected:
+          - Dial/automation completes; SMS confirms.
+
+      - id: PAY-04
+        title: Change payment method mid-flow
+        priority: P2
+        steps:
+          - Start Paybill; tap Change payment; switch to Till.
+        expected:
+          - Form resets to selected method; no crash.
+
+      - id: PAY-05
+        title: Cancel payment on PIN restores amount
+        priority: P0
+        steps:
+          - Reach M-Pesa PIN from Pay; tap Cancel payment.
+        expected:
+          - Returns to amount entry for that Pay draft.
+
+  - id: REPEAT
+    name: Repeat / Another transaction
+    cases:
+      - id: REPEAT-01
+        title: Another transaction with automation on
+        priority: P0
+        requires: [PRE-02, PRE-04]
+        steps:
+          - Open a supported receipt → Another transaction.
+          - Adjust amount if needed → Pay / confirm → auth → PIN.
+        expected:
+          - Repeat confirm screen; dial + Accessibility; processing.
+
+      - id: REPEAT-02
+        title: Automation off → Copy payment details
+        priority: P1
+        steps:
+          - Profile → disable Enable repeat automation.
+          - Receipt → Another transaction.
+        expected:
+          - Copy payment details screen; Copy details works; no Accessibility dial.
+
+      - id: REPEAT-03
+        title: Accessibility missing → onboarding
+        priority: P0
+        steps:
+          - Turn Accessibility off; start Another transaction / Send confirm path.
+        expected:
+          - Enable Repeat Payment onboarding with sideload unlock steps.
+
+      - id: REPEAT-04
+        title: Unsupported transaction type
+        priority: P2
+        steps:
+          - Open a receipt that cannot be automated (if available).
+        expected:
+          - Message that payment cannot be started automatically; Back.
+
+  - id: BALANCE
+    name: Balance privacy
+    cases:
+      - id: BAL-01
+        title: Tap to reveal masked balance
+        priority: P1
+        steps:
+          - Ensure Always display balance is off.
+          - On home, tap ****** / masked balance.
+        expected:
+          - Amount reveals briefly then re-masks (~3s).
+
+      - id: BAL-02
+        title: Always display balance
+        priority: P2
+        steps:
+          - Profile → Always display balance on; return home / Metrics / Send sheet.
+        expected:
+          - Balance visible without tap across surfaces.
+
+  - id: FAV
+    name: Favourites / Frequent
+    cases:
+      - id: FAV-01
+        title: Show favourites toggle
+        priority: P2
+        steps:
+          - Profile → Show favourites on/off.
+        expected:
+          - Home Frequent row appears/disappears accordingly.
+
+      - id: FAV-02
+        title: Add / use frequent contact
+        priority: P2
+        applies_when: [favourites_on]
+        steps:
+          - From Frequent, Add or tap existing; start Send.
+        expected:
+          - Recipient pre-filled or Send opens for that contact.
+
+  - id: METRICS
+    name: Metrics & Analytics
+    cases:
+      - id: MET-01
+        title: Period chips and overview
+        priority: P1
+        steps:
+          - Home → Metrics.
+          - Switch 7D, 30D, 90D, This year, Year, All.
+        expected:
+          - Income / Expenses / Net / Transactions and chart update; no crash.
+
+      - id: MET-02
+        title: Custom date range
+        priority: P2
+        steps:
+          - Custom → pick range → Apply; Cancel discards.
+        expected:
+          - Metrics respect custom range after Apply.
+
+  - id: TICKETS
+    name: Tickets
+    cases:
+      - id: TKT-01
+        title: Add event ticket (photo / PDF / pkpass)
+        priority: P1
+        steps:
+          - Tickets → Add ticket → Event ticket.
+          - Import a sample photo/PDF/.pkpass (grant Camera if needed).
+        expected:
+          - Ticket appears in list; detail opens.
+
+      - id: TKT-02
+        title: Add SGR booking SMS
+        priority: P1
+        steps:
+          - Add ticket → SGR booking SMS → paste/confirm sample confirmation.
+        expected:
+          - Ticket created from confirmation text.
+
+      - id: TKT-03
+        title: Mark used / Delete / Scan boarding QR
+        priority: P2
+        steps:
+          - Open ticket detail; Mark as used; Scan boarding QR if available; Delete ticket.
+        expected:
+          - Status updates; delete removes item; scanner opens with Camera permission.
+
+      - id: TKT-04
+        title: Open .pkpass from intent
+        priority: P2
+        steps:
+          - Share/open a .pkpass into LipaBill.
+        expected:
+          - Navigates to Tickets with pending import.
+
+  - id: SETTINGS
+    name: Profile / Settings
+    cases:
+      - id: SET-01
+        title: Font size slider
+        priority: P2
+        steps:
+          - Change font size 8–18; leave and return to list.
+        expected:
+          - UI text scales; preference persists.
+
+      - id: SET-02
+        title: Default SIM Safaricom-only
+        priority: P0
+        applies_when: [multi_sim]
+        steps:
+          - Profile → Default SIM; try selecting non-Safaricom if listed.
+        expected:
+          - Only Safaricom selectable for dial; non-Safaricom shows can’t dial copy.
+
+      - id: SET-03
+        title: Accessibility section sideload help
+        priority: P0
+        applies_when: [sideload]
+        steps:
+          - With a11y off, confirm numbered unlock buttons in Profile.
+        expected:
+          - 1 / 2 / 3 buttons open Accessibility / App info correctly.
+
+      - id: SET-04
+        title: Recent repeat attempts list
+        priority: P2
+        steps:
+          - After a repeat attempt, open Profile.
+        expected:
+          - Attempt row shows outcome · amount · counterparty.
+
+  - id: SIDELOAD
+    name: Firebase App Distribution / restricted settings regression
+    cases:
+      - id: SIDE-01
+        title: Accessibility blocked until Allow restricted settings
+        priority: P0
+        applies_when: [sideload, android_13_plus]
+        steps:
+          - Fresh sideload install; do NOT unlock restricted settings.
+          - Try enabling LipaBill Accessibility only.
+        expected:
+          - Toggle blocked / restricted dialog; after App info unlock, toggle works.
+
+      - id: SIDE-02
+        title: SMS blocked until Allow restricted settings (15–24)
+        priority: P0
+        applies_when: [sideload, android_15_24]
+        steps:
+          - Without unlock, request SMS; open Permissions → SMS.
+        expected:
+          - SMS greyed / denied until restricted settings allowed.
+
+      - id: SIDE-03
+        title: App update may require re-unlock
+        priority: P1
+        applies_when: [sideload]
+        steps:
+          - Install newer App Distribution build over previous.
+          - Re-check Accessibility (and SMS on 15–24).
+        expected:
+          - If reset, numbered unlock flow still recovers; document if flag persisted.
+
+      - id: SIDE-04
+        title: Play Protect warning does not block adb/App Tester install
+        priority: P2
+        applies_when: [play_protect_on]
+        steps:
+          - Install via App Tester; dismiss Play Protect if prompted.
+        expected:
+          - App installs; note any OEM block that requires adb instead.
+
+  - id: SMOKE
+    name: Release smoke (minimum before shipping build)
+    description: Run on every Firebase App Distribution upload.
+    cases:
+      - id: SMOKE-01
+        title: Install + unlock + home
+        priority: P0
+        steps:
+          - Install 1.0.3 → unlock → complete or skip first-run.
+          - Complete PRE-02 Accessibility unlock.
+        expected:
+          - Home loads without crash.
+
+      - id: SMOKE-02
+        title: SMS rescan (if SMS granted)
+        priority: P0
+        steps:
+          - Rescan SMS.
+        expected:
+          - History populates or empty state is correct for permission.
+
+      - id: SMOKE-03
+        title: Send or Pay end-to-end on Safaricom
+        priority: P0
+        requires: [PRE-02, PRE-04, safaricom_sim]
+        steps:
+          - Complete one small Send OR Pay through PIN and SMS confirmation.
+        expected:
+          - Dial works; Accessibility fills USSD; new SMS lands; receipt Confirmed.
+
+      - id: SMOKE-04
+        title: Metrics + Tickets open
+        priority: P1
+        steps:
+          - Open Metrics; open Tickets; back to home.
+        expected:
+          - No crash; UI renders.
+
+# ---------------------------------------------------------------------------
+results_template:
+  fields:
+    - case_id
+    - result          # pass | fail | blocked | skipped
+    - device_model
+    - android_version
+    - installer       # firebase_app_tester | adb | other
+    - notes
+    - screenshot_uri  # optional
+
+tester_checklist_short:
+  - "[ ] PRE-02 Accessibility restricted settings unlocked"
+  - "[ ] PRE-03 SMS unlocked (Android 15–24)"
+  - "[ ] Safaricom SIM selected in Profile"
+  - "[ ] SMOKE-01 home opens"
+  - "[ ] SMOKE-02 Rescan SMS"
+  - "[ ] SMOKE-03 one Send or Pay E2E"
+  - "[ ] SEND-03 / PAY-05 PIN Cancel returns to amount"
+  - "[ ] GATES-01 Send/Pay grey without Accessibility"
+
+known_limitations:
+  - >
+    Firebase App Distribution installs are sideloads. Accessibility (and SMS on
+    Android 15–24) require Allow restricted settings — no app code can bypass this.
+  - >
+    Play Internal testing installs avoid restricted settings; use that channel if
+    testers cannot complete the unlock.
+  - >
+    Payment success is confirmed only when a new M-Pesa SMS is imported — not from
+    USSD UI alone.
+  - >
+    M-Pesa PIN is entered on LipaBill keypad, sent once into the prompt, never stored.
