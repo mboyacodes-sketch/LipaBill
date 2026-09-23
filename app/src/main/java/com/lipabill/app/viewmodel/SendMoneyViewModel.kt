@@ -13,6 +13,7 @@ import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.ussd.SimLineHelper
 import com.lipabill.app.ussd.UssdMenuBuilder
+import com.lipabill.app.ui.util.formatKesMoney
 import com.lipabill.app.ui.util.sanitizeAmountInput
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -42,7 +43,9 @@ data class SendMoneyUiState(
     val needsPhoneStatePermission: Boolean = false,
     val hasContactsPermission: Boolean = false,
     val dialStarted: Boolean = false,
-    val statusMessage: String? = null
+    val statusMessage: String? = null,
+    /** What the user should do next on the recipient step (null when ready). */
+    val guidanceMessage: String? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
@@ -86,6 +89,7 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
         val detailsOk = draft.selected != null ||
             UssdMenuBuilder.normalizePhoneNumber(trimmed) != null
         val probeOk = detailsOk && buildProbe(draft.selected, trimmed) != null
+        val hasPerm = PhoneBookSearcher.hasPermission(getApplication())
         gates.copy(
             contacts = filtered,
             query = draft.query,
@@ -94,9 +98,41 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
             amountValid = amountOk,
             detailsValid = detailsOk,
             canSend = detailsOk && amountOk && probeOk && !gates.dialStarted,
-            hasContactsPermission = PhoneBookSearcher.hasPermission(getApplication())
+            hasContactsPermission = hasPerm,
+            guidanceMessage = sendDetailsGuidance(
+                query = trimmed,
+                selected = draft.selected,
+                contacts = filtered,
+                detailsOk = detailsOk,
+                hasContactsPermission = hasPerm
+            )
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SendMoneyUiState())
+
+    private fun sendDetailsGuidance(
+        query: String,
+        selected: SendContact?,
+        contacts: List<SendContact>,
+        detailsOk: Boolean,
+        hasContactsPermission: Boolean
+    ): String? {
+        if (detailsOk || selected != null) return null
+        val label = query.take(28).let { if (query.length > 28) "$it…" else it }
+        return when {
+            query.isBlank() ->
+                "Search a past contact, or type a phone number."
+            contacts.isEmpty() && query.any { it.isLetter() } ->
+                if (!hasContactsPermission) {
+                    "No past matches for \"$label\". Allow Contacts, or type a phone number."
+                } else {
+                    "No match for \"$label\". Keep typing a phone number to continue."
+                }
+            contacts.isEmpty() ->
+                "Enter a full phone number to continue."
+            else ->
+                "Pick a contact, or enter a full phone number."
+        }
+    }
 
     private data class RecipientDraft(
         val tx: List<SendContact>,
@@ -276,11 +312,7 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
             ?: UssdMenuBuilder.normalizePhoneNumber(state.query)
             ?: return null
         val name = state.selected?.name ?: phone
-        val amountLabel = if (amount % 1.0 == 0.0) {
-            amount.toLong().toString()
-        } else {
-            "%.2f".format(amount)
-        }
+        val amountLabel = formatKesMoney(amount)
         return Triple("Send", listOfNotNull(name.takeIf { it != phone }, phone).joinToString(" · "), amountLabel)
     }
 
