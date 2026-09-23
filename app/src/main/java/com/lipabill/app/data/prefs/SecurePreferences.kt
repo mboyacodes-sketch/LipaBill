@@ -64,10 +64,20 @@ class SecurePreferences(context: Context) {
         get() = prefs.getInt(KEY_UI_FONT_SIZE_SP, DEFAULT_FONT_SIZE_SP).coerceIn(8, 22)
         set(value) = prefs.edit().putInt(KEY_UI_FONT_SIZE_SP, value.coerceIn(8, 22)).apply()
 
-    /** When true, available balance is always visible (no eye / auto-hide). */
+    /** When true, available balance is always visible (no tap-to-reveal / auto-hide). */
     var alwaysShowBalance: Boolean
         get() = prefs.getBoolean(KEY_ALWAYS_SHOW_BALANCE, false)
         set(value) = prefs.edit().putBoolean(KEY_ALWAYS_SHOW_BALANCE, value).apply()
+
+    /** When true, the home Favourites (Frequent) section is shown. */
+    var favouritesSectionEnabled: Boolean
+        get() = prefs.getBoolean(KEY_FAVOURITES_SECTION, true)
+        set(value) = prefs.edit().putBoolean(KEY_FAVOURITES_SECTION, value).apply()
+
+    /** When true, first-run permissions + SIM setup has been completed. */
+    var firstRunSetupDone: Boolean
+        get() = prefs.getBoolean(KEY_FIRST_RUN_SETUP_DONE, false)
+        set(value) = prefs.edit().putBoolean(KEY_FIRST_RUN_SETUP_DONE, value).apply()
 
     /** When true, non-confirmation SMS rows have been purged from Room. */
     var confirmationFilterPurgeDone: Boolean
@@ -92,6 +102,8 @@ class SecurePreferences(context: Context) {
         private const val KEY_PREFERRED_SIM_SUB_ID = "preferred_sim_subscription_id"
         private const val KEY_UI_FONT_SIZE_SP = "ui_font_size_sp_v2"
         private const val KEY_ALWAYS_SHOW_BALANCE = "always_show_balance"
+        private const val KEY_FAVOURITES_SECTION = "favourites_section_enabled"
+        private const val KEY_FIRST_RUN_SETUP_DONE = "first_run_setup_done"
         const val DEFAULT_TIMEOUT_MS = 2 * 60 * 1000L
         const val DEFAULT_FONT_SIZE_SP = 12
     }
