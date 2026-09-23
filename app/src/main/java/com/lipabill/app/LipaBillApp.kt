@@ -14,6 +14,8 @@ import com.lipabill.app.data.repository.TicketRepository
 import com.lipabill.app.data.repository.TransactionRepository
 import com.lipabill.app.data.sms.SmsInboxReader
 import com.lipabill.app.data.sms.SmsInboxSyncWatcher
+import com.lipabill.app.metrics.AppCrashReporting
+import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -50,11 +52,25 @@ class LipaBillApp : Application() {
     private val _alwaysShowBalance = MutableStateFlow(false)
     val alwaysShowBalance: StateFlow<Boolean> = _alwaysShowBalance.asStateFlow()
 
+    private val _favouritesSectionEnabled = MutableStateFlow(true)
+    val favouritesSectionEnabled: StateFlow<Boolean> = _favouritesSectionEnabled.asStateFlow()
+
     override fun onCreate() {
         super.onCreate()
+        AppMetrics.init(this)
+        AppCrashReporting.init(this)
         securePreferences = SecurePreferences(this)
         _fontSizeSp.value = securePreferences.uiFontSizeSp
         _alwaysShowBalance.value = securePreferences.alwaysShowBalance
+        _favouritesSectionEnabled.value = securePreferences.favouritesSectionEnabled
+        // Existing installs already past first launch — don't force the new setup wizard.
+        if (!securePreferences.firstRunSetupDone &&
+            (securePreferences.smsBackfillDone ||
+                securePreferences.preferredSimSubscriptionId >= 0 ||
+                securePreferences.accessibilityOnboardingSeen)
+        ) {
+            securePreferences.firstRunSetupDone = true
+        }
         authManager = AuthManager(this, securePreferences)
 
         val db = AppDatabase.getInstance(this)
@@ -117,5 +133,10 @@ class LipaBillApp : Application() {
     fun setAlwaysShowBalance(enabled: Boolean) {
         securePreferences.alwaysShowBalance = enabled
         _alwaysShowBalance.value = enabled
+    }
+
+    fun setFavouritesSectionEnabled(enabled: Boolean) {
+        securePreferences.favouritesSectionEnabled = enabled
+        _favouritesSectionEnabled.value = enabled
     }
 }
