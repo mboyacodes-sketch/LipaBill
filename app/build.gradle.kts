@@ -7,6 +7,14 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// Firebase Analytics + Crashlytics — apply when Console config is present
+// (see docs/firebase-analytics.md).
+val hasGoogleServices = file("google-services.json").exists()
+if (hasGoogleServices) {
+    apply(plugin = "com.google.gms.google-services")
+    apply(plugin = "com.google.firebase.crashlytics")
+}
+
 android {
     namespace = "com.lipabill.app"
     compileSdk = 36
@@ -15,12 +23,33 @@ android {
         applicationId = "com.lipabill.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 8
+        versionName = "1.0.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Real devices are arm64; drop x86/x86_64 emulator ABIs from shipped APKs.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+        buildConfigField("boolean", "FIREBASE_ANALYTICS", if (hasGoogleServices) "true" else "false")
+        buildConfigField("boolean", "FIREBASE_CRASHLYTICS", if (hasGoogleServices) "true" else "false")
+    }
+
+    /**
+     * play — Google Play production (no Settings UI auto-click helper).
+     * internal — Firebase App Distribution / APK sideload (full unlock helpers).
+     * SMS + Accessibility USSD fill remain in both; do not hide them from review.
+     */
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") {
+            dimension = "distribution"
+            isDefault = true
+            buildConfigField("boolean", "SIDELOAD_DISTRIBUTION", "false")
+        }
+        create("internal") {
+            dimension = "distribution"
+            versionNameSuffix = "-internal"
+            buildConfigField("boolean", "SIDELOAD_DISTRIBUTION", "true")
         }
     }
 
@@ -98,6 +127,11 @@ android {
             excludes += "**/fontbox/resources/cmap/**"
         }
     }
+
+    lint {
+        lintConfig = file("lint.xml")
+        abortOnError = true
+    }
 }
 
 // Strip PDFBox CJK cmaps from merged assets (AAR assets bypass packaging.resources).
@@ -161,6 +195,12 @@ dependencies {
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     // Embedded text from airline e-ticket PDFs (more reliable than OCR alone)
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
+    // Firebase Analytics + Crashlytics (no Messaging / Remote Config).
+    // Active only when app/google-services.json is present.
+    implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
+    implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-crashlytics")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
