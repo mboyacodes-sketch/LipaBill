@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -46,6 +47,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +55,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
@@ -64,12 +67,17 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.widget.Toast
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.repository.SendContact
@@ -88,7 +96,11 @@ import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.util.displayLabel
 import com.lipabill.app.ui.util.formatActivityTime
 import com.lipabill.app.ui.util.formatKes
+import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
 import com.lipabill.app.ui.util.isOutgoing
+import com.lipabill.app.ui.util.rememberHideKeyboard
+import com.lipabill.app.ui.util.rememberKeyboardDismissActions
+import com.lipabill.app.ussd.PaymentAccessGates
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -113,9 +125,37 @@ fun TransactionListScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    val app = LocalContext.current.applicationContext as LipaBillApp
+    val context = LocalContext.current
+    val app = context.applicationContext as LipaBillApp
     val alwaysShowBalance by app.alwaysShowBalance.collectAsStateWithLifecycle()
+    val favouritesSectionEnabled by app.favouritesSectionEnabled.collectAsStateWithLifecycle()
     var receiptTxId by remember { mutableStateOf<Long?>(null) }
+    var paymentAccess by remember { mutableStateOf(PaymentAccessGates.evaluate(context)) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                paymentAccess = PaymentAccessGates.evaluate(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        paymentAccess = PaymentAccessGates.evaluate(context)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    fun runIfPaymentsReady(action: () -> Unit) {
+        val status = PaymentAccessGates.evaluate(context).also { paymentAccess = it }
+        if (status.ready) {
+            action()
+        } else {
+            Toast.makeText(
+                context,
+                status.blockReason ?: "Finish setup in Profile to send and pay",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
 
     LaunchedEffect(state.scanMessage) {
         val msg = state.scanMessage ?: return@LaunchedEffect
@@ -131,8 +171,13 @@ fun TransactionListScreen(
     }.collectAsStateWithLifecycle(initialValue = null)
 
     val showingReceipt = receiptTxId != null
+    val hideKeyboard = rememberHideKeyboard()
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .hideKeyboardOnOutsideTap()
+    ) {
         PullToRefreshBox(
             isRefreshing = state.isScanning,
             onRefresh = onRescan,
@@ -164,23 +209,27 @@ fun TransactionListScreen(
                 }
                 item(key = "actions") {
                     QuickActionsRow(
-                        onSend = onSend,
-                        onDeposit = onReceive,
+                        onSend = { runIfPaymentsReady(onSend) },
+                        onDeposit = { runIfPaymentsReady(onReceive) },
                         onDetails = onExchange,
                         onTickets = onTickets,
+                        sendPayEnabled = paymentAccess.ready,
                         modifier = Modifier.padding(horizontal = Space.page)
                     )
                     Spacer(modifier = Modifier.height(Space.block))
                 }
-                if (frequent.isNotEmpty()) {
+                if (favouritesSectionEnabled && frequent.isNotEmpty()) {
                     item(key = "frequent") {
                         Column(modifier = Modifier.padding(horizontal = Space.page)) {
-                            SectionHeader(title = "Frequent", onOpen = onSend)
+                            SectionHeader(
+                                title = "Frequent",
+                                onOpen = { runIfPaymentsReady(onSend) }
+                            )
                             Spacer(modifier = Modifier.height(Space.block))
                             FrequentContactsRow(
                                 contacts = frequent,
-                                onAdd = onSend,
-                                onSelect = onSendTo
+                                onAdd = { runIfPaymentsReady(onSend) },
+                                onSelect = { contact -> runIfPaymentsReady { onSendTo(contact) } }
                             )
                         }
                         Spacer(modifier = Modifier.height(Space.block))
@@ -211,7 +260,10 @@ fun TransactionListScreen(
                 items(items = flat, key = { it.id }) { tx ->
                     TransactionRow(
                         tx = tx,
-                        onClick = { receiptTxId = tx.id },
+                        onClick = {
+                            hideKeyboard()
+                            receiptTxId = tx.id
+                        },
                         modifier = Modifier.padding(horizontal = Space.page)
                     )
                 }
@@ -438,8 +490,8 @@ private fun BalanceSection(
             balance = balance,
             alwaysShow = alwaysShowBalance,
             amountStyle = HomeType.balance,
-            horizontalArrangement = Arrangement.Center,
-            eyeTint = Mute
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center
         )
     }
 }
@@ -450,14 +502,25 @@ private fun QuickActionsRow(
     onDeposit: () -> Unit,
     onDetails: () -> Unit,
     onTickets: () -> Unit,
+    sendPayEnabled: Boolean,
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
-        QuickAction(Icons.Outlined.NorthEast, "Send", onSend)
-        QuickAction(Icons.Outlined.Payments, "Pay", onDeposit)
+        QuickAction(
+            icon = Icons.Outlined.NorthEast,
+            label = "Send",
+            onClick = onSend,
+            enabled = sendPayEnabled
+        )
+        QuickAction(
+            icon = Icons.Outlined.Payments,
+            label = "Pay",
+            onClick = onDeposit,
+            enabled = sendPayEnabled
+        )
         QuickAction(Icons.Outlined.Wallet, "Metrics", onDetails)
         QuickAction(Icons.Outlined.ConfirmationNumber, "Tickets", onTickets)
     }
@@ -467,19 +530,29 @@ private fun QuickActionsRow(
 private fun QuickAction(
     icon: ImageVector,
     label: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    enabled: Boolean = true
 ) {
+    val iconTint = if (enabled) Accent else Mute
+    val labelColor = if (enabled) Ink else Mute
+    val face = if (enabled) CardWhite else SoftBlue
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(Space.gap),
-        modifier = Modifier.width(56.dp)
+        modifier = Modifier
+            .width(56.dp)
+            .alpha(if (enabled) 1f else 0.55f)
     ) {
         Box(
             modifier = Modifier
                 .size(56.dp)
-                .shadow(2.dp, RoundedCornerShape(16.dp), clip = false)
+                .shadow(
+                    if (enabled) 2.dp else 0.dp,
+                    RoundedCornerShape(16.dp),
+                    clip = false
+                )
                 .clip(RoundedCornerShape(16.dp))
-                .background(CardWhite)
+                .background(face)
                 .border(1.dp, Hairline, RoundedCornerShape(16.dp))
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center
@@ -487,14 +560,14 @@ private fun QuickAction(
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = Accent,
+                tint = iconTint,
                 modifier = Modifier.size(22.dp)
             )
         }
         Text(
             text = label,
             style = HomeType.label,
-            color = Ink,
+            color = labelColor,
             maxLines = 1
         )
     }
@@ -539,7 +612,11 @@ private fun TransactionSearchField(
         modifier = modifier.fillMaxWidth(),
         singleLine = true,
         textStyle = SheetInputStyle,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Text,
+            imeAction = ImeAction.Search
+        ),
+        keyboardActions = rememberKeyboardDismissActions(),
         shape = RoundedCornerShape(14.dp),
         placeholder = {
             Text("Name or number", style = HomeType.body, color = Mute)
