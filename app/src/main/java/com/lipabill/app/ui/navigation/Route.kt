@@ -6,6 +6,7 @@ sealed class Route(val path: String) {
     data object List : Route("list")
     data object Settings : Route("settings")
     data object Permission : Route("permission")
+    data object FirstRunSetup : Route("first_run_setup")
     data object Metrics : Route("metrics")
     data object Tickets : Route("tickets")
     data class TicketDetail(val id: Long) : Route("ticket/$id") {
