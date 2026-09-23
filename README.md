@@ -15,8 +15,12 @@ A full local workspace is required to build a production binary.
 - Android SDK (minSdk 26)
 
 ```bash
-./gradlew assembleDebug
+./gradlew :app:assemblePlayDebug
+./gradlew :app:bundlePlayRelease      # Play Store AAB
+./gradlew :app:assembleInternalRelease  # Firebase / sideload
 ```
+
+Flavors: **`play`** (default, Play submission) and **`internal`** (sideload helpers such as Settings restricted-unlock auto-navigation). Both keep SMS ledger + USSD Accessibility fill.
 
 ## Notes
 
