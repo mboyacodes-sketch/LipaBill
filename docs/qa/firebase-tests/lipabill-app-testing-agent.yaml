@@ -1,0 +1,195 @@
+# Firebase App Distribution — App Testing agent YAML
+# Schema: https://firebase.google.com/docs/app-distribution/android/app-testing-agent
+#
+# Import via Console → App Distribution → Test Cases → Import
+# or: firebase apptesting:execute --app=<FIREBASE_APP_ID> --test-dir=docs/qa/firebase-tests LipaBill-1.0.4.apk
+#
+# Allowed fields per test: displayName, id, prerequisiteTestCaseId, steps
+# Allowed fields per step: goal, hint, finalScreenAssertion
+#
+# Notes for LipaBill on cloud devices (1.0.4+):
+# - Sideload first-run: Permissions (no SMS) → SIM → Unlock restricted settings →
+#   Accessibility & SMS → Done. Agent should Skip unlock / Skip for now — do not
+#   enter Android system Settings for restricted settings.
+# - Prefer Skip for now on steps the agent cannot complete in system Settings.
+# - Real *334# dial / Safaricom SIM / M-Pesa PIN may fail on lab devices — covered in
+#   docs/qa/firebase-app-distribution-manual-qa.yaml for human testers.
+
+tests:
+  - displayName: Unlock and reach home
+    id: unlock-reach-home
+    steps:
+      - goal: Unlock LipaBill and reach the main home screen
+        hint: >-
+          If you see Open LipaBill, tap it and complete or dismiss device unlock
+          if prompted. If Set up LipaBill appears, advance the wizard without
+          opening Android system Settings: on Permissions tap Allow permissions
+          only if a system dialog appears and can be accepted quickly, otherwise
+          Continue; on SIM tap Continue; on Unlock restricted settings tap Skip
+          unlock for now; on Accessibility and SMS tap Skip for now; on You are
+          ready tap Open LipaBill. If SMS access needed appears after setup, tap
+          Continue without SMS. Dismiss any toasts. Never stay on App info or
+          Accessibility system screens.
+        finalScreenAssertion: >-
+          The LipaBill home screen is visible with Send, Pay, Metrics, and
+          Tickets actions, and no fullscreen setup or SMS permission wizard.
+
+  - displayName: Open Metrics
+    id: open-metrics
+    prerequisiteTestCaseId: unlock-reach-home
+    steps:
+      - goal: Open Metrics and Analytics from the home screen
+        hint: Tap the Metrics quick action on the home screen.
+        finalScreenAssertion: >-
+          The Metrics and Analytics screen is visible with period options such
+          as 7D or 30D and overview figures like Income or Expenses.
+      - goal: Return to the home screen
+        hint: Use the system Back button or any back/navigation control.
+        finalScreenAssertion: >-
+          The LipaBill home screen with Send and Pay is visible again.
+
+  - displayName: Open Tickets list
+    id: open-tickets
+    prerequisiteTestCaseId: unlock-reach-home
+    steps:
+      - goal: Open the Tickets screen from home
+        hint: Tap the Tickets quick action.
+        finalScreenAssertion: >-
+          The Tickets screen is visible, including an Add ticket control or an
+          empty tickets state.
+      - goal: Open the add-ticket choices then close them
+        hint: >-
+          Tap Add ticket if shown. You should see options like Event ticket or
+          SGR booking SMS. Then dismiss or go back without importing a file.
+        finalScreenAssertion: >-
+          The Tickets list screen is visible again without a crash.
+      - goal: Return to home
+        hint: Use Back until the main home screen appears.
+        finalScreenAssertion: The LipaBill home screen with Send and Pay is visible.
+
+  - displayName: Open Profile settings
+    id: open-settings
+    prerequisiteTestCaseId: unlock-reach-home
+    steps:
+      - goal: Open Settings or Profile from the home screen
+        hint: Tap the Settings gear or Settings button near the top of home.
+        finalScreenAssertion: >-
+          The Settings screen is visible with sections such as re-auth timeout,
+          font size, balance privacy, favourites, repeat payment, SIM, or
+          Accessibility.
+      - goal: Scroll the Settings screen to find Accessibility
+        hint: Scroll down if needed until Accessibility or LipaBill Repeat Payment text is visible.
+        finalScreenAssertion: >-
+          Text about Accessibility or LipaBill Repeat Payment is visible on
+          the Settings screen.
+      - goal: Return to home without changing critical toggles
+        hint: Use Back. Do not disable payment automation unless already off.
+        finalScreenAssertion: The LipaBill home screen is visible.
+
+  - displayName: Open Send sheet
+    id: open-send-sheet
+    prerequisiteTestCaseId: unlock-reach-home
+    steps:
+      - goal: Open the Send money sheet from home
+        hint: >-
+          Tap Send. If Send is greyed out, still tap it once; a toast may appear.
+          If the Send sheet opens, stay on the recipient search step.
+        finalScreenAssertion: >-
+          Either the Send sheet is open showing recipient search (Name or phone
+          number), or a toast/message about Accessibility, automation, Phone
+          permission, or Safaricom SIM is shown while still on home.
+      - goal: Close the Send sheet if it is open
+        hint: Swipe the sheet down or tap outside / Back to dismiss it.
+        finalScreenAssertion: The LipaBill home screen is visible.
+
+  - displayName: Open Pay sheet
+    id: open-pay-sheet
+    prerequisiteTestCaseId: unlock-reach-home
+    steps:
+      - goal: Open the Pay money sheet from home
+        hint: >-
+          Tap Pay. If greyed out, tap once and note any toast. If the sheet
+          opens, confirm Paybill, Till, or Pochi options are shown.
+        finalScreenAssertion: >-
+          Either the Pay sheet shows Paybill, Till, or Pochi La Biashara, or a
+          gate toast about Accessibility, automation, permissions, or SIM is
+          visible on home.
+      - goal: Dismiss Pay and return to home
+        hint: Close the bottom sheet with Back or swipe down.
+        finalScreenAssertion: The LipaBill home screen is visible.
+
+  - displayName: Balance privacy reveal
+    id: balance-reveal
+    prerequisiteTestCaseId: unlock-reach-home
+    steps:
+      - goal: Reveal the masked M-Pesa balance on the home wallet card
+        hint: >-
+          Find Available balance. If it shows asterisks or a masked value, tap
+          it once to reveal. If Always display balance is on, the amount may
+          already be visible — that also counts as success.
+        finalScreenAssertion: >-
+          A numeric balance amount in KES or digits is visible on the home
+          wallet card, or clear empty/zero balance text is shown.
+
+  - displayName: Search transactions
+    id: search-transactions
+    prerequisiteTestCaseId: unlock-reach-home
+    steps:
+      - goal: Use the transaction search field on home
+        hint: >-
+          Tap the search field with placeholder Name or number. Type a short
+          query such as a letter. If the list is empty due to no SMS, that is
+          acceptable as long as search UI responds.
+        finalScreenAssertion: >-
+          The search field is focused or shows entered text, and the
+          transactions area shows either filtered results, No matches, No
+          activity yet, or SMS permission off messaging.
+      - goal: Clear the search if a Clear control is available
+        hint: Tap Clear search if visible, otherwise delete the query text.
+        finalScreenAssertion: The home transactions section is visible again.
+
+  - displayName: First-run wizard skip path
+    id: first-run-skip-path
+    steps:
+      - goal: From a cold start, reach home by skipping setup where needed
+        hint: >-
+          Unlock with Open LipaBill if shown. On Set up LipaBill follow the
+          1.0.4 sideload order without opening system Settings: Permissions
+          (Allow permissions or Continue), SIM (Continue), Unlock restricted
+          settings (Skip unlock for now), Accessibility and SMS (Skip for now),
+          You are ready (Open LipaBill). If SMS access needed appears, tap
+          Continue without SMS.
+        finalScreenAssertion: >-
+          The LipaBill home screen is visible with Send, Pay, Metrics, and
+          Tickets.
+
+  - displayName: Toggle favourites visibility
+    id: toggle-favourites
+    prerequisiteTestCaseId: unlock-reach-home
+    steps:
+      - goal: Open Settings and find the Show favourites switch
+        hint: Open Settings from home, scroll to Favourites, find Show favourites.
+        finalScreenAssertion: The Show favourites switch is visible on Settings.
+      - goal: Toggle Show favourites once then return home
+        hint: >-
+          Tap the Show favourites switch once to flip it, then go Back to home.
+          Look for whether a Frequent section appears or disappears.
+        finalScreenAssertion: >-
+          The home screen is visible; a Frequent section may be present or
+          absent depending on the toggle, with no crash.
+
+  - displayName: Metrics period chips
+    id: metrics-period-chips
+    prerequisiteTestCaseId: unlock-reach-home
+    steps:
+      - goal: Open Metrics
+        hint: Tap Metrics on home.
+        finalScreenAssertion: Metrics and Analytics is on screen.
+      - goal: Switch the period to 30D
+        hint: Tap the 30D chip or equivalent period control.
+        finalScreenAssertion: >-
+          Metrics still shows overview content and 30D appears selected or the
+          period has updated without an error.
+      - goal: Switch the period to 7D and leave Metrics
+        hint: Tap 7D, then go Back to home.
+        finalScreenAssertion: The LipaBill home screen is visible.
