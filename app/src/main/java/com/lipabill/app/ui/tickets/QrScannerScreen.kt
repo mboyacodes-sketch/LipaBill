@@ -1,3 +1,5 @@
+@file:OptIn(androidx.camera.core.ExperimentalGetImage::class)
+
 package com.lipabill.app.ui.tickets
 
 import android.util.Log
