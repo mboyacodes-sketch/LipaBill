@@ -14,6 +14,7 @@ import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.ussd.SimLineHelper
 import com.lipabill.app.ussd.UssdMenuBuilder
+import com.lipabill.app.ui.util.formatKesMoney
 import com.lipabill.app.ui.util.sanitizeAmountInput
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -55,7 +56,9 @@ data class PayMoneyUiState(
     val hasSavedSimPreference: Boolean = false,
     val needsPhoneStatePermission: Boolean = false,
     val dialStarted: Boolean = false,
-    val statusMessage: String? = null
+    val statusMessage: String? = null,
+    /** What the user should do next on the details step (null when ready). */
+    val guidanceMessage: String? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
@@ -68,9 +71,6 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
     private val pochiQuery = MutableStateFlow("")
     private val merchantQuery = MutableStateFlow("")
     private val contactsAccess = MutableStateFlow(PhoneBookSearcher.hasPermission(application))
-
-    private val allPochiContacts = app.repository.observeSendContacts()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val phoneBookHits: StateFlow<List<SendContact>> =
         combine(pochiQuery, contactsAccess) { q, _ -> q }
@@ -99,15 +99,25 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Learned Pochi recipients (phone ↔ name), same portfolio path as Paybill/Till. */
+    private val pochiMerchantHits = combine(_ui, pochiQuery) { state, q ->
+        (state.method == PayMethod.POCHI) to q
+    }.flatMapLatest { (isPochi, q) ->
+        if (!isPochi) flowOf(emptyList())
+        else app.repository.observeMerchantSearch(TransactionType.POCHI, q)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     val uiState: StateFlow<PayMoneyUiState> = combine(
-        combine(_ui, allPochiContacts, pochiQuery, phoneBookHits, merchantHits) { state, pochiAll, pochiQ, book, hits ->
-            PochiDraft(state, pochiAll, pochiQ, book, hits)
+        combine(_ui, pochiMerchantHits, pochiQuery, phoneBookHits, merchantHits) {
+                state, pochiMerchants, pochiQ, book, hits ->
+            PochiDraft(state, pochiMerchants, pochiQ, book, hits)
         },
         merchantQuery
     ) { draft, merchantQ ->
         val trimmed = draft.pochiQuery.trim()
+        val learnedPochi = draft.pochiMerchants.map { it.toPochiContact() }
         val filteredPochi = SendMoneyViewModel.mergeRecipientSearch(
-            txContacts = draft.pochiAll,
+            txContacts = learnedPochi,
             phoneBook = draft.book,
             query = trimmed
         )
@@ -121,7 +131,7 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
 
     private data class PochiDraft(
         val state: PayMoneyUiState,
-        val pochiAll: List<SendContact>,
+        val pochiMerchants: List<MerchantHit>,
         val pochiQuery: String,
         val book: List<SendContact>,
         val hits: List<MerchantHit>
@@ -497,11 +507,7 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
                 ?: return null
             }
         }
-        val amountLabel = if (amount % 1.0 == 0.0) {
-            amount.toLong().toString()
-        } else {
-            "%.2f".format(amount)
-        }
+        val amountLabel = formatKesMoney(amount)
         return Triple(title, detail, amountLabel)
     }
 
@@ -516,8 +522,70 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
                     UssdMenuBuilder.normalizePhoneNumber(pochiQuery) != null
         }
         val amountOk = RepeatTransactionViewModel.parseAmount(amountInput) != null
-        val next = copy(detailsValid = detailsOk, amountValid = amountOk)
+        val next = copy(
+            detailsValid = detailsOk,
+            amountValid = amountOk,
+            guidanceMessage = computeDetailsGuidance(detailsOk)
+        )
         return next.copy(canPay = computeCanPay(next))
+    }
+
+    private fun PayMoneyUiState.computeDetailsGuidance(detailsOk: Boolean): String? {
+        if (detailsOk) return null
+        return when (method) {
+            null -> "Choose Paybill, Till, or Pochi to continue."
+            PayMethod.PAYBILL -> paybillGuidance()
+            PayMethod.TILL -> tillGuidance()
+            PayMethod.POCHI -> pochiGuidance()
+        }
+    }
+
+    private fun PayMoneyUiState.paybillGuidance(): String {
+        val q = merchantQuery.trim()
+        val label = q.take(28).let { if (q.length > 28) "$it…" else it }
+        return when {
+            q.isBlank() && businessNumber.isEmpty() ->
+                "Search a saved business, or type the paybill number (5+ digits)."
+            businessNumber.isEmpty() && merchantHits.isEmpty() && q.any { it.isLetter() } ->
+                "No saved business matches \"$label\". Type the paybill number (5+ digits) instead."
+            businessNumber.isEmpty() ->
+                "Enter a full paybill number (at least 5 digits)."
+            accountNumber.isBlank() ->
+                "Enter the account / shop code for this paybill."
+            else ->
+                "Add paybill number and account to continue."
+        }
+    }
+
+    private fun PayMoneyUiState.tillGuidance(): String {
+        val q = merchantQuery.trim()
+        val label = q.take(28).let { if (q.length > 28) "$it…" else it }
+        return when {
+            q.isBlank() && tillNumber.isEmpty() ->
+                "Search a saved business, or type the till number (5+ digits)."
+            tillNumber.isEmpty() && merchantHits.isEmpty() && q.any { it.isLetter() } ->
+                "No saved business matches \"$label\". Type the till number (5+ digits) instead."
+            tillNumber.isEmpty() ->
+                "Enter a full till number (at least 5 digits)."
+            else ->
+                "Add a till number to continue."
+        }
+    }
+
+    private fun PayMoneyUiState.pochiGuidance(): String {
+        val q = pochiQuery.trim()
+        return when {
+            q.isBlank() ->
+                "Search a saved Pochi recipient, or type their phone number."
+            pochiContacts.isEmpty() &&
+                UssdMenuBuilder.normalizePhoneNumber(q) == null &&
+                q.any { it.isLetter() } ->
+                "No saved match for \"$q\". Enter a full phone number to continue."
+            UssdMenuBuilder.normalizePhoneNumber(q) == null ->
+                "Enter a valid M-Pesa phone number to continue."
+            else ->
+                "Choose a recipient or enter a phone number."
+        }
     }
 
     private fun computeCanPay(state: PayMoneyUiState): Boolean {
@@ -578,5 +646,17 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
                 )
             }
         }
+    }
+
+    private fun MerchantHit.toPochiContact(): SendContact {
+        val phone = UssdMenuBuilder.normalizePhoneNumber(identifier) ?: identifier
+        return SendContact(
+            transactionId = id,
+            name = displayName,
+            phone = phone,
+            normalizedPhone = phone,
+            sendCount = 1,
+            lastSentMillis = 0L
+        )
     }
 }
