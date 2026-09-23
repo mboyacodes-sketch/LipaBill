@@ -115,23 +115,20 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
         contactsAccess.value = PhoneBookSearcher.hasPermission(ctx)
         val needsPerm = !SimLineHelper.hasPhoneStatePermission(ctx)
         val lines = if (needsPerm) emptyList() else SimLineHelper.listActiveLines(ctx)
-        val preferredRaw = app.securePreferences.preferredSimSubscriptionId
-        if (preferredRaw < 0 && lines.size == 1) {
-            app.securePreferences.preferredSimSubscriptionId = lines.first().subscriptionId
+        val selectedSub = if (needsPerm) {
+            null
+        } else {
+            SimLineHelper.ensureSafaricomPreferred(app.securePreferences, lines)
         }
         val preferred = app.securePreferences.preferredSimSubscriptionId
-        val selectedSub = if (preferred >= 0) {
-            lines.firstOrNull { it.subscriptionId == preferred }?.subscriptionId
-        } else {
-            null
-        }
         _gates.update {
             it.copy(
                 featureEnabled = coordinator.isFeatureEnabled(),
                 accessibilityEnabled = AccessibilityHelper.isLipaBillServiceEnabled(ctx),
                 simLines = lines,
                 selectedSubscriptionId = selectedSub,
-                hasSavedSimPreference = preferred >= 0,
+                hasSavedSimPreference = preferred >= 0 &&
+                    lines.any { line -> line.subscriptionId == preferred && line.isSafaricom },
                 needsPhoneStatePermission = needsPerm,
                 hasContactsPermission = PhoneBookSearcher.hasPermission(ctx)
             )
@@ -162,6 +159,34 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
     /** Full reset when the sheet is dismissed. */
     fun resetSession() {
         clearSelection()
+        resumeOnAmountStep = false
+    }
+
+    /**
+     * Re-open Send on the amount step after the user cancels the M-Pesa PIN pad.
+     */
+    fun restoreAmountEntry(phone: String, name: String?, amountInput: String) {
+        select(
+            SendContact(
+                transactionId = 0L,
+                name = name,
+                phone = phone,
+                normalizedPhone = phone
+            )
+        )
+        setAmountInput(amountInput)
+        _gates.update { it.copy(dialStarted = false, statusMessage = null) }
+        resumeOnAmountStep = true
+    }
+
+    /** True once after [restoreAmountEntry]; sheet should land on Amount. */
+    var resumeOnAmountStep: Boolean = false
+        private set
+
+    fun consumeResumeOnAmountStep(): Boolean {
+        val value = resumeOnAmountStep
+        resumeOnAmountStep = false
+        return value
     }
 
     fun setAmountInput(value: String) {
