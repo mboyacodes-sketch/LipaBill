@@ -26,9 +26,13 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
+import com.lipabill.app.ui.util.imeAndNavBarsPadding
+import com.lipabill.app.ui.util.rememberKeyboardDismissActions
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -45,8 +49,13 @@ fun RepeatConfirmScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val tx = state.transaction
     val needsSimSetup = state.simLines.size > 1 && !state.hasSavedSimPreference
+    val missingSafaricom = !state.needsPhoneStatePermission &&
+        state.simLines.isNotEmpty() &&
+        state.simLines.none { it.isSafaricom }
+    val dismissActions = rememberKeyboardDismissActions()
 
     Scaffold(
+        modifier = Modifier.hideKeyboardOnOutsideTap(),
         topBar = {
             TopAppBar(
                 title = { Text("Pay") },
@@ -62,6 +71,7 @@ fun RepeatConfirmScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .imeAndNavBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(Space.page)
         ) {
@@ -103,7 +113,11 @@ fun RepeatConfirmScreen(
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Amount") },
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Decimal,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = dismissActions,
                 isError = state.amountInput.isNotBlank() && !state.amountValid,
                 supportingText = if (state.amountInput.isNotBlank() && !state.amountValid) {
                     { Text("Enter a valid amount greater than 0") }
@@ -118,6 +132,15 @@ fun RepeatConfirmScreen(
                     Spacer(modifier = Modifier.height(Space.block))
                     Text(
                         text = "Allow phone access to use your default SIM.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                missingSafaricom -> {
+                    Spacer(modifier = Modifier.height(Space.block))
+                    Text(
+                        text = "A Safaricom SIM is required to dial M-Pesa. " +
+                            "You can still browse LipaBill without it.",
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -167,15 +190,18 @@ fun RepeatConfirmScreen(
                             !state.featureEnabled -> onManualFallback()
                             !state.accessibilityEnabled -> onNeedAccessibility()
                             state.needsPhoneStatePermission -> onRequestPhoneStatePermission()
+                            missingSafaricom -> onOpenSimSettings()
                             needsSimSetup -> onOpenSimSettings()
                             else -> onConfirm()
                         }
                     },
                     modifier = Modifier.weight(1f),
-                    enabled = !state.dialStarted && state.amountValid && state.plan != null
+                    enabled = !state.dialStarted && state.amountValid && state.plan != null &&
+                        !missingSafaricom
                 ) {
                     Text(
                         when {
+                            missingSafaricom -> "Need Safaricom"
                             needsSimSetup -> "Set SIM"
                             state.needsPhoneStatePermission -> "Allow"
                             !state.accessibilityEnabled && state.featureEnabled -> "Enable"
