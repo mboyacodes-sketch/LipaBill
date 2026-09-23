@@ -17,9 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,13 +29,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.activityViewModels
@@ -49,11 +46,14 @@ import com.lipabill.app.R
 import com.lipabill.app.security.AppSecurity
 import com.lipabill.app.ui.sheet.HorizontalRecipient
 import com.lipabill.app.ui.sheet.HorizontalRecipientRow
+import com.lipabill.app.ui.sheet.InAppKeyboard
 import com.lipabill.app.ui.sheet.MoneyConfirmDialog
 import com.lipabill.app.ui.sheet.MoneySheetScaffold
 import com.lipabill.app.ui.sheet.SheetInputStyle
 import com.lipabill.app.ui.sheet.expandForComposeContent
 import com.lipabill.app.ui.sheet.formatSheetAmount
+import com.lipabill.app.ui.sheet.resolveSheetFeedback
+import com.lipabill.app.ui.sheet.SheetFeedbackTone
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.HomeType
@@ -62,8 +62,9 @@ import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.LipaBillTheme
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.util.InterceptSystemIme
+import com.lipabill.app.ui.util.bringIntoViewOnFocus
 import com.lipabill.app.ui.util.hideKeyboard
-import com.lipabill.app.ui.util.rememberKeyboardDismissActions
 import com.lipabill.app.viewmodel.PayMethod
 import com.lipabill.app.viewmodel.PayMoneyViewModel
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
@@ -72,6 +73,12 @@ import com.lipabill.app.viewmodel.TransactionListViewModel
 private enum class PaySheetStep {
     Details,
     Amount
+}
+
+private enum class PayFocusedField {
+    Merchant,
+    Account,
+    Pochi
 }
 
 class PayMoneyBottomSheetFragment : BottomSheetDialogFragment() {
@@ -148,6 +155,7 @@ fun PayMoneySheetContent(
         )
     }
     var showConfirm by remember { mutableStateOf(false) }
+    var focusedField by remember { mutableStateOf<PayFocusedField?>(null) }
     val app = LocalContext.current.applicationContext as LipaBillApp
     val alwaysShowBalance by app.alwaysShowBalance.collectAsStateWithLifecycle()
     val pendingAmount = remember(state.amountInput) {
@@ -155,7 +163,6 @@ fun PayMoneySheetContent(
     }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    val dismissActions = rememberKeyboardDismissActions()
 
     LaunchedEffect(Unit) {
         payVm.refreshGates()
@@ -163,13 +170,20 @@ fun PayMoneySheetContent(
 
     LaunchedEffect(step) {
         if (step == PaySheetStep.Amount) {
+            focusedField = null
             hideKeyboard(focusManager, keyboard)
         }
     }
 
+    fun dismissTextKeyboard() {
+        focusedField = null
+        focusManager.clearFocus(force = true)
+        hideKeyboard(focusManager, keyboard)
+    }
+
     fun goToAmount() {
         if (!state.detailsValid) return
-        hideKeyboard(focusManager, keyboard)
+        dismissTextKeyboard()
         step = PaySheetStep.Amount
     }
 
@@ -195,15 +209,33 @@ fun PayMoneySheetContent(
     }
 
     val onAmountStep = step == PaySheetStep.Amount
+    val availableBalance = listState.latestBalance
+    val exceedsBalance = availableBalance != null &&
+        pendingAmount != null &&
+        pendingAmount > 0.0 &&
+        pendingAmount > availableBalance
+    val feedback = resolveSheetFeedback(
+        status = state.statusMessage,
+        guidance = when {
+            onAmountStep && exceedsBalance ->
+                "That amount is more than your available balance."
+            onAmountStep && state.amountInput.isBlank() ->
+                "Enter an amount to continue."
+            onAmountStep && !state.amountValid ->
+                "Enter a valid amount to continue."
+            onAmountStep -> null
+            else -> state.guidanceMessage
+        }
+    )
 
     MoneySheetScaffold(
-        title = "Pay",
         balance = listState.latestBalance,
         alwaysShowBalance = alwaysShowBalance,
         pendingDeduction = pendingAmount,
         selectedName = selectedName ?: "Choose merchant",
         selectedSubtitle = selectedSubtitle ?: state.method.labelOrPick(),
         amountDisplay = formatSheetAmount(state.amountInput),
+        amountInput = state.amountInput,
         selectedSelected = state.detailsValid,
         recipientsHeader = if (onAmountStep) "Change payment" else "Payment",
         onRecipientsHeaderClick = if (onAmountStep) {
@@ -218,6 +250,7 @@ fun PayMoneySheetContent(
                 MethodChipRow(
                     selected = state.method,
                     onSelect = {
+                        dismissTextKeyboard()
                         payVm.selectMethod(it)
                         step = PaySheetStep.Details
                     }
@@ -225,13 +258,7 @@ fun PayMoneySheetContent(
                 Spacer(modifier = Modifier.height(Space.block))
                 when (state.method) {
                     PayMethod.PAYBILL, PayMethod.TILL -> {
-                        if (state.merchantHits.isEmpty()) {
-                            Text(
-                                text = "Search a saved name below, or type a number.",
-                                style = HomeType.caption,
-                                color = Mute
-                            )
-                        } else {
+                        if (state.merchantHits.isNotEmpty()) {
                             HorizontalRecipientRow {
                                 state.merchantHits.take(6).forEach { hit ->
                                     HorizontalRecipient(
@@ -245,7 +272,7 @@ fun PayMoneySheetContent(
                                         onClick = {
                                             payVm.selectMerchant(hit)
                                             if (state.method == PayMethod.TILL) {
-                                                hideKeyboard(focusManager, keyboard)
+                                                dismissTextKeyboard()
                                                 step = PaySheetStep.Amount
                                             }
                                         }
@@ -255,13 +282,7 @@ fun PayMoneySheetContent(
                         }
                     }
                     PayMethod.POCHI -> {
-                        if (state.pochiContacts.isEmpty()) {
-                            Text(
-                                text = "No past contacts — enter a phone number below.",
-                                style = HomeType.caption,
-                                color = Mute
-                            )
-                        } else {
+                        if (state.pochiContacts.isNotEmpty()) {
                             HorizontalRecipientRow {
                                 state.pochiContacts.take(6).forEach { contact ->
                                     val name = contact.name ?: contact.normalizedPhone
@@ -278,7 +299,7 @@ fun PayMoneySheetContent(
                                             contact.fromPhoneBook == state.selectedPochi?.fromPhoneBook,
                                         onClick = {
                                             payVm.selectPochiContact(contact)
-                                            hideKeyboard(focusManager, keyboard)
+                                            dismissTextKeyboard()
                                             step = PaySheetStep.Amount
                                         }
                                     )
@@ -294,70 +315,151 @@ fun PayMoneySheetContent(
             null
         } else {
             {
-                when (state.method) {
-                    PayMethod.PAYBILL -> {
-                        OutlinedTextField(
-                            value = state.merchantQuery,
-                            onValueChange = payVm::setMerchantQuery,
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            textStyle = SheetInputStyle,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                            keyboardActions = dismissActions,
-                            shape = RoundedCornerShape(14.dp),
-                            placeholder = {
-                                Text("Business name or number", style = HomeType.body, color = Mute)
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(Space.gap))
-                        OutlinedTextField(
-                            value = state.accountNumber,
-                            onValueChange = payVm::setAccountNumber,
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            textStyle = SheetInputStyle,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
-                            keyboardActions = dismissActions,
-                            shape = RoundedCornerShape(14.dp),
-                            placeholder = {
-                                Text("Account / shop code", style = HomeType.body, color = Mute)
-                            },
-                            enabled = state.businessNumber.length >= 5
-                        )
+                InterceptSystemIme {
+                    when (state.method) {
+                        PayMethod.PAYBILL -> {
+                            OutlinedTextField(
+                                value = state.merchantQuery,
+                                onValueChange = payVm::setMerchantQuery,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .bringIntoViewOnFocus(delayMs = 80L)
+                                    .onFocusChanged {
+                                        focusedField = if (it.isFocused) {
+                                            PayFocusedField.Merchant
+                                        } else if (focusedField == PayFocusedField.Merchant) {
+                                            null
+                                        } else {
+                                            focusedField
+                                        }
+                                    },
+                                singleLine = true,
+                                readOnly = true,
+                                textStyle = SheetInputStyle,
+                                shape = RoundedCornerShape(14.dp),
+                                placeholder = {
+                                    Text("Business name or number", style = HomeType.body, color = Mute)
+                                }
+                            )
+                            Spacer(modifier = Modifier.height(Space.gap))
+                            OutlinedTextField(
+                                value = state.accountNumber,
+                                onValueChange = payVm::setAccountNumber,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .bringIntoViewOnFocus(delayMs = 80L)
+                                    .onFocusChanged {
+                                        focusedField = if (it.isFocused) {
+                                            PayFocusedField.Account
+                                        } else if (focusedField == PayFocusedField.Account) {
+                                            null
+                                        } else {
+                                            focusedField
+                                        }
+                                    },
+                                singleLine = true,
+                                readOnly = true,
+                                textStyle = SheetInputStyle,
+                                shape = RoundedCornerShape(14.dp),
+                                placeholder = {
+                                    Text("Account / shop code", style = HomeType.body, color = Mute)
+                                },
+                                enabled = state.businessNumber.length >= 5
+                            )
+                        }
+                        PayMethod.TILL -> {
+                            OutlinedTextField(
+                                value = state.merchantQuery,
+                                onValueChange = payVm::setMerchantQuery,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .bringIntoViewOnFocus(delayMs = 80L)
+                                    .onFocusChanged {
+                                        focusedField = if (it.isFocused) {
+                                            PayFocusedField.Merchant
+                                        } else if (focusedField == PayFocusedField.Merchant) {
+                                            null
+                                        } else {
+                                            focusedField
+                                        }
+                                    },
+                                singleLine = true,
+                                readOnly = true,
+                                textStyle = SheetInputStyle,
+                                shape = RoundedCornerShape(14.dp),
+                                placeholder = {
+                                    Text("Business name or till number", style = HomeType.body, color = Mute)
+                                }
+                            )
+                        }
+                        PayMethod.POCHI -> {
+                            OutlinedTextField(
+                                value = state.pochiQuery,
+                                onValueChange = payVm::setPochiQuery,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .bringIntoViewOnFocus(delayMs = 80L)
+                                    .onFocusChanged {
+                                        focusedField = if (it.isFocused) {
+                                            PayFocusedField.Pochi
+                                        } else if (focusedField == PayFocusedField.Pochi) {
+                                            null
+                                        } else {
+                                            focusedField
+                                        }
+                                    },
+                                singleLine = true,
+                                readOnly = true,
+                                textStyle = SheetInputStyle,
+                                shape = RoundedCornerShape(14.dp),
+                                placeholder = {
+                                    Text("Name or phone number", style = HomeType.body, color = Mute)
+                                }
+                            )
+                        }
+                        null -> Unit
                     }
-                    PayMethod.TILL -> {
-                        OutlinedTextField(
-                            value = state.merchantQuery,
-                            onValueChange = payVm::setMerchantQuery,
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            textStyle = SheetInputStyle,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                            keyboardActions = dismissActions,
-                            shape = RoundedCornerShape(14.dp),
-                            placeholder = {
-                                Text("Business name or till number", style = HomeType.body, color = Mute)
-                            }
-                        )
-                    }
-                    PayMethod.POCHI -> {
-                        OutlinedTextField(
-                            value = state.pochiQuery,
-                            onValueChange = payVm::setPochiQuery,
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            textStyle = SheetInputStyle,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
-                            keyboardActions = dismissActions,
-                            shape = RoundedCornerShape(14.dp),
-                            placeholder = {
-                                Text("Name or phone number", style = HomeType.body, color = Mute)
-                            }
-                        )
-                    }
-                    null -> Unit
                 }
             }
+        },
+        inAppTextKeyboard = if (!onAmountStep && focusedField != null) {
+            {
+                val activeValue = when (focusedField) {
+                    PayFocusedField.Merchant -> state.merchantQuery
+                    PayFocusedField.Account -> state.accountNumber
+                    PayFocusedField.Pochi -> state.pochiQuery
+                    null -> ""
+                }
+                InAppKeyboard(
+                    startOnDigits = activeValue.any { it.isDigit() } &&
+                        activeValue.none { it.isLetter() },
+                    onChar = { ch ->
+                        when (focusedField) {
+                            PayFocusedField.Merchant ->
+                                payVm.setMerchantQuery(state.merchantQuery + ch)
+                            PayFocusedField.Account ->
+                                payVm.setAccountNumber(state.accountNumber + ch)
+                            PayFocusedField.Pochi ->
+                                payVm.setPochiQuery(state.pochiQuery + ch)
+                            null -> Unit
+                        }
+                    },
+                    onBackspace = {
+                        when (focusedField) {
+                            PayFocusedField.Merchant ->
+                                payVm.setMerchantQuery(state.merchantQuery.dropLast(1))
+                            PayFocusedField.Account ->
+                                payVm.setAccountNumber(state.accountNumber.dropLast(1))
+                            PayFocusedField.Pochi ->
+                                payVm.setPochiQuery(state.pochiQuery.dropLast(1))
+                            null -> Unit
+                        }
+                    },
+                    onDone = { dismissTextKeyboard() }
+                )
+            }
+        } else {
+            null
         },
         ctaLabel = if (onAmountStep) "Pay Now" else "Continue",
         ctaEnabled = if (onAmountStep) {
@@ -374,6 +476,10 @@ fun PayMoneySheetContent(
         },
         onKey = payVm::appendAmountKey,
         onBackspace = payVm::deleteAmountKey,
+        onApplyAddUpAmount = payVm::setAmountInput,
+        onClearAmount = { payVm.setAmountInput("") },
+        feedbackMessage = feedback?.first,
+        feedbackTone = feedback?.second ?: SheetFeedbackTone.Hint,
         modifier = Modifier.fillMaxWidth()
     )
 
