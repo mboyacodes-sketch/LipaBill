@@ -6,7 +6,7 @@ import androidx.room.PrimaryKey
 import com.lipabill.app.data.model.TransactionType
 
 /**
- * Maps Lipa na M-Pesa identifiers (paybill / till numbers) to SMS business names
+ * Maps Lipa na M-Pesa identifiers (paybill / till / Pochi phone) to SMS business names
  * so users can later search by name and recover the number + last account.
  */
 @Entity(
@@ -19,9 +19,9 @@ import com.lipabill.app.data.model.TransactionType
 data class MerchantEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val type: TransactionType,
-    /** Business number (paybill) or till number (buy goods). Digits only. */
+    /** Business number (paybill), till number, or Pochi phone. Digits only. */
     val identifier: String,
-    /** Last account / shop code used for this paybill (null for till). */
+    /** Last account / shop code used for this paybill (null for till / Pochi). */
     val accountHint: String?,
     val displayName: String,
     val normalizedName: String,
