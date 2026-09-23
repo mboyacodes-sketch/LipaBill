@@ -107,13 +107,21 @@ class TransactionRepository(
 
     /**
      * Re-query inbox and insert any new messages (deduped by transaction code).
+     * Existing Room rows are never deleted here — only additive inserts.
      * @return number of newly inserted rows
      */
     suspend fun rescanInbox(): Int = withContext(Dispatchers.IO) {
         purgeNonConfirmationsIfNeeded()
         repairParsedAmountsIfNeeded()
-        val parsed = inboxReader.parseAll(maxMessages = SMS_SCAN_LIMIT)
+        // Without SMS access, leave prior rows alone and do not mark backfill complete.
+        if (!inboxReader.hasSmsPermission()) {
+            linkPhonesByName()
+            return@withContext 0
+        }
+        val parsed = inboxReader.parseAll(maxMessages = SmsInboxReader.DEFAULT_MAX_MESSAGES)
         if (parsed.isEmpty()) {
+            // Keep any already-imported history; only mark backfill done when we could
+            // actually query the inbox (permission granted above).
             securePreferences.smsBackfillDone = true
             linkPhonesByName()
             return@withContext 0
@@ -131,6 +139,12 @@ class TransactionRepository(
         purgeNonConfirmationsIfNeeded()
         repairParsedAmountsIfNeeded()
         if (securePreferences.smsBackfillDone && dao.count() > 0) {
+            linkPhonesByName()
+            return 0
+        }
+        // Never treat "no SMS permission" as a finished backfill — that would skip
+        // re-import after the user grants access, leaving an empty history.
+        if (!inboxReader.hasSmsPermission()) {
             linkPhonesByName()
             return 0
         }
@@ -213,15 +227,19 @@ class TransactionRepository(
     }
 
     /**
-     * One-time (or versioned) cleanup of rows that are not real Confirmed + M-PESA balance SMS.
-     * Manual/synthetic codes are kept.
+     * One-time cleanup of rows that are not real Confirmed + M-PESA balance SMS.
+     * Manual/synthetic codes are kept. Does not wipe the database or touch
+     * confirmation rows. Only forces a re-scan when something was actually removed.
      */
     suspend fun purgeNonConfirmationsIfNeeded(): Int = withContext(Dispatchers.IO) {
         if (securePreferences.confirmationFilterPurgeDone) return@withContext 0
         val removed = purgeNonConfirmations()
         securePreferences.confirmationFilterPurgeDone = true
-        // Force a fresh inbox import after purge so valid SMS come back cleanly.
-        securePreferences.smsBackfillDone = false
+        if (removed > 0) {
+            // Only re-import when we deleted junk — leave smsBackfillDone alone if
+            // nothing changed so updates do not thrash the inbox.
+            securePreferences.smsBackfillDone = false
+        }
         removed
     }
 
@@ -241,7 +259,7 @@ class TransactionRepository(
     companion object {
         const val LIST_LIMIT = 80
         const val ANALYTICS_LIMIT = 500
-        const val SMS_SCAN_LIMIT = 300
+        const val SMS_SCAN_LIMIT = SmsInboxReader.DEFAULT_MAX_MESSAGES
         const val SEND_SCAN_LIMIT = 250
         const val FREQUENT_LIMIT = 12
         const val NAME_LINK_SCAN_LIMIT = 500
