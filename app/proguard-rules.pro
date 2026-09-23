@@ -61,8 +61,14 @@
 # --- Compose / Navigation (library consumer rules usually enough) ---
 -dontwarn androidx.compose.**
 
+# --- Firebase Crashlytics (readable stacks after R8) ---
+-keepattributes SourceFile,LineNumberTable
+-keep public class * extends java.lang.Exception
+-dontwarn com.google.firebase.crashlytics.**
+
 # --- PDFBox (e-ticket text extraction) ---
 -keep class com.tom_roush.pdfbox.** { *; }
 -dontwarn com.tom_roush.pdfbox.**
 -dontwarn org.apache.commons.**
 -dontwarn org.bouncycastle.**
+-dontwarn com.gemalto.jp2.**
