@@ -11,7 +11,7 @@
     <style name="Theme.LipaBill.BottomSheetDialog" parent="ThemeOverlay.MaterialComponents.BottomSheetDialog">
         <item name="bottomSheetStyle">@style/Widget.LipaBill.BottomSheet</item>
         <item name="android:windowIsFloating">false</item>
-        <item name="android:windowSoftInputMode">adjustNothing</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
         <item name="android:navigationBarColor">@android:color/white</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:colorBackground">@android:color/transparent</item>
