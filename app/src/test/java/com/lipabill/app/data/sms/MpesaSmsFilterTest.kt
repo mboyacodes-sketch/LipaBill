@@ -54,4 +54,40 @@ class MpesaSmsFilterTest {
         assertFalse(MpesaSmsFilter.isTransactionConfirmation(""))
         assertFalse(MpesaSmsFilter.isTransactionConfirmation(null))
     }
+
+    @Test
+    fun rejects_otp_and_promo_style_bodies() {
+        assertFalse(
+            MpesaSmsFilter.isTransactionConfirmation(
+                "Your M-PESA verification code is 482910. Do not share."
+            )
+        )
+        assertFalse(
+            MpesaSmsFilter.isTransactionConfirmation(
+                "MPESA: Get 50%% airtime bonus this weekend. Dial *544#."
+            )
+        )
+        assertFalse(
+            MpesaSmsFilter.isTransactionConfirmation(
+                "Confirmed. You requested a new M-PESA PIN. Reply YES to continue."
+            )
+        )
+    }
+
+    @Test
+    fun pipeline_requires_sender_and_confirmation_together() {
+        // Conceptual gate used by receiver/inbox: both checks must pass.
+        val legitBody =
+            "THX7K2LM9P Confirmed. Ksh500.00 sent to JANE. New M-PESA balance is Ksh9,000.00."
+        assertTrue(MpesaSmsFilter.isMpesaSender("MPESA"))
+        assertTrue(MpesaSmsFilter.isTransactionConfirmation(legitBody))
+
+        assertFalse(MpesaSmsFilter.isMpesaSender("254712345678"))
+        assertTrue(MpesaSmsFilter.isTransactionConfirmation(legitBody))
+
+        assertTrue(MpesaSmsFilter.isMpesaSender("MPESA"))
+        assertFalse(
+            MpesaSmsFilter.isTransactionConfirmation("MPESA OTP 123456 Confirmed by you.")
+        )
+    }
 }
