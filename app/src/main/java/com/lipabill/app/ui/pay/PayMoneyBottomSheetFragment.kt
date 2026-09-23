@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -61,6 +62,8 @@ import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.LipaBillTheme
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.util.hideKeyboard
+import com.lipabill.app.ui.util.rememberKeyboardDismissActions
 import com.lipabill.app.viewmodel.PayMethod
 import com.lipabill.app.viewmodel.PayMoneyViewModel
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
@@ -139,7 +142,11 @@ fun PayMoneySheetContent(
 ) {
     val state by payVm.uiState.collectAsStateWithLifecycle()
     val listState by listVm.uiState.collectAsStateWithLifecycle()
-    var step by remember { mutableStateOf(PaySheetStep.Details) }
+    var step by remember {
+        mutableStateOf(
+            if (payVm.consumeResumeOnAmountStep()) PaySheetStep.Amount else PaySheetStep.Details
+        )
+    }
     var showConfirm by remember { mutableStateOf(false) }
     val app = LocalContext.current.applicationContext as LipaBillApp
     val alwaysShowBalance by app.alwaysShowBalance.collectAsStateWithLifecycle()
@@ -148,6 +155,7 @@ fun PayMoneySheetContent(
     }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    val dismissActions = rememberKeyboardDismissActions()
 
     LaunchedEffect(Unit) {
         payVm.refreshGates()
@@ -155,15 +163,13 @@ fun PayMoneySheetContent(
 
     LaunchedEffect(step) {
         if (step == PaySheetStep.Amount) {
-            focusManager.clearFocus(force = true)
-            keyboard?.hide()
+            hideKeyboard(focusManager, keyboard)
         }
     }
 
     fun goToAmount() {
         if (!state.detailsValid) return
-        focusManager.clearFocus(force = true)
-        keyboard?.hide()
+        hideKeyboard(focusManager, keyboard)
         step = PaySheetStep.Amount
     }
 
@@ -239,8 +245,7 @@ fun PayMoneySheetContent(
                                         onClick = {
                                             payVm.selectMerchant(hit)
                                             if (state.method == PayMethod.TILL) {
-                                                focusManager.clearFocus(force = true)
-                                                keyboard?.hide()
+                                                hideKeyboard(focusManager, keyboard)
                                                 step = PaySheetStep.Amount
                                             }
                                         }
@@ -273,8 +278,7 @@ fun PayMoneySheetContent(
                                             contact.fromPhoneBook == state.selectedPochi?.fromPhoneBook,
                                         onClick = {
                                             payVm.selectPochiContact(contact)
-                                            focusManager.clearFocus(force = true)
-                                            keyboard?.hide()
+                                            hideKeyboard(focusManager, keyboard)
                                             step = PaySheetStep.Amount
                                         }
                                     )
@@ -298,6 +302,8 @@ fun PayMoneySheetContent(
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             textStyle = SheetInputStyle,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = dismissActions,
                             shape = RoundedCornerShape(14.dp),
                             placeholder = {
                                 Text("Business name or number", style = HomeType.body, color = Mute)
@@ -310,7 +316,8 @@ fun PayMoneySheetContent(
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             textStyle = SheetInputStyle,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
+                            keyboardActions = dismissActions,
                             shape = RoundedCornerShape(14.dp),
                             placeholder = {
                                 Text("Account / shop code", style = HomeType.body, color = Mute)
@@ -325,6 +332,8 @@ fun PayMoneySheetContent(
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             textStyle = SheetInputStyle,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = dismissActions,
                             shape = RoundedCornerShape(14.dp),
                             placeholder = {
                                 Text("Business name or till number", style = HomeType.body, color = Mute)
@@ -338,7 +347,8 @@ fun PayMoneySheetContent(
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             textStyle = SheetInputStyle,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
+                            keyboardActions = dismissActions,
                             shape = RoundedCornerShape(14.dp),
                             placeholder = {
                                 Text("Name or phone number", style = HomeType.body, color = Mute)
