@@ -30,7 +30,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +49,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.lipabill.app.ui.components.BalanceAmountRow
 import com.lipabill.app.ui.theme.CardWhite
+import kotlinx.coroutines.delay
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.HomeType
@@ -52,7 +58,9 @@ import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.LocalAppType
 import com.lipabill.app.ui.theme.Mute
+import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.util.formatMoneyInputLabel
 import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
 import com.lipabill.app.ui.util.imeAndNavBarsPadding
 
@@ -76,11 +84,6 @@ val SheetHeroAmountStyle: TextStyle
     @ReadOnlyComposable
     get() = LocalAppType.current.sheetHeroAmount
 
-val SheetTitleStyle: TextStyle
-    @Composable
-    @ReadOnlyComposable
-    get() = LocalAppType.current.sheetTitle
-
 val SheetInputStyle: TextStyle
     @Composable
     @ReadOnlyComposable
@@ -88,7 +91,6 @@ val SheetInputStyle: TextStyle
 
 @Composable
 fun MoneySheetScaffold(
-    title: String,
     balance: Double?,
     alwaysShowBalance: Boolean,
     pendingDeduction: Double? = null,
@@ -96,6 +98,8 @@ fun MoneySheetScaffold(
     selectedSubtitle: String?,
     amountDisplay: String,
     selectedSelected: Boolean,
+    /** Raw amount digits (no KES / commas) — seeds Add up when + is tapped. */
+    amountInput: String = "",
     recipientsHeader: String = "Recipients",
     onRecipientsHeaderClick: (() -> Unit)? = null,
     recipientsContent: @Composable () -> Unit,
@@ -107,6 +111,15 @@ fun MoneySheetScaffold(
     extraAboveKeypad: (@Composable () -> Unit)? = null,
     showKeypad: Boolean = true,
     showRecipients: Boolean = true,
+    /** When set, amount step shows an optional “Add up” helper that can fill the amount. */
+    onApplyAddUpAmount: ((String) -> Unit)? = null,
+    /** Clears the typed amount (calculator C). */
+    onClearAmount: (() -> Unit)? = null,
+    /** Optional in-app text keyboard (details step) — replaces the system IME. */
+    inAppTextKeyboard: (@Composable () -> Unit)? = null,
+    /** Inline coaching / status above the CTA — never leave empty searches silent. */
+    feedbackMessage: String? = null,
+    feedbackTone: SheetFeedbackTone = SheetFeedbackTone.Hint,
     modifier: Modifier = Modifier
 ) {
     val amountValue = pendingDeduction
@@ -116,6 +129,9 @@ fun MoneySheetScaffold(
         amountValue > balance
     val amountColor = if (exceedsBalance) Expense else Ink
     val ctaReallyEnabled = ctaEnabled && !exceedsBalance
+    var showAddUp by remember { mutableStateOf(false) }
+    /** Amount on the payment pad when Add up opened — restored if the user cancels. */
+    var addUpSeed by remember { mutableStateOf("") }
 
     Column(
         modifier = modifier
@@ -149,18 +165,44 @@ fun MoneySheetScaffold(
                 exceedsBalance = exceedsBalance,
                 onChangeRecipient = onRecipientsHeaderClick,
                 changeLabel = recipientsHeader,
+                onOpenAddUp = onApplyAddUpAmount?.let {
+                    {
+                        addUpSeed = amountInput
+                        showAddUp = true
+                    }
+                },
                 modifier = Modifier
                     .weight(1f, fill = true)
                     .fillMaxWidth()
             )
-            AmountKeypad(onKey = onKey, onBackspace = onBackspace)
+            AmountKeypad(
+                onKey = onKey,
+                onBackspace = onBackspace,
+                onClear = onClearAmount,
+                onAction = onApplyAddUpAmount?.let {
+                    {
+                        addUpSeed = amountInput
+                        showAddUp = true
+                    }
+                },
+                actionLabel = "+"
+            )
             Spacer(modifier = Modifier.height(Space.block))
         } else {
+            val detailsScroll = rememberScrollState()
+            // Fields sit at the bottom of the scroll content — when the in-app keyboard
+            // appears the viewport shrinks; scroll down so the focused field stays visible.
+            LaunchedEffect(inAppTextKeyboard != null, feedbackMessage) {
+                if (inAppTextKeyboard != null || !feedbackMessage.isNullOrBlank()) {
+                    delay(64)
+                    detailsScroll.animateScrollTo(detailsScroll.maxValue)
+                }
+            }
             Column(
                 modifier = Modifier
                     .weight(1f, fill = true)
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(detailsScroll)
             ) {
                 Spacer(modifier = Modifier.height(Space.block))
                 BalanceCard(
@@ -203,9 +245,30 @@ fun MoneySheetScaffold(
                     Spacer(modifier = Modifier.height(Space.block))
                     extraAboveKeypad()
                 }
-                // Extra room so the focused field can scroll above the CTA while IME is open.
-                Spacer(modifier = Modifier.height(Space.section + Space.section))
+                // Coaching sits under the fields so it stays visible above the in-app keyboard.
+                if (!feedbackMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(Space.gap))
+                    SheetFeedback(
+                        message = feedbackMessage,
+                        tone = feedbackTone
+                    )
+                }
+                Spacer(modifier = Modifier.height(Space.section))
             }
+            if (inAppTextKeyboard != null) {
+                Spacer(modifier = Modifier.height(Space.gap))
+                inAppTextKeyboard()
+                Spacer(modifier = Modifier.height(Space.gap))
+            }
+        }
+
+        // Amount step: no text fields — keep status above the CTA.
+        if (showKeypad && !feedbackMessage.isNullOrBlank()) {
+            SheetFeedback(
+                message = feedbackMessage,
+                tone = feedbackTone
+            )
+            Spacer(modifier = Modifier.height(Space.gap))
         }
 
         Button(
@@ -225,6 +288,21 @@ fun MoneySheetScaffold(
             Text(ctaLabel, style = HomeType.rowTitle)
         }
     }
+
+    if (showAddUp && onApplyAddUpAmount != null) {
+        AmountAddUpDialog(
+            initialAmountInput = addUpSeed,
+            onDismiss = {
+                // Cancel / back — put back whatever was on the pad when Add up opened.
+                onApplyAddUpAmount(addUpSeed)
+                showAddUp = false
+            },
+            onUseTotal = { nextAmount ->
+                onApplyAddUpAmount(nextAmount)
+                showAddUp = false
+            }
+        )
+    }
 }
 
 @Composable
@@ -239,6 +317,7 @@ private fun AmountStage(
     exceedsBalance: Boolean,
     onChangeRecipient: (() -> Unit)?,
     changeLabel: String,
+    onOpenAddUp: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -276,8 +355,9 @@ private fun AmountStage(
                     BalanceAmountRow(
                         balance = balance,
                         alwaysShow = alwaysShowBalance,
+                        amountStyle = HomeType.caption,
                         pendingDeduction = null,
-                        amountStyle = HomeType.caption
+                        horizontalArrangement = Arrangement.Start
                     )
                 }
             }
@@ -347,7 +427,7 @@ private fun CompactRecipientChip(
 }
 
 @Composable
-fun BalanceCard(
+private fun BalanceCard(
     balance: Double?,
     alwaysShowBalance: Boolean,
     pendingDeduction: Double? = null
@@ -452,7 +532,7 @@ private fun SelectedAmountRow(
 }
 
 @Composable
-fun AvatarBadge(
+private fun AvatarBadge(
     label: String,
     selected: Boolean,
     modifier: Modifier = Modifier,
@@ -540,19 +620,54 @@ fun HorizontalRecipientRow(
     }
 }
 
+private enum class KeypadCellKind { DIGIT, BACKSPACE, CLEAR, ACTION, EMPTY }
+
+private data class KeypadCell(
+    val label: String,
+    val kind: KeypadCellKind,
+    val weight: Float = 1f
+)
+
 @Composable
 fun AmountKeypad(
     onKey: (String) -> Unit,
-    onBackspace: () -> Unit
+    onBackspace: () -> Unit,
+    onClear: (() -> Unit)? = null,
+    /** Optional right-column action (e.g. “+” to add an item or open Add up). */
+    onAction: (() -> Unit)? = null,
+    actionLabel: String = "+",
+    actionEnabled: Boolean = true,
+    modifier: Modifier = Modifier
 ) {
+    // Calculator-style grid: digits left, ops on the right.
     val rows = listOf(
-        listOf("1", "2", "3"),
-        listOf("4", "5", "6"),
-        listOf("7", "8", "9"),
-        listOf(".", "0", "⌫")
+        listOf(
+            KeypadCell("7", KeypadCellKind.DIGIT),
+            KeypadCell("8", KeypadCellKind.DIGIT),
+            KeypadCell("9", KeypadCellKind.DIGIT),
+            KeypadCell("C", KeypadCellKind.CLEAR)
+        ),
+        listOf(
+            KeypadCell("4", KeypadCellKind.DIGIT),
+            KeypadCell("5", KeypadCellKind.DIGIT),
+            KeypadCell("6", KeypadCellKind.DIGIT),
+            KeypadCell("⌫", KeypadCellKind.BACKSPACE)
+        ),
+        listOf(
+            KeypadCell("1", KeypadCellKind.DIGIT),
+            KeypadCell("2", KeypadCellKind.DIGIT),
+            KeypadCell("3", KeypadCellKind.DIGIT),
+            KeypadCell(actionLabel, KeypadCellKind.ACTION)
+        ),
+        listOf(
+            KeypadCell(".", KeypadCellKind.DIGIT),
+            KeypadCell("0", KeypadCellKind.DIGIT, weight = 2f),
+            KeypadCell("", KeypadCellKind.EMPTY)
+        )
     )
+
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(SheetCanvas)
@@ -564,14 +679,49 @@ fun AmountKeypad(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(Space.gap)
             ) {
-                row.forEach { key ->
-                    KeypadKey(
-                        label = key,
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            if (key == "⌫") onBackspace() else onKey(key)
+                row.forEach { cell ->
+                    when (cell.kind) {
+                        KeypadCellKind.EMPTY -> Spacer(modifier = Modifier.weight(cell.weight))
+                        KeypadCellKind.CLEAR -> {
+                            if (onClear != null) {
+                                KeypadKey(
+                                    label = cell.label,
+                                    accent = true,
+                                    modifier = Modifier.weight(cell.weight),
+                                    onClick = onClear
+                                )
+                            } else {
+                                KeypadKey(
+                                    label = "⌫",
+                                    modifier = Modifier.weight(cell.weight),
+                                    onClick = onBackspace
+                                )
+                            }
                         }
-                    )
+                        KeypadCellKind.BACKSPACE -> KeypadKey(
+                            label = "⌫",
+                            modifier = Modifier.weight(cell.weight),
+                            onClick = onBackspace
+                        )
+                        KeypadCellKind.ACTION -> {
+                            if (onAction != null) {
+                                KeypadKey(
+                                    label = cell.label,
+                                    accent = true,
+                                    enabled = actionEnabled,
+                                    modifier = Modifier.weight(cell.weight),
+                                    onClick = onAction
+                                )
+                            } else {
+                                Spacer(modifier = Modifier.weight(cell.weight))
+                            }
+                        }
+                        KeypadCellKind.DIGIT -> KeypadKey(
+                            label = cell.label,
+                            modifier = Modifier.weight(cell.weight),
+                            onClick = { onKey(cell.label) }
+                        )
+                    }
                 }
             }
         }
@@ -582,34 +732,43 @@ fun AmountKeypad(
 private fun KeypadKey(
     label: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    accent: Boolean = false,
+    enabled: Boolean = true
 ) {
+    val bg = when {
+        !enabled -> SoftFill
+        accent -> SoftBlue
+        else -> CardWhite
+    }
+    val fg = when {
+        !enabled -> Mute
+        accent -> Accent
+        else -> Ink
+    }
     Box(
         modifier = modifier
-            .height(44.dp)
+            .height(52.dp)
             .shadow(1.dp, RoundedCornerShape(14.dp), spotColor = Color.Black.copy(alpha = 0.05f))
             .clip(RoundedCornerShape(14.dp))
-            .background(CardWhite)
-            .clickable(onClick = onClick),
+            .background(bg)
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center
     ) {
         if (label == "⌫") {
             Icon(
                 Icons.AutoMirrored.Outlined.Backspace,
                 contentDescription = "Delete",
-                tint = Ink,
-                modifier = Modifier.size(20.dp)
+                tint = fg,
+                modifier = Modifier.size(22.dp)
             )
         } else {
-            Text(label, style = HomeType.greeting, color = Ink)
+            Text(label, style = HomeType.greeting, color = fg)
         }
     }
 }
 
-fun formatSheetAmount(raw: String): String {
-    if (raw.isBlank()) return "0"
-    return raw
-}
+fun formatSheetAmount(raw: String): String = formatMoneyInputLabel(raw)
 
 @Composable
 fun MoneyConfirmDialog(
