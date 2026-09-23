@@ -626,8 +626,12 @@ fun TicketDetailScreen(
     var attachLeg by remember { mutableStateOf<BoardingLeg?>(null) }
     var showBoardingQrDialog by remember { mutableStateOf(false) }
 
-    DisposableEffect(Unit) {
-        // Ticket detail / boarding pass: max brightness + keep screen on for gate scan
+    // Gate scan: only boost brightness / keep-awake for active tickets.
+    val boostScanBrightness = ticket?.effectiveStatus() == TicketStatus.ACTIVE
+    DisposableEffect(boostScanBrightness) {
+        if (!boostScanBrightness) {
+            return@DisposableEffect onDispose { }
+        }
         val win = findActivity(view.context)?.window
         val previousBrightness = win?.attributes?.screenBrightness
             ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
