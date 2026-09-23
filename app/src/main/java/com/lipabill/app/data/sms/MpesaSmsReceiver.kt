@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import com.lipabill.app.LipaBillApp
-import com.lipabill.app.data.parser.MpesaSmsParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -14,6 +13,8 @@ import kotlinx.coroutines.launch
  * Live SMS ingestion for M-Pesa messages arriving after install.
  * Upserts the broadcast payload immediately, then kicks a quiet inbox
  * rescan so multipart / delayed writes still land in Room.
+ *
+ * Does not log SMS bodies. Does not trigger payments or USSD.
  */
 class MpesaSmsReceiver : BroadcastReceiver() {
 
@@ -29,12 +30,13 @@ class MpesaSmsReceiver : BroadcastReceiver() {
                 var matched = false
                 messages.forEach { sms ->
                     val address = sms.displayOriginatingAddress.orEmpty()
-                    if (!MpesaSmsFilter.isMpesaSender(address)) return@forEach
                     val body = sms.messageBody.orEmpty()
-                    if (body.isBlank()) return@forEach
-                    if (!MpesaSmsFilter.isTransactionConfirmation(body)) return@forEach
+                    val parsed = MpesaSmsIngestion.acceptAndParse(
+                        address = address,
+                        body = body,
+                        timestampMillis = sms.timestampMillis
+                    ) ?: return@forEach
                     matched = true
-                    val parsed = MpesaSmsParser.parse(body, sms.timestampMillis)
                     app.repository.upsert(parsed)
                 }
                 if (matched) {
