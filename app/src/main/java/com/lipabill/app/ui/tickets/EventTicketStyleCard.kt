@@ -40,7 +40,6 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.ImageBitmap
@@ -58,7 +57,6 @@ import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
-import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.util.formatEventWhen
 import java.time.Instant
 import java.time.ZoneId
@@ -67,15 +65,14 @@ import java.util.Locale
 
 private val EventDetailBorder = Color(0xFFE8E8E8)
 private val EventLabelGrey = Color(0xFF9CA3AF)
-private val EventAccentSoft = Color(0xFF6B849E)
 
-private val EventWashBrush = Brush.verticalGradient(
-    colors = listOf(Accent, Accent, EventAccentSoft, SoftBlue)
-)
+/** Solid stage behind the event ticket — brand blue (distinct from SGR’s near-black). */
+val EventStage = Accent
 
 /**
- * Event ticket — congrats card with QR stub. When [isUsed], the stub tears off
- * at the perforation and drops slightly below as a separate piece.
+ * Event ticket — white perforated card on a solid brand-blue stage.
+ * Layout matches the SGR solid-stage pattern; color keeps event tickets distinct.
+ * When [isUsed], the stub tears off at the perforation and drops slightly below.
  */
 @Composable
 fun EventTicketStyleCard(
@@ -83,6 +80,7 @@ fun EventTicketStyleCard(
     qrBitmap: ImageBitmap?,
     onChangeDate: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    stageColor: Color = EventStage,
     isUsed: Boolean = false
 ) {
     val model = remember(ticket) { ticket.toEventTicketUiModel() }
@@ -124,7 +122,7 @@ fun EventTicketStyleCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
-            .background(EventWashBrush)
+            .background(stageColor)
             .padding(horizontal = 16.dp, vertical = 28.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {

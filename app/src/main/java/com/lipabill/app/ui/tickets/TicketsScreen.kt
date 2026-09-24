@@ -737,22 +737,31 @@ fun TicketDetailScreen(
 
     val current = ticket
     val isRailDetail = current?.isRailTravel == true
+    val isEventDetail = current != null && !current.isTravelTicket
+    val detailStage = when {
+        isRailDetail -> SgrStage
+        isEventDetail -> EventStage
+        else -> Canvas
+    }
+    val useColoredStage = isRailDetail || isEventDetail
     val sgrHeader = remember(current) {
         current?.takeIf { it.isRailTravel }?.toSgrTicketUiModel()
     }
 
     Scaffold(
-        containerColor = if (isRailDetail) SgrStage else Canvas,
+        containerColor = detailStage,
         topBar = {
-            if (isRailDetail) {
+            if (useColoredStage) {
                 TopAppBar(
                     title = {
                         Text(
-                            "Upcoming Trips",
+                            if (isRailDetail) "Upcoming Trips" else (current?.title ?: "Ticket"),
                             color = Color.White,
                             fontFamily = GeometricSansFamily,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 17.sp
+                            fontSize = 17.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     },
                     navigationIcon = {
@@ -765,7 +774,7 @@ fun TicketDetailScreen(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = SgrStage,
+                        containerColor = detailStage,
                         titleContentColor = Color.White,
                         navigationIconContentColor = Color.White
                     )
@@ -788,7 +797,7 @@ fun TicketDetailScreen(
                 "Ticket not found",
                 modifier = Modifier.padding(padding).padding(Space.page),
                 style = HomeType.body,
-                color = if (isRailDetail) Color.White.copy(alpha = 0.7f) else Mute
+                color = if (useColoredStage) Color.White.copy(alpha = 0.7f) else Mute
             )
             return@Scaffold
         }
@@ -1029,10 +1038,16 @@ fun TicketDetailScreen(
                 Text(
                     text = displayStatus.label(),
                     style = HomeType.label,
-                    color = statusColor,
+                    color = if (isEventDetail) Color.White else statusColor,
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .background(statusColor.copy(alpha = 0.12f))
+                        .background(
+                            if (isEventDetail) {
+                                Color.White.copy(alpha = 0.14f)
+                            } else {
+                                statusColor.copy(alpha = 0.12f)
+                            }
+                        )
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 )
                 Spacer(modifier = Modifier.height(Space.block))
@@ -1095,6 +1110,7 @@ fun TicketDetailScreen(
                     EventTicketStyleCard(
                         ticket = current,
                         qrBitmap = gateQr,
+                        stageColor = EventStage,
                         isUsed = isUsed,
                         onChangeDate = if (!isUsed) {
                             {
@@ -1116,17 +1132,41 @@ fun TicketDetailScreen(
                         (current.isReturnTrip && current.hasReturnBoardingPass)
                     )
             ) {
-                OutlinedButton(
-                    onClick = { viewModel.markUsed() },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(26.dp)
-                ) { Text("Mark as used") }
+                if (isEventDetail) {
+                    Button(
+                        onClick = { viewModel.markUsed() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp),
+                        shape = RoundedCornerShape(28.dp),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = CardWhite,
+                            contentColor = Accent
+                        )
+                    ) {
+                        Text(
+                            "Mark as used",
+                            fontFamily = GeometricSansFamily,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { viewModel.markUsed() },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(26.dp)
+                    ) { Text("Mark as used") }
+                }
             }
             TextButton(
                 onClick = { confirmDelete = true },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Delete ticket", color = Expense)
+                Text(
+                    "Delete ticket",
+                    color = if (isEventDetail) Color.White.copy(alpha = 0.75f) else Expense
+                )
             }
             Spacer(modifier = Modifier.height(Space.gap))
         }
