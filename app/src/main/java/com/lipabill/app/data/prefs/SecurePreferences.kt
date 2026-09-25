@@ -52,6 +52,17 @@ class SecurePreferences(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_A11Y_ONBOARDING_SEEN, value).apply()
 
     /**
+     * True after the user has successfully enabled LipaBill Accessibility.
+     * Survives APK updates (`adb install -r` / Play update). Cleared when the
+     * user intentionally turns the service off from Profile. Android itself
+     * always disables Accessibility on update — this flag drives the re-enable
+     * prompt so we don't leave Send/Pay/Repeat broken silently.
+     */
+    var accessibilityPreferredOn: Boolean
+        get() = prefs.getBoolean(KEY_A11Y_PREFERRED_ON, false)
+        set(value) = prefs.edit().putBoolean(KEY_A11Y_PREFERRED_ON, value).apply()
+
+    /**
      * Preferred SIM subscriptionId for dialing *334#.
      * -1 means not set — auto-pick Safaricom if present, else first SIM.
      */
@@ -99,6 +110,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_AMOUNT_PARSE_REPAIR_DONE = "amount_parse_repair_v2"
         private const val KEY_REPEAT_ENABLED = "repeat_feature_enabled"
         private const val KEY_A11Y_ONBOARDING_SEEN = "a11y_onboarding_seen"
+        private const val KEY_A11Y_PREFERRED_ON = "a11y_preferred_on"
         private const val KEY_PREFERRED_SIM_SUB_ID = "preferred_sim_subscription_id"
         private const val KEY_UI_FONT_SIZE_SP = "ui_font_size_sp_v2"
         private const val KEY_ALWAYS_SHOW_BALANCE = "always_show_balance"
