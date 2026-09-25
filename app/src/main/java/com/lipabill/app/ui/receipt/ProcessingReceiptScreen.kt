@@ -110,19 +110,19 @@ fun ProcessingReceiptScreen(
         RepeatOutcome.ABORTED_MISMATCH,
         RepeatOutcome.ABORTED_ERROR -> {
             statusTitle = "Interrupted"
-            statusDetail = "Payment automation stopped. Check the dialer, then try again if needed."
+            statusDetail = "Payment automation stopped. Check M-Pesa on your phone, then try again if needed."
         }
         RepeatOutcome.USER_CANCELLED -> {
             statusTitle = if (attempt?.detail == "pending") "Processing" else "Cancelled"
             statusDetail = if (attempt?.detail == "pending") {
-                "Finish any dialer prompts. You’ll enter your PIN on LipaBill’s keypad."
+                "Finish any on-screen prompts. You’ll enter your PIN on LipaBill’s keypad."
             } else {
                 "This payment was cancelled."
             }
         }
         else -> {
             statusTitle = "Processing"
-            statusDetail = "Finish any dialer prompts. You’ll enter your PIN on LipaBill’s keypad."
+            statusDetail = "Finish any on-screen prompts. You’ll enter your PIN on LipaBill’s keypad."
         }
     }
     val isActive = statusTitle == "Processing" || statusTitle == "PIN submitted"
