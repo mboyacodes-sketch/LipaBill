@@ -32,29 +32,33 @@ object KenyaRegionGate {
     }
 
     fun evaluate(context: Context): Verdict {
-        if (BuildConfig.DEBUG || BuildConfig.SIDELOAD_DISTRIBUTION) {
-            return Verdict.Allowed
-        }
-
+        val bypass = BuildConfig.DEBUG || BuildConfig.SIDELOAD_DISTRIBUTION
         val appCtx = context.applicationContext
-        val isos = collectCountryIsos(appCtx)
-
-        if (isos.any { it == COUNTRY_ISO }) return Verdict.Allowed
-        if (SimLineHelper.hasPhoneStatePermission(appCtx) &&
+        val hasSafaricom = SimLineHelper.hasPhoneStatePermission(appCtx) &&
             SimLineHelper.hasSafaricomSim(appCtx)
-        ) {
-            return Verdict.Allowed
-        }
-
-        val foreign = isos.firstOrNull { it != COUNTRY_ISO }
-        if (foreign != null) return Verdict.Blocked(foreign)
-
-        // Unknown — don't block; Safaricom gates still protect Send/Pay.
-        return Verdict.Allowed
+        return verdictFor(
+            countryIsos = collectCountryIsos(appCtx),
+            hasSafaricomSim = hasSafaricom,
+            bypassGate = bypass
+        )
     }
 
-    fun isAllowed(context: Context): Boolean =
-        evaluate(context) is Verdict.Allowed
+    /**
+     * Pure decision used by [evaluate] and unit tests.
+     * [bypassGate] mirrors debug / internal flavors.
+     */
+    internal fun verdictFor(
+        countryIsos: List<String>,
+        hasSafaricomSim: Boolean,
+        bypassGate: Boolean
+    ): Verdict {
+        if (bypassGate) return Verdict.Allowed
+        if (countryIsos.any { it == COUNTRY_ISO }) return Verdict.Allowed
+        if (hasSafaricomSim) return Verdict.Allowed
+        val foreign = countryIsos.firstOrNull { it != COUNTRY_ISO }
+        if (foreign != null) return Verdict.Blocked(foreign)
+        return Verdict.Allowed
+    }
 
     @SuppressLint("MissingPermission")
     private fun collectCountryIsos(context: Context): List<String> {
