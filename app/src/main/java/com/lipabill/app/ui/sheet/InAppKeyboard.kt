@@ -131,7 +131,7 @@ fun InAppKeyboard(
             ) {
                 if (!digitsMode && rowIndex == 2) {
                     InAppKey(
-                        weight = 1.25f,
+                        weight = 1.35f,
                         accent = shift,
                         onClick = { shift = !shift }
                     ) {
@@ -165,8 +165,9 @@ fun InAppKeyboard(
                         )
                     }
                 }
-                if (!digitsMode && rowIndex == 2) {
-                    InAppKey(weight = 1.25f, onClick = onBackspace, repeatOnHold = true) {
+                // Delete beside M (letters) / last symbol key (digits)
+                if (rowIndex == 2) {
+                    InAppKey(weight = 1.35f, onClick = onBackspace, repeatOnHold = true) {
                         Icon(
                             Icons.AutoMirrored.Outlined.Backspace,
                             contentDescription = "Delete",
@@ -178,6 +179,7 @@ fun InAppKeyboard(
             }
         }
 
+        // Bottom row stretches full width — no delete here
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(KeyGap)
@@ -195,16 +197,6 @@ fun InAppKeyboard(
                     style = labelStyle,
                     color = Accent
                 )
-            }
-            if (digitsMode) {
-                InAppKey(weight = 1.25f, onClick = onBackspace, repeatOnHold = true) {
-                    Icon(
-                        Icons.AutoMirrored.Outlined.Backspace,
-                        contentDescription = "Delete",
-                        tint = Ink,
-                        modifier = Modifier.size(KeyIconSize)
-                    )
-                }
             }
             InAppKey(weight = 4f, onClick = { onChar(" ") }) {
                 Text("space", style = labelStyle, color = Mute)
