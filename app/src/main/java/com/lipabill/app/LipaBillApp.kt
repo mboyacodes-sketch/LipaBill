@@ -16,6 +16,7 @@ import com.lipabill.app.data.sms.SmsInboxReader
 import com.lipabill.app.data.sms.SmsInboxSyncWatcher
 import com.lipabill.app.metrics.AppCrashReporting
 import com.lipabill.app.metrics.AppMetrics
+import com.lipabill.app.ui.permissions.AccessibilityPreferred
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -72,6 +73,8 @@ class LipaBillApp : Application() {
             securePreferences.firstRunSetupDone = true
         }
         authManager = AuthManager(this, securePreferences)
+        // Remember if Accessibility is already on so an update can prompt re-enable.
+        AccessibilityPreferred.syncFromSystem(this, securePreferences)
 
         val db = AppDatabase.getInstance(this)
         merchantDirectory = MerchantDirectory(
