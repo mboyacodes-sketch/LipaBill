@@ -52,10 +52,8 @@ import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.data.tickets.PkPassIntents
 import com.lipabill.app.security.AppSecurity
 import com.lipabill.app.ui.analytics.MetricsScreen
-import com.lipabill.app.region.KenyaRegionGate
-import com.lipabill.app.ui.region.KenyaOnlyScreen
 import com.lipabill.app.ui.auth.AuthGateScreen
-import com.lipabill.app.ui.detail.TransactionDetailScreen
+import com.lipabill.app.ui.detail.TransactionReceiptPopup
 import com.lipabill.app.ui.main.MainShellScreen
 import com.lipabill.app.ui.navigation.Route
 import com.lipabill.app.ui.permissions.FirstRunSetupScreen
@@ -64,6 +62,7 @@ import com.lipabill.app.ui.permissions.SmsPermissionScreen
 import com.lipabill.app.ui.permissions.SmsRestrictedSettings
 import com.lipabill.app.ui.pay.PayMoneyBottomSheetFragment
 import com.lipabill.app.ui.receipt.ProcessingReceiptScreen
+import com.lipabill.app.ui.region.KenyaOnlyScreen
 import com.lipabill.app.ui.repeat.AccessibilityOnboardingScreen
 import com.lipabill.app.ui.repeat.ManualRepeatScreen
 import com.lipabill.app.ui.repeat.RepeatConfirmScreen
@@ -74,6 +73,7 @@ import com.lipabill.app.ui.tickets.TicketDetailScreen
 import com.lipabill.app.ui.tickets.TicketsScreen
 import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
 import com.lipabill.app.metrics.AppMetrics
+import com.lipabill.app.region.KenyaRegionGate
 import com.lipabill.app.ussd.AccessibilityHelper
 import com.lipabill.app.ussd.PendingPaymentReceipt
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
@@ -84,7 +84,6 @@ import com.lipabill.app.viewmodel.SendMoneyViewModel
 import com.lipabill.app.viewmodel.SettingsViewModel
 import com.lipabill.app.viewmodel.TicketDetailViewModel
 import com.lipabill.app.viewmodel.TicketsViewModel
-import com.lipabill.app.viewmodel.TransactionDetailViewModel
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import com.lipabill.app.viewmodel.viewModelFactory
 import kotlinx.coroutines.launch
@@ -671,7 +670,6 @@ private fun AuthenticatedApp(
         composable(Route.List.path) {
             MainShellScreen(
                 listVm = listVm,
-                onOpenTransaction = { /* receipt is a popup on the list */ },
                 onRepeatTransaction = { id -> navigateRepeat(id) },
                 onOpenSend = { showSendSheet() },
                 onOpenSendTo = { contact -> showSendSheet(preselect = contact) },
@@ -722,23 +720,6 @@ private fun AuthenticatedApp(
             TicketDetailScreen(
                 viewModel = detailVm,
                 onBack = { navController.popBackStack() }
-            )
-        }
-        composable(
-            route = Route.Detail.pattern,
-            arguments = listOf(navArgument("id") { type = NavType.LongType })
-        ) { entry ->
-            val id = entry.arguments?.getLong("id") ?: return@composable
-            BackHandler { navigateHome() }
-            val detailVm: TransactionDetailViewModel = viewModel(
-                factory = viewModelFactory {
-                    TransactionDetailViewModel(app, id)
-                }
-            )
-            TransactionDetailScreen(
-                viewModel = detailVm,
-                onBack = { navigateHome() },
-                onRepeat = { txId -> navigateRepeat(txId) }
             )
         }
         composable(

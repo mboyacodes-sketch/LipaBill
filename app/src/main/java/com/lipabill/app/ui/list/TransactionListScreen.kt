@@ -114,7 +114,6 @@ import kotlinx.coroutines.flow.flowOf
 @Composable
 fun TransactionListScreen(
     viewModel: TransactionListViewModel,
-    onOpenTransaction: (Long) -> Unit,
     modifier: Modifier = Modifier,
     onRepeatTransaction: (Long) -> Unit = {},
     onSend: () -> Unit = {},
