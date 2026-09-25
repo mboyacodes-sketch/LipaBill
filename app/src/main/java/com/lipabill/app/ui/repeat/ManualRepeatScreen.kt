@@ -71,7 +71,7 @@ fun ManualRepeatScreen(
                 .padding(Space.page)
         ) {
             Text(
-                text = "Repeat automation is off or unavailable. Copy these details and dial *334# yourself.",
+                text = "Repeat automation is off or unavailable. Copy these details and complete the payment in M-Pesa yourself.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
