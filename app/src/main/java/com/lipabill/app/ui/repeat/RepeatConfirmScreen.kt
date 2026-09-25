@@ -187,7 +187,7 @@ fun RepeatConfirmScreen(
                 state.featureEnabled && !state.accessibilityEnabled -> {
                     Spacer(modifier = Modifier.height(Space.block))
                     Text(
-                        text = "Enable Accessibility for LipaBill to fill the USSD menu.",
+                        text = "Enable Accessibility for LipaBill to help fill M-Pesa payment screens.",
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyMedium
                     )
