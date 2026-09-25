@@ -1,10 +1,13 @@
 package com.lipabill.app.ui.permissions
 
+import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Process
 import android.provider.Settings
+import com.lipabill.app.ussd.AccessibilityHelper
 
 /**
  * Firebase App Distribution / APK installs are not Play Store installs.
@@ -18,6 +21,10 @@ object SideloadRestrictedSettings {
         "com.android.vending",
         "com.google.android.feedback"
     )
+
+    /** App op flipped when the user enables Allow restricted settings (API 34+). */
+    private const val OPSTR_ACCESS_RESTRICTED_SETTINGS =
+        "android:access_restricted_settings"
 
     fun isSideloaded(context: Context): Boolean {
         val installer = installerPackage(context) ?: return true
@@ -35,6 +42,34 @@ object SideloadRestrictedSettings {
     fun needsRestrictedSettingsFlow(context: Context): Boolean =
         accessibilityUnlockNeeded(context) ||
             (isSideloaded(context) && SmsRestrictedSettings.appliesToThisDevice())
+
+    /**
+     * True when App info → Allow restricted settings is already on.
+     * Uses AppOps when available; on API 33 falls back to Accessibility enabled.
+     */
+    fun isRestrictedSettingsAllowed(context: Context): Boolean {
+        if (!needsRestrictedSettingsFlow(context)) return true
+        if (Build.VERSION.SDK_INT < 34) {
+            return AccessibilityHelper.isLipaBillServiceEnabled(context)
+        }
+        return try {
+            val appOps = context.getSystemService(AppOpsManager::class.java) ?: return false
+            val mode = appOps.unsafeCheckOpNoThrow(
+                OPSTR_ACCESS_RESTRICTED_SETTINGS,
+                Process.myUid(),
+                context.packageName
+            )
+            mode == AppOpsManager.MODE_ALLOWED
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Show the "Allow restricted settings" CTA only while unlock is still required.
+     */
+    fun shouldShowUnlockButton(context: Context): Boolean =
+        needsRestrictedSettingsFlow(context) && !isRestrictedSettingsAllowed(context)
 
     fun openAppInfo(context: Context) {
         val intent = Intent(
