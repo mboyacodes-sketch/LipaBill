@@ -376,7 +376,7 @@ fun FirstRunSetupScreen(
                         onClick = onOpenAccessibilitySettings,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("1 · Open Accessibility (trigger)")
+                        Text("1 · Open LipaBill toggle (trigger)")
                     }
                     Spacer(modifier = Modifier.height(Space.gap))
                     Button(
@@ -474,7 +474,7 @@ fun FirstRunSetupScreen(
                             onClick = onOpenAccessibilitySettings,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Open Accessibility")
+                            Text("Open LipaBill toggle")
                         }
                         Spacer(modifier = Modifier.height(Space.gap))
                         Button(
@@ -495,7 +495,7 @@ fun FirstRunSetupScreen(
                             onClick = onOpenAccessibilitySettings,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Open Accessibility settings")
+                            Text("Open LipaBill toggle")
                         }
                     }
                     Spacer(modifier = Modifier.height(Space.gap))

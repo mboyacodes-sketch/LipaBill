@@ -24,7 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.lipabill.app.ui.permissions.AccessibilityDisclosure
-import com.lipabill.app.ui.permissions.AccessibilityRestrictedSteps
+import com.lipabill.app.ui.permissions.RestrictedSettingsUnlockSteps
 import com.lipabill.app.ui.permissions.SideloadRestrictedSettings
 import com.lipabill.app.ui.theme.Space
 
@@ -76,8 +76,8 @@ fun AccessibilityOnboardingScreen(
                         "then turn on LipaBill Repeat Payment."
                 } else {
                     "You turn Accessibility on yourself in system Settings. " +
-                        "LipaBill will open the LipaBill service screen — flip the switch only " +
-                        "if you agree with the disclosure below."
+                        "LipaBill opens the LipaBill Repeat Payment toggle screen — " +
+                        "flip the switch only if you agree with the disclosure below."
                 },
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -85,7 +85,7 @@ fun AccessibilityOnboardingScreen(
 
             if (showRestrictedUnlock) {
                 Spacer(modifier = Modifier.height(Space.section))
-                AccessibilityRestrictedSteps()
+                RestrictedSettingsUnlockSteps()
                 Spacer(modifier = Modifier.height(Space.section))
                 Text("What Accessibility will do", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(Space.gap))
@@ -105,7 +105,7 @@ fun AccessibilityOnboardingScreen(
                     onClick = onOpenSettings,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("1 · Open Accessibility")
+                    Text("1 · Open LipaBill toggle")
                 }
                 Spacer(modifier = Modifier.height(Space.gap))
                 Button(
@@ -119,7 +119,7 @@ fun AccessibilityOnboardingScreen(
                     onClick = onOpenSettings,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("3 · Open Accessibility again")
+                    Text("3 · Open LipaBill toggle again")
                 }
             } else {
                 Spacer(modifier = Modifier.height(Space.pageV + Space.block))
@@ -141,7 +141,7 @@ fun AccessibilityOnboardingScreen(
                     onClick = onOpenSettings,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Turn on LipaBill Accessibility")
+                    Text("Open LipaBill toggle")
                 }
             }
 

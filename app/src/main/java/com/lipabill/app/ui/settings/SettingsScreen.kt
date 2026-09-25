@@ -44,7 +44,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lipabill.app.BuildConfig
 import com.lipabill.app.MarketingLinks
-import com.lipabill.app.ui.permissions.AccessibilityRestrictedSteps
+import com.lipabill.app.ui.permissions.RestrictedSettingsUnlockSteps
 import com.lipabill.app.ui.permissions.SideloadRestrictedSettings
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.viewmodel.SettingsViewModel
@@ -358,13 +358,13 @@ fun SettingsScreen(
                 SideloadRestrictedSettings.accessibilityUnlockNeeded(LocalContext.current)
             if (needsRestrictedUnlock && !state.lipaBillA11yEnabled) {
                 Spacer(modifier = Modifier.height(Space.block))
-                AccessibilityRestrictedSteps()
+                RestrictedSettingsUnlockSteps()
                 Spacer(modifier = Modifier.height(Space.block))
                 Button(
                     onClick = { viewModel.openAccessibilitySettings() },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("1 · Open Accessibility")
+                    Text("1 · Open LipaBill toggle")
                 }
                 Spacer(modifier = Modifier.height(Space.gap))
                 Button(
@@ -378,7 +378,7 @@ fun SettingsScreen(
                     onClick = { viewModel.openAccessibilitySettings() },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("3 · Open Accessibility again")
+                    Text("3 · Open LipaBill toggle again")
                 }
             } else {
                 Spacer(modifier = Modifier.height(Space.block))
@@ -386,13 +386,7 @@ fun SettingsScreen(
                     onClick = { viewModel.openAccessibilitySettings() },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        if (state.lipaBillA11yEnabled) {
-                            "Open LipaBill Accessibility toggle"
-                        } else {
-                            "Turn on LipaBill Accessibility"
-                        }
-                    )
+                    Text("Open LipaBill toggle")
                 }
             }
 

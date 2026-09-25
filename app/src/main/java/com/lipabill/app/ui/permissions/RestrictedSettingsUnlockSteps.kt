@@ -17,7 +17,7 @@ import com.lipabill.app.ui.theme.Space
 @Composable
 fun RestrictedSettingsUnlockSteps() {
     val steps = listOf(
-        "Tap Open Accessibility and try turning LipaBill Repeat Payment on " +
+        "Tap Open LipaBill toggle and try turning LipaBill Repeat Payment on " +
             "(you’ll see “Restricted setting” — that unlocks the App info menu)",
         "Tap Open App info → ⋮ or More → Allow restricted settings " +
             "(confirm with PIN / fingerprint)",
@@ -58,7 +58,7 @@ fun RestrictedSettingsUnlockSteps() {
 @Composable
 fun SensitiveAccessSteps() {
     val steps = listOf(
-        "Open Accessibility → Installed apps → LipaBill Repeat Payment → On",
+        "Open LipaBill toggle → turn LipaBill Repeat Payment On",
         "Tap Allow SMS and grant it (or open App info → Permissions → SMS → Allow)",
         "Return here when both are on"
     )
@@ -86,10 +86,4 @@ fun SensitiveAccessSteps() {
             }
         }
     }
-}
-
-/** @deprecated Prefer [RestrictedSettingsUnlockSteps] for the unlock-only phase. */
-@Composable
-fun AccessibilityRestrictedSteps() {
-    RestrictedSettingsUnlockSteps()
 }
