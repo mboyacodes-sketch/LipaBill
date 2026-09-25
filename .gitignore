@@ -53,3 +53,12 @@ brag-output/
 
 # R8 mapping (local only — never ship)
 /app/build/outputs/mapping/
+
+# Local design / review media (large; not needed to build)
+/artwork/
+
+# Tests for private parser IP
+/app/src/test/java/com/lipabill/app/data/parser/
+
+# Local install helpers (references private USSD service)
+/tools/
