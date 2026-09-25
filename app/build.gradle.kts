@@ -23,8 +23,8 @@ android {
         applicationId = "com.lipabill.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.0.8"
+        versionCode = 20
+        versionName = "2.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Real devices are arm64; drop x86/x86_64 emulator ABIs from shipped APKs.
         ndk {
@@ -85,6 +85,10 @@ android {
             isShrinkResources = true
             isDebuggable = false
             isCrunchPngs = true
+            // Package native .so symbols into the AAB for Play Console crash/ANR symbolication.
+            ndk {
+                debugSymbolLevel = "SYMBOL_TABLE"
+            }
             signingConfig = if (hasReleaseKeystore) {
                 signingConfigs.getByName("release")
             } else {
