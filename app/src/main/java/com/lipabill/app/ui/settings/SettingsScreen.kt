@@ -1,5 +1,7 @@
 package com.lipabill.app.ui.settings
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,6 +42,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lipabill.app.BuildConfig
+import com.lipabill.app.MarketingLinks
 import com.lipabill.app.ui.permissions.AccessibilityRestrictedSteps
 import com.lipabill.app.ui.permissions.SideloadRestrictedSettings
 import com.lipabill.app.ui.theme.Space
@@ -57,6 +61,7 @@ fun SettingsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val attempts by viewModel.recentAttempts.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
+    val context = LocalContext.current
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -419,7 +424,54 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            Spacer(modifier = Modifier.height(Space.section))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(Space.section))
+            Text("About & legal", style = MaterialTheme.typography.titleLarge)
+            Spacer(modifier = Modifier.height(Space.tight))
+            Text(
+                text = "LipaBill ${BuildConfig.VERSION_NAME}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(Space.gap))
+            TextButton(
+                onClick = { openHttps(context, MarketingLinks.PRIVACY) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Privacy policy")
+            }
+            TextButton(
+                onClick = { openHttps(context, MarketingLinks.SUPPORT) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Help & support")
+            }
+            TextButton(
+                onClick = { openMailto(context, MarketingLinks.SUPPORT_EMAIL) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Email support")
+            }
         }
+    }
+}
+
+private fun openHttps(context: android.content.Context, url: String) {
+    runCatching {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+}
+
+private fun openMailto(context: android.content.Context, email: String) {
+    runCatching {
+        val intent = Intent(Intent.ACTION_SENDTO).apply {
+            data = Uri.parse("mailto:")
+            putExtra(Intent.EXTRA_EMAIL, arrayOf(email))
+            putExtra(Intent.EXTRA_SUBJECT, "LipaBill support")
+        }
+        context.startActivity(Intent.createChooser(intent, "Email support"))
     }
 }
 
