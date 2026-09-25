@@ -1,6 +1,8 @@
 package com.lipabill.app.ui.detail
 
 import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +28,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -123,6 +126,26 @@ fun TransactionDetailScreen(
                 ) {
                     Text("Another transaction")
                 }
+                Spacer(modifier = Modifier.height(Space.gap))
+            }
+            if (canRequestMpesaReverse(current)) {
+                OutlinedButton(
+                    onClick = { openMpesaReverseSms(context, current) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text("Reverse transaction")
+                }
+                Spacer(modifier = Modifier.height(Space.tight))
+                Text(
+                    text = "Opens Messages to 456 with the original M-PESA SMS. Available for about 24 hours after payment.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
             Spacer(modifier = Modifier.height(Space.section))
         }
@@ -136,6 +159,54 @@ private fun shareTransaction(context: android.content.Context, tx: MpesaTransact
         putExtra(Intent.EXTRA_TEXT, text)
     }
     context.startActivity(Intent.createChooser(intent, "Share transaction"))
+}
+
+/**
+ * Opens the default SMS app addressed to Safaricom reverse short code 456,
+ * with the original confirmation SMS body prefilled (unedited).
+ * Only valid within [REVERSE_WINDOW_MS] of the transaction time.
+ */
+fun canRequestMpesaReverse(
+    tx: MpesaTransaction,
+    nowMs: Long = System.currentTimeMillis()
+): Boolean {
+    if (tx.rawBody.isBlank()) return false
+    val age = nowMs - tx.timestampMillis
+    // Safaricom DIY reverse is within 24h; hide slightly early so the option
+    // doesn’t linger at the edge of an expired window.
+    return age in 0 until REVERSE_WINDOW_MS
+}
+
+private const val REVERSE_WINDOW_MS = 23L * 60 * 60 * 1000 // slightly under 24h
+
+fun openMpesaReverseSms(context: android.content.Context, tx: MpesaTransaction) {
+    if (!canRequestMpesaReverse(tx)) {
+        Toast.makeText(
+            context,
+            "Reversal is only available within about 24 hours of the payment",
+            Toast.LENGTH_LONG
+        ).show()
+        return
+    }
+    val body = tx.rawBody.trim()
+    if (body.isEmpty()) {
+        Toast.makeText(
+            context,
+            "No original SMS on this receipt to send to 456",
+            Toast.LENGTH_LONG
+        ).show()
+        return
+    }
+    val intent = Intent(Intent.ACTION_SENDTO).apply {
+        data = Uri.parse("smsto:456")
+        putExtra("sms_body", body)
+        putExtra("android.intent.extra.TEXT", body)
+    }
+    runCatching {
+        context.startActivity(intent)
+    }.onFailure {
+        Toast.makeText(context, "Couldn’t open Messages", Toast.LENGTH_SHORT).show()
+    }
 }
 
 /**
