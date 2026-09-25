@@ -2,9 +2,9 @@
 <resources>
     <string name="app_name">LipaBill</string>
     <string name="accessibility_service_description">
-        LipaBill uses Accessibility only to fill M-Pesa USSD menus for a payment you already
-        confirmed in the app. It acts only while a payment session is active, reads dialer/USSD
-        screens needed for that session, and does not read SMS or control unrelated apps.
+        LipaBill uses Accessibility only to help fill M-Pesa payment screens for a payment you already
+        confirmed in the app. It acts only while a payment session is active, reads the screens
+        needed for that session, and does not read SMS or control unrelated apps.
         Your M-Pesa PIN is entered on LipaBill’s secure keypad, sent once into the PIN prompt,
         and is never stored.
     </string>
