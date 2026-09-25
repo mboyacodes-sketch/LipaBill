@@ -56,6 +56,8 @@ import com.lipabill.app.ui.auth.AuthGateScreen
 import com.lipabill.app.ui.detail.TransactionReceiptPopup
 import com.lipabill.app.ui.main.MainShellScreen
 import com.lipabill.app.ui.navigation.Route
+import com.lipabill.app.ui.permissions.AccessibilityPreferred
+import com.lipabill.app.ui.permissions.AccessibilityToggleCoachDialog
 import com.lipabill.app.ui.permissions.FirstRunSetupScreen
 import com.lipabill.app.ui.permissions.SideloadRestrictedSettings
 import com.lipabill.app.ui.permissions.SmsPermissionScreen
@@ -254,6 +256,8 @@ private fun AuthenticatedApp(
     var skipPermission by remember { mutableStateOf(false) }
     var pendingDialTxId by remember { mutableStateOf<Long?>(null) }
     var phoneStateRefreshKey by remember { mutableStateOf(0) }
+    var showAccessibilityReenable by remember { mutableStateOf(false) }
+    var dismissedA11yReenableThisSession by remember { mutableStateOf(false) }
     // Android 15–24 only: sideloaded SMS needs "Allow restricted settings".
     // Android 25+ uses the normal permission / App info route.
     val supportsRestrictedSmsUnlock = SmsRestrictedSettings.appliesToThisDevice()
@@ -285,9 +289,36 @@ private fun AuthenticatedApp(
                 receive == PackageManager.PERMISSION_GRANTED
             smsGranted = ok
             if (ok) permanentlyDenied = false
+            // Android turns Accessibility off on every update — prompt if user had it on.
+            if (!dismissedA11yReenableThisSession) {
+                showAccessibilityReenable =
+                    AccessibilityPreferred.syncFromSystem(context, app.securePreferences)
+            } else {
+                AccessibilityPreferred.syncFromSystem(context, app.securePreferences)
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    if (showAccessibilityReenable) {
+        AccessibilityToggleCoachDialog(
+            currentlyEnabled = false,
+            titleOverride = "Turn Accessibility back on",
+            bodyOverride = "Android turns LipaBill Accessibility off after each update. " +
+                AccessibilityHelper.coachMessage(turningOn = true),
+            dismissLabel = "Not now",
+            onConfirmOpen = {
+                showAccessibilityReenable = false
+                dismissedA11yReenableThisSession = true
+                AccessibilityPreferred.markUserTurningOn(app.securePreferences)
+                AccessibilityHelper.openAppAccessibilityDetails(context)
+            },
+            onDismiss = {
+                showAccessibilityReenable = false
+                dismissedA11yReenableThisSession = true
+            }
+        )
     }
 
     val callPermissionLauncher = rememberLauncherForActivityResult(
@@ -304,7 +335,7 @@ private fun AuthenticatedApp(
                 Toast.makeText(context, "Permissions granted — tap Confirm again", Toast.LENGTH_LONG)
                     .show()
             !callOk ->
-                Toast.makeText(context, "Phone permission is required to dial *334#", Toast.LENGTH_LONG)
+                Toast.makeText(context, "Phone permission is required for M-Pesa payments", Toast.LENGTH_LONG)
                     .show()
             else ->
                 Toast.makeText(context, "SIM access updated — pick your line, then Confirm", Toast.LENGTH_LONG)
@@ -612,6 +643,7 @@ private fun AuthenticatedApp(
                 },
                 onOpenAccessibilitySettings = {
                     app.securePreferences.accessibilityOnboardingSeen = true
+                    AccessibilityPreferred.markUserTurningOn(app.securePreferences)
                     AccessibilityHelper.openAppAccessibilityDetails(context)
                 },
                 onSelectSim = { subId ->
@@ -776,6 +808,7 @@ private fun AuthenticatedApp(
             AccessibilityOnboardingScreen(
                 onOpenSettings = {
                     app.securePreferences.accessibilityOnboardingSeen = true
+                    AccessibilityPreferred.markUserTurningOn(app.securePreferences)
                     AccessibilityHelper.openAppAccessibilityDetails(context)
                 },
                 onOpenAppInfo = {
@@ -785,6 +818,7 @@ private fun AuthenticatedApp(
                 onContinue = {
                     app.securePreferences.accessibilityOnboardingSeen = true
                     if (AccessibilityHelper.isLipaBillServiceEnabled(context)) {
+                        AccessibilityPreferred.markUserTurningOn(app.securePreferences)
                         navigateHome()
                     } else {
                         Toast.makeText(
