@@ -52,15 +52,6 @@ interface TicketDao {
     @Query("SELECT * FROM tickets WHERE orderId = :orderId LIMIT 1")
     suspend fun getByOrderId(orderId: String): TicketEntity?
 
-    @Query(
-        """
-        SELECT * FROM tickets
-        WHERE expectsBoardingPass = 1 AND hasBoardingPass = 0
-        ORDER BY createdAtMillis DESC
-        """
-    )
-    suspend fun getAwaitingBoardingPass(): List<TicketEntity>
-
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entity: TicketEntity): Long
 

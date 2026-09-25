@@ -343,17 +343,6 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun clearPochiContact() {
-        pochiQuery.value = ""
-        _ui.update {
-            it.copy(
-                selectedPochi = null,
-                dialStarted = false,
-                statusMessage = null
-            )
-        }
-    }
-
     fun setAmountInput(value: String) {
         _ui.update { it.copy(amountInput = sanitizeAmountInput(value)) }
     }

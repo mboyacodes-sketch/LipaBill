@@ -53,9 +53,6 @@ object AppMetrics {
     fun paymentStarted(flow: String) =
         log("payment_started", bundleOf("flow" to flow.take(16)))
 
-    fun paymentReachedPin(flow: String) =
-        log("payment_reached_pin", bundleOf("flow" to flow.take(16)))
-
     fun paymentAborted(flow: String, reason: String) =
         log(
             "payment_aborted",
@@ -64,9 +61,6 @@ object AppMetrics {
                 "reason" to reason.take(32)
             )
         )
-
-    fun ticketImport(source: String) =
-        log("ticket_import", bundleOf("source" to source.take(16)))
 
     fun log(event: String, params: Bundle = Bundle()) {
         val fa = analytics ?: return

@@ -24,10 +24,6 @@ class TicketRepository(
     fun observeById(id: Long): Flow<Ticket?> =
         dao.observeById(id).map { it?.toDomain() }
 
-    suspend fun getById(id: Long): Ticket? = withContext(Dispatchers.IO) {
-        dao.getById(id)?.toDomain()
-    }
-
     /**
      * Inserts a ticket. Returns id, or null if the barcode / booking ref already exists.
      */
@@ -186,40 +182,8 @@ class TicketRepository(
         ticketId
     }
 
-    /**
-     * Finds an open confirmation that likely matches this boarding pass
-     * (same booking ref, or same route + departure day).
-     */
-    suspend fun findMatchingConfirmation(draft: TicketImport): Ticket? = withContext(Dispatchers.IO) {
-        val ref = draft.orderId?.trim()?.ifBlank { null }
-        if (ref != null) {
-            dao.getByOrderId(ref)?.takeIf { !it.hasBoardingPass }?.toDomain()?.let { return@withContext it }
-            dao.getAwaitingBoardingPass().firstOrNull { open ->
-                val openRef = open.orderId ?: return@firstOrNull false
-                ref.contains(openRef, ignoreCase = true) || openRef.contains(ref, ignoreCase = true)
-            }?.toDomain()?.let { return@withContext it }
-        }
-
-        val awaiting = dao.getAwaitingBoardingPass()
-        if (awaiting.isEmpty()) return@withContext null
-        val draftDay = draft.startsAtMillis?.let { it / 86_400_000L }
-        awaiting.firstOrNull { open ->
-            val sameVenue = !draft.venue.isNullOrBlank() &&
-                !open.venue.isNullOrBlank() &&
-                venuesCompatible(open.venue!!, draft.venue!!)
-            val sameDay = draftDay != null &&
-                open.startsAtMillis != null &&
-                open.startsAtMillis / 86_400_000L == draftDay
-            sameVenue && (sameDay || draftDay == null || open.startsAtMillis == null)
-        }?.toDomain()
-    }
-
     suspend fun markUsed(id: Long) = withContext(Dispatchers.IO) {
         dao.updateStatus(id, TicketStatus.USED)
-    }
-
-    suspend fun markActive(id: Long) = withContext(Dispatchers.IO) {
-        dao.updateStatus(id, TicketStatus.ACTIVE)
     }
 
     suspend fun setEventStartsAt(id: Long, startsAtMillis: Long?) = withContext(Dispatchers.IO) {
@@ -296,27 +260,6 @@ class TicketRepository(
             ?.substringAfter(':')
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
-    }
-
-    private fun venuesCompatible(a: String, b: String): Boolean {
-        fun norm(s: String) = s.lowercase()
-            .replace("terminus", "")
-            .replace("→", "to")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-        val na = norm(a)
-        val nb = norm(b)
-        return na.contains(nb) || nb.contains(na) ||
-            (na.contains("nairobi") && nb.contains("nairobi") &&
-                na.contains("mombasa") && nb.contains("mombasa")) ||
-            iataOverlap(na, nb)
-    }
-
-    private fun iataOverlap(a: String, b: String): Boolean {
-        val codes = listOf("nbo", "mba", "znz", "kis", "edl")
-        val shared = codes.filter { a.contains(it) && b.contains(it) }
-        return shared.size >= 2 ||
-            (a.contains("znz") && b.contains("znz") && a.contains("nbo") && b.contains("nbo"))
     }
 
     companion object {

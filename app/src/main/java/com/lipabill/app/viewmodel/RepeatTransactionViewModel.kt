@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.ussd.AccessibilityHelper
-import com.lipabill.app.ussd.RepeatOutcome
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.ussd.SimLineHelper
@@ -79,14 +78,6 @@ class RepeatTransactionViewModel(
         refresh(_ui.value.transaction ?: transaction.value, sanitizeAmountInput(value))
     }
 
-    fun selectSim(subscriptionId: Int) {
-        app.securePreferences.preferredSimSubscriptionId = subscriptionId
-        _ui.value = _ui.value.copy(
-            selectedSubscriptionId = subscriptionId,
-            hasSavedSimPreference = true
-        )
-    }
-
     private fun refresh(tx: MpesaTransaction?, amountInput: String) {
         val amount = parseAmount(amountInput)
         val plan = if (tx != null && amount != null) {
@@ -142,10 +133,6 @@ class RepeatTransactionViewModel(
                 "USSD started — enter PIN on the LipaBill keypad when prompted."
             }
         )
-    }
-
-    suspend fun cancelAttempt(auditId: Long, outcome: RepeatOutcome, detail: String?) {
-        coordinator.cancelPrepared(auditId, outcome, detail)
     }
 
     suspend fun logManualCopy() {

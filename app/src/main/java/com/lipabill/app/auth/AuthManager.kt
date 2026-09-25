@@ -140,31 +140,6 @@ class AuthManager(
         )
     }
 
-    /**
-     * Step-up auth for money-moving actions. Always prompts even if the session
-     * is already unlocked. Does not change [state] on failure/cancel.
-     */
-    fun authenticateSensitive(
-        activity: FragmentActivity,
-        title: String = "Confirm to pay",
-        subtitle: String = "LipaBill will open M-Pesa. You enter your PIN on a secure keypad.",
-        onSuccess: () -> Unit,
-        onCancelOrFail: (String) -> Unit
-    ) {
-        if (capability() == AuthCapability.NONE) {
-            onCancelOrFail("Set a phone PIN or biometric to confirm payments")
-            return
-        }
-        authenticateInternal(
-            activity = activity,
-            title = title,
-            subtitle = subtitle,
-            onSuccess = onSuccess,
-            onError = onCancelOrFail,
-            onCancel = { onCancelOrFail("Authentication cancelled") }
-        )
-    }
-
     private fun unlockSubtitle(): String =
         when {
             hasBiometricEnrolled() && hasDeviceCredential() ->

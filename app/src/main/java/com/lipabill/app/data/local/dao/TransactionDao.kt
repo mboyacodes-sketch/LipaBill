@@ -46,14 +46,8 @@ interface TransactionDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIgnore(entity: TransactionEntity): Long
 
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertAllIgnore(entities: List<TransactionEntity>): List<Long>
-
     @Query("SELECT COUNT(*) FROM transactions")
     suspend fun count(): Int
-
-    @Query("SELECT EXISTS(SELECT 1 FROM transactions WHERE code = :code)")
-    suspend fun existsByCode(code: String): Boolean
 
     @Query("SELECT id, amount, balance, cost, rawBody, timestampMillis FROM transactions")
     suspend fun getAllForAmountRepair(): List<AmountRepairRow>

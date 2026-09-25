@@ -198,12 +198,3 @@ fun rememberTicketQrBitmap(
 ): ImageBitmap? = remember(value, format, sizePx, onGrey) {
     encodeTicketBarcode(value, format, sizePx, onGrey = onGrey)
 }
-
-/** Flight boarding — Aztec only (ZXing), never QR. */
-@Composable
-fun rememberFlightAztecBitmap(
-    bcbpPayload: String?,
-    sizePx: Int = 512
-): ImageBitmap? = remember(bcbpPayload, sizePx) {
-    bcbpPayload?.let { encodeAztecBoardingPass(it, sizePx) }
-}

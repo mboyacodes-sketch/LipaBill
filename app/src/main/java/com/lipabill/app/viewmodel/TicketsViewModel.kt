@@ -51,15 +51,6 @@ class TicketsViewModel(
             hasBoardingPass = true
         )
 
-    suspend fun addFromScan(barcodeValue: String, title: String = "Scanned ticket"): Long? =
-        app.ticketRepository.add(
-            title = title,
-            barcodeValue = barcodeValue,
-            source = TicketSource.MANUAL_SCAN,
-            expectsBoardingPass = false,
-            hasBoardingPass = true
-        )
-
     /**
      * Import a file as an event ticket (one-shot) or flight e-ticket (awaits boarding).
      */
@@ -87,17 +78,6 @@ class TicketsViewModel(
         }
     }
 
-    fun delete(id: Long) {
-        viewModelScope.launch { app.ticketRepository.delete(id) }
-    }
-
-    fun markUsed(id: Long) {
-        viewModelScope.launch { app.ticketRepository.markUsed(id) }
-    }
-
-    fun markActive(id: Long) {
-        viewModelScope.launch { app.ticketRepository.markActive(id) }
-    }
 }
 
 class TicketDetailViewModel(
@@ -111,11 +91,6 @@ class TicketDetailViewModel(
     fun markUsed() {
         val id = ticket.value?.id ?: return
         viewModelScope.launch { app.ticketRepository.markUsed(id) }
-    }
-
-    fun markActive() {
-        val id = ticket.value?.id ?: return
-        viewModelScope.launch { app.ticketRepository.markActive(id) }
     }
 
     fun setEventStartsAt(startsAtMillis: Long?) {

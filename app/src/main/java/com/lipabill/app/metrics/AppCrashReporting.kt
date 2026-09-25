@@ -29,23 +29,4 @@ object AppCrashReporting {
             crashlytics = cx
         }
     }
-
-    /** Safe breadcrumb — short code only, no PII. */
-    fun breadcrumb(message: String) {
-        val cx = crashlytics ?: return
-        runCatching { cx.log(message.take(100)) }
-    }
-
-    fun setKey(name: String, value: String) {
-        val cx = crashlytics ?: return
-        runCatching { cx.setCustomKey(name.take(40), value.take(64)) }
-    }
-
-    fun recordNonFatal(t: Throwable, message: String? = null) {
-        val cx = crashlytics ?: return
-        runCatching {
-            message?.take(100)?.let { cx.log(it) }
-            cx.recordException(t)
-        }
-    }
 }
