@@ -128,9 +128,9 @@ class RepeatTransactionViewModel(
         _ui.value = _ui.value.copy(
             dialStarted = true,
             statusMessage = if (line != null) {
-                "USSD on ${line.label} — enter PIN on the LipaBill keypad when prompted."
+                "Payment on ${line.label} — enter PIN on the LipaBill keypad when prompted."
             } else {
-                "USSD started — enter PIN on the LipaBill keypad when prompted."
+                "Payment started — enter PIN on the LipaBill keypad when prompted."
             }
         )
     }
