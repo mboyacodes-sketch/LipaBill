@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.local.entity.RepeatAttemptEntity
+import com.lipabill.app.ui.permissions.AccessibilityPreferred
 import com.lipabill.app.ussd.AccessibilityHelper
 import com.lipabill.app.ui.permissions.SideloadRestrictedSettings
 import com.lipabill.app.ussd.SimLine
@@ -40,7 +41,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun refresh() {
-        _ui.value = buildState()
+        val state = buildState()
+        if (state.lipaBillA11yEnabled) {
+            AccessibilityPreferred.markUserTurningOn(app.securePreferences)
+        }
+        _ui.value = state
     }
 
     fun setTimeoutMinutes(minutes: Int) {
@@ -82,6 +87,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun openAccessibilitySettings() {
         AccessibilityHelper.openAppAccessibilityDetails(getApplication())
+    }
+
+    /** Profile Turn on/off — remember intent so updates can prompt re-enable. */
+    fun onAccessibilityToggleConfirmed(currentlyEnabled: Boolean) {
+        if (currentlyEnabled) {
+            AccessibilityPreferred.markUserTurningOff(app.securePreferences)
+        } else {
+            AccessibilityPreferred.markUserTurningOn(app.securePreferences)
+        }
+        openAccessibilitySettings()
     }
 
     fun openAppInfoForRestrictedSettings() {
