@@ -7,6 +7,7 @@ import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.contacts.PhoneBookSearcher
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.data.parser.PaybillPasteParser
 import com.lipabill.app.data.repository.MerchantHit
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.ussd.AccessibilityHelper
@@ -327,6 +328,30 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * Fills Paybill + account (and amount when clearly present) from pasted text.
+     * @return true when both paybill and account were found.
+     */
+    fun applyPaybillPaste(raw: String): Boolean {
+        val draft = PaybillPasteParser.parse(raw) ?: return false
+        selectMethod(PayMethod.PAYBILL)
+        merchantQuery.value = draft.businessNumber
+        val amount = draft.amountInput.orEmpty()
+        _ui.update {
+            it.copy(
+                businessNumber = draft.businessNumber,
+                accountNumber = draft.accountNumber,
+                amountInput = amount,
+                dialStarted = false,
+                statusMessage = null
+            )
+        }
+        if (amount.isNotBlank()) {
+            resumeOnAmountStep = true
+        }
+        return true
+    }
+
     fun setPochiQuery(value: String) {
         pochiQuery.value = value
         _ui.update { it.copy(selectedPochi = null) }
@@ -455,9 +480,9 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
             it.copy(
                 dialStarted = true,
                 statusMessage = if (line != null) {
-                    "USSD on ${line.label} — enter PIN on the LipaBill keypad when prompted."
+                    "Payment on ${line.label} — enter PIN on the LipaBill keypad when prompted."
                 } else {
-                    "USSD started — enter PIN on the LipaBill keypad when prompted."
+                    "Payment started — enter PIN on the LipaBill keypad when prompted."
                 }
             )
         }
