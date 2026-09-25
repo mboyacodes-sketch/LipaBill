@@ -25,9 +25,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -88,6 +91,15 @@ fun FirstRunSetupScreen(
         mutableStateOf(AccessibilityHelper.isLipaBillServiceEnabled(context))
     }
     var refreshKey by remember { mutableIntStateOf(0) }
+    var prevA11y by remember { mutableStateOf<Boolean?>(null) }
+    var showRestrictedUnlock by remember {
+        mutableStateOf(SideloadRestrictedSettings.shouldShowUnlockButton(context))
+    }
+    val snackbar = remember { SnackbarHostState() }
+    val a11yCoach = rememberAccessibilityToggleCoach(
+        currentlyEnabled = a11yEnabled,
+        onOpenSettings = onOpenAccessibilitySettings
+    )
 
     fun refreshSims() {
         simLines = if (SimLineHelper.hasPhoneStatePermission(context)) {
@@ -137,11 +149,28 @@ fun FirstRunSetupScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event != Lifecycle.Event.ON_RESUME) return@LifecycleEventObserver
             a11yEnabled = AccessibilityHelper.isLipaBillServiceEnabled(context)
+            showRestrictedUnlock = SideloadRestrictedSettings.shouldShowUnlockButton(context)
             refreshSims()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+    LaunchedEffect(a11yEnabled) {
+        val prev = prevA11y
+        if (prev != null && prev != a11yEnabled) {
+            snackbar.showSnackbar(
+                if (a11yEnabled) {
+                    "LipaBill Accessibility is on"
+                } else {
+                    "LipaBill Accessibility is off"
+                }
+            )
+        }
+        prevA11y = a11yEnabled
+    }
+
+    a11yCoach.Dialog()
 
     fun stepLabel(): String = when (step) {
         SetupStep.Permissions -> "Step 1 of $totalSteps · Permissions"
@@ -167,6 +196,10 @@ fun FirstRunSetupScreen(
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
+        SnackbarHost(
+            hostState = snackbar,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -211,7 +244,7 @@ fun FirstRunSetupScreen(
                             "SMS — import M-Pesa confirmations only (encrypted on device)"
                         )
                     }
-                    PermissionBullet("Phone — dial *334# on your Safaricom line")
+                    PermissionBullet("Phone — start M-Pesa payments on Safaricom")
                     PermissionBullet("Phone state — detect Safaricom on multi-SIM")
                     PermissionBullet("Contacts — look up send / pochi recipients")
                     PermissionBullet("Camera — scan boarding passes")
@@ -281,7 +314,7 @@ fun FirstRunSetupScreen(
                         !SimLineHelper.hasPhoneStatePermission(context) -> {
                             Text(
                                 text = "Phone state permission is needed to list SIMs. " +
-                                    "Go back and allow permissions, or continue without dialing.",
+                                    "Go back and allow permissions, or continue without payments.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.error,
                                 textAlign = TextAlign.Center
@@ -362,35 +395,48 @@ fun FirstRunSetupScreen(
 
                 SetupStep.RestrictedUnlock -> {
                     Text(
-                        text = "SMS and LipaBill Repeat Payment (Accessibility) are locked " +
-                            "behind one App info switch on Firebase App Distribution installs. " +
-                            "Do not allow SMS yet — unlock restricted settings first.",
+                        text = if (showRestrictedUnlock) {
+                            "On sideload installs, Android locks Accessibility and SMS " +
+                                "until you allow restricted settings in App info."
+                        } else {
+                            "Restricted settings are allowed. Continue to turn on Accessibility and SMS."
+                        },
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
-                    Spacer(modifier = Modifier.height(Space.section))
-                    RestrictedSettingsUnlockSteps()
-                    Spacer(modifier = Modifier.height(Space.section))
-                    Button(
-                        onClick = onOpenAccessibilitySettings,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("1 · Open LipaBill toggle (trigger)")
+                    if (showRestrictedUnlock) {
+                        Spacer(modifier = Modifier.height(Space.section))
+                        RestrictedSettingsUnlockSteps()
                     }
-                    Spacer(modifier = Modifier.height(Space.gap))
+                    Spacer(modifier = Modifier.height(Space.section))
                     Button(
-                        onClick = onOpenAppSettings,
+                        onClick = { a11yCoach.requestToggle() },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("2 · Open App info → Allow restricted settings")
+                        Text("Turn on")
+                    }
+                    if (showRestrictedUnlock) {
+                        Spacer(modifier = Modifier.height(Space.gap))
+                        OutlinedButton(
+                            onClick = onOpenAppSettings,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Allow restricted settings")
+                        }
                     }
                     Spacer(modifier = Modifier.height(Space.gap))
                     Button(
                         onClick = { step = SetupStep.SensitiveAccess },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("I've unlocked — continue to SMS & Accessibility")
+                        Text(
+                            if (showRestrictedUnlock) {
+                                "I've unlocked — continue"
+                            } else {
+                                "Continue"
+                            }
+                        )
                     }
                     Spacer(modifier = Modifier.height(Space.gap))
                     OutlinedButton(
@@ -405,12 +451,10 @@ fun FirstRunSetupScreen(
                     val smsOk = smsGranted()
                     Text(
                         text = if (restrictedFlow) {
-                            "Restricted settings should be allowed. Now turn on LipaBill " +
-                                "Accessibility and allow SMS — both work after that unlock."
+                            "Turn on LipaBill Repeat Payment and allow SMS."
                         } else {
-                            "Turn on LipaBill Accessibility so Send, Pay, and Repeat can " +
-                                "assist M-Pesa USSD after you Confirm a payment. " +
-                                "You flip the switch yourself in system Settings."
+                            "Turn on LipaBill so Send, Pay, and Repeat can help with M-Pesa. " +
+                                "You flip one switch in Settings."
                         },
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -469,13 +513,15 @@ fun FirstRunSetupScreen(
                         )
                         Spacer(modifier = Modifier.height(Space.section))
                         SensitiveAccessSteps()
-                        Spacer(modifier = Modifier.height(Space.section))
-                        Button(
-                            onClick = onOpenAccessibilitySettings,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Open LipaBill toggle")
-                        }
+                    }
+                    Spacer(modifier = Modifier.height(Space.section))
+                    Button(
+                        onClick = { a11yCoach.requestToggle() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (a11yEnabled) "Turn off" else "Turn on")
+                    }
+                    if (restrictedFlow) {
                         Spacer(modifier = Modifier.height(Space.gap))
                         Button(
                             onClick = {
@@ -488,14 +534,6 @@ fun FirstRunSetupScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(if (smsOk) "Open App info (SMS)" else "Allow SMS")
-                        }
-                    } else {
-                        Spacer(modifier = Modifier.height(Space.section))
-                        Button(
-                            onClick = onOpenAccessibilitySettings,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Open LipaBill toggle")
                         }
                     }
                     Spacer(modifier = Modifier.height(Space.gap))
