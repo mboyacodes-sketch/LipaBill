@@ -10,7 +10,7 @@ object AccessibilityDisclosure {
 
     val WHAT_IT_DOES: String = listOf(
         "Only while you start a payment you already confirmed in LipaBill.",
-        "Reads M-Pesa USSD / dialer screens for that active payment session.",
+        "Reads M-Pesa payment screens for that active payment session.",
         "Types the next menu number, phone, or amount you already approved.",
         "Shows a secure LipaBill keypad for your M-Pesa PIN (hidden digits, not stored).",
         "On some sideload installs, briefly helps open the LipaBill Accessibility toggle " +
@@ -27,7 +27,7 @@ object AccessibilityDisclosure {
 
     val REQUIRED_PHRASES: List<String> = listOf(
         "payment you already confirmed",
-        "USSD",
+        "M-Pesa payment screens",
         "PIN",
         "general device automation",
         "Settings"
