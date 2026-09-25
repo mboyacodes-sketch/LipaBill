@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -21,10 +22,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Add
@@ -60,19 +60,19 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -83,6 +83,7 @@ import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.ui.components.BalanceAmountRow
 import com.lipabill.app.ui.detail.TransactionReceiptPopup
+import com.lipabill.app.ui.sheet.InAppKeyboard
 import com.lipabill.app.ui.sheet.SheetInputStyle
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Hairline
@@ -93,13 +94,14 @@ import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.util.InterceptSystemIme
+import com.lipabill.app.ui.util.bringIntoViewOnFocus
 import com.lipabill.app.ui.util.displayLabel
 import com.lipabill.app.ui.util.formatActivityTime
 import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
 import com.lipabill.app.ui.util.isOutgoing
 import com.lipabill.app.ui.util.rememberHideKeyboard
-import com.lipabill.app.ui.util.rememberKeyboardDismissActions
 import com.lipabill.app.ussd.PaymentAccessGates
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -172,26 +174,48 @@ fun TransactionListScreen(
 
     val showingReceipt = receiptTxId != null
     val hideKeyboard = rememberHideKeyboard()
+    val focusManager = LocalFocusManager.current
+    var searchFocused by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(showingReceipt) {
+        if (showingReceipt && searchFocused) {
+            searchFocused = false
+            focusManager.clearFocus(force = true)
+        }
+    }
+
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress && searchFocused) {
+            searchFocused = false
+            focusManager.clearFocus(force = true)
+        }
+    }
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .hideKeyboardOnOutsideTap()
     ) {
-        PullToRefreshBox(
-            isRefreshing = state.isScanning,
-            onRefresh = onRescan,
-            modifier = Modifier
-                .fillMaxSize()
-                // Strong in-composition bokeh so list text behind the ticket is unreadable.
-                .then(if (showingReceipt) Modifier.blur(14.dp) else Modifier)
-        ) {
-            LazyColumn(
+        Column(modifier = Modifier.fillMaxSize()) {
+            PullToRefreshBox(
+                isRefreshing = state.isScanning,
+                onRefresh = onRescan,
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(CardWhite),
-                contentPadding = PaddingValues(bottom = Space.section)
+                    .weight(1f)
+                    .fillMaxWidth()
+                    // Strong in-composition bokeh so list text behind the ticket is unreadable.
+                    .then(if (showingReceipt) Modifier.blur(14.dp) else Modifier)
             ) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(CardWhite),
+                    contentPadding = PaddingValues(
+                        bottom = if (searchFocused) Space.gap else Space.section
+                    )
+                ) {
                 item(key = "hero") {
                     TopWalletHero(
                         onRescan = onRescan,
@@ -242,7 +266,8 @@ fun TransactionListScreen(
                         Spacer(modifier = Modifier.height(Space.gap))
                         TransactionSearchField(
                             query = state.searchQuery,
-                            onQueryChange = viewModel::setSearchQuery
+                            onQueryChange = viewModel::setSearchQuery,
+                            onFocusChange = { searchFocused = it }
                         )
                         Spacer(modifier = Modifier.height(Space.gap))
                     }
@@ -262,12 +287,36 @@ fun TransactionListScreen(
                         tx = tx,
                         onClick = {
                             hideKeyboard()
+                            searchFocused = false
                             receiptTxId = tx.id
                         },
                         modifier = Modifier.padding(horizontal = Space.page)
                     )
                 }
             }
+                }
+            }
+
+            if (searchFocused && !showingReceipt) {
+                InAppKeyboard(
+                    startOnDigits = state.searchQuery.any { it.isDigit() } &&
+                        state.searchQuery.none { it.isLetter() },
+                    onChar = { ch ->
+                        viewModel.setSearchQuery(state.searchQuery + ch)
+                    },
+                    onBackspace = {
+                        viewModel.setSearchQuery(state.searchQuery.dropLast(1))
+                    },
+                    onDone = {
+                        searchFocused = false
+                        focusManager.clearFocus(force = true)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(CardWhite)
+                        .navigationBarsPadding()
+                        .padding(horizontal = Space.page, vertical = Space.gap)
+                )
             }
         }
         SnackbarHost(
@@ -604,51 +653,53 @@ private fun SectionHeader(title: String, onOpen: (() -> Unit)? = null) {
 private fun TransactionSearchField(
     query: String,
     onQueryChange: (String) -> Unit,
+    onFocusChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = modifier.fillMaxWidth(),
-        singleLine = true,
-        textStyle = SheetInputStyle,
-        keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Text,
-            imeAction = ImeAction.Search
-        ),
-        keyboardActions = rememberKeyboardDismissActions(),
-        shape = RoundedCornerShape(14.dp),
-        placeholder = {
-            Text("Name or number", style = HomeType.body, color = Mute)
-        },
-        leadingIcon = {
-            Icon(
-                imageVector = Icons.Outlined.Search,
-                contentDescription = null,
-                tint = Mute,
-                modifier = Modifier.size(20.dp)
-            )
-        },
-        trailingIcon = {
-            if (query.isNotEmpty()) {
-                IconButton(onClick = { onQueryChange("") }) {
-                    Icon(
-                        imageVector = Icons.Outlined.Close,
-                        contentDescription = "Clear search",
-                        tint = Mute,
-                        modifier = Modifier.size(18.dp)
-                    )
+    InterceptSystemIme {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = modifier
+                .fillMaxWidth()
+                .bringIntoViewOnFocus(delayMs = 80L)
+                .onFocusChanged { onFocusChange(it.isFocused) },
+            singleLine = true,
+            readOnly = true,
+            textStyle = SheetInputStyle,
+            shape = RoundedCornerShape(14.dp),
+            placeholder = {
+                Text("Name or number", style = HomeType.body, color = Mute)
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Outlined.Search,
+                    contentDescription = null,
+                    tint = Mute,
+                    modifier = Modifier.size(20.dp)
+                )
+            },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(
+                            imageVector = Icons.Outlined.Close,
+                            contentDescription = "Clear search",
+                            tint = Mute,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
-            }
-        },
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Hairline,
-            unfocusedBorderColor = Hairline,
-            focusedContainerColor = Color(0xFFF7F8FA),
-            unfocusedContainerColor = Color(0xFFF7F8FA),
-            cursorColor = Ink
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Hairline,
+                unfocusedBorderColor = Hairline,
+                focusedContainerColor = Color(0xFFF7F8FA),
+                unfocusedContainerColor = Color(0xFFF7F8FA),
+                cursorColor = Ink
+            )
         )
-    )
+    }
 }
 
 @Composable
