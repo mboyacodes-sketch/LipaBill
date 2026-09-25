@@ -235,6 +235,18 @@ fun TransactionReceiptPopup(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (canRequestMpesaReverse(tx)) {
+                        OutlinedButton(
+                            onClick = { openMpesaReverseSms(context, tx) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp),
+                            shape = RoundedCornerShape(22.dp),
+                            border = BorderStroke(1.dp, Hairline)
+                        ) {
+                            Text("Reverse", style = HomeType.label, color = Ink)
+                        }
+                    }
                     if (canPay && onRepeat != null) {
                         Button(
                             onClick = { onRepeat(tx.id) },
@@ -247,9 +259,9 @@ fun TransactionReceiptPopup(
                                 contentColor = Accent
                             )
                         ) {
-                            Text("Another transaction", style = HomeType.label)
+                            Text("Another", style = HomeType.label)
                         }
-                    } else {
+                    } else if (!canRequestMpesaReverse(tx)) {
                         Spacer(modifier = Modifier.weight(1f))
                     }
                     OutlinedButton(
