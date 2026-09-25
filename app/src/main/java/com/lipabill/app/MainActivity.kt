@@ -52,6 +52,8 @@ import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.data.tickets.PkPassIntents
 import com.lipabill.app.security.AppSecurity
 import com.lipabill.app.ui.analytics.MetricsScreen
+import com.lipabill.app.region.KenyaRegionGate
+import com.lipabill.app.ui.region.KenyaOnlyScreen
 import com.lipabill.app.ui.auth.AuthGateScreen
 import com.lipabill.app.ui.detail.TransactionDetailScreen
 import com.lipabill.app.ui.main.MainShellScreen
@@ -139,27 +141,49 @@ private fun LipaBillRoot(
 ) {
     val authState by app.authManager.state.collectAsStateWithLifecycle()
     var authError by remember { mutableStateOf<String?>(null) }
+    var regionVerdict by remember {
+        mutableStateOf(KenyaRegionGate.evaluate(activity))
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    when (authState) {
-        AuthUiState.Unlocked -> {
-            AuthenticatedApp(activity = activity, app = app)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                regionVerdict = KenyaRegionGate.evaluate(activity)
+            }
         }
-        else -> {
-            AuthGateScreen(
-                state = authState,
-                errorMessage = authError,
-                onUnlockClick = {
-                    authError = null
-                    app.authManager.authenticate(activity) { authError = it }
-                },
-                onContinueWithoutLock = {
-                    app.authManager.continueWithoutLockScreen()
-                },
-                onAutoPrompt = {
-                    authError = null
-                    app.authManager.authenticate(activity) { authError = it }
-                }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    when (val region = regionVerdict) {
+        is KenyaRegionGate.Verdict.Blocked -> {
+            KenyaOnlyScreen(
+                detectedIso = region.detectedIso,
+                onTryAgain = { regionVerdict = KenyaRegionGate.evaluate(activity) }
             )
+        }
+        KenyaRegionGate.Verdict.Allowed -> when (authState) {
+            AuthUiState.Unlocked -> {
+                AuthenticatedApp(activity = activity, app = app)
+            }
+            else -> {
+                AuthGateScreen(
+                    state = authState,
+                    errorMessage = authError,
+                    onUnlockClick = {
+                        authError = null
+                        app.authManager.authenticate(activity) { authError = it }
+                    },
+                    onContinueWithoutLock = {
+                        app.authManager.continueWithoutLockScreen()
+                    },
+                    onAutoPrompt = {
+                        authError = null
+                        app.authManager.authenticate(activity) { authError = it }
+                    }
+                )
+            }
         }
     }
 }
