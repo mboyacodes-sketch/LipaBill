@@ -125,9 +125,6 @@ object BookingConfirmationParser {
         }
     }
 
-    private fun firstMatch(text: String, regex: Regex): String? =
-        regex.find(text)?.groupValues?.getOrNull(1)?.trim()
-
     private fun parseDate(text: String): LocalDate? {
         val patterns = listOf("dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "d-M-yyyy", "yyyy-MM-dd")
         val raw = firstMatch(
