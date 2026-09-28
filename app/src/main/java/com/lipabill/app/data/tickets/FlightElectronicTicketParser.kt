@@ -5,7 +5,6 @@ import com.lipabill.app.data.model.TicketSource
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
-import java.time.Month
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -816,17 +815,4 @@ object FlightElectronicTicketParser {
         }
         return null
     }
-
-    private fun parseMonth(raw: String): Month? {
-        val key = raw.trim().lowercase(Locale.ENGLISH).take(3)
-        return mapOf(
-            "jan" to Month.JANUARY, "feb" to Month.FEBRUARY, "mar" to Month.MARCH,
-            "apr" to Month.APRIL, "may" to Month.MAY, "jun" to Month.JUNE,
-            "jul" to Month.JULY, "aug" to Month.AUGUST, "sep" to Month.SEPTEMBER,
-            "oct" to Month.OCTOBER, "nov" to Month.NOVEMBER, "dec" to Month.DECEMBER
-        )[key]
-    }
-
-    private fun firstMatch(text: String, regex: Regex): String? =
-        regex.find(text)?.groupValues?.getOrNull(1)?.trim()
 }
