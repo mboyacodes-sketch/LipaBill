@@ -11,6 +11,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
@@ -31,8 +32,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import android.graphics.Color as AndroidColor
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModelProvider
@@ -48,6 +51,7 @@ import androidx.navigation.navArgument
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.lipabill.app.auth.AuthUiState
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.data.sms.hasMpesaSmsPermission
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.data.tickets.PkPassIntents
 import com.lipabill.app.security.AppSecurity
@@ -70,12 +74,16 @@ import com.lipabill.app.ui.repeat.ManualRepeatScreen
 import com.lipabill.app.ui.repeat.RepeatConfirmScreen
 import com.lipabill.app.ui.send.SendMoneyBottomSheetFragment
 import com.lipabill.app.ui.settings.SettingsScreen
+import com.lipabill.app.ui.adapt.AdaptiveFrame
+import com.lipabill.app.ui.adapt.ProvideWindowWidth
 import com.lipabill.app.ui.theme.LipaBillTheme
 import com.lipabill.app.ui.tickets.TicketDetailScreen
 import com.lipabill.app.ui.tickets.TicketsScreen
 import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
+import com.lipabill.app.device.HandheldDeviceGate
 import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.region.KenyaRegionGate
+import com.lipabill.app.ui.device.UnsupportedDeviceScreen
 import com.lipabill.app.ussd.AccessibilityHelper
 import com.lipabill.app.ussd.PendingPaymentReceipt
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
@@ -106,8 +114,19 @@ class MainActivity : AppCompatActivity(),
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Before super.onCreate so Android 14 and earlier match the edge-to-edge
+        // layout Android 15 enforces for targetSdk 35+.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(
+                scrim = AndroidColor.TRANSPARENT,
+                darkScrim = AndroidColor.TRANSPARENT
+            ),
+            navigationBarStyle = SystemBarStyle.light(
+                scrim = AndroidColor.TRANSPARENT,
+                darkScrim = AndroidColor.TRANSPARENT
+            )
+        )
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
         AppSecurity.lockScreenCapture(this)
         val app = application as LipaBillApp
         setContent {
@@ -118,7 +137,9 @@ class MainActivity : AppCompatActivity(),
                         .fillMaxSize()
                         .hideKeyboardOnOutsideTap()
                 ) {
-                    LipaBillRoot(activity = this, app = app)
+                    ProvideWindowWidth {
+                        LipaBillRoot(activity = this@MainActivity, app = app)
+                    }
                 }
             }
         }
@@ -145,11 +166,15 @@ private fun LipaBillRoot(
     var regionVerdict by remember {
         mutableStateOf(KenyaRegionGate.evaluate(activity))
     }
+    var phoneOrTablet by remember {
+        mutableStateOf(HandheldDeviceGate.isPhoneOrTablet(activity))
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
+                phoneOrTablet = HandheldDeviceGate.isPhoneOrTablet(activity)
                 regionVerdict = KenyaRegionGate.evaluate(activity)
             }
         }
@@ -157,18 +182,26 @@ private fun LipaBillRoot(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    if (!phoneOrTablet) {
+        AdaptiveFrame(expandedMax = 520.dp) { UnsupportedDeviceScreen() }
+        return
+    }
+
     when (val region = regionVerdict) {
         is KenyaRegionGate.Verdict.Blocked -> {
-            KenyaOnlyScreen(
-                detectedIso = region.detectedIso,
-                onTryAgain = { regionVerdict = KenyaRegionGate.evaluate(activity) }
-            )
+            AdaptiveFrame(expandedMax = 520.dp) {
+                KenyaOnlyScreen(
+                    detectedIso = region.detectedIso,
+                    onTryAgain = { regionVerdict = KenyaRegionGate.evaluate(activity) }
+                )
+            }
         }
         KenyaRegionGate.Verdict.Allowed -> when (authState) {
             AuthUiState.Unlocked -> {
                 AuthenticatedApp(activity = activity, app = app)
             }
             else -> {
+                AdaptiveFrame(expandedMax = 520.dp) {
                 AuthGateScreen(
                     state = authState,
                     errorMessage = authError,
@@ -184,6 +217,7 @@ private fun LipaBillRoot(
                         app.authManager.authenticate(activity) { authError = it }
                     }
                 )
+                }
             }
         }
     }
@@ -232,12 +266,7 @@ private fun AuthenticatedApp(
         }
     }
 
-    fun hasSmsPermission(): Boolean {
-        val read = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS)
-        val receive = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS)
-        return read == PackageManager.PERMISSION_GRANTED &&
-            receive == PackageManager.PERMISSION_GRANTED
-    }
+    fun hasSmsPermission(): Boolean = context.hasMpesaSmsPermission()
 
     fun hasCallPermission(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) ==
@@ -289,12 +318,16 @@ private fun AuthenticatedApp(
                 receive == PackageManager.PERMISSION_GRANTED
             smsGranted = ok
             if (ok) permanentlyDenied = false
-            // Android turns Accessibility off on every update — prompt if user had it on.
-            if (!dismissedA11yReenableThisSession) {
-                showAccessibilityReenable =
-                    AccessibilityPreferred.syncFromSystem(context, app.securePreferences)
-            } else {
+            // Some updates leave Accessibility off. Coach only on release/Play builds —
+            // debug installs restore via adb (scripts/install-play-debug.sh) so UI work
+            // isn't interrupted every push.
+            val needsReenable =
                 AccessibilityPreferred.syncFromSystem(context, app.securePreferences)
+            if (!BuildConfig.DEBUG &&
+                !dismissedA11yReenableThisSession &&
+                needsReenable
+            ) {
+                showAccessibilityReenable = true
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -633,7 +666,7 @@ private fun AuthenticatedApp(
         }
     ) {
         composable(Route.FirstRunSetup.path) {
-            FirstRunSetupScreen(
+            AdaptiveFrame { FirstRunSetupScreen(
                 onOpenAppSettings = {
                     val intent = Intent(
                         Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -663,10 +696,10 @@ private fun AuthenticatedApp(
                         popUpTo(Route.FirstRunSetup.path) { inclusive = true }
                     }
                 }
-            )
+            ) }
         }
         composable(Route.Permission.path) {
-            SmsPermissionScreen(
+            AdaptiveFrame { SmsPermissionScreen(
                 permanentlyDenied = permanentlyDenied,
                 showRestrictedSettingsHelp = showRestrictedSettingsHelp,
                 onRequestPermission = {
@@ -690,7 +723,7 @@ private fun AuthenticatedApp(
                         popUpTo(Route.Permission.path) { inclusive = true }
                     }
                 }
-            )
+            ) }
             LaunchedEffect(smsGranted) {
                 if (smsGranted) {
                     navController.navigate(Route.List.path) {
@@ -719,10 +752,12 @@ private fun AuthenticatedApp(
         }
         composable(Route.Metrics.path) {
             BackHandler { navigateHome() }
-            MetricsScreen(
-                viewModel = listVm,
-                onBack = { navigateHome() }
-            )
+            AdaptiveFrame {
+                MetricsScreen(
+                    viewModel = listVm,
+                    onBack = { navigateHome() }
+                )
+            }
         }
         composable(Route.Tickets.path) {
             BackHandler { navigateHome() }
@@ -749,10 +784,12 @@ private fun AuthenticatedApp(
                 key = "ticket-$id",
                 factory = viewModelFactory { TicketDetailViewModel(app, id) }
             )
-            TicketDetailScreen(
-                viewModel = detailVm,
-                onBack = { navController.popBackStack() }
-            )
+            AdaptiveFrame(expandedMax = 840.dp) {
+                TicketDetailScreen(
+                    viewModel = detailVm,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
         composable(
             route = Route.RepeatConfirm.pattern,
@@ -782,7 +819,7 @@ private fun AuthenticatedApp(
                 repeatVm.refreshAccessibility()
                 onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
             }
-            RepeatConfirmScreen(
+            AdaptiveFrame { RepeatConfirmScreen(
                 viewModel = repeatVm,
                 onBack = { navigateHome() },
                 onNeedAccessibility = {
@@ -798,14 +835,14 @@ private fun AuthenticatedApp(
                     phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
                 },
                 onConfirm = { runStepUpAndDial(repeatVm) }
-            )
+            ) }
         }
         composable(
             route = Route.RepeatOnboarding.pattern,
             arguments = listOf(navArgument("id") { type = NavType.LongType })
         ) {
             BackHandler { navigateHome() }
-            AccessibilityOnboardingScreen(
+            AdaptiveFrame { AccessibilityOnboardingScreen(
                 onOpenSettings = {
                     app.securePreferences.accessibilityOnboardingSeen = true
                     AccessibilityPreferred.markUserTurningOn(app.securePreferences)
@@ -829,7 +866,7 @@ private fun AuthenticatedApp(
                     }
                 },
                 onCancel = { navigateHome() }
-            )
+            ) }
         }
         composable(
             route = Route.RepeatManual.pattern,
@@ -850,24 +887,26 @@ private fun AuthenticatedApp(
                     RepeatTransactionViewModel(app, id, amountArg.ifBlank { null })
                 }
             )
-            ManualRepeatScreen(
+            AdaptiveFrame { ManualRepeatScreen(
                 viewModel = repeatVm,
                 onBack = { navigateHome() },
                 onCopied = {
                     scope.launch { repeatVm.logManualCopy() }
                 }
-            )
+            ) }
         }
         composable(Route.Settings.path) {
             BackHandler { navigateHome() }
             val settingsVm: SettingsViewModel = viewModel()
-            SettingsScreen(
-                viewModel = settingsVm,
-                onBack = { navigateHome() },
-                onRequestPhoneStatePermission = {
-                    phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
-                }
-            )
+            AdaptiveFrame {
+                SettingsScreen(
+                    viewModel = settingsVm,
+                    onBack = { navigateHome() },
+                    onRequestPhoneStatePermission = {
+                        phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+                    }
+                )
+            }
         }
         composable(
             route = Route.Processing.pattern,
@@ -875,11 +914,13 @@ private fun AuthenticatedApp(
         ) { entry ->
             val auditId = entry.arguments?.getLong("auditId") ?: return@composable
             BackHandler { navigateHome() }
-            ProcessingReceiptScreen(
-                auditId = auditId,
-                onDone = { navigateHome() },
-                onBack = { navigateHome() }
-            )
+            AdaptiveFrame(expandedMax = 720.dp) {
+                ProcessingReceiptScreen(
+                    auditId = auditId,
+                    onDone = { navigateHome() },
+                    onBack = { navigateHome() }
+                )
+            }
         }
     }
 }
