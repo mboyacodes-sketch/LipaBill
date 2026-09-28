@@ -32,7 +32,6 @@ import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.GeometricSansFamily
 import com.lipabill.app.ui.theme.Ink
-import com.lipabill.app.ui.theme.LabelBlue
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
@@ -80,7 +79,7 @@ fun KenyaOnlyScreen(
                     letterSpacing = 2.sp,
                     fontWeight = FontWeight.Medium
                 ),
-                color = LabelBlue,
+                color = Mute,
                 textAlign = TextAlign.Center
             )
 
