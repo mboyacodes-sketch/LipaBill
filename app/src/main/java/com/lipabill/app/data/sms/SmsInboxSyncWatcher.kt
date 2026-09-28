@@ -1,14 +1,11 @@
 package com.lipabill.app.data.sms
 
-import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.Telephony
-import androidx.core.content.ContextCompat
 import com.lipabill.app.data.repository.TransactionRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +38,7 @@ class SmsInboxSyncWatcher(
 
     fun start() {
         if (registered) return
-        if (!hasSmsPermission()) return
+        if (!appContext.hasMpesaSmsPermission()) return
         try {
             appContext.contentResolver.registerContentObserver(
                 Telephony.Sms.Inbox.CONTENT_URI,
@@ -54,18 +51,6 @@ class SmsInboxSyncWatcher(
         }
     }
 
-    fun stop() {
-        if (!registered) return
-        try {
-            appContext.contentResolver.unregisterContentObserver(observer)
-        } catch (_: Exception) {
-            // ignore
-        }
-        registered = false
-        debounceJob?.cancel()
-        debounceJob = null
-    }
-
     /** Call after SMS permission is granted at runtime. */
     fun ensureStarted() {
         if (!registered) start()
@@ -76,7 +61,7 @@ class SmsInboxSyncWatcher(
     }
 
     private fun scheduleSync(immediate: Boolean = false) {
-        if (!hasSmsPermission()) return
+        if (!appContext.hasMpesaSmsPermission()) return
         debounceJob?.cancel()
         debounceJob = scope.launch {
             if (!immediate) delay(DEBOUNCE_MS)
@@ -88,13 +73,6 @@ class SmsInboxSyncWatcher(
                 // keep quiet — Room list will refresh on next successful sync
             }
         }
-    }
-
-    private fun hasSmsPermission(): Boolean {
-        val read = ContextCompat.checkSelfPermission(appContext, Manifest.permission.READ_SMS)
-        val receive = ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECEIVE_SMS)
-        return read == PackageManager.PERMISSION_GRANTED &&
-            receive == PackageManager.PERMISSION_GRANTED
     }
 
     companion object {
