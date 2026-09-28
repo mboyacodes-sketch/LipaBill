@@ -179,6 +179,44 @@ class UssdMenuMatcherTest {
     }
 }
 
+class ConfirmDetectorTest {
+
+    private val yesNo = """
+        Send money to JANE DOE 0712345678
+        Ksh 100.00
+        1. Yes
+        2. No
+    """.trimIndent()
+
+    @Test
+    fun detects_yes_no_confirm() {
+        val yes = ConfirmDetector.resolveYes(yesNo)
+        val no = ConfirmDetector.resolveNo(yesNo)
+        assertEquals("yes digit", "1", yes)
+        assertEquals("no digit", "2", no)
+        assertTrue(
+            "expected yes/no confirm; yes=$yes no=$no options=${UssdMenuMatcher.parseOptions(yesNo)}",
+            ConfirmDetector.isYesNoConfirm(yesNo)
+        )
+    }
+
+    @Test
+    fun ignores_ordinary_menu() {
+        assertFalse(
+            ConfirmDetector.isYesNoConfirm(
+                "1. Send Money\n2. Withdraw Cash\n3. Buy Goods"
+            )
+        )
+    }
+
+    @Test
+    fun summary_drops_menu_lines() {
+        val summary = ConfirmDetector.summaryLines(yesNo)
+        assertTrue(summary.contains("JANE DOE"))
+        assertFalse(summary.contains("1. Yes"))
+    }
+}
+
 class PinDetectorTest {
 
     @Test
