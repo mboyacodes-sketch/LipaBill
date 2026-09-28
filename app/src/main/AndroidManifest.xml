@@ -19,8 +19,20 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <!-- Phone/SMS required for M-Pesa; keep optional so Chrome OS / tablets can install. -->
+    <!-- Telephony stays optional so Wi-Fi tablets can install. -->
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <!--
+      Phones and tablets only. These are present on handhelds and missing on
+      TVs, watches, cars, and Android XR, so Play will not offer the app there.
+    -->
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="true"
+        tools:replace="android:required" />
+    <uses-feature android:name="android.hardware.screen.portrait" android:required="true" />
+    <uses-feature android:name="android.hardware.screen.landscape" android:required="true" />
+    <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true" />
+    <uses-feature android:name="android.software.app_widgets" android:required="true" />
 
     <queries>
         <package android:name="com.android.settings" />
@@ -46,6 +58,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:resizeableActivity="true"
         android:theme="@style/Theme.LipaBill">
 
         <!-- Metrics only: disable advertising ID collection -->
@@ -56,11 +69,15 @@
             android:name="google_analytics_default_allow_ad_personalization_signals"
             android:value="false" />
 
+        <!-- fullUser follows the phone's rotation setting. A fixed portrait or
+             landscape lock makes some devices turn Auto-rotate off when the app opens. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.LipaBill"
-            android:screenOrientation="portrait"
+            android:resizeableActivity="true"
+            android:screenOrientation="fullUser"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"
             android:windowSoftInputMode="adjustNothing"
             android:enableOnBackInvokedCallback="false"
             android:launchMode="singleTop">
