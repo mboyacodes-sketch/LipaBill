@@ -69,14 +69,13 @@
             android:name="google_analytics_default_allow_ad_personalization_signals"
             android:value="false" />
 
-        <!-- fullUser follows the phone's rotation setting. A fixed portrait or
-             landscape lock makes some devices turn Auto-rotate off when the app opens. -->
+        <!-- Omit screenOrientation. portrait and fullUser make some devices
+             rewrite the system Auto-rotate toggle when this activity opens. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.LipaBill"
             android:resizeableActivity="true"
-            android:screenOrientation="fullUser"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"
             android:windowSoftInputMode="adjustNothing"
             android:enableOnBackInvokedCallback="false"
