@@ -7,9 +7,10 @@ import com.lipabill.app.ussd.AccessibilityHelper
 /**
  * Tracks whether the user wants LipaBill Accessibility on.
  *
- * Android disables Accessibility services on every package update / reinstall.
- * Apps cannot flip the system switch back on — we only remember intent and
- * prompt (or restore via adb during local installs).
+ * On some devices / update paths the OS Accessibility toggle ends up off.
+ * Apps cannot flip it back — we remember intent and coach on release builds.
+ * Debug installs should restore the toggle with scripts/install-play-debug.sh
+ * instead of nagging on every push.
  */
 object AccessibilityPreferred {
 
