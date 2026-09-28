@@ -32,6 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.data.model.Ticket
 import com.lipabill.app.data.model.TicketSource
+import com.lipabill.app.data.model.notesValue
+import com.lipabill.app.data.tickets.KNOWN_IATA
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Ink
@@ -646,17 +648,3 @@ private fun parseIataRoute(raw: String?): Pair<String, String>? {
     return a to b
 }
 
-private val KNOWN_IATA = setOf(
-    "NBO", "MBA", "KIS", "EDL", "MYD", "ZNZ", "JRO", "DAR", "EBB", "KGL", "WIL"
-)
-
-private fun String?.notesValue(label: String): String? {
-    val prefix = "$label:"
-    return orEmpty()
-        .split(" · ")
-        .map { it.trim() }
-        .firstOrNull { it.startsWith(prefix, ignoreCase = true) }
-        ?.substringAfter(':')
-        ?.trim()
-        ?.takeIf { it.isNotEmpty() }
-}
