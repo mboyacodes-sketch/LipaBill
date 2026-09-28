@@ -18,6 +18,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.R
 
+/** Pay and send sheet width. The rest of the UI follows the window size. */
+val ContentMaxWidth = 600.dp
+
 /** Clean off-white + travel-ticket blues (boarding / booking cards). */
 val Canvas = Color(0xFFF6F7F9)
 /** Soft chip / avatar fill — matches ticket passenger badge. */
@@ -25,16 +28,40 @@ val SoftBlue = Color(0xFFE8EEF5)
 /** Primary text & high-contrast chrome. */
 val Ink = Color(0xFF111827)
 /** Secondary captions (neutral). Prefer [LabelBlue] for labeled fields. */
-val Mute = Color(0xFF9CA3AF)
+val Mute = Color(0xFF6B7280)
 val Hairline = Color(0xFFE5E7EB)
 val CardWhite = Color(0xFFFFFFFF)
+/** Credit / inflow amounts. */
 val Income = Color(0xFF16A34A)
 val Expense = Color(0xFFDC2626)
+/** Debit amounts on home list (charcoal, not red). */
+val Debit = Ink
 /**
  * Brand / primary actions — travel route blue from ticket cards.
  * Prefer this (or MaterialTheme.colorScheme.primary) for filled buttons & emphasis.
  */
 val Accent = Color(0xFF2F4A6E)
+/** Pressed / deeper route blue. */
+val AccentDark = Color(0xFF243A58)
+/** Pastel fills for Pay / Metrics / Passes action circles. */
+val ActionPay = Color(0xFFD6E4F2)
+val ActionMetrics = Color(0xFFF3E9C8)
+val ActionTickets = Color(0xFFDCE8F5)
+/** Deterministic avatar backgrounds (home, sheets, frequent). */
+val AvatarPastels = listOf(
+    Color(0xFFDCE8F5),
+    Color(0xFFE8DCF5),
+    Color(0xFFDCF5E8),
+    Color(0xFFF5E8DC),
+    Color(0xFFE8F0DC),
+    Color(0xFFF5DCDC)
+)
+
+fun avatarPastel(seed: Int): Color {
+    val i = kotlin.math.abs(seed) % AvatarPastels.size
+    return AvatarPastels[i]
+}
+
 /** Headings, route codes, titles — same as ticket “Booking Confirmed” / airport codes. */
 val RouteBlue = Accent
 /** Uppercase field labels (FLIGHT NO., DATE, …) on travel cards & similar chrome. */
@@ -92,18 +119,18 @@ fun appSpace(baseSp: Int): AppSpace {
     val scale = (baseSp.coerceIn(8, 18) / UI_FONT_BASELINE_SP.toFloat())
     fun s(v: Float): Dp = (v * scale).dp
     return AppSpace(
-        page = s(14f),
-        pageV = s(10f),
-        section = s(14f),
-        block = s(8f),
-        gap = s(6f),
-        tight = s(3f),
-        row = s(8f),
-        chip = s(10f),
-        card = s(12f),
-        cardH = s(14f),
-        hero = s(10f),
-        button = s(10f),
+        page = s(12f),
+        pageV = s(8f),
+        section = s(10f),
+        block = s(6f),
+        gap = s(4f),
+        tight = s(2f),
+        row = s(6f),
+        chip = s(8f),
+        card = s(10f),
+        cardH = s(11f),
+        hero = s(8f),
+        button = s(8f),
         scale = scale
     )
 }
