@@ -3,9 +3,12 @@ package com.lipabill.app.ui.util
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -46,6 +49,14 @@ fun Modifier.hideKeyboardOnOutsideTap(): Modifier = composed {
  */
 fun Modifier.imeAndNavBarsPadding(): Modifier = composed {
     windowInsetsPadding(WindowInsets.navigationBars)
+}
+
+/**
+ * Status bar, navigation bar, and display cutout. Does not include the IME.
+ * Use on full-screen sheets that draw behind the system bars.
+ */
+fun Modifier.systemBarsAndCutoutPadding(): Modifier = composed {
+    windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))
 }
 
 /**
