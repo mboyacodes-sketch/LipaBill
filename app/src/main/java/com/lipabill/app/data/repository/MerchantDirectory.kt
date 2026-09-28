@@ -8,6 +8,8 @@ import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.parser.digitsOnly
 import com.lipabill.app.data.parser.extractAccount
+import com.lipabill.app.data.parser.phoneContradicts
+import com.lipabill.app.data.parser.phonesMatch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
@@ -123,18 +125,13 @@ class MerchantDirectory(
                 amount = amount,
                 sinceMillis = now - PENDING_TTL_MS
             )
-            if (pending != null) {
-                // For Send Money, only consume the pending when phones align (or SMS omitted phone).
-                if (tx.type == TransactionType.SENT) {
-                    val smsPhone = digitsOnly(tx.counterpartyPhone)
-                    if (smsPhone != null && !phonesMatch(smsPhone, pending.identifier)) {
-                        return@withContext tx
-                    }
-                }
+            if (pending != null && !pendingPhoneContradicts(tx, pending)) {
                 return@withContext applyPendingEnrichment(tx, pending, now)
             }
         }
 
+        // Pochi receipts are often ordinary "sent to" messages, so a Send pending that
+        // names a different phone must not swallow them.
         enrichPochiIncoming(tx, amount, now)
     }
 
@@ -152,15 +149,26 @@ class MerchantDirectory(
             sinceMillis = now - PENDING_TTL_MS
         ) ?: return tx
 
-        val smsPhone = digitsOnly(tx.counterpartyPhone)
-        // If the SMS already has a different phone, this is likely Send Money — leave it alone.
-        if (smsPhone != null && smsPhone != pending.identifier) return tx
+        // 254… and 07… are the same handset. A masked receipt must still show the dialed number.
+        if (pendingPhoneContradicts(tx, pending)) return tx
 
         return applyPendingEnrichment(
             tx = tx.copy(type = TransactionType.POCHI),
             pending = pending,
             now = now
         )
+    }
+
+    /** Send and Pochi only. A missing phone does not contradict the dial. */
+    private fun pendingPhoneContradicts(
+        tx: MpesaTransaction,
+        pending: PendingMerchantPaymentEntity
+    ): Boolean {
+        val phonePayment = tx.type == TransactionType.SENT ||
+            tx.type == TransactionType.POCHI ||
+            pending.type == TransactionType.POCHI
+        if (!phonePayment) return false
+        return phoneContradicts(tx.counterpartyPhone, pending.identifier)
     }
 
     private suspend fun applyPendingEnrichment(
@@ -190,7 +198,11 @@ class MerchantDirectory(
             tx.rawBody.contains("Account", ignoreCase = true) -> tx.rawBody
             else -> "${tx.rawBody} Account ${pending.accountCode}"
         }
-        val phone = digitsOnly(tx.counterpartyPhone) ?: pending.identifier
+        val smsPhone = tx.counterpartyPhone
+        val phone = when {
+            smsPhone.isNullOrBlank() || smsPhone.contains('*') -> pending.identifier
+            else -> digitsOnly(smsPhone) ?: pending.identifier
+        }
         return tx.copy(
             type = pending.type,
             counterpartyPhone = phone,
@@ -287,16 +299,6 @@ class MerchantDirectory(
         if (digits.length < 9) return false
         val letters = name.count { it.isLetter() }
         return letters == 0
-    }
-
-    private fun phonesMatch(a: String, b: String): Boolean {
-        val da = a.filter { it.isDigit() }
-        val db = b.filter { it.isDigit() }
-        if (da.isEmpty() || db.isEmpty()) return false
-        if (da == db) return true
-        val a9 = da.takeLast(9)
-        val b9 = db.takeLast(9)
-        return a9.length == 9 && b9.length == 9 && a9 == b9
     }
 
     private fun normalizeName(name: String): String =
