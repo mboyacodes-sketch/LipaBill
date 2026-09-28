@@ -3,7 +3,7 @@ package com.lipabill.app.ui.sheet
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,6 +17,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,7 +37,7 @@ import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
-import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.util.appendAmountKey
 import com.lipabill.app.ui.util.formatKesMoney
 import com.lipabill.app.ui.util.formatMoneyInputDisplay
 import com.lipabill.app.ui.util.formatMoneyInputLabel
@@ -110,16 +111,6 @@ data class AmountAddUpState(
     }
 }
 
-internal fun appendAmountKey(current: String, key: String): String {
-    return when (key) {
-        "." -> {
-            if (current.contains('.')) current
-            else if (current.isEmpty()) "0." else current + "."
-        }
-        else -> sanitizeAmountInput(current + key)
-    }
-}
-
 @Composable
 fun AmountAddUpDialog(
     initialAmountInput: String = "",
@@ -129,6 +120,12 @@ fun AmountAddUpDialog(
     var state by remember(initialAmountInput) {
         mutableStateOf(AmountAddUpState.seededFrom(initialAmountInput))
     }
+    val linesScroll = rememberScrollState()
+    LaunchedEffect(state.lines.size, linesScroll.maxValue) {
+        if (state.lines.isNotEmpty()) {
+            linesScroll.animateScrollTo(linesScroll.maxValue)
+        }
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -137,24 +134,25 @@ fun AmountAddUpDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = Space.page)
+                .padding(horizontal = 24.dp)
                 .shadow(12.dp, RoundedCornerShape(28.dp), spotColor = Ink.copy(alpha = 0.12f))
                 .clip(RoundedCornerShape(28.dp))
                 .background(CardWhite)
-                .padding(horizontal = Space.page, vertical = Space.section)
+                .padding(horizontal = 20.dp, vertical = 18.dp)
         ) {
             Text(
                 text = "Add up",
                 style = HomeType.section,
                 color = Ink
             )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "Enter each item, tap +, then use the total to pay.",
                 style = HomeType.caption,
                 color = Mute
             )
-            Spacer(modifier = Modifier.height(Space.block))
 
+            Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = formatKesMoney(state.total),
                 style = SheetHeroAmountStyle,
@@ -164,6 +162,7 @@ fun AmountAddUpDialog(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = when {
                     state.lines.isEmpty() && state.entry.isBlank() -> "No items yet"
@@ -177,16 +176,16 @@ fun AmountAddUpDialog(
             )
 
             if (state.lines.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(Space.gap))
+                Spacer(modifier = Modifier.height(12.dp))
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 88.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(14.dp))
                         .background(SoftBlue)
-                        .verticalScroll(rememberScrollState())
-                        .padding(Space.block),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                        .verticalScroll(linesScroll)
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     state.lines.forEachIndexed { index, line ->
                         Text(
@@ -198,16 +197,18 @@ fun AmountAddUpDialog(
                 }
             }
 
-            Spacer(modifier = Modifier.height(Space.block))
+            Spacer(modifier = Modifier.height(14.dp))
             Text(
                 text = formatMoneyInputDisplay(state.entry),
                 style = SheetAmountStyle,
                 color = if (state.entry.isBlank()) Mute else Ink,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 36.dp),
                 textAlign = TextAlign.Center
             )
-            Spacer(modifier = Modifier.height(Space.gap))
 
+            Spacer(modifier = Modifier.height(12.dp))
             AmountKeypad(
                 onKey = { key -> state = state.withKey(key) },
                 onBackspace = { state = state.withBackspace() },
@@ -216,7 +217,8 @@ fun AmountAddUpDialog(
                 actionLabel = "+",
                 actionEnabled = state.canAddEntry
             )
-            Spacer(modifier = Modifier.height(Space.gap))
+
+            Spacer(modifier = Modifier.height(14.dp))
             Button(
                 onClick = {
                     val next = if (state.canAddEntry) state.withEntryAdded() else state
@@ -226,8 +228,8 @@ fun AmountAddUpDialog(
                 enabled = state.canUseTotal,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
-                shape = RoundedCornerShape(26.dp),
+                    .height(48.dp),
+                shape = RoundedCornerShape(24.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Accent,
                     contentColor = CardWhite
@@ -237,9 +239,12 @@ fun AmountAddUpDialog(
             }
             TextButton(
                 onClick = onDismiss,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .padding(top = 2.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                Text("Cancel", color = Mute)
+                Text("Cancel", style = HomeType.label, color = Mute)
             }
         }
     }
