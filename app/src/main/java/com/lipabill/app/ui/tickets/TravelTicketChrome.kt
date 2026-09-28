@@ -37,7 +37,7 @@ import com.lipabill.app.ui.theme.SoftBlue
 import java.util.Locale
 
 @Composable
-internal fun TravelDetailCell(label: String, value: String, modifier: Modifier = Modifier) {
+fun TravelDetailCell(label: String, value: String, modifier: Modifier = Modifier) {
     Column(modifier = modifier.padding(end = 6.dp)) {
         Text(
             text = label,
@@ -60,7 +60,7 @@ internal fun TravelDetailCell(label: String, value: String, modifier: Modifier =
 }
 
 @Composable
-internal fun TravelPassengerRow(name: String, subtitle: String?) {
+fun TravelPassengerRow(name: String, subtitle: String?) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
@@ -100,7 +100,7 @@ internal fun TravelPassengerRow(name: String, subtitle: String?) {
 }
 
 @Composable
-internal fun TravelTicketPerforation() {
+fun TravelTicketPerforation() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
