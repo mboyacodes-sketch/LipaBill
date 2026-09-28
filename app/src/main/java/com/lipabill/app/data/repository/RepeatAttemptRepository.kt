@@ -15,6 +15,8 @@ class RepeatAttemptRepository(
     fun observeRecent(limit: Int = 50): Flow<List<RepeatAttemptEntity>> =
         dao.observeRecent(limit)
 
+    fun observeById(id: Long): Flow<RepeatAttemptEntity?> = dao.observeById(id)
+
     suspend fun beginAttempt(tx: MpesaTransaction, amountOverride: Double? = null): Long =
         withContext(Dispatchers.IO) {
             dao.insert(
