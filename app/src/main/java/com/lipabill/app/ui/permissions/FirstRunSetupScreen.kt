@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -45,6 +46,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.lipabill.app.data.sms.hasMpesaSmsPermission
+import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ussd.AccessibilityHelper
 import com.lipabill.app.ussd.SimLine
@@ -111,12 +114,7 @@ fun FirstRunSetupScreen(
             ?: selectedSubId
     }
 
-    fun smsGranted(): Boolean {
-        val read = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS)
-        val receive = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS)
-        return read == PackageManager.PERMISSION_GRANTED &&
-            receive == PackageManager.PERMISSION_GRANTED
-    }
+    fun smsGranted(): Boolean = context.hasMpesaSmsPermission()
 
     fun safePermissionsGranted(): Boolean =
         safeRuntimePermissions().all {
@@ -193,6 +191,7 @@ fun FirstRunSetupScreen(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
+            .background(Canvas)
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
@@ -231,7 +230,7 @@ fun FirstRunSetupScreen(
                                 "(they share one App info switch on sideloaded installs)."
                         } else {
                             "LipaBill needs a few permissions up front so Send, Pay, " +
-                                "SMS import, and tickets work without interrupting you later. " +
+                                "SMS import, and Passes work without interrupting you later. " +
                                 "SMS is used only for M-Pesa confirmation receipts on this device."
                         },
                         style = MaterialTheme.typography.bodyLarge,
