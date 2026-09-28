@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.ui.theme.Accent
+import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.GeometricSansFamily
 import com.lipabill.app.ui.theme.Ink
@@ -47,7 +48,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-private val KeyboardCanvas = Color(0xFFF7F7F8)
+private val KeyboardCanvas = Canvas
 
 /** Large type on compact keys — keep overall keyboard height tight. */
 private val KeyHeight = 42.dp
