@@ -23,8 +23,8 @@ android {
         applicationId = "com.lipabill.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 20
-        versionName = "2.0.0"
+        versionCode = 21
+        versionName = "2.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Real devices are arm64; drop x86/x86_64 emulator ABIs from shipped APKs.
         ndk {
