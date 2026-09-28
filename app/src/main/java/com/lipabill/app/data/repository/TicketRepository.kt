@@ -7,6 +7,8 @@ import com.lipabill.app.data.model.Ticket
 import com.lipabill.app.data.model.TicketBarcodeFormat
 import com.lipabill.app.data.model.TicketSource
 import com.lipabill.app.data.model.TicketStatus
+import com.lipabill.app.data.model.notesValue
+import com.lipabill.app.data.tickets.KNOWN_IATA
 import com.lipabill.app.data.tickets.TicketImport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -214,9 +216,9 @@ class TicketRepository(
         if (!ticket.hasReturnBoardingPass) return BoardingLeg.RETURN
 
         val draftRoute = draft.venue.orEmpty() + " " + draft.notes.orEmpty() + " " + draft.title
-        val returnNote = notesValue(ticket.notes, "Return").orEmpty()
-        val origin = notesValue(ticket.notes, "Origin")
-        val destination = notesValue(ticket.notes, "Destination")
+        val returnNote = ticket.notes.notesValue("Return").orEmpty()
+        val origin = ticket.notes.notesValue("Origin")
+        val destination = ticket.notes.notesValue("Destination")
         val outboundHint = listOfNotNull(ticket.venue, origin, destination).joinToString(" ")
 
         val looksReturn = routeHintMatch(draftRoute, returnNote) ||
@@ -251,20 +253,4 @@ class TicketRepository(
             h.indexOf(parts[1].take(3)) < h.indexOf(parts[0].take(3))
     }
 
-    private fun notesValue(notes: String?, label: String): String? {
-        val prefix = "$label:"
-        return notes.orEmpty()
-            .split(" · ")
-            .map { it.trim() }
-            .firstOrNull { it.startsWith(prefix, ignoreCase = true) }
-            ?.substringAfter(':')
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
-    }
-
-    companion object {
-        private val KNOWN_IATA = setOf(
-            "NBO", "MBA", "KIS", "EDL", "MYD", "ZNZ", "JRO", "DAR", "EBB", "KGL", "WIL"
-        )
-    }
 }
