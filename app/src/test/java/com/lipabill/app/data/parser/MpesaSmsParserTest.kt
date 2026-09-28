@@ -161,6 +161,69 @@ class MpesaSmsParserTest {
     }
 
     @Test
+    fun sent_to_without_date_still_reads_name() {
+        val body =
+            "NODATE001 Confirmed. Ksh100.00 sent to JOHN. New M-PESA balance is Ksh50.00."
+        val tx = MpesaSmsParser.parse(body, ts)
+        assertEquals(TransactionType.SENT, tx.type)
+        assertEquals("JOHN", tx.counterpartyName)
+        assertEquals(100.0, tx.amount!!, 0.001)
+    }
+
+    @Test
+    fun sent_ksh_to_other_network_reads_phone() {
+        val body =
+            "OTHNET001 Confirmed. You sent Ksh200.00 to 0733000000 on 1/1/26 at 10:00 AM. " +
+                "New M-PESA balance is Ksh800.00. Transaction cost, Ksh0.00."
+        val tx = MpesaSmsParser.parse(body, ts)
+        assertEquals(TransactionType.SENT, tx.type)
+        assertEquals("0733000000", tx.counterpartyPhone)
+        assertEquals(200.0, tx.amount!!, 0.001)
+    }
+
+    @Test
+    fun transferred_to_is_send() {
+        val body =
+            "XFER00001 Confirmed. Ksh75.00 transferred to 254711222333 on 2/2/26 at 9:00 AM. " +
+                "New M-PESA balance is Ksh400.00."
+        val tx = MpesaSmsParser.parse(body, ts)
+        assertEquals(TransactionType.SENT, tx.type)
+        assertEquals("254711222333", tx.counterpartyPhone)
+    }
+
+    @Test
+    fun sent_to_pochi_by_name_is_pochi_even_without_the_word_in_the_party_only() {
+        val body =
+            "POCHI0001 Confirmed. Ksh500.00 sent to Pochi La Biashara JANE DOE 254712345678 " +
+                "on 3/3/26 at 4:00 PM. New M-PESA balance is Ksh1,000.00. Transaction cost, Ksh0.00."
+        val tx = MpesaSmsParser.parse(body, ts)
+        assertEquals(TransactionType.POCHI, tx.type)
+        assertEquals("254712345678", tx.counterpartyPhone)
+        assertTrue(tx.counterpartyName!!.contains("JANE DOE"))
+    }
+
+    @Test
+    fun paid_to_pochi_is_not_buy_goods() {
+        val body =
+            "POCHI0002 Confirmed. Ksh80.00 paid to POCHI LA BIASHARA - MAMA NJERI. " +
+                "on 4/4/26 at 1:00 PM. New M-PESA balance is Ksh200.00. Transaction cost, Ksh0.00."
+        val tx = MpesaSmsParser.parse(body, ts)
+        assertEquals(TransactionType.POCHI, tx.type)
+        assertTrue(tx.counterpartyName!!.contains("MAMA NJERI", ignoreCase = true))
+    }
+
+    @Test
+    fun masked_phone_is_kept_on_send() {
+        val body =
+            "MASK00001 Confirmed. Ksh100.00 sent to JANE DOE 2547*****678 on 5/5/26 at 8:00 AM. " +
+                "New M-PESA balance is Ksh300.00."
+        val tx = MpesaSmsParser.parse(body, ts)
+        assertEquals(TransactionType.SENT, tx.type)
+        assertEquals("2547*****678", tx.counterpartyPhone)
+        assertEquals("JANE DOE", tx.counterpartyName)
+    }
+
+    @Test
     fun unknown_preserves_raw_and_does_not_crash() {
         val body = "Hello from MPESA promo: earn points this weekend!"
         val tx = MpesaSmsParser.parse(body, ts)
