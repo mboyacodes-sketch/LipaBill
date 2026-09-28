@@ -1,12 +1,9 @@
 package com.lipabill.app.data.sms
 
-import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
 import android.provider.Telephony
-import androidx.core.content.ContextCompat
 import com.lipabill.app.data.model.MpesaTransaction
 
 /**
@@ -22,12 +19,7 @@ class SmsInboxReader(private val context: Context) {
         val dateMillis: Long
     )
 
-    fun hasSmsPermission(): Boolean {
-        val read = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS)
-        val receive = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS)
-        return read == PackageManager.PERMISSION_GRANTED &&
-            receive == PackageManager.PERMISSION_GRANTED
-    }
+    fun hasSmsPermission(): Boolean = context.hasMpesaSmsPermission()
 
     fun readMpesaMessages(maxMessages: Int = DEFAULT_MAX_MESSAGES): List<RawSms> {
         if (!hasSmsPermission()) return emptyList()
