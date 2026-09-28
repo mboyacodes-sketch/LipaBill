@@ -6,7 +6,6 @@ import com.lipabill.app.data.model.TicketBarcodeFormat
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedInputStream
-import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -70,17 +69,6 @@ object PkPassParser {
             }
         }
         return null
-    }
-
-    private fun InputStream.readBytes(): ByteArray {
-        val out = ByteArrayOutputStream()
-        val buf = ByteArray(8 * 1024)
-        while (true) {
-            val n = read(buf)
-            if (n <= 0) break
-            out.write(buf, 0, n)
-        }
-        return out.toByteArray()
     }
 
     private fun mapPassJson(root: JSONObject): ParsedPkPass {
