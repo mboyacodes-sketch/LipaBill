@@ -7,6 +7,17 @@ import androidx.compose.ui.text.input.VisualTransformation
 import java.text.NumberFormat
 import java.util.Locale
 
+/** One keypad tap: at most one decimal point, at most two fraction digits. */
+fun appendAmountKey(current: String, key: String): String {
+    return when (key) {
+        "." -> {
+            if (current.contains('.')) current
+            else if (current.isEmpty()) "0." else current + "."
+        }
+        else -> sanitizeAmountInput(current + key)
+    }
+}
+
 /**
  * Digits plus at most one decimal point with up to 2 fraction digits.
  * Strips grouping commas and normalizes leading zeros (`05` → `5`, `0.` kept).
