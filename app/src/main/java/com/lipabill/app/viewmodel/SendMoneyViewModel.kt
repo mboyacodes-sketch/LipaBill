@@ -13,6 +13,7 @@ import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.ussd.SimLineHelper
 import com.lipabill.app.ussd.UssdMenuBuilder
+import com.lipabill.app.ui.util.appendAmountKey as applyAmountKey
 import com.lipabill.app.ui.util.formatKesMoney
 import com.lipabill.app.ui.util.sanitizeAmountInput
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -230,24 +231,7 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun appendAmountKey(key: String) {
-        when (key) {
-            "." -> {
-                if (!amountInput.value.contains('.')) {
-                    amountInput.value =
-                        if (amountInput.value.isEmpty()) "0." else amountInput.value + "."
-                }
-            }
-            else -> {
-                val current = amountInput.value
-                val parts = current.split('.')
-                if (parts.size == 2 && parts[1].length >= 2) return
-                if (current == "0" && key != ".") {
-                    amountInput.value = key
-                } else {
-                    amountInput.value = sanitizeAmountInput(current + key)
-                }
-            }
-        }
+        amountInput.value = applyAmountKey(amountInput.value, key)
     }
 
     fun deleteAmountKey() {
