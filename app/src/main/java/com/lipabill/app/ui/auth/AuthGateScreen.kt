@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,21 +36,27 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.auth.AuthUiState
 import com.lipabill.app.ui.theme.Accent
-import com.lipabill.app.ui.theme.Canvas
+import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.GeometricSansFamily
 import com.lipabill.app.ui.theme.Ink
-import com.lipabill.app.ui.theme.LabelBlue
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
+
+private val AuthCream = Color(0xFFF7F6F0)
+private val AuthHeadline = Accent
+private val AuthRing = Accent.copy(alpha = 0.12f)
 
 @Composable
 fun AuthGateScreen(
@@ -80,28 +87,31 @@ private fun LockedContent(
     onUnlockClick: () -> Unit
 ) {
     val breath by rememberInfiniteTransition(label = "unlock_breath").animateFloat(
-        initialValue = 0.55f,
+        initialValue = 0.72f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = FastOutSlowInEasing),
+            animation = tween(1900, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "unlock_breath_alpha"
+    )
+    val ringPulse by rememberInfiniteTransition(label = "ring_pulse").animateFloat(
+        initialValue = 0.55f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "ring_pulse_alpha"
     )
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        Canvas,
-                        SoftBlue,
-                        SoftBlue.copy(alpha = 0.85f)
-                    )
-                )
-            )
+            .background(AuthCream)
     ) {
+        AuthBackdropBlobs()
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -110,72 +120,64 @@ private fun LockedContent(
                 .padding(horizontal = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.weight(0.28f))
-
-            // Brand is the hero — not an eyebrow
-            Text(
-                text = "LipaBill",
-                style = MaterialTheme.typography.displayLarge.copy(
-                    fontFamily = GeometricSansFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 42.sp,
-                    letterSpacing = (-0.8).sp,
-                    lineHeight = 46.sp
-                ),
-                color = Accent,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = "M-PESA · ON THIS PHONE",
-                style = MaterialTheme.typography.labelMedium.copy(
-                    letterSpacing = 2.sp,
-                    fontWeight = FontWeight.Medium
-                ),
-                color = LabelBlue,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(36.dp))
-
-            Text(
-                text = "Your payments,\nready when you are.",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontFamily = GeometricSansFamily,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 22.sp,
-                    lineHeight = 28.sp
-                ),
-                color = Ink,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "Unlock with fingerprint, face, or your phone PIN.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = Mute,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 8.dp)
-            )
-
-            Spacer(modifier = Modifier.height(40.dp))
-
             Box(
                 modifier = Modifier
-                    .size(72.dp)
-                    .background(Color.White.copy(alpha = 0.72f), RoundedCornerShape(22.dp))
-                    .alpha(breath),
+                    .weight(1f)
+                    .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Fingerprint,
-                    contentDescription = null,
-                    tint = Accent,
-                    modifier = Modifier.size(34.dp)
-                )
-            }
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    LipaBillWordmark()
 
-            Spacer(modifier = Modifier.weight(0.42f))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "ON THIS PHONE",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            letterSpacing = 2.4.sp,
+                            fontWeight = FontWeight.Medium,
+                            fontFamily = GeometricSansFamily
+                        ),
+                        color = Mute,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(28.dp))
+
+                    Text(
+                        text = "Your payments,\nready when you are.",
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontFamily = GeometricSansFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 26.sp,
+                            lineHeight = 32.sp
+                        ),
+                        color = AuthHeadline,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Unlock with fingerprint, face, or your phone PIN.",
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontFamily = GeometricSansFamily,
+                            fontSize = 15.sp,
+                            lineHeight = 22.sp
+                        ),
+                        color = Mute,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(28.dp))
+
+                    FingerprintBadge(
+                        breath = breath,
+                        ringPulse = ringPulse
+                    )
+                }
+            }
 
             if (!errorMessage.isNullOrBlank()) {
                 Text(
@@ -183,7 +185,7 @@ private fun LockedContent(
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(bottom = 12.dp)
+                    modifier = Modifier.padding(bottom = 10.dp)
                 )
             }
 
@@ -191,24 +193,117 @@ private fun LockedContent(
                 onClick = onUnlockClick,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp),
-                shape = RoundedCornerShape(14.dp),
+                    .height(56.dp),
+                shape = RoundedCornerShape(28.dp),
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Accent,
-                    contentColor = Color.White
+                    contentColor = CardWhite
                 )
             ) {
                 Text(
                     text = "Open LipaBill",
                     style = MaterialTheme.typography.titleMedium.copy(
+                        fontFamily = GeometricSansFamily,
                         fontWeight = FontWeight.SemiBold
                     )
                 )
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(18.dp))
         }
+    }
+}
+
+@Composable
+private fun LipaBillWordmark() {
+    Text(
+        text = "LipaBill",
+        style = MaterialTheme.typography.displayLarge.copy(
+            fontFamily = GeometricSansFamily,
+            fontWeight = FontWeight.Bold,
+            fontSize = 44.sp,
+            letterSpacing = (-0.6).sp,
+            lineHeight = 48.sp
+        ),
+        color = Accent,
+        textAlign = TextAlign.Center
+    )
+}
+
+@Composable
+private fun FingerprintBadge(
+    breath: Float,
+    ringPulse: Float
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.size(140.dp)
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize().alpha(ringPulse)) {
+            val c = Offset(size.width / 2f, size.height / 2f)
+            val maxR = size.minDimension * 0.48f
+            drawCircle(color = AuthRing, radius = maxR, center = c)
+            drawCircle(color = AuthRing.copy(alpha = 0.18f), radius = maxR * 0.78f, center = c)
+            drawCircle(color = AuthRing.copy(alpha = 0.28f), radius = maxR * 0.58f, center = c)
+        }
+        Box(
+            modifier = Modifier
+                .size(76.dp)
+                .shadow(
+                    elevation = 10.dp,
+                    shape = RoundedCornerShape(22.dp),
+                    spotColor = Color.Black.copy(alpha = 0.12f),
+                    ambientColor = Color.Black.copy(alpha = 0.06f)
+                )
+                .background(CardWhite, RoundedCornerShape(22.dp))
+                .alpha(breath),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Fingerprint,
+                contentDescription = "Unlock with biometrics",
+                tint = Accent,
+                modifier = Modifier.size(36.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun AuthBackdropBlobs() {
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+        // Soft mint wash top-right
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(SoftBlue.copy(alpha = 0.55f), Color.Transparent),
+                center = Offset(w * 0.92f, h * 0.08f),
+                radius = w * 0.55f
+            ),
+            radius = w * 0.55f,
+            center = Offset(w * 0.92f, h * 0.08f)
+        )
+        // Soft green wash bottom-left behind illustration
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Accent.copy(alpha = 0.08f), Color.Transparent),
+                center = Offset(w * 0.15f, h * 0.72f),
+                radius = w * 0.7f
+            ),
+            radius = w * 0.7f,
+            center = Offset(w * 0.15f, h * 0.72f)
+        )
+        val hill = Path().apply {
+            moveTo(0f, h * 0.78f)
+            cubicTo(w * 0.2f, h * 0.70f, w * 0.35f, h * 0.88f, w * 0.55f, h * 0.80f)
+            cubicTo(w * 0.75f, h * 0.72f, w * 0.9f, h * 0.86f, w, h * 0.78f)
+            lineTo(w, h)
+            lineTo(0f, h)
+            close()
+        }
+        drawPath(hill, color = Accent.copy(alpha = 0.06f))
     }
 }
 
@@ -217,12 +312,9 @@ private fun NoLockScreenContent(onContinue: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(Canvas, SoftBlue)
-                )
-            )
+            .background(AuthCream)
     ) {
+        AuthBackdropBlobs()
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -258,7 +350,7 @@ private fun NoLockScreenContent(onContinue: () -> Unit) {
             OutlinedButton(
                 onClick = onContinue,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
+                shape = RoundedCornerShape(28.dp)
             ) {
                 Text("Continue without lock")
             }
