@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,6 +51,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.lipabill.app.ui.components.BalanceAmountRow
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.ContentMaxWidth
 import kotlinx.coroutines.delay
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.Hairline
@@ -56,23 +59,19 @@ import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Income
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Accent
+import com.lipabill.app.ui.theme.AvatarPastels
+import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.LocalAppType
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.util.formatMoneyInputLabel
 import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
-import com.lipabill.app.ui.util.imeAndNavBarsPadding
+import com.lipabill.app.ui.util.systemBarsAndCutoutPadding
 
-private val SheetCanvas = Color(0xFFF7F7F8)
-private val SoftFill = Color(0xFFF2F3F5)
-private val AvatarPalette = listOf(
-    Color(0xFFDCE8F5),
-    Color(0xFFE8DCF5),
-    Color(0xFFDCF5E8),
-    Color(0xFFF5E8DC),
-    Color(0xFFE8F0DC)
-)
+private val SheetCanvas = Canvas
+private val SoftFill = SoftBlue
+private val AvatarPalette = AvatarPastels
 
 val SheetAmountStyle: TextStyle
     @Composable
@@ -133,13 +132,19 @@ fun MoneySheetScaffold(
     /** Amount on the payment pad when Add up opened — restored if the user cancels. */
     var addUpSeed by remember { mutableStateOf("") }
 
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter
+    ) {
     Column(
         modifier = modifier
-            .fillMaxSize()
+            .fillMaxHeight()
+            .fillMaxWidth()
+            .widthIn(max = ContentMaxWidth)
             .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
             .background(CardWhite)
             .hideKeyboardOnOutsideTap()
-            .imeAndNavBarsPadding()
+            .systemBarsAndCutoutPadding()
             .padding(horizontal = Space.page)
             .padding(top = Space.gap, bottom = Space.block)
     ) {
@@ -287,6 +292,7 @@ fun MoneySheetScaffold(
         ) {
             Text(ctaLabel, style = HomeType.rowTitle)
         }
+    }
     }
 
     if (showAddUp && onApplyAddUpAmount != null) {
