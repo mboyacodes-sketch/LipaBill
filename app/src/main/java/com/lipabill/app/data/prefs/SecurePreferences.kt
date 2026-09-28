@@ -54,9 +54,8 @@ class SecurePreferences(context: Context) {
     /**
      * True after the user has successfully enabled LipaBill Accessibility.
      * Survives APK updates (`adb install -r` / Play update). Cleared when the
-     * user intentionally turns the service off from Profile. Android itself
-     * always disables Accessibility on update — this flag drives the re-enable
-     * prompt so we don't leave Send/Pay/Repeat broken silently.
+     * user intentionally turns the service off from Profile. When the OS toggle
+     * is off after an update, release builds use this flag for the re-enable coach.
      */
     var accessibilityPreferredOn: Boolean
         get() = prefs.getBoolean(KEY_A11Y_PREFERRED_ON, false)
