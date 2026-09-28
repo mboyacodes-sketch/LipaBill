@@ -1,9 +1,13 @@
 package com.lipabill.app.ui.sheet
 
+import android.graphics.Color
+import android.os.Build
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
 import android.view.WindowManager
-import androidx.core.view.WindowCompat
+import androidx.activity.EdgeToEdge
+import androidx.activity.SystemBarStyle
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 
@@ -12,16 +16,10 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
  * Compose content that measures late (Pay/Send) still fills on first open.
  */
 fun BottomSheetDialog.expandForComposeContent() {
-    window?.let { win ->
-        WindowCompat.setDecorFitsSystemWindows(win, false)
-        win.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-    }
+    window?.let { enableSheetEdgeToEdge(it) }
     setOnShowListener { dlg ->
         val dialog = dlg as BottomSheetDialog
-        dialog.window?.let { win ->
-            WindowCompat.setDecorFitsSystemWindows(win, false)
-            win.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        }
+        dialog.window?.let { enableSheetEdgeToEdge(it) }
         val sheet = dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
             ?: return@setOnShowListener
 
@@ -48,4 +46,20 @@ fun BottomSheetDialog.expandForComposeContent() {
         sheet.postDelayed({ reExpand() }, 50L)
         sheet.postDelayed({ reExpand() }, 160L)
     }
+}
+
+/** Same edge-to-edge contract as the activity, so the sheet matches on Android 14 and 15. */
+private fun enableSheetEdgeToEdge(window: Window) {
+    EdgeToEdge.enable(
+        window,
+        SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+        SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+    )
+    if (Build.VERSION.SDK_INT >= 30) {
+        window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
+    }
+    window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 }
