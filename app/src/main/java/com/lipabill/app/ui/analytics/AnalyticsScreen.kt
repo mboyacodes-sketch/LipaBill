@@ -155,7 +155,8 @@ fun MetricsScreen(
                 BalanceAmountRow(
                     balance = state.latestBalance,
                     alwaysShow = alwaysShowBalance,
-                    amountStyle = HomeType.amount
+                    amountStyle = HomeType.amount,
+                    showEyeToggle = true
                 )
             }
             Spacer(modifier = Modifier.height(Space.block))
