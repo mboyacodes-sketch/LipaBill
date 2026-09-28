@@ -1,13 +1,11 @@
 package com.lipabill.app.ui.sheet
 
-import android.graphics.Color
 import android.os.Build
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowManager
-import androidx.activity.EdgeToEdge
-import androidx.activity.SystemBarStyle
+import androidx.core.view.WindowCompat
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 
@@ -48,13 +46,16 @@ fun BottomSheetDialog.expandForComposeContent() {
     }
 }
 
-/** Same edge-to-edge contract as the activity, so the sheet matches on Android 14 and 15. */
+/**
+ * Dialogs are not a ComponentActivity, so they cannot call enableEdgeToEdge().
+ * This is the same contract: draw behind the system bars with dark icons.
+ */
 private fun enableSheetEdgeToEdge(window: Window) {
-    EdgeToEdge.enable(
-        window,
-        SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-        SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
-    )
+    WindowCompat.setDecorFitsSystemWindows(window, false)
+    WindowCompat.getInsetsController(window, window.decorView).apply {
+        isAppearanceLightStatusBars = true
+        isAppearanceLightNavigationBars = true
+    }
     if (Build.VERSION.SDK_INT >= 30) {
         window.attributes = window.attributes.apply {
             layoutInDisplayCutoutMode =

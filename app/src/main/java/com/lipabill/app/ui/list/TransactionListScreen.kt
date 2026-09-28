@@ -512,6 +512,7 @@ fun TransactionListScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeExpandedPane(
     pageMargin: Dp,
