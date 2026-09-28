@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.data.model.BoardingPassSnapshot
+import com.lipabill.app.data.model.notesValue
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Ink
@@ -280,13 +281,3 @@ private fun extractIata(raw: String?): String? {
     return Regex("""\b([A-Z]{3})\b""").find(t)?.groupValues?.getOrNull(1)
 }
 
-private fun String?.notesValue(label: String): String? {
-    val prefix = "$label:"
-    return orEmpty()
-        .split(" · ")
-        .map { it.trim() }
-        .firstOrNull { it.startsWith(prefix, ignoreCase = true) }
-        ?.substringAfter(':')
-        ?.trim()
-        ?.takeIf { it.isNotEmpty() }
-}
