@@ -25,14 +25,18 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -52,8 +56,13 @@ import com.lipabill.app.BuildConfig
 import com.lipabill.app.MarketingLinks
 import com.lipabill.app.ui.permissions.SideloadRestrictedSettings
 import com.lipabill.app.ui.permissions.rememberAccessibilityToggleCoach
+import com.lipabill.app.ui.theme.Accent
+import com.lipabill.app.ui.theme.Canvas
+import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.HomeType
+import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.viewmodel.SettingsViewModel
 import kotlin.math.roundToInt
 
@@ -104,18 +113,27 @@ fun SettingsScreen(
 
     Scaffold(
         modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Canvas,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text("Settings", color = Ink) },
                 navigationIcon = {
                     if (onBack != null) {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = Ink
+                            )
                         }
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Canvas,
+                    titleContentColor = Ink,
+                    navigationIconContentColor = Ink
+                )
             )
         }
     ) { padding ->
@@ -290,7 +308,11 @@ fun SettingsScreen(
                                     } else {
                                         null
                                     },
-                                    enabled = enabled
+                                    enabled = enabled,
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = Accent,
+                                        unselectedColor = MaterialTheme.colorScheme.outline
+                                    )
                                 )
                                 Spacer(modifier = Modifier.width(Space.gap))
                                 Column(modifier = Modifier.weight(1f)) {
@@ -327,7 +349,7 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(Space.tight))
                     attempts.take(5).forEach { attempt ->
                         Text(
-                            text = "${attempt.outcome} · ${formatKesSafe(attempt.amount)} · " +
+                            text = "${attempt.outcome} · ${formatKes(attempt.amount)} · " +
                                 (attempt.counterpartyName
                                     ?: attempt.counterpartyPhone
                                     ?: "—"),
@@ -411,7 +433,16 @@ private fun SettingsSwitchRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = CardWhite,
+                checkedTrackColor = Accent,
+                uncheckedThumbColor = CardWhite,
+                uncheckedTrackColor = MaterialTheme.colorScheme.outline
+            )
+        )
     }
 }
 
@@ -442,7 +473,12 @@ private fun SettingsSliderRow(
             onValueChange = onValueChange,
             valueRange = valueRange,
             steps = steps,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            colors = SliderDefaults.colors(
+                thumbColor = Accent,
+                activeTrackColor = Accent,
+                inactiveTrackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+            )
         )
         if (caption != null) {
             Text(
@@ -470,6 +506,3 @@ private fun openMailto(context: android.content.Context, email: String) {
         context.startActivity(Intent.createChooser(intent, "Email support"))
     }
 }
-
-private fun formatKesSafe(amount: Double?): String =
-    if (amount == null) "—" else "%.2f".format(amount)
