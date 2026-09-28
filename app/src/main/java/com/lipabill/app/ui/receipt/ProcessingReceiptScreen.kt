@@ -1,7 +1,9 @@
 package com.lipabill.app.ui.receipt
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,19 +14,21 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.ContentCut
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,37 +36,64 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lipabill.app.LipaBillApp
-import com.lipabill.app.data.local.entity.RepeatAttemptEntity
+import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.ui.theme.Accent
+import com.lipabill.app.ui.theme.Canvas
+import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Expense
+import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.Income
+import com.lipabill.app.ui.theme.Ink
+import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.util.displayLabel
 import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.ui.util.formatTimestamp
-import com.lipabill.app.ui.util.isOutgoing
+import com.lipabill.app.ussd.PendingPaymentMatcher
 import com.lipabill.app.ussd.PendingPaymentReceipt
 import com.lipabill.app.ussd.RepeatOutcome
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+
+private val DetailBorder = Color(0xFFE8E8E8)
+private val LabelGrey = Color(0xFF9CA3AF)
+private val TagProcessingBg = Color(0xFFFFF4E5)
+private val TagProcessingFg = Color(0xFFB45309)
+private val TagDoneBg = Income.copy(alpha = 0.14f)
+private val TagDoneFg = Income
+private val TagWarnBg = Color(0xFFFEE2E2)
+private val TagWarnFg = Color(0xFFB91C1C)
+private val HaloGrey = Color(0xFF9CA3AF)
+private val HaloMist = Color(0xFFD1D5DB)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,264 +102,575 @@ fun ProcessingReceiptScreen(
     onDone: () -> Unit,
     onBack: () -> Unit
 ) {
-    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as LipaBillApp
+    val app = LocalContext.current.applicationContext as LipaBillApp
     val snapshot = remember(auditId) { PendingPaymentReceipt.peek(auditId) }
-    var attempt by remember { mutableStateOf<RepeatAttemptEntity?>(null) }
-    val scope = rememberCoroutineScope()
+    val attempt by app.repeatRepository.observeById(auditId)
+        .collectAsStateWithLifecycle(initialValue = null)
+    var matchedTx by remember { mutableStateOf<MpesaTransaction?>(null) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    fun refreshAttempt() {
-        scope.launch {
-            attempt = app.repeatRepository.getById(auditId)
-        }
-    }
+    val recent by app.repository.observeTransactions(limit = 40)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
 
     DisposableEffect(lifecycleOwner, auditId) {
-        refreshAttempt()
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) refreshAttempt()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                app.smsInboxSyncWatcher.syncQuietNow()
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val amount = snapshot?.amount ?: attempt?.amount
-    val name = snapshot?.counterpartyName ?: attempt?.counterpartyName
-    val phone = snapshot?.counterpartyPhone ?: attempt?.counterpartyPhone
-    val type = snapshot?.type ?: TransactionType.UNKNOWN
+    val amount = matchedTx?.amount ?: snapshot?.amount ?: attempt?.amount
+    val smsName = matchedTx?.counterpartyName?.trim()?.takeIf { it.isNotBlank() }
+    val dialName = snapshot?.counterpartyName ?: attempt?.counterpartyName
+    // Prefer M-Pesa SMS name when the dial was a bare number / unknown contact.
+    val name = when {
+        smsName != null && !isPhoneLikeLabel(smsName) -> smsName
+        smsName != null && (dialName == null || isPhoneLikeLabel(dialName)) -> smsName
+        else -> dialName ?: smsName
+    }
+    val phone = matchedTx?.counterpartyPhone?.takeIf { it.isNotBlank() }
+        ?: snapshot?.counterpartyPhone
+        ?: attempt?.counterpartyPhone
+    val type = snapshot?.type ?: matchedTx?.type ?: TransactionType.UNKNOWN
     val account = snapshot?.accountHint
+        ?: matchedTx?.rawBody?.let { accountFromRaw(it) }
     val startedAt = snapshot?.startedAtMillis ?: attempt?.createdAtMillis
         ?: System.currentTimeMillis()
 
-    val statusTitle: String
-    val statusDetail: String
-    when (attempt?.outcome) {
-        RepeatOutcome.COMPLETED_TO_PIN -> {
-            statusTitle = "PIN submitted"
-            statusDetail = "Waiting for M-Pesa confirmation SMS. Sync will update your history."
+    LaunchedEffect(snapshot, recent, matchedTx) {
+        if (matchedTx != null || snapshot == null) return@LaunchedEffect
+        matchedTx = PendingPaymentMatcher.findMatch(snapshot, recent)
+    }
+
+    LaunchedEffect(matchedTx, attempt?.outcome) {
+        if (matchedTx != null) return@LaunchedEffect
+        val aborted = when (attempt?.outcome) {
+            RepeatOutcome.ABORTED_MISMATCH,
+            RepeatOutcome.ABORTED_ERROR,
+            RepeatOutcome.USER_CANCELLED ->
+                attempt?.detail != "pending"
+            else -> false
         }
-        RepeatOutcome.ABORTED_MISMATCH,
-        RepeatOutcome.ABORTED_ERROR -> {
-            statusTitle = "Interrupted"
-            statusDetail = "Payment automation stopped. Check M-Pesa on your phone, then try again if needed."
-        }
-        RepeatOutcome.USER_CANCELLED -> {
-            statusTitle = if (attempt?.detail == "pending") "Processing" else "Cancelled"
-            statusDetail = if (attempt?.detail == "pending") {
-                "Finish any on-screen prompts. You’ll enter your PIN on LipaBill’s keypad."
-            } else {
-                "This payment was cancelled."
-            }
-        }
-        else -> {
-            statusTitle = "Processing"
-            statusDetail = "Finish any on-screen prompts. You’ll enter your PIN on LipaBill’s keypad."
+        if (aborted) return@LaunchedEffect
+        while (isActive) {
+            app.smsInboxSyncWatcher.syncQuietNow()
+            delay(2_500L)
         }
     }
-    val isActive = statusTitle == "Processing" || statusTitle == "PIN submitted"
+
+    val tag: ReceiptTag = when {
+        matchedTx != null -> ReceiptTag.DONE
+        attempt?.outcome == RepeatOutcome.ABORTED_MISMATCH ||
+            attempt?.outcome == RepeatOutcome.ABORTED_ERROR -> ReceiptTag.INTERRUPTED
+        attempt?.outcome == RepeatOutcome.USER_CANCELLED &&
+            attempt?.detail != "pending" -> ReceiptTag.CANCELLED
+        else -> ReceiptTag.PROCESSING
+    }
+
+    val headerTitle = when (tag) {
+        ReceiptTag.DONE -> "Confirmed"
+        ReceiptTag.INTERRUPTED -> "Interrupted"
+        ReceiptTag.CANCELLED -> "Cancelled"
+        ReceiptTag.PROCESSING -> "Payment"
+    }
+    val headerSubtitle = when (tag) {
+        ReceiptTag.DONE ->
+            "M-Pesa confirmation received"
+        ReceiptTag.INTERRUPTED ->
+            "Automation stopped — check M-Pesa on your phone"
+        ReceiptTag.CANCELLED ->
+            "This payment was cancelled"
+        ReceiptTag.PROCESSING -> when (attempt?.outcome) {
+            RepeatOutcome.COMPLETED_TO_PIN ->
+                "PIN submitted — waiting for confirmation SMS"
+            else ->
+                "Enter your PIN; updates when SMS arrives"
+        }
+    }
+
+    val partyLabel = when (type) {
+        TransactionType.PAYBILL -> "Paybill"
+        TransactionType.BUY_GOODS -> "Till"
+        TransactionType.POCHI -> "Pochi"
+        else -> "Phone"
+    }
+    val confirmCode = matchedTx?.code?.takeIf { !it.startsWith("MANUAL") }
+    val toValue = name?.takeIf { it.isNotBlank() }
+        ?: phone?.takeIf { it.isNotBlank() }
+        ?: "—"
+    // Avoid repeating the same string under To and Phone.
+    val idValue = phone?.takeIf { it.isNotBlank() && it != name }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = HaloMist.copy(alpha = 0.55f),
         topBar = {
             TopAppBar(
-                title = { Text("Payment") },
+                title = { Text("Payment", color = Ink) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Ink
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    containerColor = Color.Transparent,
+                    titleContentColor = Ink,
+                    navigationIconContentColor = Ink
                 )
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = Space.page, vertical = Space.gap),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            val outgoing = type.isOutgoing()
-            val tagBg = if (outgoing) Expense.copy(alpha = 0.12f) else Income.copy(alpha = 0.12f)
-            val tagFg = if (outgoing) Expense else Income
-
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Edge-to-edge grey halo (full phone, including under the top bar).
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .shadow(10.dp, RoundedCornerShape(28.dp), clip = false)
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-            ) {
-                Text(
-                    text = type.displayLabel(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = tagFg,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(Space.card)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(tagBg)
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                )
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                HaloMist.copy(alpha = 0.98f),
+                                HaloGrey.copy(alpha = 0.45f),
+                                HaloGrey.copy(alpha = 0.28f),
+                                HaloMist.copy(alpha = 0.70f)
+                            )
+                        )
+                    )
+            )
 
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = Space.page, vertical = Space.gap),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Floating receipt at 80% — halo fills the screen behind it.
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = Space.page, vertical = Space.section),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isActive && statusTitle == "Processing") {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(28.dp),
-                                strokeWidth = 2.5.dp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        } else {
-                            Text(
-                                text = "M",
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(Space.block))
-                    Text(
-                        text = "M-PESA",
-                        style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 2.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.height(Space.block))
-                    DashedRule()
-                    Spacer(modifier = Modifier.height(Space.block))
-
-                    Text(
-                        text = formatKes(amount),
-                        style = MaterialTheme.typography.displayLarge,
-                        color = Expense,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(Space.block))
-                    DashedRule()
-                    Spacer(modifier = Modifier.height(Space.block))
-
-                    ReceiptRow("Status", statusTitle)
-                    ReceiptRow("To", name ?: "—")
-                    if (!phone.isNullOrBlank()) {
-                        ReceiptRow(
-                            label = when (type) {
-                                TransactionType.PAYBILL -> "Paybill"
-                                TransactionType.BUY_GOODS -> "Till"
-                                TransactionType.POCHI -> "Pochi"
-                                else -> "Phone"
-                            },
-                            value = phone
+                        .scale(0.8f)
+                        .shadow(
+                            elevation = 20.dp,
+                            shape = RoundedCornerShape(22.dp),
+                            clip = false,
+                            ambientColor = HaloGrey.copy(alpha = 0.28f),
+                            spotColor = HaloGrey.copy(alpha = 0.22f)
                         )
-                    }
-                    if (!account.isNullOrBlank()) {
-                        ReceiptRow("Account", account)
-                    }
-                    ReceiptRow("Started", formatTimestamp(startedAt))
-                    ReceiptRow("Attempt", "#$auditId")
-
-                    Spacer(modifier = Modifier.height(Space.block))
-                    DashedRule()
-                    Spacer(modifier = Modifier.height(Space.block))
-
-                    Text(
-                        text = statusTitle,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(CardWhite)
+                ) {
+                    PaymentCongratsHeader(
+                        tag = tag,
+                        title = headerTitle,
+                        subtitle = headerSubtitle
                     )
-                    Spacer(modifier = Modifier.height(Space.tight))
-                    Text(
-                        text = statusDetail,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
+                    Spacer(modifier = Modifier.height(12.dp))
+                    PaymentDetailsBox(
+                        amount = formatKes(amount ?: matchedTx?.amount),
+                        typeLabel = type.displayLabel(),
+                        toValue = toValue,
+                        partyLabel = partyLabel,
+                        idValue = idValue,
+                        account = account,
+                        startedLabel = formatTimestamp(startedAt)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    PaymentTicketPerforation()
+                    PaymentStub(
+                        tag = tag,
+                        confirmCode = confirmCode
                     )
                 }
-            }
 
-            Spacer(modifier = Modifier.height(Space.block))
-            Button(
-                onClick = {
+                Spacer(modifier = Modifier.height(Space.block))
+                Button(
+                    onClick = {
+                        PendingPaymentReceipt.clear()
+                        onDone()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(26.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Accent,
+                        contentColor = CardWhite
+                    )
+                ) {
+                    Text(if (tag == ReceiptTag.DONE) "Done" else "Close")
+                }
+                TextButton(onClick = {
                     PendingPaymentReceipt.clear()
-                    onDone()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                shape = RoundedCornerShape(26.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
+                    onBack()
+                }) {
+                    Text("Back to home")
+                }
+                Spacer(modifier = Modifier.height(Space.section))
+            }
+        }
+    }
+}
+
+private enum class ReceiptTag(val label: String) {
+    PROCESSING("Processing"),
+    DONE("Done"),
+    INTERRUPTED("Interrupted"),
+    CANCELLED("Cancelled")
+}
+
+@Composable
+private fun PaymentCongratsHeader(
+    tag: ReceiptTag,
+    title: String,
+    subtitle: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .border(
+                    2.dp,
+                    when (tag) {
+                        ReceiptTag.DONE -> Accent
+                        ReceiptTag.PROCESSING -> TagProcessingFg
+                        else -> Mute
+                    },
+                    CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            when (tag) {
+                ReceiptTag.PROCESSING ->
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.dp,
+                        color = TagProcessingFg
+                    )
+                ReceiptTag.DONE ->
+                    Icon(
+                        imageVector = Icons.Outlined.Check,
+                        contentDescription = null,
+                        tint = Accent,
+                        modifier = Modifier.size(26.dp)
+                    )
+                else ->
+                    Icon(
+                        imageVector = Icons.Outlined.Check,
+                        contentDescription = null,
+                        tint = Mute,
+                        modifier = Modifier.size(26.dp)
+                    )
+            }
+        }
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Done")
+                Text(
+                    text = title,
+                    color = when (tag) {
+                        ReceiptTag.DONE -> Accent
+                        ReceiptTag.PROCESSING -> TagProcessingFg
+                        else -> Mute
+                    },
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+                StatusTagChip(tag = tag)
             }
-            TextButton(onClick = {
-                PendingPaymentReceipt.clear()
-                onBack()
-            }) {
-                Text("Back to home")
-            }
-            Spacer(modifier = Modifier.height(Space.section))
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                color = Mute,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Normal,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
 
 @Composable
-private fun ReceiptRow(label: String, value: String) {
-    Row(
+private fun StatusTagChip(tag: ReceiptTag) {
+    val (bg, fg) = when (tag) {
+        ReceiptTag.PROCESSING -> TagProcessingBg to TagProcessingFg
+        ReceiptTag.DONE -> TagDoneBg to TagDoneFg
+        ReceiptTag.INTERRUPTED,
+        ReceiptTag.CANCELLED -> TagWarnBg to TagWarnFg
+    }
+    Text(
+        text = tag.label.uppercase(),
+        color = fg,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.5.sp,
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(bg)
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+    )
+}
+
+@Composable
+private fun PaymentDetailsBox(
+    amount: String,
+    typeLabel: String,
+    toValue: String,
+    partyLabel: String,
+    idValue: String?,
+    account: String?,
+    startedLabel: String
+) {
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = Space.gap),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top
+            .padding(horizontal = 18.dp)
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp)
+                .border(BorderStroke(1.dp, DetailBorder), RoundedCornerShape(12.dp))
+                .padding(horizontal = 16.dp, vertical = 18.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                PaymentField(
+                    label = "Amount",
+                    value = amount,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                PaymentField(
+                    label = "Type",
+                    value = typeLabel,
+                    modifier = Modifier.width(96.dp),
+                    alignEnd = true
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                PaymentField(
+                    label = "To",
+                    value = toValue,
+                    modifier = Modifier.weight(1f)
+                )
+                if (idValue != null) {
+                    Spacer(modifier = Modifier.width(12.dp))
+                    PaymentField(
+                        label = partyLabel,
+                        value = idValue,
+                        modifier = Modifier.width(110.dp),
+                        alignEnd = true
+                    )
+                }
+            }
+
+            if (!account.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                PaymentField(label = "Account", value = account)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            PaymentField(label = "Date & Time", value = startedLabel)
+        }
+
         Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(end = Space.block)
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.End,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
+            text = "PAYMENT DETAILS",
+            color = Color(0xFF6B7280),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.8.sp,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .background(CardWhite)
+                .padding(horizontal = 10.dp)
         )
     }
 }
 
 @Composable
-private fun DashedRule() {
-    val color = MaterialTheme.colorScheme.outline
-    Canvas(
+private fun PaymentStub(tag: ReceiptTag, confirmCode: String?) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(1.dp)
+            .background(CardWhite)
+            .padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        drawLine(
-            color = color,
-            start = Offset(0f, 0f),
-            end = Offset(size.width, 0f),
-            strokeWidth = 2f,
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f), 0f)
+        Box(
+            modifier = Modifier
+                .size(110.dp)
+                .border(1.dp, Hairline, RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            when (tag) {
+                ReceiptTag.PROCESSING ->
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(36.dp),
+                        strokeWidth = 3.dp,
+                        color = Accent
+                    )
+                ReceiptTag.DONE ->
+                    Icon(
+                        imageVector = Icons.Outlined.Check,
+                        contentDescription = null,
+                        tint = Income,
+                        modifier = Modifier.size(40.dp)
+                    )
+                else ->
+                    Text("—", color = Mute, fontSize = 18.sp)
+            }
+        }
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = when (tag) {
+                    ReceiptTag.DONE -> "Payment complete"
+                    ReceiptTag.PROCESSING -> "Awaiting SMS"
+                    ReceiptTag.INTERRUPTED -> "Not completed"
+                    ReceiptTag.CANCELLED -> "Cancelled"
+                },
+                color = when (tag) {
+                    ReceiptTag.DONE -> Ink
+                    ReceiptTag.INTERRUPTED,
+                    ReceiptTag.CANCELLED -> Expense
+                    else -> Ink
+                },
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = when {
+                    !confirmCode.isNullOrBlank() -> "Ref $confirmCode"
+                    tag == ReceiptTag.PROCESSING -> "Stay on this screen for live update"
+                    else -> "Return home when ready"
+                },
+                color = Mute,
+                fontSize = 12.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun PaymentField(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    alignEnd: Boolean = false
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start
+    ) {
+        Text(
+            text = label,
+            color = LabelGrey,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Normal,
+            maxLines = 1
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = value,
+            color = Ink,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
         )
     }
+}
+
+@Composable
+private fun PaymentTicketPerforation() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(28.dp)
+            .background(CardWhite),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .matchParentSize()
+        ) {
+            val r = 10.dp.toPx()
+            val cy = size.height / 2f
+            drawCircle(
+                color = Color.Black,
+                radius = r,
+                center = Offset(0f, cy),
+                blendMode = BlendMode.Clear
+            )
+            drawCircle(
+                color = Color.Black,
+                radius = r,
+                center = Offset(size.width, cy),
+                blendMode = BlendMode.Clear
+            )
+            drawLine(
+                color = LabelGrey.copy(alpha = 0.55f),
+                start = Offset(r + 4.dp.toPx(), cy),
+                end = Offset(size.width - r - 4.dp.toPx(), cy),
+                strokeWidth = 2.dp.toPx(),
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
+            )
+        }
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .background(CardWhite, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.ContentCut,
+                contentDescription = null,
+                tint = LabelGrey,
+                modifier = Modifier
+                    .size(16.dp)
+                    .rotate(-45f)
+            )
+        }
+    }
+}
+
+/** True when a "name" is really just a phone number (new/unknown recipient). */
+private fun isPhoneLikeLabel(value: String): Boolean {
+    val digits = value.filter { it.isDigit() }
+    if (digits.length < 9) return false
+    return value.none { it.isLetter() }
+}
+
+private fun accountFromRaw(raw: String): String? {
+    val match = Regex("""Account\s+(.+)""", RegexOption.IGNORE_CASE).find(raw.trim())
+        ?: return null
+    return match.groupValues[1].trim().takeIf { it.isNotEmpty() }
 }
