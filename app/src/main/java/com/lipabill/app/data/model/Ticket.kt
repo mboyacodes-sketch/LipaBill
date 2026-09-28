@@ -108,8 +108,7 @@ data class Ticket(
 
     /** Round-trip from e-ticket notes (`Trip: Return`). */
     val isReturnTrip: Boolean
-        get() = notes.orEmpty().split(" · ")
-            .any { it.equals("Trip: Return", ignoreCase = true) }
+        get() = notes.notesValue("Trip").equals("Return", ignoreCase = true)
 
     /** Code shown at the gate — outbound boarding when attached; else event QR. */
     val gateBarcodeValue: String?
@@ -150,6 +149,18 @@ data class Ticket(
             )
         }
     }
+}
+
+/** Value of a `Label: value` segment in ticket notes joined by " · ". */
+fun String?.notesValue(label: String): String? {
+    val prefix = "$label:"
+    return orEmpty()
+        .split(" · ")
+        .map { it.trim() }
+        .firstOrNull { it.startsWith(prefix, ignoreCase = true) }
+        ?.substringAfter(':')
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
 }
 
 /** Fields for one attached boarding pass (outbound or return). */
