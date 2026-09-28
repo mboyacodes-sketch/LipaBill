@@ -481,27 +481,6 @@ object ETicketTextParser {
         return hits.sortedBy { it.first }
     }
 
-    private fun kenyaStationIn(text: String, preferFirst: Boolean): String? {
-        val found = findStationMentions(text)
-        if (found.isEmpty()) return null
-        return if (preferFirst) found.first().third else found.last().third
-    }
-
-    private fun stationNear(text: String, vararg labels: String): String? {
-        for (label in labels) {
-            val m = Regex(
-                """(?i)\b${Regex.escape(label)}\b\s*[:\-]?\s*([A-Za-z][A-Za-z .'-]{2,40})"""
-            ).find(text)
-            val raw = m?.groupValues?.getOrNull(1)?.trim()?.substringBefore("\n")
-            if (!raw.isNullOrBlank()) {
-                val station = kenyaStations.firstOrNull { raw.contains(it, ignoreCase = true) }
-                if (station != null) return normalizeStation(station)
-                if (raw.length in 3..32) return raw.trim().trimEnd(',', '.', ';')
-            }
-        }
-        return null
-    }
-
     private fun normalizeStation(name: String): String = when {
         name.equals("Nairobi", true) -> "Nairobi Terminus"
         name.equals("Mombasa", true) -> "Mombasa Terminus"
@@ -547,9 +526,6 @@ object ETicketTextParser {
         }
         return null
     }
-
-    private fun firstMatch(text: String, regex: Regex): String? =
-        regex.find(text)?.groupValues?.getOrNull(1)?.trim()
 
     private fun firstNonEmptyLine(text: String): String? =
         text.lineSequence().map { it.trim() }.firstOrNull { it.length >= 4 }
