@@ -23,9 +23,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -86,6 +86,8 @@ import com.lipabill.app.data.model.TicketBarcodeFormat
 import com.lipabill.app.data.model.TicketStatus
 import com.lipabill.app.data.tickets.BookingConfirmationParser
 import com.lipabill.app.data.tickets.TicketDocumentKind
+import com.lipabill.app.ui.adapt.LocalWindowForm
+import com.lipabill.app.ui.adapt.WindowWidth
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Expense
@@ -183,13 +185,21 @@ fun TicketsScreen(
         containerColor = Canvas,
         topBar = {
             TopAppBar(
-                title = { Text("Tickets", style = HomeType.greeting) },
+                title = { Text("Passes", style = HomeType.greeting, color = Ink) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Ink
+                        )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Canvas)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Canvas,
+                    titleContentColor = Ink,
+                    navigationIconContentColor = Ink
+                )
             )
         },
         floatingActionButton = {
@@ -198,7 +208,7 @@ fun TicketsScreen(
                 containerColor = Accent,
                 contentColor = CardWhite
             ) {
-                Icon(Icons.Outlined.Add, contentDescription = "Add ticket")
+                Icon(Icons.Outlined.Add, contentDescription = "Add pass")
             }
         }
     ) { padding ->
@@ -212,16 +222,25 @@ fun TicketsScreen(
                 onSgrSms = { addMode = AddTicketMode.CONFIRMATION }
             )
         } else {
-            LazyColumn(
+            val window = LocalWindowForm.current.width
+            val columns = when (window) {
+                WindowWidth.Compact -> GridCells.Fixed(1)
+                WindowWidth.Medium -> GridCells.Fixed(2)
+                WindowWidth.Expanded -> GridCells.Adaptive(400.dp)
+            }
+            val sidePad = if (window == WindowWidth.Compact) Space.page else 24.dp
+            LazyVerticalGrid(
+                columns = columns,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
                 contentPadding = PaddingValues(
-                    start = Space.page,
-                    end = Space.page,
+                    start = sidePad,
+                    end = sidePad,
                     top = Space.gap,
                     bottom = 88.dp
                 ),
+                horizontalArrangement = Arrangement.spacedBy(Space.block),
                 verticalArrangement = Arrangement.spacedBy(Space.block)
             ) {
                 items(visibleTickets, key = { it.id }) { ticket ->
@@ -285,7 +304,7 @@ fun TicketsScreen(
             confirmButton = {
                 TextButton(onClick = { error = null }) { Text("OK") }
             },
-            title = { Text("Tickets") },
+            title = { Text("Passes") },
             text = { Text(msg) }
         )
     }
@@ -351,7 +370,7 @@ private fun EmptyTickets(
                     .padding(14.dp)
             )
             Spacer(modifier = Modifier.height(Space.block))
-            Text("No tickets yet", style = HomeType.section, color = RouteBlue)
+            Text("No passes yet", style = HomeType.section, color = RouteBlue)
             Spacer(modifier = Modifier.height(Space.gap))
             Text(
                 text = "Add an event ticket, or paste your SGR booking SMS. More travel types coming soon.",
@@ -458,7 +477,7 @@ private fun AddTicketChooserDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add ticket") },
+        title = { Text("Add pass") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Space.gap)) {
                 Text(
@@ -1219,8 +1238,6 @@ fun TicketDetailScreen(
     }
 }
 
-private data class TicketMeta(val label: String, val value: String)
-
 @Composable
 private fun rememberBoardingPdf417(snapshot: BoardingPassSnapshot?): ImageBitmap? {
     val code = snapshot?.barcodeValue?.takeIf { it.isNotBlank() } ?: return null
@@ -1379,165 +1396,6 @@ private fun TravelBoardingLegBlock(
     }
 }
 
-/** Booking confirmation / e-ticket receipt fields only. */
-private fun Ticket.bookingDisplayRows(): List<TicketMeta> {
-    val rows = mutableListOf<TicketMeta>()
-    orderId?.takeIf { it.isNotBlank() }?.let { rows += TicketMeta("Ref No", it) }
-    appendRouteRows(rows, venue, notes)
-    startsAtMillis?.let { rows += TicketMeta("Departure", formatEventWhen(it)) }
-    seatOrTier?.takeIf { it.isNotBlank() }?.let { rows += TicketMeta("Seat / class", it) }
-    rows += notesToMetaRows(notes, includeBoardingFields = false)
-    return rows.distinctBy { it.label to it.value }
-}
-
-/** Boarding pass fields only (independent of booking). */
-private fun Ticket.boardingDisplayRows(): List<TicketMeta> {
-    if (!hasBoardingPass) return emptyList()
-    val rows = mutableListOf<TicketMeta>()
-    appendRouteRows(rows, boardingVenue, boardingNotes)
-    boardingStartsAtMillis?.let { rows += TicketMeta("Departure", formatEventWhen(it)) }
-    boardingSeatOrTier?.takeIf { it.isNotBlank() }?.let { rows += TicketMeta("Seat / gate", it) }
-    rows += notesToMetaRows(boardingNotes, includeBoardingFields = true)
-    return rows.distinctBy { it.label to it.value }
-}
-
-private fun appendRouteRows(rows: MutableList<TicketMeta>, venue: String?, notes: String?) {
-    val origin = notes.notesValue("Origin")
-    val destination = notes.notesValue("Destination")
-    when {
-        origin != null || destination != null -> {
-            origin?.let { rows += TicketMeta("Origin", it) }
-            destination?.let { rows += TicketMeta("Destination", it) }
-        }
-        venue?.contains("→") == true -> {
-            val parts = venue.split("→", limit = 2)
-            rows += TicketMeta("Origin", parts[0].trim())
-            rows += TicketMeta("Destination", parts.getOrNull(1)?.trim().orEmpty())
-        }
-        !venue.isNullOrBlank() -> rows += TicketMeta("Route", venue)
-    }
-}
-
-private fun notesToMetaRows(notes: String?, includeBoardingFields: Boolean): List<TicketMeta> {
-    val rows = mutableListOf<TicketMeta>()
-    notes.orEmpty().split(" · ").map { it.trim() }.filter { it.isNotEmpty() }.forEach { part ->
-        when {
-            part.startsWith("Origin:", ignoreCase = true) -> Unit
-            part.startsWith("Destination:", ignoreCase = true) -> Unit
-            part.startsWith("Passenger:", ignoreCase = true) ->
-                rows += TicketMeta("Passenger", part.substringAfter(':').trim())
-            part.startsWith("Airline:", ignoreCase = true) ->
-                rows += TicketMeta("Airline", part.substringAfter(':').trim())
-            part.startsWith("Boarding:", ignoreCase = true) ->
-                if (includeBoardingFields) {
-                    rows += TicketMeta("Boarding", part.substringAfter(':').trim())
-                } else Unit
-            part.startsWith("Departure time:", ignoreCase = true) ->
-                if (includeBoardingFields) {
-                    rows += TicketMeta("Dep time", part.substringAfter(':').trim())
-                } else Unit
-            part.startsWith("Gate:", ignoreCase = true) ->
-                if (includeBoardingFields) {
-                    rows += TicketMeta("Gate", part.substringAfter(':').trim())
-                } else Unit
-            part.startsWith("Zone:", ignoreCase = true) ->
-                if (includeBoardingFields) {
-                    rows += TicketMeta("Zone", part.substringAfter(':').trim())
-                } else Unit
-            part.startsWith("Class:", ignoreCase = true) ->
-                rows += TicketMeta("Class", part.substringAfter(':').trim())
-            part.startsWith("Cabin:", ignoreCase = true) ->
-                if (includeBoardingFields) {
-                    rows += TicketMeta("Cabin", part.substringAfter(':').trim())
-                } else Unit
-            part.startsWith("Security:", ignoreCase = true) ->
-                if (includeBoardingFields) {
-                    rows += TicketMeta("Security", part.substringAfter(':').trim())
-                } else Unit
-            part.startsWith("Agent:", ignoreCase = true) ->
-                if (includeBoardingFields) {
-                    rows += TicketMeta("Agent", part.substringAfter(':').trim())
-                } else Unit
-            part.startsWith("Email:", ignoreCase = true) ->
-                rows += TicketMeta("Email", part.substringAfter(':').trim())
-            part.startsWith("Phone:", ignoreCase = true) ->
-                rows += TicketMeta("Phone", part.substringAfter(':').trim())
-            part.startsWith("Taxes:", ignoreCase = true) ->
-                rows += TicketMeta("Taxes", part.substringAfter(':').trim())
-            part.startsWith("Ticket no:", ignoreCase = true) ->
-                rows += TicketMeta("Ticket no.", part.substringAfter(':').trim())
-            part.startsWith("Issued:", ignoreCase = true) ->
-                rows += TicketMeta("Issued", part.substringAfter(':').trim())
-            part.startsWith("Issued at:", ignoreCase = true) ->
-                rows += TicketMeta("Issued at", part.substringAfter(':').trim())
-            part.startsWith("Dep terminal:", ignoreCase = true) ->
-                rows += TicketMeta("Dep terminal", part.substringAfter(':').trim())
-            part.startsWith("Arr terminal:", ignoreCase = true) ->
-                rows += TicketMeta("Arr terminal", part.substringAfter(':').trim())
-            part.startsWith("Arrival:", ignoreCase = true) ->
-                rows += TicketMeta("Arrival", part.substringAfter(':').trim())
-            part.startsWith("Status:", ignoreCase = true) ->
-                rows += TicketMeta("Status", part.substringAfter(':').trim())
-            part.startsWith("Fare basis:", ignoreCase = true) ->
-                rows += TicketMeta("Fare basis", part.substringAfter(':').trim())
-            part.startsWith("Duration:", ignoreCase = true) ->
-                rows += TicketMeta("Duration", part.substringAfter(':').trim())
-            part.startsWith("Operated by:", ignoreCase = true) ->
-                rows += TicketMeta("Operated by", part.substringAfter(':').trim())
-            part.startsWith("Base fare:", ignoreCase = true) ->
-                rows += TicketMeta("Base fare", part.substringAfter(':').trim())
-            part.startsWith("Fare equiv:", ignoreCase = true) ->
-                rows += TicketMeta("Fare equiv", part.substringAfter(':').trim())
-            part.startsWith("Total:", ignoreCase = true) ->
-                rows += TicketMeta("Total paid", part.substringAfter(':').trim())
-            part.startsWith("Payment:", ignoreCase = true) ->
-                rows += TicketMeta("Payment", part.substringAfter(':').trim())
-            part.startsWith("Doc:", ignoreCase = true) ->
-                rows += TicketMeta("Document", part.substringAfter(':').trim())
-            part.startsWith("Trip:", ignoreCase = true) ->
-                rows += TicketMeta("Trip", part.substringAfter(':').trim())
-            part.startsWith("Return:", ignoreCase = true) ->
-                rows += TicketMeta("Return", part.substringAfter(':').trim())
-            part.startsWith("Leg ", ignoreCase = true) ->
-                rows += TicketMeta(
-                    part.substringBefore(':').trim(),
-                    part.substringAfter(':').trim()
-                )
-            part.startsWith("ID:", ignoreCase = true) ->
-                rows += TicketMeta("ID / Passport", part.substringAfter(':').trim())
-            part.startsWith("Fare:", ignoreCase = true) ->
-                rows += TicketMeta("Fare", part.substringAfter(':').trim())
-            part.startsWith("Serial:", ignoreCase = true) ->
-                rows += TicketMeta("Serial", part.substringAfter(':').trim())
-            part.startsWith("Sold at", ignoreCase = true) ->
-                rows += TicketMeta("Sold at", part.removePrefix("Sold at").trim())
-            part.equals("Boarding pass", ignoreCase = true) -> Unit
-            part.contains("add boarding pass", ignoreCase = true) -> Unit
-            part.contains("boarding pass attached", ignoreCase = true) -> Unit
-            part.contains("electronic ticket", ignoreCase = true) -> Unit
-            part.contains("e-ticket receipt", ignoreCase = true) -> Unit
-            part.startsWith("Itinerary —", ignoreCase = true) -> Unit
-            part.contains("Gate barcode not read", ignoreCase = true) -> Unit
-            part.contains("Aztec built from pass fields", ignoreCase = true) -> Unit
-            part.contains("Aztec from pass fields", ignoreCase = true) -> Unit
-            part.startsWith("Imported", ignoreCase = true) -> Unit
-            else -> rows += TicketMeta("Note", part)
-        }
-    }
-    return rows
-}
-
-private fun String?.notesValue(label: String): String? {
-    val prefix = "$label:"
-    return orEmpty()
-        .split(" · ")
-        .map { it.trim() }
-        .firstOrNull { it.startsWith(prefix, ignoreCase = true) }
-        ?.substringAfter(':')
-        ?.trim()
-        ?.takeIf { it.isNotEmpty() }
-}
-
 @Composable
 private fun SectionLabel(text: String) {
     Text(
@@ -1549,49 +1407,6 @@ private fun SectionLabel(text: String) {
             .padding(horizontal = 4.dp),
         textAlign = TextAlign.Start
     )
-}
-
-@Composable
-private fun TicketMetaRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top
-    ) {
-        Text(
-            text = label,
-            style = HomeType.caption,
-            color = Mute,
-            modifier = Modifier.width(110.dp)
-        )
-        Text(
-            text = value,
-            style = HomeType.rowTitle,
-            color = Ink,
-            textAlign = TextAlign.End,
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-/** Compact meta row for the left column beside a vertical boarding barcode. */
-@Composable
-private fun BoardingDetailRow(label: String, value: String) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = label,
-            style = HomeType.caption,
-            color = Mute,
-            maxLines = 1
-        )
-        Text(
-            text = value,
-            style = HomeType.body,
-            color = Ink,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
 }
 
 private fun pickEventDateTime(
