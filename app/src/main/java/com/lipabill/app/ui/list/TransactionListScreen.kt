@@ -6,37 +6,39 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ConfirmationNumber
 import androidx.compose.material.icons.outlined.NorthEast
 import androidx.compose.material.icons.outlined.Payments
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Wallet
-import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,30 +51,28 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -81,19 +81,26 @@ import android.widget.Toast
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.repository.SendContact
+import com.lipabill.app.ui.adapt.LocalWindowForm
+import com.lipabill.app.ui.adapt.WindowWidth
 import com.lipabill.app.ui.components.BalanceAmountRow
 import com.lipabill.app.ui.detail.TransactionReceiptPopup
 import com.lipabill.app.ui.sheet.InAppKeyboard
 import com.lipabill.app.ui.sheet.SheetInputStyle
+import com.lipabill.app.ui.theme.Accent
+import com.lipabill.app.ui.theme.ActionMetrics
+import com.lipabill.app.ui.theme.ActionPay
+import com.lipabill.app.ui.theme.ActionTickets
 import com.lipabill.app.ui.theme.CardWhite
-import com.lipabill.app.ui.theme.Hairline
+import com.lipabill.app.ui.theme.Canvas as CreamCanvas
+import com.lipabill.app.ui.theme.Debit
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Income
 import com.lipabill.app.ui.theme.Ink
-import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.theme.avatarPastel
 import com.lipabill.app.ui.util.InterceptSystemIme
 import com.lipabill.app.ui.util.bringIntoViewOnFocus
 import com.lipabill.app.ui.util.displayLabel
@@ -106,9 +113,45 @@ import com.lipabill.app.ussd.PaymentAccessGates
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 
 /**
- * Clean off-white home: greeting, balance, actions, frequent contacts, transactions.
+ * Off-white + route-blue home: balance pill, actions, frequent, transactions.
+ * Layout tokens measured from the home mock (≈390dp frame).
+ */
+private object HomeMock {
+    val Margin = 20.dp
+    val SectionGap = 18.dp
+    val HeaderIcon = 40.dp
+    val HeaderIconGap = 10.dp
+    /** Breathing room under status bar (inset applied on the list container). */
+    val HeaderTop = 8.dp
+    /** Gap under search/gear before the balance pill. */
+    val HeaderBottom = 48.dp
+
+    val PillRadius = 28.dp
+    val PillMinHeight = 104.dp
+    val PillPadH = 22.dp
+    val PillPadV = 16.dp
+    val PillLabelGap = 8.dp
+
+    val ActionSize = 60.dp
+    val ActionIcon = 24.dp
+    val ActionLabelGap = 8.dp
+
+    val FrequentAvatar = 52.dp
+    val FrequentGap = 12.dp
+    val FrequentLabelGap = 6.dp
+
+    val SearchRadius = 24.dp
+    val SearchMinHeight = 44.dp
+
+    val TxAvatar = 40.dp
+    val TxRowV = 8.dp
+}
+
+/**
+ * Off-white + route-blue home: balance pill, actions, frequent, transactions.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalCoroutinesApi::class)
 @Composable
@@ -176,6 +219,17 @@ fun TransactionListScreen(
     val focusManager = LocalFocusManager.current
     var searchFocused by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    // Header search icon scrolls to the transactions search field (index after hero+actions[+frequent]).
+    val txHeaderIndex = if (favouritesSectionEnabled && frequent.isNotEmpty()) 3 else 2
+    val listCoversSwoosh by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 ||
+                listState.firstVisibleItemScrollOffset > 64
+        }
+    }
+    val window = LocalWindowForm.current.width
+    val pageMargin = if (window == WindowWidth.Compact) HomeMock.Margin else 28.dp
 
     LaunchedEffect(showingReceipt) {
         if (showingReceipt && searchFocused) {
@@ -194,81 +248,190 @@ fun TransactionListScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .background(CreamCanvas)
             .hideKeyboardOnOutsideTap()
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        // Left page swoosh — mirror of the design’s top-right leaf (stays clear of status icons).
+        Canvas(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .fillMaxWidth(if (window == WindowWidth.Expanded) 0.38f else 0.62f)
+                .height(260.dp)
+                .statusBarsPadding()
+                .then(if (listCoversSwoosh) Modifier.blur(20.dp) else Modifier)
+        ) {
+            val w = size.width
+            val h = size.height
+            val leaf = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(w * 0.55f, 0f)
+                cubicTo(w * 0.42f, h * 0.18f, w * 0.38f, h * 0.45f, w * 0.22f, h * 0.68f)
+                cubicTo(w * 0.12f, h * 0.82f, w * 0.05f, h * 0.72f, 0f, h * 0.55f)
+                close()
+            }
+            drawPath(leaf, color = Accent.copy(alpha = 0.88f))
+            val soft = Path().apply {
+                moveTo(0f, 0f)
+                lineTo(w * 0.38f, 0f)
+                cubicTo(w * 0.30f, h * 0.22f, w * 0.22f, h * 0.38f, 0f, h * 0.32f)
+                close()
+            }
+            drawPath(soft, color = Accent.copy(alpha = 0.50f))
+        }
+
+        if (window == WindowWidth.Expanded) {
+            HomeExpandedPane(
+                pageMargin = pageMargin,
+                isScanning = state.isScanning,
+                onRescan = onRescan,
+                showingReceipt = showingReceipt,
+                listState = listState,
+                balance = state.latestBalance,
+                alwaysShowBalance = alwaysShowBalance,
+                frequent = frequent,
+                showFrequent = favouritesSectionEnabled && frequent.isNotEmpty(),
+                flat = flat,
+                hasSmsPermission = state.hasSmsPermission,
+                searchQuery = state.searchQuery,
+                onQueryChange = viewModel::setSearchQuery,
+                searchFocused = searchFocused,
+                onSearchFocus = { searchFocused = it },
+                onSearch = {
+                    scope.launch {
+                        listState.animateScrollToItem(0)
+                        searchFocused = true
+                    }
+                },
+                onOpenSettings = onOpenSettings,
+                onSend = { runIfPaymentsReady(onSend) },
+                onPay = { runIfPaymentsReady(onReceive) },
+                onMetrics = onExchange,
+                onTickets = onTickets,
+                sendPayEnabled = paymentAccess.ready,
+                onAddFrequent = { runIfPaymentsReady(onSend) },
+                onSelectFrequent = { contact -> runIfPaymentsReady { onSendTo(contact) } },
+                onOpenTransaction = { id ->
+                    hideKeyboard()
+                    searchFocused = false
+                    receiptTxId = id
+                },
+                onKey = { ch -> viewModel.setSearchQuery(state.searchQuery + ch) },
+                onBackspace = { viewModel.setSearchQuery(state.searchQuery.dropLast(1)) },
+                onKeyboardDone = {
+                    searchFocused = false
+                    focusManager.clearFocus(force = true)
+                }
+            )
+        } else Column(modifier = Modifier.fillMaxSize()) {
             PullToRefreshBox(
                 isRefreshing = state.isScanning,
                 onRefresh = onRescan,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    // Strong in-composition bokeh so list text behind the ticket is unreadable.
+                    .statusBarsPadding()
                     .then(if (showingReceipt) Modifier.blur(14.dp) else Modifier)
             ) {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(CardWhite),
+                    modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
                         bottom = if (searchFocused) Space.gap else Space.section
                     )
                 ) {
                 item(key = "hero") {
-                    TopWalletHero(
-                        onRescan = onRescan,
+                    HomeBrandHeader(
+                        horizontalPadding = pageMargin,
+                        onSearch = {
+                            scope.launch {
+                                listState.animateScrollToItem(txHeaderIndex)
+                                searchFocused = true
+                            }
+                        },
                         onOpenSettings = onOpenSettings
                     )
                 }
-                item(key = "balance") {
-                    Spacer(modifier = Modifier.height(Space.block))
-                    BalanceSection(
-                        balance = state.latestBalance,
-                        alwaysShowBalance = alwaysShowBalance,
-                        modifier = Modifier.padding(horizontal = Space.page)
-                    )
-                    Spacer(modifier = Modifier.height(Space.block))
-                }
-                item(key = "actions") {
-                    QuickActionsRow(
-                        onSend = { runIfPaymentsReady(onSend) },
-                        onDeposit = { runIfPaymentsReady(onReceive) },
-                        onDetails = onExchange,
-                        onTickets = onTickets,
-                        sendPayEnabled = paymentAccess.ready,
-                        modifier = Modifier.padding(horizontal = Space.page)
-                    )
-                    Spacer(modifier = Modifier.height(Space.block))
+                item(key = "balance-actions") {
+                    if (window == WindowWidth.Medium) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = pageMargin),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(20.dp)
+                        ) {
+                            BalanceSection(
+                                balance = state.latestBalance,
+                                alwaysShowBalance = alwaysShowBalance,
+                                modifier = Modifier.weight(1f)
+                            )
+                            QuickActionsRow(
+                                onSend = { runIfPaymentsReady(onSend) },
+                                onDeposit = { runIfPaymentsReady(onReceive) },
+                                onDetails = onExchange,
+                                onTickets = onTickets,
+                                sendPayEnabled = paymentAccess.ready,
+                                spread = false
+                            )
+                        }
+                    } else {
+                        BalanceSection(
+                            balance = state.latestBalance,
+                            alwaysShowBalance = alwaysShowBalance,
+                            modifier = Modifier.padding(horizontal = pageMargin)
+                        )
+                        Spacer(modifier = Modifier.height(HomeMock.SectionGap))
+                        QuickActionsRow(
+                            onSend = { runIfPaymentsReady(onSend) },
+                            onDeposit = { runIfPaymentsReady(onReceive) },
+                            onDetails = onExchange,
+                            onTickets = onTickets,
+                            sendPayEnabled = paymentAccess.ready,
+                            modifier = Modifier.padding(horizontal = pageMargin)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(HomeMock.SectionGap))
                 }
                 if (favouritesSectionEnabled && frequent.isNotEmpty()) {
                     item(key = "frequent") {
-                        Column(modifier = Modifier.padding(horizontal = Space.page)) {
+                        Column(modifier = Modifier.padding(horizontal = pageMargin)) {
                             SectionHeader(
                                 title = "Frequent",
+                                trailing = null,
                                 onOpen = { runIfPaymentsReady(onSend) }
                             )
-                            Spacer(modifier = Modifier.height(Space.block))
+                            Spacer(modifier = Modifier.height(10.dp))
                             FrequentContactsRow(
                                 contacts = frequent,
                                 onAdd = { runIfPaymentsReady(onSend) },
                                 onSelect = { contact -> runIfPaymentsReady { onSendTo(contact) } }
                             )
                         }
-                        Spacer(modifier = Modifier.height(Space.block))
+                        Spacer(modifier = Modifier.height(HomeMock.SectionGap))
                     }
                 }
 
                 item(key = "tx-header") {
-                    Column(modifier = Modifier.padding(horizontal = Space.page)) {
-                        SectionHeader(title = "Transactions")
-                        Spacer(modifier = Modifier.height(Space.gap))
+                    val sheetTop = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(CreamCanvas, sheetTop)
+                            .padding(horizontal = pageMargin)
+                            .padding(top = 10.dp)
+                    ) {
+                        SectionHeader(
+                            title = "Transactions",
+                            trailing = "See all",
+                            onOpen = {
+                                scope.launch { listState.animateScrollToItem(txHeaderIndex) }
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
                         TransactionSearchField(
                             query = state.searchQuery,
                             onQueryChange = viewModel::setSearchQuery,
                             onFocusChange = { searchFocused = it }
                         )
-                        Spacer(modifier = Modifier.height(Space.gap))
+                        Spacer(modifier = Modifier.height(6.dp))
                     }
                 }
 
@@ -277,7 +440,10 @@ fun TransactionListScreen(
                     EmptyState(
                         hasPermission = state.hasSmsPermission,
                         searching = state.searchQuery.isNotBlank(),
-                        modifier = Modifier.padding(horizontal = Space.page)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(CreamCanvas)
+                            .padding(horizontal = pageMargin)
                     )
                 }
             } else {
@@ -289,10 +455,21 @@ fun TransactionListScreen(
                             searchFocused = false
                             receiptTxId = tx.id
                         },
-                        modifier = Modifier.padding(horizontal = Space.page)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(CreamCanvas)
+                            .padding(horizontal = pageMargin)
                     )
                 }
             }
+                item(key = "tx-sheet-tail") {
+                    Spacer(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .background(CreamCanvas)
+                    )
+                }
                 }
             }
 
@@ -312,7 +489,7 @@ fun TransactionListScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(CardWhite)
+                        .background(CreamCanvas)
                         .navigationBarsPadding()
                         .padding(horizontal = Space.page, vertical = Space.gap)
                 )
@@ -336,52 +513,176 @@ fun TransactionListScreen(
 }
 
 @Composable
-private fun TopWalletHero(
+private fun HomeExpandedPane(
+    pageMargin: Dp,
+    isScanning: Boolean,
     onRescan: () -> Unit,
-    onOpenSettings: () -> Unit
+    showingReceipt: Boolean,
+    listState: LazyListState,
+    balance: Double?,
+    alwaysShowBalance: Boolean,
+    frequent: List<SendContact>,
+    showFrequent: Boolean,
+    flat: List<MpesaTransaction>,
+    hasSmsPermission: Boolean,
+    searchQuery: String,
+    onQueryChange: (String) -> Unit,
+    searchFocused: Boolean,
+    onSearchFocus: (Boolean) -> Unit,
+    onSearch: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onSend: () -> Unit,
+    onPay: () -> Unit,
+    onMetrics: () -> Unit,
+    onTickets: () -> Unit,
+    sendPayEnabled: Boolean,
+    onAddFrequent: () -> Unit,
+    onSelectFrequent: (SendContact) -> Unit,
+    onOpenTransaction: (Long) -> Unit,
+    onKey: (String) -> Unit,
+    onBackspace: () -> Unit,
+    onKeyboardDone: () -> Unit
 ) {
-    val dock = Color(0xFFE2E6EC)
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(dock)
-            .statusBarsPadding()
-    ) {
-        HomeHeader(
-            onRescan = onRescan,
-            onOpenSettings = onOpenSettings,
-            modifier = Modifier.padding(horizontal = Space.page, vertical = Space.hero)
-        )
-        Spacer(modifier = Modifier.height(Space.block))
-        Box(
-            modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.BottomCenter
+    Row(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .width(400.dp)
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState())
+                .statusBarsPadding()
+                .padding(bottom = Space.section)
         ) {
-            WalletBanner(
-                modifier = Modifier.fillMaxWidth(0.79f)
+            HomeBrandHeader(
+                onSearch = onSearch,
+                onOpenSettings = onOpenSettings,
+                horizontalPadding = pageMargin,
+                bottomPadding = 16.dp
             )
+            BalanceSection(
+                balance = balance,
+                alwaysShowBalance = alwaysShowBalance,
+                modifier = Modifier.padding(horizontal = pageMargin)
+            )
+            Spacer(modifier = Modifier.height(HomeMock.SectionGap))
+            QuickActionsRow(
+                onSend = onSend,
+                onDeposit = onPay,
+                onDetails = onMetrics,
+                onTickets = onTickets,
+                sendPayEnabled = sendPayEnabled,
+                modifier = Modifier.padding(horizontal = pageMargin)
+            )
+            if (showFrequent) {
+                Spacer(modifier = Modifier.height(HomeMock.SectionGap))
+                Column(modifier = Modifier.padding(horizontal = pageMargin)) {
+                    SectionHeader(title = "Frequent", trailing = null, onOpen = onSend)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    FrequentContactsRow(
+                        contacts = frequent,
+                        onAdd = onAddFrequent,
+                        onSelect = onSelectFrequent
+                    )
+                }
+            }
+        }
+        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            PullToRefreshBox(
+                isRefreshing = isScanning,
+                onRefresh = onRescan,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .then(if (showingReceipt) Modifier.blur(14.dp) else Modifier)
+            ) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = Space.section)
+                ) {
+                    item(key = "tx-header") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = pageMargin)
+                                .padding(top = 10.dp)
+                        ) {
+                            SectionHeader(title = "Transactions")
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TransactionSearchField(
+                                query = searchQuery,
+                                onQueryChange = onQueryChange,
+                                onFocusChange = onSearchFocus
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+                    }
+                    if (flat.isEmpty()) {
+                        item(key = "empty") {
+                            EmptyState(
+                                hasPermission = hasSmsPermission,
+                                searching = searchQuery.isNotBlank(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = pageMargin)
+                            )
+                        }
+                    } else {
+                        items(items = flat, key = { it.id }) { tx ->
+                            TransactionRow(
+                                tx = tx,
+                                onClick = { onOpenTransaction(tx.id) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = pageMargin)
+                            )
+                        }
+                    }
+                }
+            }
+            if (searchFocused && !showingReceipt) {
+                InAppKeyboard(
+                    startOnDigits = searchQuery.any { it.isDigit() } &&
+                        searchQuery.none { it.isLetter() },
+                    onChar = onKey,
+                    onBackspace = onBackspace,
+                    onDone = onKeyboardDone,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(CreamCanvas)
+                        .navigationBarsPadding()
+                        .padding(horizontal = pageMargin, vertical = Space.gap)
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun HomeHeader(
-    onRescan: () -> Unit,
+private fun HomeBrandHeader(
+    onSearch: () -> Unit,
     onOpenSettings: () -> Unit,
-    modifier: Modifier = Modifier
+    horizontalPadding: Dp = HomeMock.Margin,
+    bottomPadding: Dp = HomeMock.HeaderBottom
 ) {
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = horizontalPadding,
+                end = horizontalPadding,
+                top = HomeMock.HeaderTop,
+                bottom = bottomPadding
+            ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.End
     ) {
         HeaderIconButton(
-            icon = Icons.Outlined.Refresh,
-            contentDescription = "Rescan SMS",
-            onClick = onRescan
+            icon = Icons.Outlined.Search,
+            contentDescription = "Search transactions",
+            onClick = onSearch
         )
-        Spacer(modifier = Modifier.width(Space.tight))
+        Spacer(modifier = Modifier.width(HomeMock.HeaderIconGap))
         HeaderIconButton(
             icon = Icons.Outlined.Settings,
             contentDescription = "Settings",
@@ -398,120 +699,17 @@ private fun HeaderIconButton(
 ) {
     Box(
         modifier = Modifier
-            .size(40.dp)
+            .size(HomeMock.HeaderIcon)
             .clip(CircleShape)
-            .background(CardWhite.copy(alpha = 0.55f))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = Accent,
+            tint = Ink,
             modifier = Modifier.size(22.dp)
         )
-    }
-}
-
-@Composable
-private fun WalletBanner(modifier: Modifier = Modifier) {
-    val cardFace = Color(0xFFF7F8FA)
-    val cardFaceDeep = Color(0xFFE4E7EC)
-    val cardFaceLight = Color(0xFFFFFFFF)
-    val inkMuted = Color(0xFF6B7280)
-    val pocketShape = RoundedCornerShape(
-        topStart = 16.dp,
-        topEnd = 16.dp,
-        bottomStart = 0.dp,
-        bottomEnd = 0.dp
-    )
-
-    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        val fullCardHeight = maxWidth / 1.586f
-        val visibleHeight = fullCardHeight * 0.547f
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(visibleHeight)
-                .shadow(
-                    elevation = 12.dp,
-                    shape = pocketShape,
-                    spotColor = Color.Black.copy(alpha = 0.2f),
-                    ambientColor = Color.Black.copy(alpha = 0.08f)
-                )
-                .clip(pocketShape)
-        ) {
-            // Full card — bottom half clipped away by the parent
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(fullCardHeight)
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(cardFaceLight, cardFace, cardFaceDeep),
-                            start = Offset(0f, 0f),
-                            end = Offset(800f, 600f)
-                        )
-                    )
-            ) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.65f),
-                        radius = size.minDimension * 0.55f,
-                        center = Offset(size.width * 0.88f, size.height * 0.02f)
-                    )
-                    drawCircle(
-                        color = Color.Black.copy(alpha = 0.04f),
-                        radius = size.minDimension * 0.55f,
-                        center = Offset(size.width * 0.12f, size.height * 0.9f)
-                    )
-                }
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = Space.cardH, vertical = Space.card)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "M-PESA",
-                            style = HomeType.label.copy(
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            ),
-                            color = Ink
-                        )
-                        Icon(
-                            imageVector = Icons.Outlined.Wifi,
-                            contentDescription = null,
-                            tint = inkMuted,
-                            modifier = Modifier
-                                .size(18.dp)
-                                .rotate(90f)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Bottom
-                    ) {
-                        Text(
-                            text = "Safaricom",
-                            style = HomeType.caption.copy(fontWeight = FontWeight.Medium),
-                            color = inkMuted
-                        )
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -521,26 +719,88 @@ private fun BalanceSection(
     alwaysShowBalance: Boolean,
     modifier: Modifier = Modifier
 ) {
-    Column(
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .background(CardWhite, RoundedCornerShape(22.dp))
-            .padding(horizontal = Space.card, vertical = Space.cardH),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .heightIn(min = HomeMock.PillMinHeight)
+            .shadow(
+                elevation = 10.dp,
+                shape = RoundedCornerShape(HomeMock.PillRadius),
+                spotColor = Color.Black.copy(alpha = 0.10f),
+                ambientColor = Color.Black.copy(alpha = 0.05f)
+            )
+            .clip(RoundedCornerShape(HomeMock.PillRadius))
+            .background(CardWhite)
     ) {
-        Text(
-            text = "Available balance",
-            style = HomeType.caption,
-            color = Mute
-        )
-        Spacer(modifier = Modifier.height(Space.gap))
-        BalanceAmountRow(
-            balance = balance,
-            alwaysShow = alwaysShowBalance,
-            amountStyle = HomeType.balance,
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center
-        )
+        // Mirrored leaf — anchored to the right edge of the pill.
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val w = size.width
+            val h = size.height
+            // Build a left-side leaf, then mirror onto the right.
+            fun mirrorX(x: Float) = w - x
+            val leaf = Path().apply {
+                moveTo(mirrorX(w * 0.42f), 0f)
+                cubicTo(
+                    mirrorX(w * 0.32f), h * 0.02f,
+                    mirrorX(w * 0.28f), h * 0.28f,
+                    mirrorX(w * 0.22f), h * 0.52f
+                )
+                cubicTo(
+                    mirrorX(w * 0.16f), h * 0.78f,
+                    mirrorX(w * 0.10f), h * 0.92f,
+                    mirrorX(0f), h
+                )
+                lineTo(w, h)
+                lineTo(w, 0f)
+                close()
+            }
+            drawPath(leaf, color = Accent.copy(alpha = 0.90f))
+            val highlight = Path().apply {
+                moveTo(mirrorX(w * 0.28f), 0f)
+                cubicTo(
+                    mirrorX(w * 0.18f), h * 0.12f,
+                    mirrorX(w * 0.12f), h * 0.35f,
+                    mirrorX(0f), h * 0.42f
+                )
+                lineTo(w, h * 0.42f)
+                lineTo(w, 0f)
+                close()
+            }
+            drawPath(highlight, color = Accent.copy(alpha = 0.45f))
+            drawCircle(
+                color = SoftBlue.copy(alpha = 0.35f),
+                radius = h * 0.38f,
+                center = Offset(mirrorX(w * 0.06f), h * 0.12f)
+            )
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = HomeMock.PillPadH,
+                    // Extra end padding so amount/eye sit clear of the right swoosh.
+                    end = HomeMock.PillPadH + 8.dp,
+                    top = HomeMock.PillPadV,
+                    bottom = HomeMock.PillPadV
+                ),
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.spacedBy(HomeMock.PillLabelGap)
+        ) {
+            Text(
+                text = "Available balance",
+                style = HomeType.caption,
+                color = Mute
+            )
+            BalanceAmountRow(
+                balance = balance,
+                alwaysShow = alwaysShowBalance,
+                amountStyle = HomeType.balance,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Start,
+                showEyeToggle = true,
+                eyeInCircle = true
+            )
+        }
     }
 }
 
@@ -551,26 +811,47 @@ private fun QuickActionsRow(
     onDetails: () -> Unit,
     onTickets: () -> Unit,
     sendPayEnabled: Boolean,
+    spread: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly
+        modifier = if (spread) modifier.fillMaxWidth() else modifier,
+        horizontalArrangement = if (spread) {
+            Arrangement.SpaceBetween
+        } else {
+            Arrangement.spacedBy(12.dp)
+        }
     ) {
         QuickAction(
             icon = Icons.Outlined.NorthEast,
             label = "Send",
             onClick = onSend,
-            enabled = sendPayEnabled
+            enabled = sendPayEnabled,
+            face = Accent,
+            iconTint = CardWhite
         )
         QuickAction(
             icon = Icons.Outlined.Payments,
             label = "Pay",
             onClick = onDeposit,
-            enabled = sendPayEnabled
+            enabled = sendPayEnabled,
+            face = ActionPay,
+            iconTint = Accent
         )
-        QuickAction(Icons.Outlined.Wallet, "Metrics", onDetails)
-        QuickAction(Icons.Outlined.ConfirmationNumber, "Tickets", onTickets)
+        QuickAction(
+            icon = Icons.Outlined.BarChart,
+            label = "Metrics",
+            onClick = onDetails,
+            face = ActionMetrics,
+            iconTint = Accent
+        )
+        QuickAction(
+            icon = Icons.Outlined.ConfirmationNumber,
+            label = "Passes",
+            onClick = onTickets,
+            face = ActionTickets,
+            iconTint = Accent
+        )
     }
 }
 
@@ -579,37 +860,37 @@ private fun QuickAction(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,
+    face: Color,
+    iconTint: Color,
     enabled: Boolean = true
 ) {
-    val iconTint = if (enabled) Accent else Mute
     val labelColor = if (enabled) Ink else Mute
-    val face = if (enabled) CardWhite else SoftBlue
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Space.gap),
+        verticalArrangement = Arrangement.spacedBy(HomeMock.ActionLabelGap),
         modifier = Modifier
-            .width(56.dp)
+            .width(HomeMock.ActionSize + 8.dp)
             .alpha(if (enabled) 1f else 0.55f)
     ) {
         Box(
             modifier = Modifier
-                .size(56.dp)
+                .size(HomeMock.ActionSize)
                 .shadow(
-                    if (enabled) 2.dp else 0.dp,
-                    RoundedCornerShape(16.dp),
-                    clip = false
+                    if (enabled) 4.dp else 0.dp,
+                    CircleShape,
+                    clip = false,
+                    spotColor = Color.Black.copy(alpha = 0.12f)
                 )
-                .clip(RoundedCornerShape(16.dp))
-                .background(face)
-                .border(1.dp, Hairline, RoundedCornerShape(16.dp))
+                .clip(CircleShape)
+                .background(if (enabled) face else face.copy(alpha = 0.5f))
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = iconTint,
-                modifier = Modifier.size(22.dp)
+                tint = if (enabled) iconTint else Mute,
+                modifier = Modifier.size(HomeMock.ActionIcon)
             )
         }
         Text(
@@ -622,7 +903,11 @@ private fun QuickAction(
 }
 
 @Composable
-private fun SectionHeader(title: String, onOpen: (() -> Unit)? = null) {
+private fun SectionHeader(
+    title: String,
+    trailing: String? = null,
+    onOpen: (() -> Unit)? = null
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -637,7 +922,15 @@ private fun SectionHeader(title: String, onOpen: (() -> Unit)? = null) {
             style = HomeType.section,
             modifier = Modifier.weight(1f)
         )
-        if (onOpen != null) {
+        if (trailing != null) {
+            Text(
+                text = trailing,
+                style = HomeType.caption,
+                color = Mute
+            )
+            Spacer(modifier = Modifier.width(2.dp))
+        }
+        if (onOpen != null || trailing != null) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
@@ -661,12 +954,13 @@ private fun TransactionSearchField(
             onValueChange = onQueryChange,
             modifier = modifier
                 .fillMaxWidth()
+                .heightIn(min = HomeMock.SearchMinHeight)
                 .bringIntoViewOnFocus(delayMs = 80L)
                 .onFocusChanged { onFocusChange(it.isFocused) },
             singleLine = true,
             readOnly = true,
             textStyle = SheetInputStyle,
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(HomeMock.SearchRadius),
             placeholder = {
                 Text("Name or number", style = HomeType.body, color = Mute)
             },
@@ -691,10 +985,10 @@ private fun TransactionSearchField(
                 }
             },
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Hairline,
-                unfocusedBorderColor = Hairline,
-                focusedContainerColor = Color(0xFFF7F8FA),
-                unfocusedContainerColor = Color(0xFFF7F8FA),
+                focusedBorderColor = Color.Transparent,
+                unfocusedBorderColor = Color.Transparent,
+                focusedContainerColor = CardWhite,
+                unfocusedContainerColor = CardWhite,
                 cursorColor = Ink
             )
         )
@@ -707,40 +1001,46 @@ private fun FrequentContactsRow(
     onAdd: () -> Unit,
     onSelect: (SendContact) -> Unit
 ) {
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(Space.chip)) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(HomeMock.FrequentGap)) {
         item {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-                    .width(64.dp)
+                    .width(HomeMock.FrequentAvatar + 8.dp)
                     .clickable(onClick = onAdd)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(52.dp)
-                        .border(1.dp, Mute, CircleShape)
+                        .size(HomeMock.FrequentAvatar)
+                        .border(1.5.dp, Mute.copy(alpha = 0.45f), CircleShape)
                         .clip(CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Outlined.Add, contentDescription = "Add", tint = Mute)
+                    Icon(
+                        Icons.Outlined.Add,
+                        contentDescription = "Add",
+                        tint = Mute,
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
-                Spacer(modifier = Modifier.height(Space.gap))
+                Spacer(modifier = Modifier.height(HomeMock.FrequentLabelGap))
                 Text("Add", style = HomeType.caption, color = Mute)
             }
         }
         items(contacts, key = { it.normalizedPhone }) { contact ->
             val name = contact.name ?: contact.normalizedPhone
+            val seed = name.hashCode()
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-                    .width(64.dp)
+                    .width(HomeMock.FrequentAvatar + 8.dp)
                     .clickable { onSelect(contact) }
             ) {
                 Box(
                     modifier = Modifier
-                        .size(52.dp)
+                        .size(HomeMock.FrequentAvatar)
                         .clip(CircleShape)
-                        .background(SoftBlue),
+                        .background(avatarPastel(seed)),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -749,7 +1049,7 @@ private fun FrequentContactsRow(
                         color = Ink
                     )
                 }
-                Spacer(modifier = Modifier.height(Space.gap))
+                Spacer(modifier = Modifier.height(HomeMock.FrequentLabelGap))
                 Text(
                     text = name,
                     style = HomeType.caption,
@@ -770,23 +1070,25 @@ private fun TransactionRow(
 ) {
     val outgoing = tx.type.isOutgoing()
     val sign = if (outgoing) "−" else "+"
-    val amountColor = if (outgoing) Ink else Income
+    val amountColor = if (outgoing) Debit else Income
+    val title = tx.counterpartyName ?: tx.type.displayLabel()
+    val seed = title.hashCode()
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = Space.row),
+            .padding(vertical = HomeMock.TxRowV),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(46.dp)
+                .size(HomeMock.TxAvatar)
                 .clip(CircleShape)
-                .background(SoftBlue),
+                .background(avatarPastel(seed)),
             contentAlignment = Alignment.Center
         ) {
-            val initial = (tx.counterpartyName ?: tx.type.displayLabel())
+            val initial = title
                 .trim()
                 .firstOrNull()
                 ?.uppercaseChar()
@@ -794,10 +1096,10 @@ private fun TransactionRow(
                 ?: "?"
             Text(text = initial, style = HomeType.rowTitle, color = Ink)
         }
-        Spacer(modifier = Modifier.width(Space.block))
+        Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = tx.counterpartyName ?: tx.type.displayLabel(),
+                text = title,
                 style = HomeType.rowTitle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -814,11 +1116,12 @@ private fun TransactionRow(
                     append(formatActivityTime(tx.timestampMillis))
                 },
                 style = HomeType.caption,
-                color = Mute,
+                color = Ink.copy(alpha = 0.62f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
+        Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = "$sign${formatKes(tx.amount)}",
             style = HomeType.amount,
@@ -853,7 +1156,7 @@ private fun EmptyState(
         Text(
             text = when {
                 searching -> "Try a different name or number."
-                hasPermission -> "Tap refresh in the header to import M-Pesa SMS."
+                hasPermission -> "Pull down to refresh and import M-Pesa SMS."
                 else -> "Grant SMS access to import your inbox."
             },
             style = HomeType.body,
