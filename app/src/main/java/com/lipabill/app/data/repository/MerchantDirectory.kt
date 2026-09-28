@@ -6,6 +6,8 @@ import com.lipabill.app.data.local.entity.MerchantEntity
 import com.lipabill.app.data.local.entity.PendingMerchantPaymentEntity
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.data.parser.digitsOnly
+import com.lipabill.app.data.parser.extractAccount
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
@@ -68,7 +70,8 @@ class MerchantDirectory(
     }
 
     /**
-     * Called when dialing Lipa na M-Pesa / Pochi so the next matching SMS can learn the name.
+     * Called when dialing so the next matching SMS can learn the recipient name
+     * (especially for numbers not already in contacts / history).
      */
     suspend fun rememberOutgoing(tx: MpesaTransaction, amount: Double) = withContext(Dispatchers.IO) {
         if (!isLearnableType(tx.type)) return@withContext
@@ -103,21 +106,31 @@ class MerchantDirectory(
     }
 
     /**
-     * When a confirmation SMS arrives with only a name, match a recent pending dial and enrich.
-     * Pochi SMS is often parsed as SENT / BUY_GOODS without a phone — bridge via amount + TTL.
+     * When a confirmation SMS arrives, match a recent pending dial and prefer SMS party details
+     * (name from M-Pesa) over dial-time placeholders for new numbers.
      */
     suspend fun enrichIncomingSms(tx: MpesaTransaction): MpesaTransaction = withContext(Dispatchers.IO) {
         val amount = tx.amount ?: return@withContext tx
         val now = System.currentTimeMillis()
         dao.prunePending(now - PENDING_TTL_MS)
 
-        if (tx.type == TransactionType.PAYBILL || tx.type == TransactionType.BUY_GOODS) {
+        if (tx.type == TransactionType.PAYBILL ||
+            tx.type == TransactionType.BUY_GOODS ||
+            tx.type == TransactionType.SENT
+        ) {
             val pending = dao.findMatchingPending(
                 type = tx.type,
                 amount = amount,
                 sinceMillis = now - PENDING_TTL_MS
             )
             if (pending != null) {
+                // For Send Money, only consume the pending when phones align (or SMS omitted phone).
+                if (tx.type == TransactionType.SENT) {
+                    val smsPhone = digitsOnly(tx.counterpartyPhone)
+                    if (smsPhone != null && !phonesMatch(smsPhone, pending.identifier)) {
+                        return@withContext tx
+                    }
+                }
                 return@withContext applyPendingEnrichment(tx, pending, now)
             }
         }
@@ -157,13 +170,19 @@ class MerchantDirectory(
     ): MpesaTransaction {
         dao.consumePending(pending.id)
         val smsName = tx.counterpartyName?.trim()?.takeIf { it.isNotBlank() }
+        val bestName = when {
+            smsName != null && !isPhoneLikeName(smsName) -> smsName
+            smsName != null -> smsName
+            else -> null
+        }
         upsertMerchant(
             type = pending.type,
             identifier = pending.identifier,
             accountHint = pending.accountCode,
-            displayName = smsName ?: placeholderName(pending.type, pending.identifier),
+            displayName = bestName
+                ?: placeholderName(pending.type, pending.identifier),
             now = now,
-            preferIncomingName = smsName != null
+            preferIncomingName = bestName != null && !isPhoneLikeName(bestName)
         )
 
         val enrichedRaw = when {
@@ -171,10 +190,11 @@ class MerchantDirectory(
             tx.rawBody.contains("Account", ignoreCase = true) -> tx.rawBody
             else -> "${tx.rawBody} Account ${pending.accountCode}"
         }
+        val phone = digitsOnly(tx.counterpartyPhone) ?: pending.identifier
         return tx.copy(
             type = pending.type,
-            counterpartyPhone = pending.identifier,
-            counterpartyName = smsName ?: tx.counterpartyName,
+            counterpartyPhone = phone,
+            counterpartyName = bestName ?: tx.counterpartyName,
             rawBody = enrichedRaw
         )
     }
@@ -237,17 +257,22 @@ class MerchantDirectory(
     private fun isLearnableType(type: TransactionType): Boolean =
         type == TransactionType.PAYBILL ||
             type == TransactionType.BUY_GOODS ||
-            type == TransactionType.POCHI
+            type == TransactionType.POCHI ||
+            type == TransactionType.SENT
 
     private fun placeholderName(type: TransactionType, identifier: String): String = when (type) {
         TransactionType.PAYBILL -> "Paybill $identifier"
         TransactionType.BUY_GOODS -> "Till $identifier"
         TransactionType.POCHI -> "Pochi $identifier"
+        TransactionType.SENT -> identifier
         else -> identifier
     }
 
     private fun isPlaceholderName(name: String, identifier: String): Boolean {
         val n = name.trim().lowercase(Locale.US)
+        if (isPhoneLikeName(name) && phonesMatch(name.filter { it.isDigit() }, identifier)) {
+            return true
+        }
         return n == "paybill $identifier" ||
             n == "till $identifier" ||
             n == "pochi $identifier" ||
@@ -257,22 +282,25 @@ class MerchantDirectory(
             n.startsWith("pochi ") && n.endsWith(identifier)
     }
 
+    private fun isPhoneLikeName(name: String): Boolean {
+        val digits = name.filter { it.isDigit() }
+        if (digits.length < 9) return false
+        val letters = name.count { it.isLetter() }
+        return letters == 0
+    }
+
+    private fun phonesMatch(a: String, b: String): Boolean {
+        val da = a.filter { it.isDigit() }
+        val db = b.filter { it.isDigit() }
+        if (da.isEmpty() || db.isEmpty()) return false
+        if (da == db) return true
+        val a9 = da.takeLast(9)
+        val b9 = db.takeLast(9)
+        return a9.length == 9 && b9.length == 9 && a9 == b9
+    }
+
     private fun normalizeName(name: String): String =
         name.trim().lowercase(Locale.US).replace(Regex("\\s+"), " ")
-
-    private fun digitsOnly(raw: String?): String? {
-        if (raw.isNullOrBlank()) return null
-        val digits = raw.filter { it.isDigit() }
-        return digits.takeIf { it.length in 5..12 }
-    }
-
-    private fun extractAccount(rawBody: String): String? {
-        val regex = Regex(
-            """(?:Account|Acc\.?)\s*[:=]?\s*([A-Za-z0-9]+)""",
-            RegexOption.IGNORE_CASE
-        )
-        return regex.find(rawBody)?.groupValues?.getOrNull(1)
-    }
 
     companion object {
         private const val TAG = "LipaBill.Merchants"
