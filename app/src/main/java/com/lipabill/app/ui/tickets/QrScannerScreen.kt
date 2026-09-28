@@ -17,10 +17,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -63,8 +71,8 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 private const val TAG = "LipaBill.QrScan"
 
 /**
- * In-app portrait QR scanner using CameraX (back camera) + ML Kit.
- * Does not rotate the activity or flip to a separate capture screen.
+ * In-app QR scanner using CameraX (back camera) + ML Kit.
+ * Follows the current window size; it does not lock orientation.
  */
 @Composable
 fun QrScannerScreen(
@@ -208,6 +216,10 @@ fun QrScannerScreen(
             onClick = onCancel,
             modifier = Modifier
                 .align(Alignment.TopStart)
+                .windowInsetsPadding(
+                    WindowInsets.statusBars.union(WindowInsets.displayCutout)
+                        .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+                )
                 .padding(Space.page)
                 .background(Color.Black.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
         ) {
@@ -222,6 +234,10 @@ fun QrScannerScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .windowInsetsPadding(
+                    WindowInsets.navigationBars.union(WindowInsets.displayCutout)
+                        .only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)
+                )
                 .padding(Space.page)
                 .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(18.dp))
                 .padding(Space.card),
@@ -235,7 +251,7 @@ fun QrScannerScreen(
             )
             Spacer(modifier = Modifier.height(Space.tight))
             Text(
-                text = cameraError ?: "Portrait locked — no rotation",
+                text = cameraError ?: "Hold the code inside the frame",
                 style = HomeType.caption,
                 color = CardWhite.copy(alpha = 0.8f),
                 textAlign = TextAlign.Center
