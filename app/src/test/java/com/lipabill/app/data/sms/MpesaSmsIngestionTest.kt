@@ -78,6 +78,25 @@ class MpesaSmsIngestionTest {
     }
 
     @Test
+    fun fuliza_draws_accepted_and_parsed() {
+        val hundred = MpesaSmsIngestion.acceptAndParse("MPESA", FULIZA_DRAW_100_SMS, ts)!!
+        assertEquals("UI3E552R94", hundred.code)
+        assertEquals(TransactionType.FULIZA, hundred.type)
+        assertEquals(100.0, hundred.amount!!, 0.001)
+        assertEquals(1.0, hundred.cost!!, 0.001)
+        assertEquals(192.97, hundred.balance!!, 0.001)
+        assertEquals("Due 02/10/26", hundred.counterpartyName)
+
+        val forty = MpesaSmsIngestion.acceptAndParse("MPESA", FULIZA_DRAW_40_SMS, ts)!!
+        assertEquals("UI3E551JPG", forty.code)
+        assertEquals(TransactionType.FULIZA, forty.type)
+        assertEquals(40.0, forty.amount!!, 0.001)
+        assertEquals(0.40, forty.cost!!, 0.001)
+        assertEquals(61.67, forty.balance!!, 0.001)
+        assertEquals("Due 02/10/26", forty.counterpartyName)
+    }
+
+    @Test
     fun message_without_balance_rejected() {
         val body =
             "THX7K2LM9P Confirmed. Ksh500.00 sent to JANE on 15/3/24 at 2:15 PM. " +

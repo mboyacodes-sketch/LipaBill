@@ -7,8 +7,13 @@ package com.lipabill.app.data.sms
  */
 object MpesaSmsFilter {
 
-    /** "M-PESA balance" and reversal wording "M-PESA account balance". */
-    private val MPESA_BALANCE = Regex("mpesa(?: account)? balance")
+    /**
+     * "M-PESA balance", reversal wording "M-PESA account balance",
+     * and Fuliza "Fuliza M-PESA outstanding".
+     */
+    private val MPESA_BALANCE = Regex(
+        "mpesa(?: account)? balance|fuliza mpesa outstanding"
+    )
 
     fun isMpesaSender(address: String?): Boolean {
         if (address.isNullOrBlank()) return false
@@ -21,8 +26,9 @@ object MpesaSmsFilter {
     }
 
     /**
-     * Real transaction confirmations include both "Confirmed" and an
-     * "M-PESA balance" line. Promo / PIN / other MPESA texts lack these.
+     * Real transaction confirmations include both "Confirmed" and either an
+     * "M-PESA balance" line or a Fuliza outstanding line. Promo / PIN / other
+     * MPESA texts lack these.
      */
     fun isTransactionConfirmation(body: String?): Boolean {
         if (body.isNullOrBlank()) return false

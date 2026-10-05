@@ -123,5 +123,6 @@ fun TransactionType.displayLabel(): String = when (this) {
     TransactionType.WITHDRAW -> "Withdraw"
     TransactionType.DEPOSIT -> "Deposit"
     TransactionType.REVERSED -> "Reversed"
+    TransactionType.FULIZA -> "Fuliza"
     TransactionType.UNKNOWN -> "Unknown"
 }

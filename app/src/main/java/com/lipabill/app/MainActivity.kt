@@ -379,16 +379,29 @@ private fun AuthenticatedApp(
     }
 
     var paymentAccessPrompt by remember { mutableStateOf(false) }
+    var paymentAccessFootnote by remember { mutableStateOf<String?>(null) }
     var pendingPaymentOpen by remember { mutableStateOf<(() -> Unit)?>(null) }
     var paymentAccessRevision by remember { mutableIntStateOf(0) }
+    /** Returning from the Accessibility screen stays on home. The next tap can open Send or Pay. */
+    var skipOpenAfterAccessibility by remember { mutableStateOf(false) }
+
+    fun dismissPaymentAccess() {
+        paymentAccessPrompt = false
+        paymentAccessFootnote = null
+        pendingPaymentOpen = null
+    }
 
     fun finishPaymentAccessIfReady() {
         if (!paymentAccessPrompt) return
         paymentAccessRevision++
+        if (skipOpenAfterAccessibility) {
+            skipOpenAfterAccessibility = false
+            dismissPaymentAccess()
+            return
+        }
         if (context.missingPaymentAccess().isNotEmpty()) return
-        paymentAccessPrompt = false
         val open = pendingPaymentOpen
-        pendingPaymentOpen = null
+        dismissPaymentAccess()
         open?.invoke()
     }
 
@@ -454,7 +467,11 @@ private fun AuthenticatedApp(
                 callPermissionLauncher.launch(arrayOf(Manifest.permission.CALL_PHONE))
             PaymentAccessNeed.PhoneState ->
                 phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
-            PaymentAccessNeed.Accessibility -> openPaymentAccessibilitySettings()
+            PaymentAccessNeed.Accessibility -> {
+                skipOpenAfterAccessibility = true
+                pendingPaymentOpen = null
+                openPaymentAccessibilitySettings()
+            }
             null -> finishPaymentAccessIfReady()
         }
     }
@@ -485,11 +502,9 @@ private fun AuthenticatedApp(
         if (missing.isNotEmpty()) {
             PaymentAccessDialog(
                 missing = missing,
+                footnote = paymentAccessFootnote,
                 onAllow = { allowNextPaymentAccess() },
-                onNotNow = {
-                    paymentAccessPrompt = false
-                    pendingPaymentOpen = null
-                }
+                onNotNow = { dismissPaymentAccess() }
             )
         }
     }
@@ -522,6 +537,12 @@ private fun AuthenticatedApp(
 
     val mainActivity = activity as MainActivity
 
+    fun refreshPaymentContacts() {
+        if (!hasContactsPermission()) return
+        sendVm.refreshContactsAccess()
+        payVm.refreshContactsAccess()
+    }
+
     fun showSendSheet(preselect: SendContact? = null, preserveState: Boolean = false) {
         openPaymentOrExplain {
             if (!preserveState) {
@@ -531,10 +552,7 @@ private fun AuthenticatedApp(
                     sendVm.select(preselect)
                 }
             }
-            if (hasContactsPermission()) {
-                sendVm.refreshContactsAccess()
-                payVm.refreshContactsAccess()
-            }
+            refreshPaymentContacts()
             val existing = activity.supportFragmentManager.findFragmentByTag(SendMoneyBottomSheetFragment.TAG)
             if (existing == null) {
                 SendMoneyBottomSheetFragment.newInstance()
@@ -549,16 +567,41 @@ private fun AuthenticatedApp(
                 payVm.clearMethod()
                 payVm.selectMethod(PayMethod.PAYBILL)
             }
-            if (hasContactsPermission()) {
-                sendVm.refreshContactsAccess()
-                payVm.refreshContactsAccess()
-            }
+            refreshPaymentContacts()
             val existing = activity.supportFragmentManager.findFragmentByTag(PayMoneyBottomSheetFragment.TAG)
             if (existing == null) {
                 PayMoneyBottomSheetFragment.newInstance()
                     .show(activity.supportFragmentManager, PayMoneyBottomSheetFragment.TAG)
             }
         }
+    }
+
+    fun toastUnfundedPayment() {
+        Toast.makeText(
+            context,
+            listVm.uiState.value.unfundedPaymentMessage(),
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
+    /** Send/Pay from Home. Permission opens the access prompt; a missing balance only explains. */
+    fun attemptPayment(open: () -> Unit) {
+        val state = listVm.uiState.value
+        val funded = state.canFundPayment()
+        if (context.missingPaymentAccess().isNotEmpty()) {
+            paymentAccessFootnote = if (funded) null else state.unfundedPaymentMessage()
+            pendingPaymentOpen = {
+                val now = listVm.uiState.value
+                if (now.canFundPayment()) open() else toastUnfundedPayment()
+            }
+            paymentAccessPrompt = true
+            return
+        }
+        if (!funded) {
+            toastUnfundedPayment()
+            return
+        }
+        open()
     }
 
     val startDestination = if (!app.securePreferences.firstRunSetupDone) {
@@ -841,9 +884,9 @@ private fun AuthenticatedApp(
             MainShellScreen(
                 listVm = listVm,
                 onRepeatTransaction = { id -> navigateRepeat(id) },
-                onOpenSend = { showSendSheet() },
-                onOpenSendTo = { contact -> showSendSheet(preselect = contact) },
-                onOpenPay = { showPaySheet() },
+                onOpenSend = { attemptPayment { showSendSheet() } },
+                onOpenSendTo = { contact -> attemptPayment { showSendSheet(preselect = contact) } },
+                onOpenPay = { attemptPayment { showPaySheet() } },
                 onOpenMetrics = {
                     navController.navigate(Route.Metrics.path)
                 },

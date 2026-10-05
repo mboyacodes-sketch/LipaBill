@@ -39,6 +39,12 @@ class MpesaSmsFilterTest {
     }
 
     @Test
+    fun accepts_fuliza_outstanding_wording() {
+        assertTrue(MpesaSmsFilter.isTransactionConfirmation(FULIZA_DRAW_100_SMS))
+        assertTrue(MpesaSmsFilter.isTransactionConfirmation(FULIZA_DRAW_40_SMS))
+    }
+
+    @Test
     fun accepts_reversal_account_balance_wording() {
         assertTrue(
             MpesaSmsFilter.isTransactionConfirmation(REVERSAL_JULIUS_SMS)

@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.CardWhite
@@ -87,9 +88,14 @@ fun TransactionReceiptPopup(
     onRepeat: ((Long) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val fuliza = tx.type == TransactionType.FULIZA
     val outgoing = tx.type.isOutgoing()
-    val amountColor = if (outgoing) Expense else Income
-    val amountPrefix = if (outgoing) "−" else "+"
+    val amountColor = if (outgoing || fuliza) Expense else Income
+    val amountPrefix = when {
+        fuliza -> ""
+        outgoing -> "−"
+        else -> "+"
+    }
     val canPay = UssdMenuBuilder.canRepeat(tx)
     val typeLabel = tx.type.displayLabel()
 
@@ -192,14 +198,18 @@ fun TransactionReceiptPopup(
 
                 TicketPerforation()
 
-                DetailSection(title = "Payment details") {
-                    DetailRow("Amount", formatKes(tx.amount))
+                DetailSection(title = if (fuliza) "Fuliza details" else "Payment details") {
+                    DetailRow(if (fuliza) "Fuliza amount" else "Amount", formatKes(tx.amount))
                     if (tx.cost != null) {
-                        DetailRow("Fee", formatKes(tx.cost))
+                        DetailRow(if (fuliza) "Access fee" else "Fee", formatKes(tx.cost))
                     }
                     DetailRow(
-                        label = if (outgoing) "Total paid" else "Total received",
-                        value = formatKes(tx.amount),
+                        label = when {
+                            fuliza -> "Outstanding"
+                            outgoing -> "Total paid"
+                            else -> "Total received"
+                        },
+                        value = formatKes(if (fuliza) tx.balance else tx.amount),
                         emphasize = true
                     )
                 }

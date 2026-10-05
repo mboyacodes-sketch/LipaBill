@@ -249,7 +249,8 @@ fun PayMoneySheetContent(
     }
 
     val onAmountStep = step == PaySheetStep.Amount
-    val exceedsBalance = amountExceedsBalance(listState.latestBalance, pendingAmount)
+    val shownBalance = listState.shownBalance()
+    val exceedsBalance = amountExceedsBalance(shownBalance, pendingAmount)
     val feedback = moneySheetFeedback(
         blockedDirective = paymentBlock?.let { paymentAccessDirective(paymentMissing) },
         status = state.statusMessage,
@@ -263,7 +264,9 @@ fun PayMoneySheetContent(
     )
 
     MoneySheetScaffold(
-        balance = listState.latestBalance,
+        balance = shownBalance,
+        balanceCaption = listState.account.balanceCaption,
+        balancePrefix = listState.account.balancePrefix,
         alwaysShowBalance = alwaysShowBalance,
         pendingDeduction = pendingAmount,
         selectedName = selectedName ?: "Choose merchant",

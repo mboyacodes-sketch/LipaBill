@@ -22,7 +22,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
@@ -109,6 +111,9 @@ import com.lipabill.app.viewmodel.TicketDetailViewModel
 import com.lipabill.app.viewmodel.TicketsViewModel
 import com.lipabill.app.viewmodel.label
 import com.lipabill.app.viewmodel.phaseLabel
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.Calendar
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -249,6 +254,18 @@ fun TicketsScreen(
                 onSgrSms = { addMode = AddTicketMode.CONFIRMATION }
             )
         } else {
+            var category by remember { mutableStateOf<PassCategory?>(null) }
+            val zone = remember { ZoneId.systemDefault() }
+            val today = remember { LocalDate.now(zone) }
+            val eventCount = visibleTickets.count { it.passCategory() == PassCategory.EVENTS }
+            val sgrCount = visibleTickets.count { it.passCategory() == PassCategory.SGR }
+            LaunchedEffect(eventCount, sgrCount) {
+                if (category == PassCategory.EVENTS && eventCount == 0) category = null
+                if (category == PassCategory.SGR && sgrCount == 0) category = null
+            }
+            val entries = remember(visibleTickets, category, today) {
+                buildPassList(visibleTickets, category, zone, today)
+            }
             val window = LocalWindowForm.current.width
             val columns = when (window) {
                 WindowWidth.Compact -> GridCells.Fixed(1)
@@ -256,25 +273,52 @@ fun TicketsScreen(
                 WindowWidth.Expanded -> GridCells.Adaptive(400.dp)
             }
             val sidePad = if (window == WindowWidth.Compact) Space.page else 24.dp
-            LazyVerticalGrid(
-                columns = columns,
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(
-                    start = sidePad,
-                    end = sidePad,
-                    top = Space.gap,
-                    bottom = 88.dp
-                ),
-                horizontalArrangement = Arrangement.spacedBy(Space.block),
-                verticalArrangement = Arrangement.spacedBy(Space.block)
+                    .padding(padding)
             ) {
-                items(visibleTickets, key = { it.id }) { ticket ->
-                    TicketListRow(
-                        ticket = ticket,
-                        onClick = { onOpenTicket(ticket.id) }
-                    )
+                PassCategoryChips(
+                    selected = category,
+                    eventCount = eventCount,
+                    sgrCount = sgrCount,
+                    onSelect = { category = it },
+                    modifier = Modifier.padding(horizontal = sidePad, vertical = Space.gap)
+                )
+                LazyVerticalGrid(
+                    columns = columns,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(
+                        start = sidePad,
+                        end = sidePad,
+                        bottom = 88.dp
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(Space.block),
+                    verticalArrangement = Arrangement.spacedBy(Space.block)
+                ) {
+                    items(
+                        items = entries,
+                        key = { it.key },
+                        span = { entry ->
+                            if (entry is PassListItem.Pass) {
+                                GridItemSpan(1)
+                            } else {
+                                GridItemSpan(maxLineSpan)
+                            }
+                        }
+                    ) { entry ->
+                        when (entry) {
+                            is PassListItem.Section -> PassSectionLabel(entry.title)
+                            is PassListItem.TodayHero -> TodayPassCard(
+                                ticket = entry.ticket,
+                                onClick = { onOpenTicket(entry.ticket.id) }
+                            )
+                            is PassListItem.Pass -> TicketListRow(
+                                ticket = entry.ticket,
+                                onClick = { onOpenTicket(entry.ticket.id) }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -431,13 +475,216 @@ private fun EmptyTickets(
     }
 }
 
+private enum class PassCategory(val label: String) {
+    EVENTS("Events"),
+    SGR("SGR")
+}
+
+private fun Ticket.passCategory(): PassCategory =
+    if (isRailTravel) PassCategory.SGR else PassCategory.EVENTS
+
+private fun Ticket.occasionMillis(): Long? =
+    startsAtMillis ?: boardingStartsAtMillis ?: returnBoardingStartsAtMillis
+
+private fun Ticket.isOnDay(zone: ZoneId, day: LocalDate): Boolean {
+    val millis = occasionMillis() ?: return false
+    return Instant.ofEpochMilli(millis).atZone(zone).toLocalDate() == day
+}
+
+private sealed interface PassListItem {
+    val key: String
+
+    data class Section(val title: String) : PassListItem {
+        override val key: String = "section-$title"
+    }
+
+    data class TodayHero(val ticket: Ticket) : PassListItem {
+        override val key: String = "today-${ticket.id}"
+    }
+
+    data class Pass(val ticket: Ticket) : PassListItem {
+        override val key: String = "pass-${ticket.id}"
+    }
+}
+
+private fun buildPassList(
+    tickets: List<Ticket>,
+    category: PassCategory?,
+    zone: ZoneId,
+    today: LocalDate
+): List<PassListItem> {
+    val pool = tickets.filter { category == null || it.passCategory() == category }
+    val heroes = pool
+        .filter { it.isOnDay(zone, today) && it.effectiveStatus() != TicketStatus.USED }
+        .sortedBy { it.occasionMillis() ?: Long.MAX_VALUE }
+    val heroIds = heroes.map { it.id }.toSet()
+    val rest = pool.filter { it.id !in heroIds }
+    val order = compareBy<Ticket>(
+        { it.effectiveStatus() == TicketStatus.USED },
+        { it.occasionMillis() == null },
+        { it.occasionMillis() ?: Long.MAX_VALUE }
+    )
+    val items = mutableListOf<PassListItem>()
+    if (heroes.isNotEmpty()) {
+        items += PassListItem.Section("Today")
+        heroes.forEach { items += PassListItem.TodayHero(it) }
+    }
+    PassCategory.entries.forEach { cat ->
+        if (category != null && category != cat) return@forEach
+        val rows = rest.filter { it.passCategory() == cat }.sortedWith(order)
+        if (rows.isEmpty()) return@forEach
+        if (category == null || heroes.isNotEmpty()) {
+            items += PassListItem.Section(cat.label)
+        }
+        rows.forEach { items += PassListItem.Pass(it) }
+    }
+    return items
+}
+
+@Composable
+private fun PassCategoryChips(
+    selected: PassCategory?,
+    eventCount: Int,
+    sgrCount: Int,
+    onSelect: (PassCategory?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        PassChip("All", selected = selected == null, onClick = { onSelect(null) })
+        PassCategory.entries.forEach { cat ->
+            val count = if (cat == PassCategory.EVENTS) eventCount else sgrCount
+            if (count > 0) {
+                PassChip(
+                    cat.label,
+                    selected = selected == cat,
+                    onClick = { onSelect(cat) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PassChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Text(
+        text = label,
+        style = HomeType.label,
+        color = if (selected) CardWhite else Ink,
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(if (selected) Accent else CardWhite)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+    )
+}
+
+@Composable
+private fun PassSectionLabel(title: String) {
+    Text(
+        text = title,
+        style = HomeType.label,
+        color = Mute,
+        modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp)
+    )
+}
+
+@Composable
+private fun TodayPassCard(
+    ticket: Ticket,
+    onClick: () -> Unit
+) {
+    val schedule = formatEventSchedule(ticket.occasionMillis(), ticket.notes)
+    val time = schedule.time
+    val place = listOfNotNull(
+        ticket.venue?.takeIf { it.isNotBlank() },
+        ticket.seatOrTier?.takeIf { it.isNotBlank() }
+    ).joinToString(" · ")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(10.dp, RoundedCornerShape(24.dp), spotColor = Color.Black.copy(alpha = 0.10f))
+            .clip(RoundedCornerShape(24.dp))
+            .background(CardWhite)
+            .clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .background(Accent)
+        )
+        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "TODAY",
+                    style = HomeType.label,
+                    color = Accent,
+                    letterSpacing = 1.2.sp
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = ticket.passCategory().label,
+                    style = HomeType.caption,
+                    color = Mute
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = time ?: ticket.title,
+                color = Ink,
+                fontFamily = GeometricSansFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = if (time != null) 32.sp else 24.sp,
+                lineHeight = if (time != null) 36.sp else 28.sp,
+                letterSpacing = (-0.4).sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (time != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = ticket.title,
+                    color = Ink,
+                    fontFamily = GeometricSansFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp,
+                    lineHeight = 22.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (place.isNotBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = place,
+                    style = HomeType.caption,
+                    color = Mute,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun TicketListRow(
     ticket: Ticket,
     onClick: () -> Unit
 ) {
+    val used = !ticket.isConfirmationOnly && ticket.effectiveStatus() == TicketStatus.USED
     val statusColor = when {
         ticket.isConfirmationOnly -> SoftBlue
+        used -> Mute
         else -> when (ticket.effectiveStatus()) {
             TicketStatus.ACTIVE -> Income
             TicketStatus.USED -> Mute
@@ -451,9 +698,14 @@ private fun TicketListRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(2.dp, RoundedCornerShape(18.dp), spotColor = Color.Black.copy(alpha = 0.06f))
+            .fadeWhenUsed(used)
+            .shadow(
+                if (used) 0.dp else 2.dp,
+                RoundedCornerShape(18.dp),
+                spotColor = Color.Black.copy(alpha = 0.06f)
+            )
             .clip(RoundedCornerShape(18.dp))
-            .background(CardWhite)
+            .background(if (used) Color(0xFFE4E2DC) else CardWhite)
             .clickable(onClick = onClick)
             .padding(horizontal = Space.card, vertical = Space.cardH),
         verticalAlignment = Alignment.CenterVertically
@@ -461,11 +713,11 @@ private fun TicketListRow(
         Icon(
             if (ticket.isConfirmationOnly) Icons.Outlined.Sms else Icons.Outlined.ConfirmationNumber,
             contentDescription = null,
-            tint = Accent,
+            tint = if (used) Mute else Accent,
             modifier = Modifier
                 .size(44.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(SoftBlue)
+                .background(if (used) Color(0xFFD5D2CB) else SoftBlue)
                 .padding(10.dp)
         )
         Spacer(modifier = Modifier.size(Space.block))
@@ -473,7 +725,7 @@ private fun TicketListRow(
             Text(
                 text = ticket.title,
                 style = HomeType.rowTitle,
-                color = Ink,
+                color = if (used) Mute else Ink,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1123,6 +1375,7 @@ fun TicketDetailScreen(
                         ticket = current,
                         pdf417 = bookingPdf417,
                         qrBitmap = bookingQr,
+                        modifier = Modifier.fadeWhenUsed(isUsed),
                         onChangeDate = if (!isUsed) {
                             {
                                 pickEventDateTime(
@@ -1324,6 +1577,7 @@ private fun TravelBoardingLegBlock(
     onImport: () -> Unit,
     onScan: () -> Unit
 ) {
+    Column(modifier = Modifier.fillMaxWidth().fadeWhenUsed(isUsed)) {
     SectionLabel(sectionLabel)
     Spacer(modifier = Modifier.height(Space.gap))
     val barcode = qrBitmap ?: pdf417
@@ -1437,6 +1691,7 @@ private fun TravelBoardingLegBlock(
                 textAlign = TextAlign.Center
             )
         }
+    }
     }
 }
 

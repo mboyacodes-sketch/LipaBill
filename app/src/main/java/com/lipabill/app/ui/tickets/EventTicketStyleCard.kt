@@ -1,10 +1,5 @@
 package com.lipabill.app.ui.tickets
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDp
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -31,7 +26,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,42 +77,20 @@ fun EventTicketStyleCard(
 ) {
     val model = remember(ticket) { ticket.toEventTicketUiModel() }
 
-    val tear = updateTransition(targetState = isUsed, label = "eventTicketTear")
-    val gap by tear.animateDp(
-        transitionSpec = { tween(720, easing = FastOutSlowInEasing) },
-        label = "gap"
-    ) { used -> if (used) 14.dp else 0.dp }
-    val stubDrop by tear.animateDp(
-        transitionSpec = { tween(720, easing = FastOutSlowInEasing) },
-        label = "stubDrop"
-    ) { used -> if (used) 28.dp else 0.dp }
-    val stubTilt by tear.animateFloat(
-        transitionSpec = { tween(720, easing = FastOutSlowInEasing) },
-        label = "stubTilt"
-    ) { used -> if (used) 3.5f else 0f }
-    val topLift by tear.animateDp(
-        transitionSpec = { tween(720, easing = FastOutSlowInEasing) },
-        label = "topLift"
-    ) { used -> if (used) (-6).dp else 0.dp }
-    val stubShadow by tear.animateDp(
-        transitionSpec = { tween(720, easing = FastOutSlowInEasing) },
-        label = "stubShadow"
-    ) { used -> if (used) 14.dp else 4.dp }
-
-    val topShape = if (isUsed) {
-        RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 12.dp, bottomEnd = 12.dp)
-    } else {
-        RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
-    }
-    val stubShape = if (isUsed) {
-        RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 20.dp, bottomEnd = 20.dp)
-    } else {
-        RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = 20.dp, bottomEnd = 20.dp)
-    }
+    val tear = rememberTicketTear(
+        used = isUsed,
+        label = "eventTicketTear",
+        gapWhenUsed = 14.dp,
+        dropWhenUsed = 28.dp,
+        liftWhenUsed = (-6).dp,
+        shadowWhenUsed = 14.dp
+    )
+    val (topShape, stubShape) = tornTicketShapes(isUsed, 20.dp)
 
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .fadeWhenUsed(isUsed)
             .clip(RoundedCornerShape(28.dp))
             .background(stageColor)
             .padding(horizontal = 16.dp, vertical = 28.dp)
@@ -128,7 +100,7 @@ fun EventTicketStyleCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .offset(y = topLift)
+                    .offset(y = tear.topLift)
                     .shadow(if (isUsed) 10.dp else 12.dp, topShape, clip = false)
                     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                     .clip(topShape)
@@ -155,16 +127,16 @@ fun EventTicketStyleCard(
                 EventTicketPerforation(showScissors = !isUsed)
             }
 
-            Spacer(modifier = Modifier.height(gap))
+            Spacer(modifier = Modifier.height(tear.gap))
 
             // ── QR stub (falls away when used) ───────────────────────
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .offset(y = stubDrop)
-                    .shadow(stubShadow, stubShape, clip = false)
+                    .offset(y = tear.stubDrop)
+                    .shadow(tear.stubShadow, stubShape, clip = false)
                     .graphicsLayer {
-                        rotationZ = stubTilt
+                        rotationZ = tear.stubTilt
                         compositingStrategy = CompositingStrategy.Offscreen
                     }
                     .clip(stubShape)
@@ -356,7 +328,7 @@ private fun EventQrStub(
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .size(110.dp)
-                    .graphicsLayer { alpha = if (isUsed) 0.45f else 1f }
+                    .graphicsLayer { alpha = if (isUsed) UsedPassAlpha else 1f }
                     .background(CardWhite)
             )
         } else {

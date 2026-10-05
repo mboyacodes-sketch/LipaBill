@@ -107,7 +107,8 @@ fun rememberPaymentAccess(
 fun PaymentAccessDialog(
     missing: List<PaymentAccessNeed>,
     onAllow: () -> Unit,
-    onNotNow: () -> Unit
+    onNotNow: () -> Unit,
+    footnote: String? = null
 ) {
     val next = missing.firstOrNull() ?: return
     AlertDialog(
@@ -122,6 +123,10 @@ fun PaymentAccessDialog(
                 Spacer(modifier = Modifier.height(Space.gap))
                 missing.forEach { need ->
                     Text("• ${need.line}")
+                }
+                if (!footnote.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(Space.gap))
+                    Text(footnote)
                 }
             }
         },

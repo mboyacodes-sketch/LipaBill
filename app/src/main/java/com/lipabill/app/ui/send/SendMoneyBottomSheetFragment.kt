@@ -194,7 +194,8 @@ fun SendMoneySheetContent(
         ?: UssdMenuBuilder.normalizePhoneNumber(state.query)?.let { "@$it" }
 
     val onAmountStep = step == SendSheetStep.Amount
-    val exceedsBalance = amountExceedsBalance(listState.latestBalance, pendingAmount)
+    val shownBalance = listState.shownBalance()
+    val exceedsBalance = amountExceedsBalance(shownBalance, pendingAmount)
     val feedback = moneySheetFeedback(
         blockedDirective = paymentBlock?.let { paymentAccessDirective(paymentMissing) },
         status = state.statusMessage,
@@ -208,7 +209,9 @@ fun SendMoneySheetContent(
     )
 
     MoneySheetScaffold(
-        balance = listState.latestBalance,
+        balance = shownBalance,
+        balanceCaption = listState.account.balanceCaption,
+        balancePrefix = listState.account.balancePrefix,
         alwaysShowBalance = alwaysShowBalance,
         pendingDeduction = pendingAmount,
         selectedName = selectedName,

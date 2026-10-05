@@ -1,10 +1,5 @@
 package com.lipabill.app.ui.tickets
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDp
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -26,7 +21,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -133,50 +127,26 @@ private fun SgrActiveTicketStack(
     onViewBoardingQr: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
-    val tear = updateTransition(targetState = isUsed, label = "sgrTicketTear")
-    val gap by tear.animateDp(
-        transitionSpec = { tween(720, easing = FastOutSlowInEasing) },
-        label = "gap"
-    ) { used -> if (used) 10.dp else 0.dp }
-    val stubDrop by tear.animateDp(
-        transitionSpec = { tween(720, easing = FastOutSlowInEasing) },
-        label = "stubDrop"
-    ) { used -> if (used) 22.dp else 0.dp }
-    val stubTilt by tear.animateFloat(
-        transitionSpec = { tween(720, easing = FastOutSlowInEasing) },
-        label = "stubTilt"
-    ) { used -> if (used) 3.5f else 0f }
-    val topLift by tear.animateDp(
-        transitionSpec = { tween(720, easing = FastOutSlowInEasing) },
-        label = "topLift"
-    ) { used -> if (used) (-4).dp else 0.dp }
-    val stubShadow by tear.animateDp(
-        transitionSpec = { tween(720, easing = FastOutSlowInEasing) },
-        label = "stubShadow"
-    ) { used -> if (used) 12.dp else 4.dp }
-
-    val corner = 28.dp
-    val topShape = if (isUsed) {
-        RoundedCornerShape(topStart = corner, topEnd = corner, bottomStart = 12.dp, bottomEnd = 12.dp)
-    } else {
-        RoundedCornerShape(topStart = corner, topEnd = corner, bottomStart = 0.dp, bottomEnd = 0.dp)
-    }
-    val stubShape = if (isUsed) {
-        RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = corner, bottomEnd = corner)
-    } else {
-        RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp, bottomStart = corner, bottomEnd = corner)
-    }
+    val tear = rememberTicketTear(
+        used = isUsed,
+        label = "sgrTicketTear",
+        gapWhenUsed = 10.dp,
+        dropWhenUsed = 22.dp,
+        liftWhenUsed = (-4).dp,
+        shadowWhenUsed = 12.dp
+    )
+    val (topShape, stubShape) = tornTicketShapes(isUsed, 28.dp)
 
     val ink = if (isUsed) Mute else Ink
 
     Column(
-        modifier = modifier,
+        modifier = modifier.fadeWhenUsed(isUsed),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .offset(y = topLift)
+                .offset(y = tear.topLift)
                 .shadow(if (isUsed) 8.dp else 14.dp, topShape, clip = false)
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .clip(topShape)
@@ -397,15 +367,15 @@ private fun SgrActiveTicketStack(
             SgrTicketPerforation(notchColor = stageColor)
         }
 
-        Spacer(modifier = Modifier.height(gap))
+        Spacer(modifier = Modifier.height(tear.gap))
 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .offset(y = stubDrop)
-                .shadow(stubShadow, stubShape, clip = false)
+                .offset(y = tear.stubDrop)
+                .shadow(tear.stubShadow, stubShape, clip = false)
                 .graphicsLayer {
-                    rotationZ = stubTilt
+                    rotationZ = tear.stubTilt
                     compositingStrategy = CompositingStrategy.Offscreen
                 }
                 .clip(stubShape)
@@ -429,7 +399,7 @@ private fun SgrActiveTicketStack(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(64.dp)
-                            .graphicsLayer { alpha = if (isUsed) 0.45f else 1f }
+                            .graphicsLayer { alpha = if (isUsed) UsedPassAlpha else 1f }
                     )
                 } else {
                     Text(

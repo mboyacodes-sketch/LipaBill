@@ -94,6 +94,8 @@ fun MoneySheetScaffold(
     balance: Double?,
     alwaysShowBalance: Boolean,
     pendingDeduction: Double? = null,
+    balanceCaption: String = "Available balance",
+    balancePrefix: String = "Available",
     selectedName: String?,
     selectedSubtitle: String?,
     amountDisplay: String,
@@ -123,12 +125,10 @@ fun MoneySheetScaffold(
     modifier: Modifier = Modifier
 ) {
     val amountValue = pendingDeduction
-    val exceedsBalance = balance != null &&
-        amountValue != null &&
-        amountValue > 0.0 &&
-        amountValue > balance
+    val exceedsBalance = amountExceedsBalance(balance, amountValue)
+    val canFund = balance != null && balance > 0.0
     val amountColor = if (exceedsBalance) Expense else Ink
-    val ctaReallyEnabled = ctaEnabled && !exceedsBalance
+    val ctaReallyEnabled = ctaEnabled && canFund && !exceedsBalance
     var showAddUp by remember { mutableStateOf(false) }
     /** Amount on the payment pad when Add up opened — restored if the user cancels. */
     var addUpSeed by remember { mutableStateOf("") }
@@ -163,6 +163,7 @@ fun MoneySheetScaffold(
             AmountStage(
                 balance = balance,
                 alwaysShowBalance = alwaysShowBalance,
+                balancePrefix = balancePrefix,
                 selectedName = selectedName,
                 selectedSubtitle = selectedSubtitle,
                 selectedSelected = selectedSelected,
@@ -214,7 +215,8 @@ fun MoneySheetScaffold(
                 BalanceCard(
                     balance = balance,
                     alwaysShowBalance = alwaysShowBalance,
-                    pendingDeduction = null
+                    pendingDeduction = null,
+                    caption = balanceCaption
                 )
                 Spacer(modifier = Modifier.height(Space.block))
                 SelectedAmountRow(
@@ -316,6 +318,7 @@ fun MoneySheetScaffold(
 private fun AmountStage(
     balance: Double?,
     alwaysShowBalance: Boolean,
+    balancePrefix: String,
     selectedName: String?,
     selectedSubtitle: String?,
     selectedSelected: Boolean,
@@ -358,7 +361,7 @@ private fun AmountStage(
             }
             balance != null -> {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Available ", style = HomeType.caption, color = Mute)
+                    Text("$balancePrefix ", style = HomeType.caption, color = Mute)
                     BalanceAmountRow(
                         balance = balance,
                         alwaysShow = alwaysShowBalance,
@@ -439,7 +442,8 @@ private fun CompactRecipientChip(
 private fun BalanceCard(
     balance: Double?,
     alwaysShowBalance: Boolean,
-    pendingDeduction: Double? = null
+    pendingDeduction: Double? = null,
+    caption: String = "Available balance"
 ) {
     Row(
         modifier = Modifier
@@ -455,7 +459,7 @@ private fun BalanceCard(
                 text = if (pendingDeduction != null && pendingDeduction > 0) {
                     "Remaining balance"
                 } else {
-                    "Available balance"
+                    caption
                 },
                 style = HomeType.label,
                 color = Mute

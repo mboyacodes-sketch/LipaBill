@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -68,6 +69,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -77,11 +79,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.ui.adapt.LocalWindowForm
 import com.lipabill.app.ui.permissions.rememberPaymentAccessNeeds
 import com.lipabill.app.ui.adapt.WindowWidth
 import com.lipabill.app.ui.components.BalanceAmountRow
+import com.lipabill.app.ui.components.WalletAccountSwitch
 import com.lipabill.app.ui.detail.TransactionReceiptPopup
 import com.lipabill.app.ui.sheet.InAppKeyboard
 import com.lipabill.app.ui.sheet.SheetInputStyle
@@ -109,6 +113,7 @@ import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
 import com.lipabill.app.ui.util.rememberHideKeyboard
 import com.lipabill.app.viewmodel.TransactionListViewModel
+import com.lipabill.app.viewmodel.WalletAccount
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -183,6 +188,10 @@ fun TransactionListScreen(
 
     val flat = remember(state.grouped) { state.grouped.flatMap { it.items } }
     val frequent = state.frequentContacts
+    val showFrequent = favouritesSectionEnabled && frequent.isNotEmpty() &&
+        state.account == WalletAccount.MPESA
+    val shownBalance = state.shownBalance()
+    val canSendPay = paymentsReady && state.canFundPayment()
     // Full row (incl. rawBody) so share can send truncated original SMS.
     val receiptTx by remember(receiptTxId) {
         receiptTxId?.let { viewModel.observeTransaction(it) } ?: flowOf(null)
@@ -195,7 +204,7 @@ fun TransactionListScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     // Header search icon scrolls to the transactions search field (index after hero+actions[+frequent]).
-    val txHeaderIndex = if (favouritesSectionEnabled && frequent.isNotEmpty()) 3 else 2
+    val txHeaderIndex = if (showFrequent) 3 else 2
     val listCoversSwoosh by remember {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0 ||
@@ -260,10 +269,12 @@ fun TransactionListScreen(
                 onRescan = onRescan,
                 showingReceipt = showingReceipt,
                 listState = listState,
-                balance = state.latestBalance,
+                balance = shownBalance,
                 alwaysShowBalance = alwaysShowBalance,
                 frequent = frequent,
-                showFrequent = favouritesSectionEnabled && frequent.isNotEmpty(),
+                showFrequent = showFrequent,
+                account = state.account,
+                onAccountSelected = viewModel::setWalletAccount,
                 flat = flat,
                 hasSmsPermission = state.hasSmsPermission,
                 searchQuery = state.searchQuery,
@@ -282,9 +293,9 @@ fun TransactionListScreen(
                 onMetrics = onExchange,
                 onTickets = onTickets,
                 onRequestSms = onRequestSms,
-                sendPayEnabled = paymentsReady,
+                sendPayEnabled = canSendPay,
                 onAddFrequent = onSend,
-                onSelectFrequent = { contact -> onSendTo(contact) },
+                onSelectFrequent = onSendTo,
                 onOpenTransaction = { id ->
                     hideKeyboard()
                     searchFocused = false
@@ -334,8 +345,10 @@ fun TransactionListScreen(
                             horizontalArrangement = Arrangement.spacedBy(20.dp)
                         ) {
                             BalanceSection(
-                                balance = state.latestBalance,
+                                balance = shownBalance,
                                 alwaysShowBalance = alwaysShowBalance,
+                                account = state.account,
+                                onAccountSelected = viewModel::setWalletAccount,
                                 modifier = Modifier.weight(1f)
                             )
                             QuickActionsRow(
@@ -343,14 +356,16 @@ fun TransactionListScreen(
                                 onDeposit = onReceive,
                                 onDetails = onExchange,
                                 onTickets = onTickets,
-                                sendPayEnabled = paymentsReady,
+                                sendPayEnabled = canSendPay,
                                 spread = false
                             )
                         }
                     } else {
                         BalanceSection(
-                            balance = state.latestBalance,
+                            balance = shownBalance,
                             alwaysShowBalance = alwaysShowBalance,
+                            account = state.account,
+                            onAccountSelected = viewModel::setWalletAccount,
                             modifier = Modifier.padding(horizontal = pageMargin)
                         )
                         Spacer(modifier = Modifier.height(HomeMock.SectionGap))
@@ -359,13 +374,13 @@ fun TransactionListScreen(
                             onDeposit = onReceive,
                             onDetails = onExchange,
                             onTickets = onTickets,
-                            sendPayEnabled = paymentsReady,
+                            sendPayEnabled = canSendPay,
                             modifier = Modifier.padding(horizontal = pageMargin)
                         )
                     }
                     Spacer(modifier = Modifier.height(HomeMock.SectionGap))
                 }
-                if (favouritesSectionEnabled && frequent.isNotEmpty()) {
+                if (showFrequent) {
                     item(key = "frequent") {
                         Column(modifier = Modifier.padding(horizontal = pageMargin)) {
                             SectionHeader(
@@ -377,79 +392,33 @@ fun TransactionListScreen(
                             FrequentContactsRow(
                                 contacts = frequent,
                                 onAdd = onSend,
-                                onSelect = { contact -> onSendTo(contact) }
+                                onSelect = onSendTo
                             )
                         }
                         Spacer(modifier = Modifier.height(HomeMock.SectionGap))
                     }
                 }
 
-                item(key = "tx-header") {
-                    val sheetTop = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(CreamCanvas, sheetTop)
-                            .padding(horizontal = pageMargin)
-                            .padding(top = 10.dp)
-                    ) {
-                        SectionHeader(
-                            title = "Transactions",
-                            trailing = "See all",
-                            onOpen = {
-                                scope.launch { listState.animateScrollToItem(txHeaderIndex) }
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        TransactionSearchField(
-                            query = state.searchQuery,
-                            onQueryChange = viewModel::setSearchQuery,
-                            onFocusChange = { searchFocused = it }
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
+                transactionFeed(
+                    account = state.account,
+                    flat = flat,
+                    hasSmsPermission = state.hasSmsPermission,
+                    searchQuery = state.searchQuery,
+                    onQueryChange = viewModel::setSearchQuery,
+                    onSearchFocus = { searchFocused = it },
+                    onRequestSms = onRequestSms,
+                    onOpenTransaction = { id ->
+                        hideKeyboard()
+                        searchFocused = false
+                        receiptTxId = id
+                    },
+                    pageMargin = pageMargin,
+                    sheetColor = CreamCanvas,
+                    headerShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                    onSeeAll = {
+                        scope.launch { listState.animateScrollToItem(txHeaderIndex) }
                     }
-                }
-
-            if (!state.hasSmsPermission && state.searchQuery.isBlank() && flat.isNotEmpty()) {
-                item(key = "sms-prompt") {
-                    SmsAccessPrompt(
-                        compact = true,
-                        onAllow = onRequestSms,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(CreamCanvas)
-                            .padding(horizontal = pageMargin)
-                    )
-                }
-            }
-            if (flat.isEmpty()) {
-                item(key = "empty") {
-                    EmptyState(
-                        hasPermission = state.hasSmsPermission,
-                        searching = state.searchQuery.isNotBlank(),
-                        onAllowSms = onRequestSms,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(CreamCanvas)
-                            .padding(horizontal = pageMargin)
-                    )
-                }
-            } else {
-                items(items = flat, key = { it.id }) { tx ->
-                    TransactionRow(
-                        tx = tx,
-                        onClick = {
-                            hideKeyboard()
-                            searchFocused = false
-                            receiptTxId = tx.id
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(CreamCanvas)
-                            .padding(horizontal = pageMargin)
-                    )
-                }
-            }
+                )
                 item(key = "tx-sheet-tail") {
                     Spacer(
                         modifier = Modifier
@@ -511,6 +480,8 @@ private fun HomeExpandedPane(
     alwaysShowBalance: Boolean,
     frequent: List<SendContact>,
     showFrequent: Boolean,
+    account: WalletAccount,
+    onAccountSelected: (WalletAccount) -> Unit,
     flat: List<MpesaTransaction>,
     hasSmsPermission: Boolean,
     searchQuery: String,
@@ -550,6 +521,8 @@ private fun HomeExpandedPane(
             BalanceSection(
                 balance = balance,
                 alwaysShowBalance = alwaysShowBalance,
+                account = account,
+                onAccountSelected = onAccountSelected,
                 modifier = Modifier.padding(horizontal = pageMargin)
             )
             Spacer(modifier = Modifier.height(HomeMock.SectionGap))
@@ -564,7 +537,11 @@ private fun HomeExpandedPane(
             if (showFrequent) {
                 Spacer(modifier = Modifier.height(HomeMock.SectionGap))
                 Column(modifier = Modifier.padding(horizontal = pageMargin)) {
-                    SectionHeader(title = "Frequent", trailing = null, onOpen = onSend)
+                    SectionHeader(
+                        title = "Frequent",
+                        trailing = null,
+                        onOpen = onSend
+                    )
                     Spacer(modifier = Modifier.height(10.dp))
                     FrequentContactsRow(
                         contacts = frequent,
@@ -589,56 +566,18 @@ private fun HomeExpandedPane(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = Space.section)
                 ) {
-                    item(key = "tx-header") {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = pageMargin)
-                                .padding(top = 10.dp)
-                        ) {
-                            SectionHeader(title = "Transactions")
-                            Spacer(modifier = Modifier.height(8.dp))
-                            TransactionSearchField(
-                                query = searchQuery,
-                                onQueryChange = onQueryChange,
-                                onFocusChange = onSearchFocus
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                        }
-                    }
-                    if (!hasSmsPermission && searchQuery.isBlank() && flat.isNotEmpty()) {
-                        item(key = "sms-prompt") {
-                            SmsAccessPrompt(
-                                compact = true,
-                                onAllow = onRequestSms,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = pageMargin)
-                            )
-                        }
-                    }
-                    if (flat.isEmpty()) {
-                        item(key = "empty") {
-                            EmptyState(
-                                hasPermission = hasSmsPermission,
-                                searching = searchQuery.isNotBlank(),
-                                onAllowSms = onRequestSms,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = pageMargin)
-                            )
-                        }
-                    } else {
-                        items(items = flat, key = { it.id }) { tx ->
-                            TransactionRow(
-                                tx = tx,
-                                onClick = { onOpenTransaction(tx.id) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = pageMargin)
-                            )
-                        }
-                    }
+                    transactionFeed(
+                        account = account,
+                        flat = flat,
+                        hasSmsPermission = hasSmsPermission,
+                        searchQuery = searchQuery,
+                        onQueryChange = onQueryChange,
+                        onSearchFocus = onSearchFocus,
+                        onRequestSms = onRequestSms,
+                        onOpenTransaction = onOpenTransaction,
+                        pageMargin = pageMargin,
+                        sheetColor = null
+                    )
                 }
             }
             if (searchFocused && !showingReceipt) {
@@ -717,6 +656,8 @@ private fun HeaderIconButton(
 private fun BalanceSection(
     balance: Double?,
     alwaysShowBalance: Boolean,
+    account: WalletAccount,
+    onAccountSelected: (WalletAccount) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -786,8 +727,9 @@ private fun BalanceSection(
             horizontalAlignment = Alignment.Start,
             verticalArrangement = Arrangement.spacedBy(HomeMock.PillLabelGap)
         ) {
+            WalletAccountSwitch(account = account, onSelect = onAccountSelected)
             Text(
-                text = "Available balance",
+                text = account.balanceCaption,
                 style = HomeType.caption,
                 color = Mute
             )
@@ -1071,9 +1013,18 @@ private fun TransactionRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val fuliza = tx.type == TransactionType.FULIZA
     val outgoing = tx.type.isOutgoing()
-    val sign = if (outgoing) "−" else "+"
-    val amountColor = if (outgoing) Debit else Income
+    val sign = when {
+        fuliza -> ""
+        outgoing -> "−"
+        else -> "+"
+    }
+    val amountColor = when {
+        fuliza -> Debit
+        outgoing -> Debit
+        else -> Income
+    }
     val named = !tx.counterpartyName.isNullOrBlank()
     val title = tx.counterpartyName ?: tx.type.displayLabel()
     val seed = title.hashCode()
@@ -1121,6 +1072,14 @@ private fun TransactionRow(
                     color = Ink.copy(alpha = 0.62f),
                     maxLines = 1
                 )
+                if (fuliza && tx.cost != null) {
+                    Text(
+                        text = " · fee ${formatKes(tx.cost)}",
+                        style = HomeType.caption,
+                        color = Ink.copy(alpha = 0.62f),
+                        maxLines = 1
+                    )
+                }
                 val phone = tx.counterpartyPhone?.trim().orEmpty()
                 if (phone.isNotEmpty()) {
                     Text(
@@ -1153,10 +1112,85 @@ private fun TransactionRow(
     }
 }
 
+private fun LazyListScope.transactionFeed(
+    account: WalletAccount,
+    flat: List<MpesaTransaction>,
+    hasSmsPermission: Boolean,
+    searchQuery: String,
+    onQueryChange: (String) -> Unit,
+    onSearchFocus: (Boolean) -> Unit,
+    onRequestSms: () -> Unit,
+    onOpenTransaction: (Long) -> Unit,
+    pageMargin: Dp,
+    sheetColor: Color?,
+    headerShape: Shape? = null,
+    onSeeAll: (() -> Unit)? = null
+) {
+    fun Modifier.sheet(shape: Shape? = null): Modifier {
+        val painted = when {
+            sheetColor == null -> this
+            shape != null -> background(sheetColor, shape)
+            else -> background(sheetColor)
+        }
+        return painted.padding(horizontal = pageMargin)
+    }
+
+    item(key = "tx-header") {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .sheet(headerShape)
+                .padding(top = 10.dp)
+        ) {
+            SectionHeader(
+                title = account.ledgerTitle,
+                trailing = if (onSeeAll != null) "See all" else null,
+                onOpen = onSeeAll
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            TransactionSearchField(
+                query = searchQuery,
+                onQueryChange = onQueryChange,
+                onFocusChange = onSearchFocus
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+        }
+    }
+    if (!hasSmsPermission && searchQuery.isBlank() && flat.isNotEmpty()) {
+        item(key = "sms-prompt") {
+            SmsAccessPrompt(
+                compact = true,
+                onAllow = onRequestSms,
+                modifier = Modifier.fillMaxWidth().sheet()
+            )
+        }
+    }
+    if (flat.isEmpty()) {
+        item(key = "empty") {
+            EmptyState(
+                hasPermission = hasSmsPermission,
+                searching = searchQuery.isNotBlank(),
+                account = account,
+                onAllowSms = onRequestSms,
+                modifier = Modifier.fillMaxWidth().sheet()
+            )
+        }
+    } else {
+        items(items = flat, key = { it.id }) { tx ->
+            TransactionRow(
+                tx = tx,
+                onClick = { onOpenTransaction(tx.id) },
+                modifier = Modifier.fillMaxWidth().sheet()
+            )
+        }
+    }
+}
+
 @Composable
 private fun EmptyState(
     hasPermission: Boolean,
     searching: Boolean,
+    account: WalletAccount,
     onAllowSms: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1169,7 +1203,7 @@ private fun EmptyState(
         Text(
             text = when {
                 searching -> "No matches"
-                hasPermission -> "No activity yet"
+                hasPermission -> account.emptyHistoryTitle
                 else -> "History needs SMS"
             },
             style = HomeType.rowTitle
@@ -1178,7 +1212,7 @@ private fun EmptyState(
         Text(
             text = when {
                 searching -> "Try a different name or number."
-                hasPermission -> "Pull down to refresh and import M-Pesa SMS."
+                hasPermission -> account.emptyHistoryDetail
                 else ->
                     "LipaBill reads Safaricom M-Pesa confirmations on this phone " +
                         "and stores them encrypted. It does not send SMS."

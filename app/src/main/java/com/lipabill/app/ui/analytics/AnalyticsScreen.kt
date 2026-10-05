@@ -56,6 +56,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.ui.components.BalanceAmountRow
+import com.lipabill.app.ui.components.WalletAccountSwitch
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Expense
@@ -85,6 +86,8 @@ fun MetricsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val stats = state.analytics
+    val account = state.account
+    val shownBalance = state.shownBalance()
     val net = stats.incomeTotal - stats.expenseTotal
     var showDatePicker by remember { mutableStateOf(false) }
     val app = LocalContext.current.applicationContext as LipaBillApp
@@ -96,7 +99,12 @@ fun MetricsScreen(
         topBar = {
             if (onBack != null) {
                 TopAppBar(
-                    title = { Text("Metrics & Analytics", style = HomeType.greeting) },
+                    title = {
+                        Text(
+                            account.metricsTitle,
+                            style = HomeType.greeting
+                        )
+                    },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -115,7 +123,10 @@ fun MetricsScreen(
                 .padding(horizontal = Space.page)
         ) {
             if (onBack == null) {
-                Text("Metrics & Analytics", style = HomeType.greeting)
+                Text(
+                    account.metricsTitle,
+                    style = HomeType.greeting
+                )
                 Spacer(modifier = Modifier.height(Space.block))
             }
 
@@ -150,10 +161,19 @@ fun MetricsScreen(
                     .background(CardWhite)
                     .padding(Space.card)
             ) {
-                Text("Available balance", style = HomeType.label, color = Mute)
+                WalletAccountSwitch(
+                    account = state.account,
+                    onSelect = viewModel::setWalletAccount
+                )
+                Spacer(modifier = Modifier.height(Space.gap))
+                Text(
+                    account.balanceCaption,
+                    style = HomeType.label,
+                    color = Mute
+                )
                 Spacer(modifier = Modifier.height(Space.gap))
                 BalanceAmountRow(
-                    balance = state.latestBalance,
+                    balance = shownBalance,
                     alwaysShow = alwaysShowBalance,
                     amountStyle = HomeType.amount,
                     showEyeToggle = true
@@ -166,14 +186,14 @@ fun MetricsScreen(
                 horizontalArrangement = Arrangement.spacedBy(Space.block)
             ) {
                 MetricStatCard(
-                    title = "Income",
+                    title = account.inflowLabel,
                     amount = stats.incomeTotal,
                     tint = Income,
                     icon = Icons.Outlined.SouthWest,
                     modifier = Modifier.weight(1f)
                 )
                 MetricStatCard(
-                    title = "Expenses",
+                    title = account.outflowLabel,
                     amount = stats.expenseTotal,
                     tint = Expense,
                     icon = Icons.Outlined.NorthEast,
@@ -203,9 +223,17 @@ fun MetricsScreen(
             Spacer(modifier = Modifier.height(Space.section))
             Text("Cash flow", style = HomeType.section)
             Spacer(modifier = Modifier.height(Space.tight))
-            Text("Income vs expenses over time", style = HomeType.caption, color = Mute)
+            Text(
+                account.cashFlowCaption,
+                style = HomeType.caption,
+                color = Mute
+            )
             Spacer(modifier = Modifier.height(Space.block))
-            CashFlowChartCard(series = stats.series)
+            CashFlowChartCard(
+                series = stats.series,
+                inflowLabel = account.inflowLabel,
+                outflowLabel = account.outflowLabel
+            )
 
             Spacer(modifier = Modifier.height(Space.section))
             Text("By type", style = HomeType.section)
@@ -213,7 +241,7 @@ fun MetricsScreen(
 
             if (stats.byType.isEmpty()) {
                 Text(
-                    text = "No transactions in this period.",
+                    text = account.emptyPeriodCopy,
                     style = HomeType.body,
                     color = Mute
                 )
@@ -409,7 +437,11 @@ private fun MetricsDateRangePicker(
 }
 
 @Composable
-private fun CashFlowChartCard(series: List<AnalyticsPoint>) {
+private fun CashFlowChartCard(
+    series: List<AnalyticsPoint>,
+    inflowLabel: String,
+    outflowLabel: String
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -421,8 +453,8 @@ private fun CashFlowChartCard(series: List<AnalyticsPoint>) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.chip)
         ) {
-            LegendDot(color = Income, label = "Income")
-            LegendDot(color = Expense, label = "Expenses")
+            LegendDot(color = Income, label = inflowLabel)
+            LegendDot(color = Expense, label = outflowLabel)
         }
         Spacer(modifier = Modifier.height(Space.block))
         if (series.isEmpty() || series.all { it.income == 0.0 && it.expense == 0.0 }) {

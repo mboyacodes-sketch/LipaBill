@@ -1,6 +1,8 @@
 package com.lipabill.app.data.parser
 
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.data.sms.FULIZA_DRAW_100_SMS
+import com.lipabill.app.data.sms.FULIZA_DRAW_40_SMS
 import com.lipabill.app.data.sms.REVERSAL_JULIUS_SMS
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -248,6 +250,22 @@ class MpesaSmsParserTest {
         assertEquals(50.0, tx.amount!!, 0.001)
         assertEquals("MAMA NJERI SHOP", tx.counterpartyName)
         assertEquals(1050.0, tx.balance!!, 0.001)
+    }
+
+    @Test
+    fun fuliza_draw_keeps_amount_fee_outstanding_and_due_date() {
+        val hundred = MpesaSmsParser.parse(FULIZA_DRAW_100_SMS, ts)
+        assertEquals(TransactionType.FULIZA, hundred.type)
+        assertEquals("UI3E552R94", hundred.code)
+        assertEquals(100.0, hundred.amount!!, 0.001)
+        assertEquals(1.0, hundred.cost!!, 0.001)
+        assertEquals(192.97, hundred.balance!!, 0.001)
+        assertEquals("Due 02/10/26", hundred.counterpartyName)
+
+        val forty = MpesaSmsParser.parse(FULIZA_DRAW_40_SMS, ts)
+        assertEquals(40.0, forty.amount!!, 0.001)
+        assertEquals(0.40, forty.cost!!, 0.001)
+        assertEquals(61.67, forty.balance!!, 0.001)
     }
 
     @Test

@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.data.repository.TransactionRepository
 import com.lipabill.app.ui.util.displayLabel
@@ -24,6 +25,72 @@ import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+
+/** Home balance and transaction list. Fuliza is a second ledger, not a payment method. */
+enum class WalletAccount(
+    val chipLabel: String,
+    val balanceCaption: String,
+    val balancePrefix: String,
+    val ledgerTitle: String,
+    val metricsTitle: String,
+    val inflowLabel: String,
+    val outflowLabel: String,
+    val emptyPeriodCopy: String,
+    val emptyHistoryTitle: String,
+    val emptyHistoryDetail: String
+) {
+    MPESA(
+        chipLabel = "M-PESA",
+        balanceCaption = "Available balance",
+        balancePrefix = "Available",
+        ledgerTitle = "Transactions",
+        metricsTitle = "Metrics & Analytics",
+        inflowLabel = "Income",
+        outflowLabel = "Expenses",
+        emptyPeriodCopy = "No transactions in this period.",
+        emptyHistoryTitle = "No activity yet",
+        emptyHistoryDetail = "Pull down to refresh and import M-Pesa SMS."
+    ),
+    FULIZA(
+        chipLabel = "Fuliza",
+        balanceCaption = "Fuliza outstanding",
+        balancePrefix = "Outstanding",
+        ledgerTitle = "Fuliza",
+        metricsTitle = "Fuliza metrics",
+        inflowLabel = "Drawn",
+        outflowLabel = "Access fees",
+        emptyPeriodCopy = "No Fuliza messages in this period.",
+        emptyHistoryTitle = "No Fuliza messages yet",
+        emptyHistoryDetail = "Fuliza confirmations from M-PESA show here."
+    );
+
+    val cashFlowCaption: String
+        get() = "$inflowLabel vs ${outflowLabel.replaceFirstChar { it.lowercase() }} over time"
+
+    /** Figure for the account that is selected. Null when there is no history. */
+    fun displayedBalance(mpesaBalance: Double?, fulizaOutstanding: Double?): Double? = when (this) {
+        MPESA -> mpesaBalance
+        FULIZA -> fulizaOutstanding
+    }
+
+    /** Send and Pay need a positive figure on the selected account. Zero and dashes do not qualify. */
+    fun canFundPayment(mpesaBalance: Double?, fulizaOutstanding: Double?): Boolean {
+        val figure = displayedBalance(mpesaBalance, fulizaOutstanding)
+        return figure != null && figure > 0.0
+    }
+
+    /** Why Send and Pay are off when this account has no usable figure. */
+    fun unfundedPaymentMessage(mpesaBalance: Double?, fulizaOutstanding: Double?): String {
+        val name = chipLabel
+        val label = if (this == FULIZA) "outstanding amount" else "balance"
+        val figure = displayedBalance(mpesaBalance, fulizaOutstanding)
+        return if (figure == null) {
+            "Send and Pay need a $name $label from your messages. There isn’t one yet."
+        } else {
+            "Send and Pay are off because your $name $label is Ksh 0.00."
+        }
+    }
+}
 
 enum class AnalyticsRange {
     DAYS_7,
@@ -67,10 +134,19 @@ data class TransactionListUiState(
     val scanMessage: String? = null,
     val hasSmsPermission: Boolean = false,
     val latestBalance: Double? = null,
+    val fulizaOutstanding: Double? = null,
+    val account: WalletAccount = WalletAccount.MPESA,
     val analytics: AnalyticsSummary = AnalyticsSummary(),
     val frequentContacts: List<SendContact> = emptyList(),
     val searchQuery: String = ""
-)
+) {
+    fun shownBalance(): Double? = account.displayedBalance(latestBalance, fulizaOutstanding)
+
+    fun canFundPayment(): Boolean = account.canFundPayment(latestBalance, fulizaOutstanding)
+
+    fun unfundedPaymentMessage(): String =
+        account.unfundedPaymentMessage(latestBalance, fulizaOutstanding)
+}
 
 data class DayGroup(
     val label: String,
@@ -90,6 +166,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     private val scanMessage = MutableStateFlow<String?>(null)
     private val hasSmsPermission = MutableStateFlow(false)
     private val searchQuery = MutableStateFlow("")
+    private val walletAccount = MutableStateFlow(WalletAccount.MPESA)
     private val analyticsRange = MutableStateFlow(AnalyticsRange.DAYS_30)
     private val analyticsYear = MutableStateFlow<Int?>(null)
     private val customStart = MutableStateFlow<LocalDate?>(null)
@@ -124,21 +201,31 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
 
     private val listCore: StateFlow<TransactionListUiState> = combine(
         combine(
-            transactions,
+            combine(transactions, analyticsSource, walletAccount) { txs, analytics, account ->
+                val mpesa = analytics.filter { it.type != TransactionType.FULIZA }
+                val fuliza = analytics.filter { it.type == TransactionType.FULIZA }
+                WalletSlice(
+                    visible = txs.onWallet(account),
+                    analytics = if (account == WalletAccount.FULIZA) fuliza else mpesa,
+                    mpesaBalance = mpesa.firstOrNull { it.balance != null }?.balance,
+                    fulizaOutstanding = fuliza.firstOrNull { it.balance != null }?.balance,
+                    account = account
+                )
+            },
             hasSmsPermission,
             scan,
-            analyticsSource,
             rangeState
-        ) { txs, smsOk, s, analyticsTxs, range ->
+        ) { wallet, smsOk, s, range ->
             val (scanning, message) = s
             TransactionListUiState(
-                grouped = groupByDay(txs),
+                grouped = groupByDay(wallet.visible),
                 isScanning = scanning,
                 scanMessage = message,
                 hasSmsPermission = smsOk,
-                latestBalance = analyticsTxs.firstOrNull { it.balance != null }?.balance
-                    ?: txs.firstOrNull { it.balance != null }?.balance,
-                analytics = buildAnalytics(analyticsTxs, range)
+                latestBalance = wallet.mpesaBalance,
+                fulizaOutstanding = wallet.fulizaOutstanding,
+                account = wallet.account,
+                analytics = buildAnalytics(wallet.analytics, range, wallet.account)
             )
         },
         searchQuery
@@ -165,6 +252,10 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
 
     fun setSearchQuery(query: String) {
         searchQuery.value = query
+    }
+
+    fun setWalletAccount(account: WalletAccount) {
+        walletAccount.value = account
     }
 
     fun setAnalyticsRange(range: AnalyticsRange) {
@@ -223,7 +314,8 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
 
     private fun buildAnalytics(
         txs: List<MpesaTransaction>,
-        rangeState: AnalyticsRangeState
+        rangeState: AnalyticsRangeState,
+        account: WalletAccount
     ): AnalyticsSummary {
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
@@ -249,7 +341,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             !date.isBefore(from) && !date.isAfter(to)
         }
 
-        val (income, expense) = flowTotals(filtered)
+        val (income, expense) = flowTotals(filtered, account)
 
         val byType = filtered
             .groupBy { it.type }
@@ -262,7 +354,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             }
             .sortedByDescending { it.total }
 
-        val series = buildSeries(filtered, from, to, rangeState.range, zone)
+        val series = buildSeries(filtered, from, to, rangeState.range, zone, account)
 
         return AnalyticsSummary(
             incomeTotal = income,
@@ -313,7 +405,8 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         from: LocalDate,
         to: LocalDate,
         range: AnalyticsRange,
-        zone: ZoneId
+        zone: ZoneId,
+        account: WalletAccount
     ): List<AnalyticsPoint> {
         if (txs.isEmpty() && range == AnalyticsRange.ALL) return emptyList()
 
@@ -326,7 +419,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         }
 
         fun totalsFor(dates: List<LocalDate>): Pair<Double, Double> =
-            flowTotals(dates.flatMap { byDate[it].orEmpty() })
+            flowTotals(dates.flatMap { byDate[it].orEmpty() }, account)
 
         val days = ChronoUnit.DAYS.between(from, to) + 1
         return when {
@@ -377,7 +470,23 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
-    private fun flowTotals(txs: Iterable<MpesaTransaction>): Pair<Double, Double> {
+    /**
+     * M-PESA: money in vs money out.
+     * Fuliza: amount drawn vs access fees. Outstanding stays on the balance, not in these totals.
+     */
+    private fun flowTotals(
+        txs: Iterable<MpesaTransaction>,
+        account: WalletAccount
+    ): Pair<Double, Double> {
+        if (account == WalletAccount.FULIZA) {
+            var drawn = 0.0
+            var fees = 0.0
+            for (tx in txs) {
+                drawn += tx.amount ?: 0.0
+                fees += tx.cost ?: 0.0
+            }
+            return drawn to fees
+        }
         var income = 0.0
         var expense = 0.0
         for (tx in txs) {
@@ -385,6 +494,11 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             if (tx.type.isOutgoing()) expense += amount else income += amount
         }
         return income to expense
+    }
+
+    private fun List<MpesaTransaction>.onWallet(account: WalletAccount): List<MpesaTransaction> {
+        val fuliza = account == WalletAccount.FULIZA
+        return filter { (it.type == TransactionType.FULIZA) == fuliza }
     }
 
     private fun groupByDay(txs: List<MpesaTransaction>): List<DayGroup> {
@@ -405,6 +519,14 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                 DayGroup(label = label, date = date, items = items)
             }
     }
+
+    private data class WalletSlice(
+        val visible: List<MpesaTransaction>,
+        val analytics: List<MpesaTransaction>,
+        val mpesaBalance: Double?,
+        val fulizaOutstanding: Double?,
+        val account: WalletAccount
+    )
 
     private data class AnalyticsRangeState(
         val range: AnalyticsRange,
