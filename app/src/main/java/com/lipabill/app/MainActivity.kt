@@ -130,6 +130,7 @@ class MainActivity : AppCompatActivity(),
             )
         )
         super.onCreate(savedInstanceState)
+        captureIncomingDocument(intent)
         val app = application as LipaBillApp
         setContent {
             val fontSize by app.fontSizeSp.collectAsStateWithLifecycle()
@@ -150,6 +151,24 @@ class MainActivity : AppCompatActivity(),
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        captureIncomingDocument(intent)
+    }
+
+    /** Local copy of a pass opened from another app. Survives the lock screen. */
+    var incomingDocumentUri by mutableStateOf<Uri?>(null)
+        private set
+
+    fun clearIncomingDocument() {
+        incomingDocumentUri = null
+    }
+
+    private fun captureIncomingDocument(intent: Intent?) {
+        val passes = PkPassIntents.preparePkPasses(this, intent)
+        if (passes.isNotEmpty()) {
+            (application as LipaBillApp).importOpenedPasses(passes)
+            return
+        }
+        PkPassIntents.capture(this, intent)?.let { incomingDocumentUri = it }
     }
 
     companion object {
@@ -233,9 +252,9 @@ private fun AuthenticatedApp(
     val context = LocalContext.current
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
-    var pendingPkPassUri by remember {
-        mutableStateOf(PkPassIntents.extractUri(activity.intent))
-    }
+    val host = activity as MainActivity
+    val pendingPkPassUri = host.incomingDocumentUri
+    val openedPass by app.openedPass.collectAsStateWithLifecycle()
     var returnToAmountAfterPinCancel by remember {
         mutableStateOf(
             activity.intent?.getBooleanExtra(
@@ -251,7 +270,6 @@ private fun AuthenticatedApp(
 
     DisposableEffect(activity) {
         val listener = androidx.core.util.Consumer<Intent> { intent ->
-            PkPassIntents.extractUri(intent)?.let { pendingPkPassUri = it }
             if (intent.getBooleanExtra(
                     MainActivity.EXTRA_RETURN_TO_AMOUNT_AFTER_PIN_CANCEL,
                     false
@@ -264,8 +282,9 @@ private fun AuthenticatedApp(
         onDispose { activity.removeOnNewIntentListener(listener) }
     }
 
-    LaunchedEffect(pendingPkPassUri) {
-        if (pendingPkPassUri != null) {
+    val openPasses = pendingPkPassUri != null || openedPass !is OpenedPass.Idle
+    LaunchedEffect(openPasses) {
+        if (openPasses) {
             navController.navigate(Route.Tickets.path) {
                 launchSingleTop = true
             }
@@ -865,7 +884,9 @@ private fun AuthenticatedApp(
                     navController.navigate(Route.TicketDetail(id).path)
                 },
                 pendingPkPassUri = pendingPkPassUri,
-                onPendingPkPassConsumed = { pendingPkPassUri = null }
+                onPendingPkPassConsumed = { host.clearIncomingDocument() },
+                openedPass = openedPass,
+                onOpenedPassHandled = { app.clearOpenedPass() }
             )
         }
         composable(

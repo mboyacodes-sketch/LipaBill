@@ -61,6 +61,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -82,6 +83,7 @@ import com.lipabill.app.data.model.BoardingPassSnapshot
 import com.lipabill.app.data.model.Ticket
 import com.lipabill.app.data.model.TicketBarcodeFormat
 import com.lipabill.app.data.model.TicketStatus
+import com.lipabill.app.OpenedPass
 import com.lipabill.app.data.tickets.BookingConfirmationParser
 import com.lipabill.app.data.tickets.TicketDocumentKind
 import com.lipabill.app.ui.adapt.LocalWindowForm
@@ -101,12 +103,14 @@ import com.lipabill.app.ui.theme.RouteBlue
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.util.formatEventSchedule
 import com.lipabill.app.ui.util.formatEventWhen
 import com.lipabill.app.viewmodel.TicketDetailViewModel
 import com.lipabill.app.viewmodel.TicketsViewModel
 import com.lipabill.app.viewmodel.label
 import com.lipabill.app.viewmodel.phaseLabel
 import java.util.Calendar
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 private enum class AddTicketMode {
@@ -123,6 +127,8 @@ fun TicketsScreen(
     onOpenTicket: (Long) -> Unit,
     pendingPkPassUri: Uri? = null,
     onPendingPkPassConsumed: () -> Unit = {},
+    openedPass: OpenedPass = OpenedPass.Idle,
+    onOpenedPassHandled: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val tickets by viewModel.tickets.collectAsStateWithLifecycle()
@@ -150,6 +156,7 @@ fun TicketsScreen(
                 onOpenTicket(id)
             }
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             error = t.message?.takeIf { it.isNotBlank() }
                 ?: "Couldn’t read that ticket file."
         } finally {
@@ -175,10 +182,29 @@ fun TicketsScreen(
         documentPicker.launch(Unit)
     }
 
-    LaunchedEffect(pendingPkPassUri) {
-        val uri = pendingPkPassUri ?: return@LaunchedEffect
+    // Hold the pass here so clearing the activity URI does not cancel this import.
+    var queuedPass by remember { mutableStateOf<Uri?>(null) }
+    SideEffect {
+        val incoming = pendingPkPassUri ?: return@SideEffect
+        if (incoming != queuedPass) queuedPass = incoming
+    }
+    LaunchedEffect(queuedPass) {
+        val uri = queuedPass ?: return@LaunchedEffect
         onPendingPkPassConsumed()
-        importDocument(uri, TicketDocumentKind.PKPASS)
+        importDocument(uri, TicketDocumentKind.AUTO)
+    }
+    LaunchedEffect(openedPass) {
+        when (val pass = openedPass) {
+            is OpenedPass.Saved -> {
+                onOpenedPassHandled()
+                onOpenTicket(pass.id)
+            }
+            is OpenedPass.Failed -> {
+                onOpenedPassHandled()
+                error = pass.message
+            }
+            OpenedPass.Idle, OpenedPass.Reading -> Unit
+        }
     }
 
     Scaffold(
@@ -276,6 +302,7 @@ fun TicketsScreen(
                             onOpenTicket(id)
                         }
                     } catch (t: Throwable) {
+                        if (t is CancellationException) throw t
                         error = t.message?.takeIf { it.isNotBlank() }
                             ?: "Couldn’t parse that confirmation."
                     }
@@ -310,7 +337,7 @@ fun TicketsScreen(
         )
     }
 
-    if (importing) {
+    if (importing || openedPass is OpenedPass.Reading) {
         val readingLabel = when (pendingDocumentKind) {
             TicketDocumentKind.FLIGHT_E_TICKET -> "Reading flight e-ticket…"
             TicketDocumentKind.EVENT -> "Reading event ticket…"
@@ -452,7 +479,10 @@ private fun TicketListRow(
             )
             val subtitle = buildList {
                 ticket.orderId?.takeIf { ticket.isConfirmationOnly }?.let { add("Ref $it") }
-                ticket.startsAtMillis?.let { add(formatEventWhen(it)) }
+                ticket.startsAtMillis?.let { start ->
+                    val schedule = formatEventSchedule(start, ticket.notes)
+                    add(listOfNotNull(schedule.date, schedule.time).joinToString(" · "))
+                }
                 ticket.seatOrTier?.let { add(it) }
                     ?: ticket.venue?.let { add(it) }
             }.joinToString(" · ").ifBlank { ticket.phaseLabel() }
@@ -679,6 +709,7 @@ fun TicketDetailScreen(
             val ok = viewModel.attachBoardingPass(context, uri, attachLeg)
             if (!ok) error = "Couldn’t attach that boarding pass (duplicate QR or unreadable)."
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             error = t.message?.takeIf { it.isNotBlank() }
                 ?: "Couldn’t read that boarding pass."
         } finally {

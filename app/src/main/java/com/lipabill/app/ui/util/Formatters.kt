@@ -1,9 +1,11 @@
 package com.lipabill.app.ui.util
 
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.data.model.notesValue
 import java.text.NumberFormat
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -25,6 +27,49 @@ fun formatTimestamp(millis: Long): String {
     return Instant.ofEpochMilli(millis)
         .atZone(ZoneId.systemDefault())
         .format(dateTimeFormat)
+}
+
+private val eventDateFormat: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("d MMMM, yyyy", Locale.ENGLISH)
+private val eventTimeFormat: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
+
+data class EventSchedule(val date: String?, val time: String?)
+
+/** Date on one line, clock time on the other. An end instant extends whichever line it changes. */
+fun formatEventSchedule(startMillis: Long?, notes: String?): EventSchedule {
+    val end = notes.notesValue("Ends")?.toLongOrNull()
+    return EventSchedule(
+        date = startMillis?.let { formatEventDateLabel(it, end) },
+        time = notes.notesValue("Time") ?: startMillis?.let { formatEventTimeLabel(it, end) }
+    )
+}
+
+/** Calendar date for a pass. A second day is included when the event crosses midnight. */
+private fun formatEventDateLabel(startMillis: Long, endMillis: Long? = null): String {
+    val zone = ZoneId.systemDefault()
+    val start = Instant.ofEpochMilli(startMillis).atZone(zone)
+    val startDate = start.format(eventDateFormat)
+    val end = endMillis?.let { Instant.ofEpochMilli(it).atZone(zone) } ?: return startDate
+    if (end.toLocalDate() == start.toLocalDate()) return startDate
+    return "$startDate – ${end.format(eventDateFormat)}"
+}
+
+/**
+ * Clock time for a pass. Midnight-only values are dates, so they stay off this line.
+ * A later end time is shown on the same line.
+ */
+private fun formatEventTimeLabel(startMillis: Long, endMillis: Long? = null): String? {
+    val zone = ZoneId.systemDefault()
+    val start = Instant.ofEpochMilli(startMillis).atZone(zone)
+    val end = endMillis?.let { Instant.ofEpochMilli(it).atZone(zone) }
+    val startText = start.format(eventTimeFormat)
+    val endText = end?.format(eventTimeFormat)
+    val startHasTime = start.toLocalTime() != LocalTime.MIDNIGHT
+    val endHasTime = end != null && end.toLocalTime() != LocalTime.MIDNIGHT
+    if (!startHasTime && !endHasTime) return null
+    if (endText == null || endText == startText) return startText
+    return "$startText – $endText"
 }
 
 /**

@@ -1,6 +1,7 @@
 package com.lipabill.app
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -13,6 +14,8 @@ import com.lipabill.app.data.repository.RepeatAttemptRepository
 import com.lipabill.app.data.repository.TicketRepository
 import com.lipabill.app.data.repository.TransactionRepository
 import com.lipabill.app.data.sms.SmsInboxReader
+import com.lipabill.app.data.tickets.TicketDocumentImporter
+import com.lipabill.app.data.tickets.TicketDocumentKind
 import com.lipabill.app.data.sms.SmsInboxSyncWatcher
 import com.lipabill.app.metrics.AppCrashReporting
 import com.lipabill.app.metrics.AppMetrics
@@ -58,6 +61,39 @@ class LipaBillApp : Application() {
 
     private val _recordingPrivacy = MutableStateFlow(false)
     val recordingPrivacy: StateFlow<Boolean> = _recordingPrivacy.asStateFlow()
+
+    private val _openedPass = MutableStateFlow<OpenedPass>(OpenedPass.Idle)
+    val openedPass: StateFlow<OpenedPass> = _openedPass.asStateFlow()
+
+    fun importOpenedPasses(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        _openedPass.value = OpenedPass.Reading
+        appScope.launch {
+            var savedId: Long? = null
+            var failure: String? = null
+            for (uri in uris) {
+                val outcome = runCatching { importOnePass(uri) }
+                outcome.onSuccess { id -> if (savedId == null) savedId = id }
+                    .onFailure { failure = it.message?.ifBlank { null } ?: "Couldn’t read that pass." }
+            }
+            _openedPass.value = when (val id = savedId) {
+                null -> OpenedPass.Failed(failure ?: "Couldn’t read that pass.")
+                else -> OpenedPass.Saved(id)
+            }
+        }
+    }
+
+    fun clearOpenedPass() {
+        _openedPass.value = OpenedPass.Idle
+    }
+
+    private suspend fun importOnePass(uri: Uri): Long {
+        val draft = TicketDocumentImporter.import(this, uri, TicketDocumentKind.PKPASS)
+        return ticketRepository.addImport(
+            draft.copy(expectsBoardingPass = false, hasBoardingPass = true)
+        ) ?: ticketRepository.existingTicketId(draft.barcodeValue, draft.orderId)
+            ?: throw IllegalArgumentException("That ticket is already saved.")
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -155,4 +191,12 @@ class LipaBillApp : Application() {
 
     private fun debugRecordingPrivacy(): Boolean =
         BuildConfig.DEBUG && securePreferences.recordingPrivacy
+}
+
+/** A .pkpass opened from another app, saved off the Passes screen so navigation cannot cancel it. */
+sealed interface OpenedPass {
+    data object Idle : OpenedPass
+    data object Reading : OpenedPass
+    data class Saved(val id: Long) : OpenedPass
+    data class Failed(val message: String) : OpenedPass
 }

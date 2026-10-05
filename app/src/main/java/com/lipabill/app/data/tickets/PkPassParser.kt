@@ -29,14 +29,24 @@ data class ParsedPkPass(
 
 object PkPassParser {
 
+    private val END_LABELS = setOf(
+        "end", "ends", "end time", "end date", "finish", "finishes",
+        "until", "to", "close", "closing", "doors close"
+    )
+
+    private val CLOCK_RANGE = Regex(
+        """(?i)^\s*(\d{1,2}(?::\d{2})?(?::\d{2})?\s*[ap]m|\d{1,2}:\d{2}(?::\d{2})?)\s*(?:-|–|—|to)\s*(\d{1,2}(?::\d{2})?(?::\d{2})?\s*[ap]m|\d{1,2}:\d{2}(?::\d{2})?)\s*$"""
+    )
+
     fun isPkPassUri(uri: Uri?, mimeType: String? = null, displayName: String? = null): Boolean {
         if (uri == null) return false
-        val path = (uri.lastPathSegment ?: uri.path ?: "").lowercase(Locale.US)
-        val name = (displayName ?: "").lowercase(Locale.US)
+        val path = listOfNotNull(uri.path, uri.lastPathSegment, displayName)
+            .joinToString(" ")
+            .lowercase(Locale.US)
         val mime = (mimeType ?: "").lowercase(Locale.US)
-        return path.endsWith(".pkpass") ||
-            name.endsWith(".pkpass") ||
+        return path.contains(".pkpass") ||
             mime == "application/vnd.apple.pkpass" ||
+            mime == "application/vnd.apple.pkpasses" ||
             mime == "application/vnd-apple.pkpass"
     }
 
@@ -96,9 +106,14 @@ object PkPassParser {
         val seat = buildSeat(fields)
             ?: fieldValue(fields, "seat", "section", "row", "gate", "tier", "stand", "block")
 
-        val startsAt = resolveEventStartsAt(root, fields)
+        val whenWindow = resolveEventWindow(root, fields)
 
-        val notes = listOfNotNull(org, description?.takeIf { it != title })
+        val notes = listOfNotNull(
+            org,
+            description?.takeIf { it != title },
+            whenWindow.end?.let { "Ends: $it" },
+            whenWindow.timeText?.let { "Time: $it" }
+        )
             .distinct()
             .joinToString(" · ")
             .ifBlank { null }
@@ -106,7 +121,7 @@ object PkPassParser {
         return ParsedPkPass(
             title = title,
             venue = venue,
-            startsAtMillis = startsAt,
+            startsAtMillis = whenWindow.start,
             seatOrTier = seat,
             barcodeValue = barcode.message,
             barcodeFormat = barcode.format,
@@ -162,8 +177,16 @@ object PkPassParser {
         val key: String,
         val label: String,
         val value: String,
-        val isDateField: Boolean
-    )
+        val hasDateStyle: Boolean,
+        val hasTimeStyle: Boolean
+    ) {
+        val isDateField: Boolean get() = hasDateStyle || hasTimeStyle
+        val name: String get() = label.ifBlank { key }.lowercase(Locale.US).trim()
+        val isEnd: Boolean get() = name in END_LABELS ||
+            name.startsWith("end ") ||
+            name.endsWith(" end") ||
+            name.contains("end time")
+    }
 
     private fun collectFields(style: JSONObject?): List<PassField> {
         if (style == null) return emptyList()
@@ -178,43 +201,87 @@ object PkPassParser {
                 val f = arr.optJSONObject(i) ?: continue
                 val value = f.optString("value").trim()
                 if (value.isEmpty()) continue
-                val hasDateStyle = f.has("dateStyle") || f.has("timeStyle")
                 out += PassField(
                     key = f.optString("key").trim(),
                     label = f.optString("label").trim(),
                     value = value,
-                    isDateField = hasDateStyle
+                    hasDateStyle = f.has("dateStyle"),
+                    hasTimeStyle = f.has("timeStyle")
                 )
             }
         }
         return out
     }
 
-    private fun resolveEventStartsAt(root: JSONObject, fields: List<PassField>): Long? {
-        parseAppleDate(root.optString("relevantDate").takeIf { it.isNotBlank() })?.let { return it }
+    private data class EventWindow(
+        val start: Long?,
+        val end: Long?,
+        val timeText: String?
+    )
 
-        fields.firstOrNull { it.isDateField }
-            ?.let { parseAppleDate(it.value) }
-            ?.let { return it }
+    private fun resolveEventWindow(root: JSONObject, fields: List<PassField>): EventWindow {
+        val timed = fields.mapNotNull { field ->
+            if (!field.hasTimeStyle && !field.isEnd && !field.name.isStartClock()) return@mapNotNull null
+            parseAppleDate(field.value)?.let { it to field }
+        }
+        val endFromLabel = timed.firstOrNull { it.second.isEnd }?.first
+        val startFromLabel = timed.firstOrNull { !it.second.isEnd }?.first
+        val distinctTimes = timed.map { it.first }.distinct().sorted()
 
-        val labeled = fieldValue(
-            fields,
-            "date", "time", "doors", "doors open", "starts", "start",
-            "event date", "show time", "showtime", "when", "departure", "boarding"
-        )
-        parseAppleDate(labeled)?.let { return it }
-
-        // Last resort: field values that look like dates (avoid seat numbers, gates, etc.)
-        for (f in fields) {
-            val v = f.value
-            if (v.length < 8 || v.none { it.isDigit() }) continue
-            if (v.any { it == '-' || it == '/' || it == 'T' || it == ',' || it == ' ' }) {
-                parseAppleDate(v)?.let { return it }
+        var start = startFromLabel
+            ?: parseAppleDate(root.optString("relevantDate").takeIf { it.isNotBlank() })
+            ?: fields.firstOrNull { it.hasDateStyle }?.let { parseAppleDate(it.value) }
+        var end = endFromLabel
+        if (end == null && distinctTimes.size >= 2) {
+            val earliest = distinctTimes.first()
+            val latest = distinctTimes.last()
+            if (start == null || timed.any { it.first == start }) start = earliest
+            if (latest != start) end = latest
+        }
+        if (start == null) {
+            val labeled = fieldValue(
+                fields,
+                "date", "time", "doors", "doors open", "starts", "start",
+                "event date", "show time", "showtime", "when", "departure", "boarding"
+            )
+            start = parseAppleDate(labeled)
+        }
+        if (start == null) {
+            for (f in fields) {
+                val v = f.value
+                if (v.length < 8 || v.none { it.isDigit() }) continue
+                if (v.any { it == '-' || it == '/' || it == 'T' || it == ',' || it == ' ' }) {
+                    parseAppleDate(v)?.let { start = it }
+                    if (start != null) break
+                }
             }
         }
-
         // expirationDate is pass validity, not event start — only if nothing else
-        return parseAppleDate(root.optString("expirationDate").takeIf { it.isNotBlank() })
+        if (start == null) {
+            start = parseAppleDate(root.optString("expirationDate").takeIf { it.isNotBlank() })
+        }
+
+        val timeText = if (end != null) {
+            null
+        } else {
+            fields.firstNotNullOfOrNull { clockRange(it.value) }
+        }
+        return EventWindow(start, end, timeText)
+    }
+
+    private fun String.isStartClock(): Boolean {
+        return this == "time" || this == "start" || this == "starts" ||
+            this == "start time" || this == "doors" || this == "doors open" ||
+            this == "show time" || this == "showtime" || this == "from"
+    }
+
+    /** "7:00 PM - 10:00 PM" or "19:00–22:00", kept as written when it is not two full dates. */
+    private fun clockRange(raw: String): String? {
+        val match = CLOCK_RANGE.matchEntire(raw.trim()) ?: return null
+        val from = match.groupValues[1].trim()
+        val to = match.groupValues[2].trim()
+        if (from.equals(to, ignoreCase = true)) return null
+        return "$from – $to"
     }
 
     private fun fieldValue(fields: List<PassField>, vararg needles: String): String? {

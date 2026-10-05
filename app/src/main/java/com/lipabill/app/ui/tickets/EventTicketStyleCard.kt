@@ -59,11 +59,7 @@ import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
-import com.lipabill.app.ui.util.formatEventWhen
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
+import com.lipabill.app.ui.util.formatEventSchedule
 
 private val EventDetailBorder = Color(0xFFE8E8E8)
 private val EventLabelGrey = Color(0xFF9CA3AF)
@@ -308,12 +304,22 @@ private fun EventDetailsBox(model: EventTicketUiModel) {
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-            EventField(
-                label = "Date & Time",
-                value = listOfNotNull(model.dateLabel, model.timeLabel)
-                    .joinToString("   ")
-                    .ifBlank { "—" }
-            )
+            Row(modifier = Modifier.fillMaxWidth()) {
+                EventField(
+                    label = "Date",
+                    value = model.dateLabel ?: "—",
+                    modifier = Modifier.weight(1.2f)
+                )
+                if (!model.timeLabel.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.width(12.dp))
+                    EventField(
+                        label = "Time",
+                        value = model.timeLabel,
+                        modifier = Modifier.weight(1f),
+                        alignEnd = true
+                    )
+                }
+            }
         }
 
         Text(
@@ -489,12 +495,9 @@ private data class EventTicketUiModel(
 
 private fun Ticket.toEventTicketUiModel(): EventTicketUiModel {
     val notes = notes
-    val zoned = startsAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) }
-    val timeLabel = zoned?.format(DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH))
-        ?: notes.notesValue("Time")
-        ?: notes.notesValue("Doors")
-    val dateLabel = zoned?.format(DateTimeFormatter.ofPattern("d MMMM, yyyy", Locale.ENGLISH))
-        ?: startsAtMillis?.let { formatEventWhen(it) }
+    val schedule = formatEventSchedule(startsAtMillis, notes)
+    val timeLabel = schedule.time ?: notes.notesValue("Doors")
+    val dateLabel = schedule.date
 
     val parts = seatOrTier.orEmpty()
         .split("·", "|", ",")
@@ -542,8 +545,8 @@ private fun Ticket.toEventTicketUiModel(): EventTicketUiModel {
     return EventTicketUiModel(
         eventTitle = eventTitle.take(48),
         venue = venueLabel?.take(40),
-        dateLabel = dateLabel?.take(22),
-        timeLabel = timeLabel?.take(12),
+        dateLabel = dateLabel?.take(48),
+        timeLabel = timeLabel?.take(32),
         seat = seat?.take(8),
         tier = tier?.take(16),
         door = door?.take(12),

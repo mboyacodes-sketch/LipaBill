@@ -84,30 +84,39 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Open Apple Wallet .pkpass from Files / email / share sheet -->
+            <!-- Open Apple Wallet .pkpass from Files / email / share sheet.
+                 Senders often use octet-stream or zip, and content URIs hide the
+                 filename, so match both the Apple type and .pkpass paths. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:mimeType="application/vnd.apple.pkpass" />
+                <data android:mimeType="application/vnd.apple.pkpasses" />
+                <data android:mimeType="application/vnd-apple.pkpass" />
+                <!-- WhatsApp sends .pkpass as a zip, with the filename only inside the file. -->
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
             </intent-filter>
             <intent-filter tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <!-- content/file .pkpass opens — not http(s) App Links -->
-                <data
-                    android:scheme="content"
-                    android:mimeType="*/*"
-                    android:pathPattern=".*\\.pkpass" />
-                <data
-                    android:scheme="file"
-                    android:mimeType="*/*"
-                    android:pathPattern=".*\\.pkpass" />
-            </intent-filter>
-            <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
                 <data android:mimeType="application/vnd.apple.pkpass" />
+                <data android:mimeType="application/vnd.apple.pkpasses" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="*/*" />
+                <!-- pathPattern stops at dots, so repeat for names that already contain some. -->
+                <data android:pathPattern=".*\\.pkpass" />
+                <data android:pathPattern=".*\\..*\\.pkpass" />
+                <data android:pathPattern=".*\\..*\\..*\\.pkpass" />
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.pkpass" />
+                <data android:pathSuffix=".pkpass" />
             </intent-filter>
             <!-- Open / share e-ticket PDFs -->
             <intent-filter>

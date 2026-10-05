@@ -87,6 +87,17 @@ class TicketRepository(
         )
     }
 
+    suspend fun existingTicketId(barcodeValue: String, orderId: String?): Long? = withContext(Dispatchers.IO) {
+        val payload = barcodeValue.trim()
+        if (payload.isNotEmpty()) {
+            dao.getByBarcodeValue(payload)?.id?.let { return@withContext it }
+            dao.getByBoardingBarcodeValue(payload)?.id?.let { return@withContext it }
+            dao.getByReturnBoardingBarcodeValue(payload)?.id?.let { return@withContext it }
+        }
+        val ref = orderId?.trim()?.ifBlank { null } ?: return@withContext null
+        dao.getByOrderId(ref)?.id
+    }
+
     suspend fun addImport(draft: TicketImport): Long? {
         return if (draft.expectsBoardingPass && !draft.hasBoardingPass) {
             add(
