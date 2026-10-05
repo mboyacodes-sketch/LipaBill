@@ -7,6 +7,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import java.text.NumberFormat
 import java.util.Locale
 
+/** Field has digits and no letters, so the in-app keypad should open on the digit keys. */
+fun String.opensOnDigitKeys(): Boolean =
+    any { it.isDigit() } && none { it.isLetter() }
+
 /** One keypad tap: at most one decimal point, at most two fraction digits. */
 fun appendAmountKey(current: String, key: String): String {
     return when (key) {

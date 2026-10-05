@@ -15,6 +15,10 @@
     </style>
 
     <style name="Widget.LipaBill.BottomSheet" parent="Widget.MaterialComponents.BottomSheet.Modal">
+        <item name="android:layout_height">match_parent</item>
+        <item name="behavior_fitToContents">false</item>
+        <item name="behavior_skipCollapsed">true</item>
+        <item name="behavior_expandedOffset">0dp</item>
         <item name="shapeAppearance">@style/ShapeAppearance.LipaBill.BottomSheet</item>
         <item name="shapeAppearanceOverlay">@style/ShapeAppearance.LipaBill.BottomSheet</item>
         <item name="backgroundTint">@android:color/white</item>

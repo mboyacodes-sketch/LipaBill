@@ -8,7 +8,6 @@ import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.data.repository.TransactionRepository
 import com.lipabill.app.ui.util.displayLabel
-import com.lipabill.app.ui.util.isOutgoing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -250,12 +249,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             !date.isBefore(from) && !date.isAfter(to)
         }
 
-        var income = 0.0
-        var expense = 0.0
-        filtered.forEach { tx ->
-            val amount = tx.amount ?: return@forEach
-            if (tx.type.isOutgoing()) expense += amount else income += amount
-        }
+        val (income, expense) = flowTotals(filtered)
 
         val byType = filtered
             .groupBy { it.type }
@@ -331,17 +325,8 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDate()
         }
 
-        fun totalsFor(dates: List<LocalDate>): Pair<Double, Double> {
-            var income = 0.0
-            var expense = 0.0
-            dates.forEach { date ->
-                byDate[date].orEmpty().forEach { tx ->
-                    val amount = tx.amount ?: return@forEach
-                    if (tx.type.isOutgoing()) expense += amount else income += amount
-                }
-            }
-            return income to expense
-        }
+        fun totalsFor(dates: List<LocalDate>): Pair<Double, Double> =
+            flowTotals(dates.flatMap { byDate[it].orEmpty() })
 
         val days = ChronoUnit.DAYS.between(from, to) + 1
         return when {
@@ -390,6 +375,16 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                 }.toList()
             }
         }
+    }
+
+    private fun flowTotals(txs: Iterable<MpesaTransaction>): Pair<Double, Double> {
+        var income = 0.0
+        var expense = 0.0
+        for (tx in txs) {
+            val amount = tx.amount ?: continue
+            if (tx.type.isOutgoing()) expense += amount else income += amount
+        }
+        return income to expense
     }
 
     private fun groupByDay(txs: List<MpesaTransaction>): List<DayGroup> {

@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.lipabill.app.ui.components.BalanceAmountRow
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.ContentMaxWidth
 import kotlinx.coroutines.delay
@@ -408,7 +409,8 @@ private fun CompactRecipientChip(
                     text = name,
                     style = HomeType.rowTitle,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.recordingPrivacyCover()
                 )
                 if (!subtitle.isNullOrBlank()) {
                     Text(
@@ -416,7 +418,8 @@ private fun CompactRecipientChip(
                         style = HomeType.caption,
                         color = Mute,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.recordingPrivacyCover()
                     )
                 }
             }
@@ -507,7 +510,8 @@ private fun SelectedAmountRow(
                     text = name,
                     style = HomeType.rowTitle,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.recordingPrivacyCover()
                 )
                 if (!subtitle.isNullOrBlank()) {
                     Text(
@@ -515,7 +519,8 @@ private fun SelectedAmountRow(
                         style = HomeType.caption,
                         color = Mute,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.recordingPrivacyCover()
                     )
                 }
             }
@@ -556,7 +561,8 @@ private fun AvatarBadge(
             Text(
                 text = label.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
                 style = HomeType.rowTitle,
-                color = Ink
+                color = Ink,
+                modifier = Modifier.recordingPrivacyCover()
             )
         }
         if (selected) {
@@ -600,14 +606,16 @@ fun HorizontalRecipient(
             style = HomeType.caption,
             color = Ink,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.recordingPrivacyCover()
         )
         Text(
             text = subtitle,
             style = HomeType.caption,
             color = Mute,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.recordingPrivacyCover()
         )
     }
 }
@@ -814,7 +822,8 @@ fun MoneyConfirmDialog(
                 color = Ink,
                 textAlign = TextAlign.Center,
                 maxLines = 3,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.recordingPrivacyCover()
             )
             if (note.isNotBlank()) {
                 Spacer(modifier = Modifier.height(Space.gap))

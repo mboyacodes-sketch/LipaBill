@@ -56,6 +56,9 @@ class LipaBillApp : Application() {
     private val _favouritesSectionEnabled = MutableStateFlow(true)
     val favouritesSectionEnabled: StateFlow<Boolean> = _favouritesSectionEnabled.asStateFlow()
 
+    private val _recordingPrivacy = MutableStateFlow(false)
+    val recordingPrivacy: StateFlow<Boolean> = _recordingPrivacy.asStateFlow()
+
     override fun onCreate() {
         super.onCreate()
         AppMetrics.init(this)
@@ -64,6 +67,7 @@ class LipaBillApp : Application() {
         _fontSizeSp.value = securePreferences.uiFontSizeSp
         _alwaysShowBalance.value = securePreferences.alwaysShowBalance
         _favouritesSectionEnabled.value = securePreferences.favouritesSectionEnabled
+        _recordingPrivacy.value = debugRecordingPrivacy()
         // Existing installs already past first launch — don't force the new setup wizard.
         if (!securePreferences.firstRunSetupDone &&
             (securePreferences.smsBackfillDone ||
@@ -142,4 +146,13 @@ class LipaBillApp : Application() {
         securePreferences.favouritesSectionEnabled = enabled
         _favouritesSectionEnabled.value = enabled
     }
+
+    fun setRecordingPrivacy(enabled: Boolean) {
+        if (!BuildConfig.DEBUG) return
+        securePreferences.recordingPrivacy = enabled
+        _recordingPrivacy.value = enabled
+    }
+
+    private fun debugRecordingPrivacy(): Boolean =
+        BuildConfig.DEBUG && securePreferences.recordingPrivacy
 }

@@ -21,6 +21,7 @@ fun MainShellScreen(
     onOpenPay: () -> Unit = {},
     onOpenMetrics: () -> Unit = {},
     onOpenTickets: () -> Unit = {},
+    onRequestSms: () -> Unit = {},
     onOpenSettings: () -> Unit = {}
 ) {
     Scaffold(
@@ -39,6 +40,7 @@ fun MainShellScreen(
             onReceive = onOpenPay,
             onExchange = onOpenMetrics,
             onTickets = onOpenTickets,
+            onRequestSms = onRequestSms,
             onRescan = { listVm.rescanInbox() },
             onOpenSettings = onOpenSettings
         )

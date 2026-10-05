@@ -1,6 +1,7 @@
 package com.lipabill.app.data.parser
 
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.data.sms.REVERSAL_JULIUS_SMS
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -221,6 +222,32 @@ class MpesaSmsParserTest {
         assertEquals(TransactionType.SENT, tx.type)
         assertEquals("2547*****678", tx.counterpartyPhone)
         assertEquals("JANE DOE", tx.counterpartyName)
+    }
+
+    @Test
+    fun reversal_credits_the_original_payee() {
+        val tx = MpesaSmsParser.parse(REVERSAL_JULIUS_SMS, ts)
+        assertEquals(TransactionType.REVERSED, tx.type)
+        assertEquals("UJ4R7Q7R31", tx.code)
+        assertEquals(125.0, tx.amount!!, 0.001)
+        assertEquals("JULIUS VIAZI SUPPLIER", tx.counterpartyName)
+        assertNull(tx.counterpartyPhone)
+        assertEquals(4801.97, tx.balance!!, 0.001)
+        assertEquals(REVERSAL_JULIUS_SMS, tx.rawBody)
+    }
+
+    @Test
+    fun reversal_accepts_favor_spelling() {
+        val body =
+            "REV88ABCD1 Confirmed. Your original transaction SENT00ABCD in favor of " +
+                "MAMA NJERI SHOP has been reversed successfully on 1/2/26 at 9:00 AM " +
+                "and Ksh50.00 has been credited to your M-PESA account. " +
+                "Your new M-PESA account balance is Ksh1,050.00."
+        val tx = MpesaSmsParser.parse(body, ts)
+        assertEquals(TransactionType.REVERSED, tx.type)
+        assertEquals(50.0, tx.amount!!, 0.001)
+        assertEquals("MAMA NJERI SHOP", tx.counterpartyName)
+        assertEquals(1050.0, tx.balance!!, 0.001)
     }
 
     @Test

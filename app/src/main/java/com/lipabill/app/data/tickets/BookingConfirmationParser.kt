@@ -53,9 +53,9 @@ object BookingConfirmationParser {
             """(?i)\bTrain\s*[:\-]?\s*([A-Za-z][A-Za-z .'-]{2,40}?)\s+to\s+([A-Za-z][A-Za-z .'-]{2,40}?)(?:\s+[EI]\d{1,2})?\b"""
         ).find(text)
         val from = fromTo?.groupValues?.getOrNull(1)?.trim()?.trimEnd(',', '.')
-            ?.let { normalizeStation(it) }
+            ?.let { sgrStationName(it) }
         val to = fromTo?.groupValues?.getOrNull(2)?.trim()?.trimEnd(',', '.')
-            ?.let { normalizeStation(it) }
+            ?.let { sgrStationName(it) }
 
         val date = parseDate(text)
         val time = parseTime(text) ?: LocalTime.of(0, 0)
@@ -115,15 +115,6 @@ object BookingConfirmationParser {
 
     fun isConfirmationPlaceholder(barcodeValue: String): Boolean =
         barcodeValue.startsWith("REF:", ignoreCase = true)
-
-    private fun normalizeStation(name: String): String {
-        val trimmed = name.trim()
-        return when {
-            trimmed.equals("Nairobi", true) -> "Nairobi Terminus"
-            trimmed.equals("Mombasa", true) -> "Mombasa Terminus"
-            else -> trimmed
-        }
-    }
 
     private fun parseDate(text: String): LocalDate? {
         val patterns = listOf("dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "d-M-yyyy", "yyyy-MM-dd")

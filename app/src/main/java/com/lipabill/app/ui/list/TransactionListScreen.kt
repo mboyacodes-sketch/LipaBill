@@ -39,9 +39,11 @@ import androidx.compose.material.icons.outlined.NorthEast
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SnackbarHost
@@ -49,7 +51,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -73,20 +74,18 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import android.widget.Toast
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.ui.adapt.LocalWindowForm
+import com.lipabill.app.ui.permissions.rememberPaymentAccessNeeds
 import com.lipabill.app.ui.adapt.WindowWidth
 import com.lipabill.app.ui.components.BalanceAmountRow
 import com.lipabill.app.ui.detail.TransactionReceiptPopup
 import com.lipabill.app.ui.sheet.InAppKeyboard
 import com.lipabill.app.ui.sheet.SheetInputStyle
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.ActionMetrics
 import com.lipabill.app.ui.theme.ActionPay
@@ -104,12 +103,11 @@ import com.lipabill.app.ui.theme.avatarPastel
 import com.lipabill.app.ui.util.InterceptSystemIme
 import com.lipabill.app.ui.util.bringIntoViewOnFocus
 import com.lipabill.app.ui.util.displayLabel
+import com.lipabill.app.ui.util.opensOnDigitKeys
 import com.lipabill.app.ui.util.formatActivityTime
 import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
-import com.lipabill.app.ui.util.isOutgoing
 import com.lipabill.app.ui.util.rememberHideKeyboard
-import com.lipabill.app.ussd.PaymentAccessGates
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -164,6 +162,7 @@ fun TransactionListScreen(
     onReceive: () -> Unit = {},
     onExchange: () -> Unit = {},
     onTickets: () -> Unit = {},
+    onRequestSms: () -> Unit = {},
     onRescan: () -> Unit = {},
     onOpenSettings: () -> Unit = {}
 ) {
@@ -174,32 +173,7 @@ fun TransactionListScreen(
     val alwaysShowBalance by app.alwaysShowBalance.collectAsStateWithLifecycle()
     val favouritesSectionEnabled by app.favouritesSectionEnabled.collectAsStateWithLifecycle()
     var receiptTxId by remember { mutableStateOf<Long?>(null) }
-    var paymentAccess by remember { mutableStateOf(PaymentAccessGates.evaluate(context)) }
-
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                paymentAccess = PaymentAccessGates.evaluate(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        paymentAccess = PaymentAccessGates.evaluate(context)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    fun runIfPaymentsReady(action: () -> Unit) {
-        val status = PaymentAccessGates.evaluate(context).also { paymentAccess = it }
-        if (status.ready) {
-            action()
-        } else {
-            Toast.makeText(
-                context,
-                status.blockReason ?: "Finish setup in Profile to send and pay",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-    }
+    val paymentsReady = rememberPaymentAccessNeeds().isEmpty()
 
     LaunchedEffect(state.scanMessage) {
         val msg = state.scanMessage ?: return@LaunchedEffect
@@ -303,13 +277,14 @@ fun TransactionListScreen(
                     }
                 },
                 onOpenSettings = onOpenSettings,
-                onSend = { runIfPaymentsReady(onSend) },
-                onPay = { runIfPaymentsReady(onReceive) },
+                onSend = onSend,
+                onPay = onReceive,
                 onMetrics = onExchange,
                 onTickets = onTickets,
-                sendPayEnabled = paymentAccess.ready,
-                onAddFrequent = { runIfPaymentsReady(onSend) },
-                onSelectFrequent = { contact -> runIfPaymentsReady { onSendTo(contact) } },
+                onRequestSms = onRequestSms,
+                sendPayEnabled = paymentsReady,
+                onAddFrequent = onSend,
+                onSelectFrequent = { contact -> onSendTo(contact) },
                 onOpenTransaction = { id ->
                     hideKeyboard()
                     searchFocused = false
@@ -364,11 +339,11 @@ fun TransactionListScreen(
                                 modifier = Modifier.weight(1f)
                             )
                             QuickActionsRow(
-                                onSend = { runIfPaymentsReady(onSend) },
-                                onDeposit = { runIfPaymentsReady(onReceive) },
+                                onSend = onSend,
+                                onDeposit = onReceive,
                                 onDetails = onExchange,
                                 onTickets = onTickets,
-                                sendPayEnabled = paymentAccess.ready,
+                                sendPayEnabled = paymentsReady,
                                 spread = false
                             )
                         }
@@ -380,11 +355,11 @@ fun TransactionListScreen(
                         )
                         Spacer(modifier = Modifier.height(HomeMock.SectionGap))
                         QuickActionsRow(
-                            onSend = { runIfPaymentsReady(onSend) },
-                            onDeposit = { runIfPaymentsReady(onReceive) },
+                            onSend = onSend,
+                            onDeposit = onReceive,
                             onDetails = onExchange,
                             onTickets = onTickets,
-                            sendPayEnabled = paymentAccess.ready,
+                            sendPayEnabled = paymentsReady,
                             modifier = Modifier.padding(horizontal = pageMargin)
                         )
                     }
@@ -396,13 +371,13 @@ fun TransactionListScreen(
                             SectionHeader(
                                 title = "Frequent",
                                 trailing = null,
-                                onOpen = { runIfPaymentsReady(onSend) }
+                                onOpen = onSend
                             )
                             Spacer(modifier = Modifier.height(10.dp))
                             FrequentContactsRow(
                                 contacts = frequent,
-                                onAdd = { runIfPaymentsReady(onSend) },
-                                onSelect = { contact -> runIfPaymentsReady { onSendTo(contact) } }
+                                onAdd = onSend,
+                                onSelect = { contact -> onSendTo(contact) }
                             )
                         }
                         Spacer(modifier = Modifier.height(HomeMock.SectionGap))
@@ -435,11 +410,24 @@ fun TransactionListScreen(
                     }
                 }
 
+            if (!state.hasSmsPermission && state.searchQuery.isBlank() && flat.isNotEmpty()) {
+                item(key = "sms-prompt") {
+                    SmsAccessPrompt(
+                        compact = true,
+                        onAllow = onRequestSms,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(CreamCanvas)
+                            .padding(horizontal = pageMargin)
+                    )
+                }
+            }
             if (flat.isEmpty()) {
                 item(key = "empty") {
                     EmptyState(
                         hasPermission = state.hasSmsPermission,
                         searching = state.searchQuery.isNotBlank(),
+                        onAllowSms = onRequestSms,
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(CreamCanvas)
@@ -475,8 +463,7 @@ fun TransactionListScreen(
 
             if (searchFocused && !showingReceipt) {
                 InAppKeyboard(
-                    startOnDigits = state.searchQuery.any { it.isDigit() } &&
-                        state.searchQuery.none { it.isLetter() },
+                    startOnDigits = state.searchQuery.opensOnDigitKeys(),
                     onChar = { ch ->
                         viewModel.setSearchQuery(state.searchQuery + ch)
                     },
@@ -536,6 +523,7 @@ private fun HomeExpandedPane(
     onPay: () -> Unit,
     onMetrics: () -> Unit,
     onTickets: () -> Unit,
+    onRequestSms: () -> Unit,
     sendPayEnabled: Boolean,
     onAddFrequent: () -> Unit,
     onSelectFrequent: (SendContact) -> Unit,
@@ -618,11 +606,23 @@ private fun HomeExpandedPane(
                             Spacer(modifier = Modifier.height(6.dp))
                         }
                     }
+                    if (!hasSmsPermission && searchQuery.isBlank() && flat.isNotEmpty()) {
+                        item(key = "sms-prompt") {
+                            SmsAccessPrompt(
+                                compact = true,
+                                onAllow = onRequestSms,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = pageMargin)
+                            )
+                        }
+                    }
                     if (flat.isEmpty()) {
                         item(key = "empty") {
                             EmptyState(
                                 hasPermission = hasSmsPermission,
                                 searching = searchQuery.isNotBlank(),
+                                onAllowSms = onRequestSms,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = pageMargin)
@@ -643,8 +643,7 @@ private fun HomeExpandedPane(
             }
             if (searchFocused && !showingReceipt) {
                 InAppKeyboard(
-                    startOnDigits = searchQuery.any { it.isDigit() } &&
-                        searchQuery.none { it.isLetter() },
+                    startOnDigits = searchQuery.opensOnDigitKeys(),
                     onChar = onKey,
                     onBackspace = onBackspace,
                     onDone = onKeyboardDone,
@@ -957,7 +956,8 @@ private fun TransactionSearchField(
                 .fillMaxWidth()
                 .heightIn(min = HomeMock.SearchMinHeight)
                 .bringIntoViewOnFocus(delayMs = 80L)
-                .onFocusChanged { onFocusChange(it.isFocused) },
+                .onFocusChanged { onFocusChange(it.isFocused) }
+                .recordingPrivacyCover(query.isNotBlank()),
             singleLine = true,
             readOnly = true,
             textStyle = SheetInputStyle,
@@ -1047,7 +1047,8 @@ private fun FrequentContactsRow(
                     Text(
                         text = name.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
                         style = HomeType.rowTitle,
-                        color = Ink
+                        color = Ink,
+                        modifier = Modifier.recordingPrivacyCover()
                     )
                 }
                 Spacer(modifier = Modifier.height(HomeMock.FrequentLabelGap))
@@ -1056,7 +1057,8 @@ private fun FrequentContactsRow(
                     style = HomeType.caption,
                     color = Ink,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.recordingPrivacyCover()
                 )
             }
         }
@@ -1072,6 +1074,7 @@ private fun TransactionRow(
     val outgoing = tx.type.isOutgoing()
     val sign = if (outgoing) "−" else "+"
     val amountColor = if (outgoing) Debit else Income
+    val named = !tx.counterpartyName.isNullOrBlank()
     val title = tx.counterpartyName ?: tx.type.displayLabel()
     val seed = title.hashCode()
 
@@ -1095,7 +1098,12 @@ private fun TransactionRow(
                 ?.uppercaseChar()
                 ?.toString()
                 ?: "?"
-            Text(text = initial, style = HomeType.rowTitle, color = Ink)
+            Text(
+                text = initial,
+                style = HomeType.rowTitle,
+                color = Ink,
+                modifier = Modifier.recordingPrivacyCover(named)
+            )
         }
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -1103,24 +1111,36 @@ private fun TransactionRow(
                 text = title,
                 style = HomeType.rowTitle,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.recordingPrivacyCover(named)
             )
-            Text(
-                text = buildString {
-                    append(tx.type.displayLabel())
-                    val phone = tx.counterpartyPhone?.trim().orEmpty()
-                    if (phone.isNotEmpty()) {
-                        append(" · ")
-                        append(phone)
-                    }
-                    append(" · ")
-                    append(formatActivityTime(tx.timestampMillis))
-                },
-                style = HomeType.caption,
-                color = Ink.copy(alpha = 0.62f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = tx.type.displayLabel(),
+                    style = HomeType.caption,
+                    color = Ink.copy(alpha = 0.62f),
+                    maxLines = 1
+                )
+                val phone = tx.counterpartyPhone?.trim().orEmpty()
+                if (phone.isNotEmpty()) {
+                    Text(
+                        text = " · $phone",
+                        style = HomeType.caption,
+                        color = Ink.copy(alpha = 0.62f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .recordingPrivacyCover()
+                    )
+                }
+                Text(
+                    text = " · ${formatActivityTime(tx.timestampMillis)}",
+                    style = HomeType.caption,
+                    color = Ink.copy(alpha = 0.62f),
+                    maxLines = 1
+                )
+            }
         }
         Spacer(modifier = Modifier.width(8.dp))
         Text(
@@ -1137,6 +1157,7 @@ private fun TransactionRow(
 private fun EmptyState(
     hasPermission: Boolean,
     searching: Boolean,
+    onAllowSms: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -1149,7 +1170,7 @@ private fun EmptyState(
             text = when {
                 searching -> "No matches"
                 hasPermission -> "No activity yet"
-                else -> "SMS permission off"
+                else -> "History needs SMS"
             },
             style = HomeType.rowTitle
         )
@@ -1158,10 +1179,41 @@ private fun EmptyState(
             text = when {
                 searching -> "Try a different name or number."
                 hasPermission -> "Pull down to refresh and import M-Pesa SMS."
-                else -> "Grant SMS access to import your inbox."
+                else ->
+                    "LipaBill reads Safaricom M-Pesa confirmations on this phone " +
+                        "and stores them encrypted. It does not send SMS."
             },
+            style = HomeType.body,
+            color = Mute,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        if (!hasPermission && !searching) {
+            Spacer(modifier = Modifier.height(Space.block))
+            Button(onClick = onAllowSms) {
+                Text("Why SMS access")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SmsAccessPrompt(
+    compact: Boolean,
+    onAllow: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.padding(vertical = if (compact) Space.gap else Space.block),
+        horizontalAlignment = Alignment.Start
+    ) {
+        Text(
+            text = "New M-Pesa confirmations stay out of this list until SMS is allowed. " +
+                "They are read on this phone only, encrypted, and never sent.",
             style = HomeType.body,
             color = Mute
         )
+        TextButton(onClick = onAllow) {
+            Text("Why SMS access")
+        }
     }
 }

@@ -24,5 +24,6 @@ fi
 "$ADB" shell settings put secure accessibility_enabled 1
 
 "$ADB" shell am force-stop "$PKG"
-"$ADB" shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null
+# am start only. monkey injects a rotation event and rewrites the system Auto-rotate toggle.
+"$ADB" shell am start -n "$PKG/.MainActivity" >/dev/null
 echo "Installed + Accessibility restored for $COMPONENT"

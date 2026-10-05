@@ -84,6 +84,15 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_FAVOURITES_SECTION, true)
         set(value) = prefs.edit().putBoolean(KEY_FAVOURITES_SECTION, value).apply()
 
+    /**
+     * Debug builds only. When true, names, phone numbers, references, and the
+     * PIN pad are blurred so a screen recording can show the app without them.
+     * Release builds ignore this flag.
+     */
+    var recordingPrivacy: Boolean
+        get() = prefs.getBoolean(KEY_RECORDING_PRIVACY, false)
+        set(value) = prefs.edit().putBoolean(KEY_RECORDING_PRIVACY, value).apply()
+
     /** When true, first-run permissions + SIM setup has been completed. */
     var firstRunSetupDone: Boolean
         get() = prefs.getBoolean(KEY_FIRST_RUN_SETUP_DONE, false)
@@ -114,6 +123,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_UI_FONT_SIZE_SP = "ui_font_size_sp_v2"
         private const val KEY_ALWAYS_SHOW_BALANCE = "always_show_balance"
         private const val KEY_FAVOURITES_SECTION = "favourites_section_enabled"
+        private const val KEY_RECORDING_PRIVACY = "recording_privacy"
         private const val KEY_FIRST_RUN_SETUP_DONE = "first_run_setup_done"
         const val DEFAULT_TIMEOUT_MS = 2 * 60 * 1000L
         const val DEFAULT_FONT_SIZE_SP = 12

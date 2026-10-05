@@ -8,23 +8,16 @@ import com.lipabill.app.data.contacts.PhoneBookSearcher
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.repository.SendContact
-import com.lipabill.app.ussd.AccessibilityHelper
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import com.lipabill.app.ussd.SimLine
-import com.lipabill.app.ussd.SimLineHelper
 import com.lipabill.app.ussd.UssdMenuBuilder
 import com.lipabill.app.ui.util.appendAmountKey as applyAmountKey
 import com.lipabill.app.ui.util.formatKesMoney
 import com.lipabill.app.ui.util.sanitizeAmountInput
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 
@@ -49,7 +42,6 @@ data class SendMoneyUiState(
     val guidanceMessage: String? = null
 )
 
-@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class SendMoneyViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as LipaBillApp
@@ -64,19 +56,12 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
     private val txContacts = app.repository.observeSendContacts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val phoneBookHits: StateFlow<List<SendContact>> = combine(query, contactsAccess) { q, _ -> q }
-        .debounce(250)
-        .flatMapLatest { q ->
-            flow {
-                val trimmed = q.trim()
-                if (trimmed.length < 2 || !PhoneBookSearcher.hasPermission(getApplication())) {
-                    emit(emptyList())
-                } else {
-                    emit(PhoneBookSearcher.search(getApplication(), trimmed))
-                }
-            }
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    private val phoneBookHits: StateFlow<List<SendContact>> = PhoneBookSearcher.observeSearch(
+        viewModelScope,
+        query,
+        contactsAccess,
+        application
+    )
 
     val uiState: StateFlow<SendMoneyUiState> = combine(
         combine(txContacts, phoneBookHits, query, selected, amountInput) { tx, book, q, sel, amount ->
@@ -108,7 +93,7 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
                 hasContactsPermission = hasPerm
             )
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SendMoneyUiState())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, SendMoneyUiState())
 
     private fun sendDetailsGuidance(
         query: String,
@@ -150,23 +135,15 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
     fun refreshGates() {
         val ctx = getApplication<Application>()
         contactsAccess.value = PhoneBookSearcher.hasPermission(ctx)
-        val needsPerm = !SimLineHelper.hasPhoneStatePermission(ctx)
-        val lines = if (needsPerm) emptyList() else SimLineHelper.listActiveLines(ctx)
-        val selectedSub = if (needsPerm) {
-            null
-        } else {
-            SimLineHelper.ensureSafaricomPreferred(app.securePreferences, lines)
-        }
-        val preferred = app.securePreferences.preferredSimSubscriptionId
+        val lines = ctx.paymentLineSnapshot(coordinator, app.securePreferences)
         _gates.update {
             it.copy(
-                featureEnabled = coordinator.isFeatureEnabled(),
-                accessibilityEnabled = AccessibilityHelper.isLipaBillServiceEnabled(ctx),
-                simLines = lines,
-                selectedSubscriptionId = selectedSub,
-                hasSavedSimPreference = preferred >= 0 &&
-                    lines.any { line -> line.subscriptionId == preferred && line.isSafaricom },
-                needsPhoneStatePermission = needsPerm,
+                featureEnabled = lines.featureEnabled,
+                accessibilityEnabled = lines.accessibilityEnabled,
+                simLines = lines.simLines,
+                selectedSubscriptionId = lines.selectedSubscriptionId,
+                hasSavedSimPreference = lines.hasSavedSimPreference,
+                needsPhoneStatePermission = lines.needsPhoneStatePermission,
                 hasContactsPermission = PhoneBookSearcher.hasPermission(ctx)
             )
         }
@@ -271,22 +248,13 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun startDial(prepared: RepeatTransactionCoordinator.PreparedRepeat) {
         val state = uiState.value
-        val subId = state.selectedSubscriptionId
-        if (subId != null) {
-            app.securePreferences.preferredSimSubscriptionId = subId
-        }
-        coordinator.startDialing(prepared, subId)
-        val line = state.simLines.firstOrNull { it.subscriptionId == subId }
-        _gates.update {
-            it.copy(
-                dialStarted = true,
-                statusMessage = if (line != null) {
-                    "Payment on ${line.label} — enter PIN on the LipaBill keypad when prompted."
-                } else {
-                    "Payment started — enter PIN on the LipaBill keypad when prompted."
-                }
-            )
-        }
+        val status = dialStartedStatus(
+            app.securePreferences,
+            state.selectedSubscriptionId,
+            state.simLines
+        )
+        coordinator.startDialing(prepared, state.selectedSubscriptionId)
+        _gates.update { it.copy(dialStarted = true, statusMessage = status) }
     }
 
     fun confirmSummary(): Triple<String, String, String>? {

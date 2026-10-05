@@ -51,6 +51,18 @@ class MpesaReverseTest {
     }
 
     @Test
+    fun reverse_denied_for_incoming() {
+        val now = paidAt + 1_000
+        listOf(
+            TransactionType.RECEIVED,
+            TransactionType.DEPOSIT,
+            TransactionType.REVERSED
+        ).forEach { type ->
+            assertFalse(canRequestMpesaReverse(tx().copy(type = type), nowMs = now))
+        }
+    }
+
+    @Test
     fun truncate_keeps_through_timestamp_drops_balance() {
         val raw =
             "THX123 Confirmed. Ksh200.00 paid to SHOP on 15/3/24 at 9:05 AM. " +

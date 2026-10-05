@@ -2,7 +2,8 @@ package com.lipabill.app.ui.settings
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,17 +14,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
@@ -34,35 +34,45 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lipabill.app.BuildConfig
 import com.lipabill.app.MarketingLinks
-import com.lipabill.app.ui.permissions.SideloadRestrictedSettings
+import com.lipabill.app.data.local.entity.RepeatAttemptEntity
 import com.lipabill.app.ui.permissions.rememberAccessibilityToggleCoach
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.Expense
+import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Ink
+import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.util.formatActivityTime
 import com.lipabill.app.ui.util.formatKes
+import com.lipabill.app.ussd.RepeatOutcome
+import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.viewmodel.SettingsViewModel
 import kotlin.math.roundToInt
 
@@ -84,8 +94,9 @@ fun SettingsScreen(
         currentlyEnabled = state.lipaBillA11yEnabled,
         onOpenSettings = { viewModel.onAccessibilityToggleConfirmed(state.lipaBillA11yEnabled) }
     )
-    val showRestrictedUnlock =
-        SideloadRestrictedSettings.shouldShowUnlockButton(context)
+    var lockAfter by remember(state.timeoutMinutes) {
+        mutableFloatStateOf(state.timeoutMinutes.toFloat())
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -100,9 +111,9 @@ fun SettingsScreen(
         if (prev != null && prev != state.lipaBillA11yEnabled) {
             snackbar.showSnackbar(
                 if (state.lipaBillA11yEnabled) {
-                    "LipaBill Accessibility is on"
+                    "LipaBill can fill M-Pesa screens"
                 } else {
-                    "LipaBill Accessibility is off"
+                    "LipaBill will no longer fill M-Pesa screens"
                 }
             )
         }
@@ -117,7 +128,7 @@ fun SettingsScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("Settings", color = Ink) },
+                title = { Text("Settings", style = HomeType.greeting, color = Ink) },
                 navigationIcon = {
                     if (onBack != null) {
                         IconButton(onClick = onBack) {
@@ -144,251 +155,165 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Space.page, vertical = Space.pageV)
         ) {
-            SettingsSection("Security") {
-                SettingsSliderRow(
-                    title = "Re-auth timeout",
-                    valueLabel = "${state.timeoutMinutes} min",
-                    value = state.timeoutMinutes.toFloat(),
+            SettingsSection("Lock") {
+                SettingsValueRow(
+                    title = "Lock after",
+                    value = minutesLabel(lockAfter.roundToInt())
+                )
+                Text(
+                    text = "You’ll unlock again after you leave the app.",
+                    style = HomeType.caption,
+                    color = Mute
+                )
+                Slider(
+                    value = lockAfter,
+                    onValueChange = { lockAfter = it },
+                    onValueChangeFinished = {
+                        viewModel.setTimeoutMinutes(lockAfter.roundToInt())
+                    },
                     valueRange = 1f..30f,
                     steps = 28,
-                    onValueChange = { viewModel.setTimeoutMinutes(it.roundToInt()) }
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = settingsSliderColors()
                 )
-                OutlinedButton(
-                    onClick = { viewModel.lockNow() },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Outlined.Lock, contentDescription = null)
-                    Spacer(modifier = Modifier.width(Space.gap))
-                    Text("Lock now")
-                }
+                SettingsDivider()
+                SettingsActionRow(
+                    title = "Lock now",
+                    icon = {
+                        Icon(
+                            Icons.Outlined.Lock,
+                            contentDescription = null,
+                            tint = Ink
+                        )
+                    },
+                    onClick = { viewModel.lockNow() }
+                )
             }
 
-            SettingsSection("Display") {
-                SettingsSliderRow(
-                    title = "Font size",
-                    valueLabel = "${state.fontSizeSp} sp",
-                    value = state.fontSizeSp.toFloat(),
-                    valueRange = 8f..18f,
-                    steps = 9,
-                    onValueChange = { viewModel.setFontSizeSp(it.roundToInt()) },
-                    caption = "Sample · 1,250.00 · THX7K2LM9P"
-                )
+            SettingsSection("Home") {
                 SettingsSwitchRow(
-                    title = "Always show balance",
-                    subtitle = "Off hides it until you tap",
+                    title = "Show balance",
+                    subtitle = "Stays on screen. Off hides it until you tap.",
                     checked = state.alwaysShowBalance,
                     onCheckedChange = viewModel::setAlwaysShowBalance
                 )
+                SettingsDivider()
                 SettingsSwitchRow(
-                    title = "Show favourites",
-                    subtitle = "Frequent contacts on home",
+                    title = "Favourites",
+                    subtitle = "Frequent contacts on the home screen.",
                     checked = state.favouritesSectionEnabled,
                     onCheckedChange = viewModel::setFavouritesSectionEnabled
                 )
+                if (BuildConfig.DEBUG) {
+                    SettingsDivider()
+                    SettingsSwitchRow(
+                        title = "Blur for recording",
+                        subtitle = "Debug only. Blurs names, numbers, references, and the PIN pad.",
+                        checked = state.recordingPrivacy,
+                        onCheckedChange = viewModel::setRecordingPrivacy
+                    )
+                }
+                SettingsDivider()
+                SettingsValueRow(
+                    title = "Text size",
+                    value = textSizeLabel(state.fontSizeSp)
+                )
+                Slider(
+                    value = state.fontSizeSp.toFloat(),
+                    onValueChange = { viewModel.setFontSizeSp(it.roundToInt()) },
+                    valueRange = 8f..18f,
+                    steps = 9,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = settingsSliderColors()
+                )
             }
 
-            SettingsSection("Payments") {
+            SettingsSection("M-Pesa") {
+                Text(
+                    text = "SIM",
+                    style = HomeType.rowTitle,
+                    color = Ink,
+                    modifier = Modifier.padding(top = Space.card)
+                )
+                Text(
+                    text = "The line used for M-Pesa.",
+                    style = HomeType.caption,
+                    color = Mute,
+                    modifier = Modifier.padding(top = Space.tight, bottom = Space.gap)
+                )
+                SimChoices(
+                    needsPermission = state.needsPhoneStatePermission,
+                    lines = state.simLines,
+                    selectedId = state.preferredSimSubscriptionId,
+                    onAllow = onRequestPhoneStatePermission,
+                    onSelect = viewModel::setPreferredSim
+                )
+                SettingsDivider()
+                SettingsNavRow(
+                    title = "Fill M-Pesa screens",
+                    subtitle = if (state.lipaBillA11yEnabled) {
+                        "On. LipaBill types into the payment menus."
+                    } else {
+                        "Off. Turn this on to type into payment menus."
+                    },
+                    action = if (state.lipaBillA11yEnabled) "Turn off" else "Turn on",
+                    actionEmphasis = !state.lipaBillA11yEnabled,
+                    onClick = { a11yCoach.requestToggle() }
+                )
+                SettingsDivider()
                 SettingsSwitchRow(
-                    title = "Repeat automation",
-                    subtitle = "Off = copy details only",
+                    title = "Automatic repeat",
+                    subtitle = "Fills the M-Pesa screens. Off copies the details instead.",
                     checked = state.repeatEnabled,
                     onCheckedChange = viewModel::setRepeatEnabled
                 )
+            }
 
-                Spacer(modifier = Modifier.height(Space.block))
-                Text("Accessibility", style = HomeType.rowTitle)
-                Spacer(modifier = Modifier.height(Space.tight))
-                Text(
-                    text = if (state.lipaBillA11yEnabled) {
-                        "On · Send, Pay, Repeat"
-                    } else {
-                        "Off · needed for Send, Pay, Repeat"
-                    },
-                    style = HomeType.body,
-                    color = if (state.lipaBillA11yEnabled) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.error
-                    }
-                )
-                if (showRestrictedUnlock) {
-                    Spacer(modifier = Modifier.height(Space.tight))
-                    Text(
-                        text = "Allow restricted settings in App info first.",
-                        style = HomeType.caption,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Spacer(modifier = Modifier.height(Space.gap))
-                Button(
-                    onClick = { a11yCoach.requestToggle() },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(if (state.lipaBillA11yEnabled) "Turn off" else "Turn on")
-                }
-                if (showRestrictedUnlock) {
-                    Spacer(modifier = Modifier.height(Space.gap))
-                    OutlinedButton(
-                        onClick = { viewModel.openAppInfoForRestrictedSettings() },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Allow restricted settings")
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(Space.block))
-                Text("Default SIM", style = HomeType.rowTitle)
-                Spacer(modifier = Modifier.height(Space.tight))
-                Text(
-                    text = "Safaricom only for M-Pesa payments.",
-                    style = HomeType.caption,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(Space.gap))
-                when {
-                    state.needsPhoneStatePermission -> {
-                        Text(
-                            text = "Phone permission needed to list SIMs.",
-                            style = HomeType.body,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        TextButton(onClick = onRequestPhoneStatePermission) {
-                            Text("Allow phone / SIM access")
-                        }
-                    }
-                    state.simLines.isEmpty() -> {
-                        Text(
-                            text = "No active SIMs detected.",
-                            style = HomeType.body,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    state.simLines.none { it.isSafaricom } -> {
-                        Text(
-                            text = "No Safaricom SIM — insert one to pay.",
-                            style = HomeType.body,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        state.simLines.forEach { line ->
-                            Text(
-                                text = line.label,
-                                style = HomeType.body,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(vertical = Space.tight)
-                            )
-                        }
-                    }
-                    else -> {
-                        state.simLines.forEach { line ->
-                            val selected = state.preferredSimSubscriptionId == line.subscriptionId
-                            val enabled = line.isSafaricom
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .then(
-                                        if (enabled) {
-                                            Modifier.selectable(
-                                                selected = selected,
-                                                onClick = {
-                                                    viewModel.setPreferredSim(line.subscriptionId)
-                                                },
-                                                role = Role.RadioButton
-                                            )
-                                        } else {
-                                            Modifier
-                                        }
-                                    )
-                                    .padding(vertical = Space.gap)
-                            ) {
-                                RadioButton(
-                                    selected = selected,
-                                    onClick = if (enabled) {
-                                        { viewModel.setPreferredSim(line.subscriptionId) }
-                                    } else {
-                                        null
-                                    },
-                                    enabled = enabled,
-                                    colors = RadioButtonDefaults.colors(
-                                        selectedColor = Accent,
-                                        unselectedColor = MaterialTheme.colorScheme.outline
-                                    )
-                                )
-                                Spacer(modifier = Modifier.width(Space.gap))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = line.label,
-                                        style = HomeType.body,
-                                        color = if (enabled) {
-                                            MaterialTheme.colorScheme.onSurface
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        }
-                                    )
-                                    when {
-                                        selected -> Text(
-                                            text = "Default for M-Pesa",
-                                            style = HomeType.caption,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                        !enabled -> Text(
-                                            text = "Not Safaricom",
-                                            style = HomeType.caption,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (attempts.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(Space.block))
-                    Text("Recent repeats", style = HomeType.rowTitle)
-                    Spacer(modifier = Modifier.height(Space.tight))
-                    attempts.take(5).forEach { attempt ->
-                        Text(
-                            text = "${attempt.outcome} · ${formatKes(attempt.amount)} · " +
-                                (attempt.counterpartyName
-                                    ?: attempt.counterpartyPhone
-                                    ?: "—"),
-                            style = HomeType.caption,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = Space.tight)
-                        )
+            if (attempts.isNotEmpty()) {
+                SettingsSection("Recent") {
+                    attempts.take(3).forEachIndexed { index, attempt ->
+                        if (index > 0) SettingsDivider()
+                        RecentAttemptRow(attempt)
                     }
                 }
             }
 
-            SettingsSection("About", showDividerBelow = false) {
-                Text(
-                    text = "LipaBill ${BuildConfig.VERSION_NAME}",
-                    style = HomeType.body,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            SettingsSection("About") {
+                SettingsNavRow(
+                    title = "Privacy",
+                    action = "",
+                    showChevron = true,
+                    onClick = { openHttps(context, MarketingLinks.PRIVACY) }
                 )
-                Spacer(modifier = Modifier.height(Space.tight))
-                Text(
-                    text = "M-Pesa PIN is typed on LipaBill’s keypad, sent once, never stored.",
-                    style = HomeType.caption,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                SettingsDivider()
+                SettingsNavRow(
+                    title = "Support",
+                    action = "",
+                    showChevron = true,
+                    onClick = { openHttps(context, MarketingLinks.SUPPORT) }
                 )
-                Spacer(modifier = Modifier.height(Space.gap))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Space.tight)
-                ) {
-                    TextButton(onClick = { openHttps(context, MarketingLinks.PRIVACY) }) {
-                        Text("Privacy")
-                    }
-                    TextButton(onClick = { openHttps(context, MarketingLinks.SUPPORT) }) {
-                        Text("Support")
-                    }
-                    TextButton(onClick = { openMailto(context, MarketingLinks.SUPPORT_EMAIL) }) {
-                        Text("Email")
-                    }
-                }
+                SettingsDivider()
+                SettingsNavRow(
+                    title = "Email support",
+                    action = "",
+                    showChevron = true,
+                    onClick = { openMailto(context, MarketingLinks.SUPPORT_EMAIL) }
+                )
             }
+
+            Text(
+                text = "LipaBill ${BuildConfig.VERSION_NAME}",
+                style = HomeType.caption,
+                color = Mute,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(Space.tight))
+            Text(
+                text = "Your M-Pesa PIN is typed on LipaBill’s keypad, sent once, and never stored.",
+                style = HomeType.caption,
+                color = Mute
+            )
+            Spacer(modifier = Modifier.height(Space.section))
         }
     }
 }
@@ -396,18 +321,52 @@ fun SettingsScreen(
 @Composable
 private fun SettingsSection(
     title: String,
-    showDividerBelow: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    Text(title, style = HomeType.section)
-    Spacer(modifier = Modifier.height(Space.block))
-    content()
-    if (showDividerBelow) {
-        Spacer(modifier = Modifier.height(Space.section))
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-        Spacer(modifier = Modifier.height(Space.section))
-    } else {
-        Spacer(modifier = Modifier.height(Space.section))
+    Text(
+        text = title,
+        style = HomeType.label,
+        color = Mute,
+        modifier = Modifier.padding(start = Space.gap)
+    )
+    Spacer(modifier = Modifier.height(Space.gap))
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(CardWhite)
+            .padding(horizontal = Space.card)
+    ) {
+        content()
+    }
+    Spacer(modifier = Modifier.height(Space.section))
+}
+
+@Composable
+private fun SettingsDivider() {
+    HorizontalDivider(color = Hairline, thickness = 1.dp)
+}
+
+@Composable
+private fun settingsSliderColors() = SliderDefaults.colors(
+    thumbColor = Accent,
+    activeTrackColor = Accent,
+    inactiveTrackColor = Hairline
+)
+
+@Composable
+private fun SettingsValueRow(
+    title: String,
+    value: String
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = Space.card)
+    ) {
+        Text(title, style = HomeType.rowTitle, color = Ink, modifier = Modifier.weight(1f))
+        Text(value, style = HomeType.body, color = Mute)
     }
 }
 
@@ -422,72 +381,235 @@ private fun SettingsSwitchRow(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = Space.gap)
+            .clickable(role = Role.Switch) { onCheckedChange(!checked) }
+            .padding(vertical = Space.card)
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = HomeType.rowTitle)
+            Text(title, style = HomeType.rowTitle, color = Ink)
             Spacer(modifier = Modifier.height(Space.tight))
-            Text(
-                text = subtitle,
-                style = HomeType.caption,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text(subtitle, style = HomeType.caption, color = Mute)
         }
+        Spacer(modifier = Modifier.width(Space.card))
         Switch(
             checked = checked,
-            onCheckedChange = onCheckedChange,
+            onCheckedChange = null,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = CardWhite,
                 checkedTrackColor = Accent,
                 uncheckedThumbColor = CardWhite,
-                uncheckedTrackColor = MaterialTheme.colorScheme.outline
+                uncheckedTrackColor = Mute.copy(alpha = 0.35f)
             )
         )
     }
 }
 
 @Composable
-private fun SettingsSliderRow(
+private fun SettingsActionRow(
     title: String,
-    valueLabel: String,
-    value: Float,
-    valueRange: ClosedFloatingPointRange<Float>,
-    steps: Int,
-    onValueChange: (Float) -> Unit,
-    caption: String? = null
+    onClick: () -> Unit,
+    icon: @Composable (() -> Unit)? = null
 ) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = Space.gap)) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(title, style = HomeType.rowTitle, modifier = Modifier.weight(1f))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = Space.card)
+    ) {
+        if (icon != null) {
+            icon()
+            Spacer(modifier = Modifier.width(Space.card))
+        }
+        Text(title, style = HomeType.rowTitle, color = Ink)
+    }
+}
+
+@Composable
+private fun SettingsNavRow(
+    title: String,
+    onClick: () -> Unit,
+    subtitle: String? = null,
+    action: String = "",
+    actionEmphasis: Boolean = false,
+    showChevron: Boolean = false
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = Space.card)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = HomeType.rowTitle, color = Ink)
+            if (subtitle != null) {
+                Spacer(modifier = Modifier.height(Space.tight))
+                Text(subtitle, style = HomeType.caption, color = Mute)
+            }
+        }
+        if (action.isNotEmpty()) {
+            Spacer(modifier = Modifier.width(Space.card))
             Text(
-                text = valueLabel,
+                text = action,
                 style = HomeType.body,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (actionEmphasis) Accent else Mute
             )
         }
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = valueRange,
-            steps = steps,
-            modifier = Modifier.fillMaxWidth(),
-            colors = SliderDefaults.colors(
-                thumbColor = Accent,
-                activeTrackColor = Accent,
-                inactiveTrackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
-            )
-        )
-        if (caption != null) {
-            Text(
-                text = caption,
-                style = HomeType.caption,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+        if (showChevron) {
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = Mute
             )
         }
     }
+}
+
+@Composable
+private fun SimChoices(
+    needsPermission: Boolean,
+    lines: List<SimLine>,
+    selectedId: Int?,
+    onAllow: () -> Unit,
+    onSelect: (Int) -> Unit
+) {
+    when {
+        needsPermission -> {
+            SettingsNavRow(
+                title = "Allow SIM access",
+                subtitle = "Needed to choose the M-Pesa line.",
+                action = "Allow",
+                actionEmphasis = true,
+                onClick = onAllow
+            )
+        }
+        lines.isEmpty() -> {
+            Text(
+                text = "No SIM found in this phone.",
+                style = HomeType.body,
+                color = Mute,
+                modifier = Modifier.padding(bottom = Space.card)
+            )
+        }
+        lines.none { it.isSafaricom } -> {
+            Text(
+                text = "Insert a Safaricom SIM to pay.",
+                style = HomeType.body,
+                color = Expense,
+                modifier = Modifier.padding(bottom = Space.gap)
+            )
+            lines.forEach { line ->
+                Text(
+                    text = line.label,
+                    style = HomeType.caption,
+                    color = Mute,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .padding(bottom = Space.card)
+                        .recordingPrivacyCover()
+                )
+            }
+        }
+        else -> {
+            val safaricom = lines.filter { it.isSafaricom }
+            val others = lines.filterNot { it.isSafaricom }
+            safaricom.forEach { line ->
+                val selected = selectedId == line.subscriptionId
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .selectable(
+                            selected = selected,
+                            onClick = { onSelect(line.subscriptionId) },
+                            role = Role.RadioButton
+                        )
+                        .padding(vertical = Space.gap)
+                ) {
+                    RadioButton(
+                        selected = selected,
+                        onClick = null,
+                        colors = RadioButtonDefaults.colors(
+                            selectedColor = Accent,
+                            unselectedColor = Hairline
+                        )
+                    )
+                    Spacer(modifier = Modifier.width(Space.gap))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = line.label,
+                            style = HomeType.body,
+                            color = Ink,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.recordingPrivacyCover()
+                        )
+                        if (selected) {
+                            Text(
+                                text = "Used for M-Pesa",
+                                style = HomeType.caption,
+                                color = Accent
+                            )
+                        }
+                    }
+                }
+            }
+            if (others.isNotEmpty()) {
+                Text(
+                    text = others.joinToString { it.label },
+                    style = HomeType.caption,
+                    color = Mute,
+                    modifier = Modifier
+                        .padding(bottom = Space.card)
+                        .recordingPrivacyCover()
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentAttemptRow(attempt: RepeatAttemptEntity) {
+    val who = attempt.counterpartyName ?: attempt.counterpartyPhone ?: "Unknown"
+    val amount = attempt.amount?.let { formatKes(it) }
+    val detail = listOfNotNull(amount, who, formatActivityTime(attempt.createdAtMillis))
+        .joinToString(" · ")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = Space.card)
+    ) {
+        Text(outcomeLabel(attempt.outcome), style = HomeType.rowTitle, color = Ink)
+        Spacer(modifier = Modifier.height(Space.tight))
+        Text(
+            text = detail,
+            style = HomeType.caption,
+            color = Mute,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.recordingPrivacyCover()
+        )
+    }
+}
+
+private fun minutesLabel(minutes: Int): String =
+    if (minutes == 1) "1 minute" else "$minutes minutes"
+
+private fun textSizeLabel(sp: Int): String = when {
+    sp <= 10 -> "Small"
+    sp <= 13 -> "Default"
+    sp <= 16 -> "Large"
+    else -> "Extra large"
+}
+
+private fun outcomeLabel(outcome: RepeatOutcome): String = when (outcome) {
+    RepeatOutcome.COMPLETED_TO_PIN -> "Reached the PIN screen"
+    RepeatOutcome.USER_CANCELLED -> "Cancelled"
+    RepeatOutcome.AUTH_FAILED -> "Unlock failed"
+    RepeatOutcome.ABORTED_MISMATCH -> "Payment screen didn’t match"
+    RepeatOutcome.ABORTED_ERROR -> "Couldn’t finish"
+    RepeatOutcome.MANUAL_COPY -> "Details copied"
 }
 
 private fun openHttps(context: android.content.Context, url: String) {

@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
@@ -15,6 +14,8 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -26,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -38,7 +40,6 @@ import androidx.core.content.ContextCompat
 import android.graphics.Color as AndroidColor
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -54,22 +55,24 @@ import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.sms.hasMpesaSmsPermission
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.data.tickets.PkPassIntents
-import com.lipabill.app.security.AppSecurity
 import com.lipabill.app.ui.analytics.MetricsScreen
 import com.lipabill.app.ui.auth.AuthGateScreen
-import com.lipabill.app.ui.detail.TransactionReceiptPopup
 import com.lipabill.app.ui.main.MainShellScreen
 import com.lipabill.app.ui.navigation.Route
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
 import com.lipabill.app.ui.permissions.AccessibilityToggleCoachDialog
 import com.lipabill.app.ui.permissions.FirstRunSetupScreen
-import com.lipabill.app.ui.permissions.SideloadRestrictedSettings
+import com.lipabill.app.ui.permissions.PaymentAccessDialog
+import com.lipabill.app.ui.permissions.PaymentAccessNeed
+import com.lipabill.app.ui.permissions.PermissionGuideDialog
+import com.lipabill.app.ui.permissions.missingPaymentAccess
+import com.lipabill.app.ui.permissions.PermissionLesson
 import com.lipabill.app.ui.permissions.SmsPermissionScreen
+import com.lipabill.app.ui.permissions.phoneLessonFor
 import com.lipabill.app.ui.permissions.SmsRestrictedSettings
 import com.lipabill.app.ui.pay.PayMoneyBottomSheetFragment
 import com.lipabill.app.ui.receipt.ProcessingReceiptScreen
 import com.lipabill.app.ui.region.KenyaOnlyScreen
-import com.lipabill.app.ui.repeat.AccessibilityOnboardingScreen
 import com.lipabill.app.ui.repeat.ManualRepeatScreen
 import com.lipabill.app.ui.repeat.RepeatConfirmScreen
 import com.lipabill.app.ui.send.SendMoneyBottomSheetFragment
@@ -127,7 +130,6 @@ class MainActivity : AppCompatActivity(),
             )
         )
         super.onCreate(savedInstanceState)
-        AppSecurity.lockScreenCapture(this)
         val app = application as LipaBillApp
         setContent {
             val fontSize by app.fontSizeSp.collectAsStateWithLifecycle()
@@ -242,6 +244,10 @@ private fun AuthenticatedApp(
             ) == true
         )
     }
+    var instantHomeReturn by remember { mutableStateOf(false) }
+    LaunchedEffect(instantHomeReturn) {
+        if (instantHomeReturn) instantHomeReturn = false
+    }
 
     DisposableEffect(activity) {
         val listener = androidx.core.util.Consumer<Intent> { intent ->
@@ -282,7 +288,6 @@ private fun AuthenticatedApp(
 
     var smsGranted by remember { mutableStateOf(hasSmsPermission()) }
     var permanentlyDenied by remember { mutableStateOf(false) }
-    var skipPermission by remember { mutableStateOf(false) }
     var pendingDialTxId by remember { mutableStateOf<Long?>(null) }
     var phoneStateRefreshKey by remember { mutableStateOf(0) }
     var showAccessibilityReenable by remember { mutableStateOf(false) }
@@ -354,6 +359,29 @@ private fun AuthenticatedApp(
         )
     }
 
+    var paymentAccessPrompt by remember { mutableStateOf(false) }
+    var pendingPaymentOpen by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var paymentAccessRevision by remember { mutableIntStateOf(0) }
+
+    fun finishPaymentAccessIfReady() {
+        if (!paymentAccessPrompt) return
+        paymentAccessRevision++
+        if (context.missingPaymentAccess().isNotEmpty()) return
+        paymentAccessPrompt = false
+        val open = pendingPaymentOpen
+        pendingPaymentOpen = null
+        open?.invoke()
+    }
+
+    fun openPaymentOrExplain(open: () -> Unit) {
+        if (context.missingPaymentAccess().isEmpty()) {
+            open()
+        } else {
+            pendingPaymentOpen = open
+            paymentAccessPrompt = true
+        }
+    }
+
     val callPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
@@ -361,6 +389,10 @@ private fun AuthenticatedApp(
         val stateOk = result[Manifest.permission.READ_PHONE_STATE] == true ||
             hasPhoneStatePermission()
         phoneStateRefreshKey++
+        if (paymentAccessPrompt) {
+            finishPaymentAccessIfReady()
+            return@rememberLauncherForActivityResult
+        }
         val txId = pendingDialTxId
         pendingDialTxId = null
         when {
@@ -380,18 +412,90 @@ private fun AuthenticatedApp(
         ActivityResultContracts.RequestPermission()
     ) {
         phoneStateRefreshKey++
+        if (paymentAccessPrompt) finishPaymentAccessIfReady()
+    }
+
+    var phoneLesson by remember { mutableStateOf<PermissionLesson?>(null) }
+    var phoneLessonAllow by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    fun explainPhoneAccess(lesson: PermissionLesson, onAllow: () -> Unit) {
+        phoneLesson = lesson
+        phoneLessonAllow = onAllow
+    }
+
+    fun openPaymentAccessibilitySettings() {
+        app.securePreferences.accessibilityOnboardingSeen = true
+        AccessibilityPreferred.markUserTurningOn(app.securePreferences)
+        AccessibilityHelper.openAppAccessibilityDetails(context)
+    }
+
+    fun allowNextPaymentAccess() {
+        when (context.missingPaymentAccess().firstOrNull()) {
+            PaymentAccessNeed.Phone ->
+                callPermissionLauncher.launch(arrayOf(Manifest.permission.CALL_PHONE))
+            PaymentAccessNeed.PhoneState ->
+                phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+            PaymentAccessNeed.Accessibility -> openPaymentAccessibilitySettings()
+            null -> finishPaymentAccessIfReady()
+        }
+    }
+
+    val activePhoneLesson = phoneLesson
+    if (activePhoneLesson != null) {
+        PermissionGuideDialog(
+            lesson = activePhoneLesson,
+            onAllow = {
+                val allow = phoneLessonAllow
+                phoneLesson = null
+                phoneLessonAllow = null
+                allow?.invoke()
+            },
+            onNotNow = {
+                phoneLesson = null
+                phoneLessonAllow = null
+                pendingDialTxId = null
+            }
+        )
+    }
+
+    if (paymentAccessPrompt) {
+        val missing = remember(paymentAccessRevision) { context.missingPaymentAccess() }
+        LaunchedEffect(missing) {
+            if (missing.isEmpty()) finishPaymentAccessIfReady()
+        }
+        if (missing.isNotEmpty()) {
+            PaymentAccessDialog(
+                missing = missing,
+                onAllow = { allowNextPaymentAccess() },
+                onNotNow = {
+                    paymentAccessPrompt = false
+                    pendingPaymentOpen = null
+                }
+            )
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) finishPaymentAccessIfReady()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    fun requestPhoneStateWithGuide() {
+        if (hasPhoneStatePermission()) {
+            phoneStateRefreshKey++
+            return
+        }
+        explainPhoneAccess(PermissionLesson.PhoneState) {
+            phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+        }
     }
 
     val listVm: TransactionListViewModel = viewModel(viewModelStoreOwner = activity)
     val sendVm: SendMoneyViewModel = viewModel(viewModelStoreOwner = activity)
     val payVm: PayMoneyViewModel = viewModel(viewModelStoreOwner = activity)
-
-    val contactsPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) {
-        sendVm.refreshContactsAccess()
-        payVm.refreshContactsAccess()
-    }
 
     LaunchedEffect(smsGranted) {
         listVm.setSmsPermission(smsGranted)
@@ -400,49 +504,48 @@ private fun AuthenticatedApp(
     val mainActivity = activity as MainActivity
 
     fun showSendSheet(preselect: SendContact? = null, preserveState: Boolean = false) {
-        if (!preserveState) {
-            sendVm.clearSelection()
-            sendVm.setAmountInput("")
-            if (preselect != null) {
-                sendVm.select(preselect)
+        openPaymentOrExplain {
+            if (!preserveState) {
+                sendVm.clearSelection()
+                sendVm.setAmountInput("")
+                if (preselect != null) {
+                    sendVm.select(preselect)
+                }
             }
-        }
-        // Contacts were requested in first-run setup; only re-prompt if still missing.
-        if (!hasContactsPermission()) {
-            contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
-        } else {
-            sendVm.refreshContactsAccess()
-            payVm.refreshContactsAccess()
-        }
-        val existing = activity.supportFragmentManager.findFragmentByTag(SendMoneyBottomSheetFragment.TAG)
-        if (existing == null) {
-            SendMoneyBottomSheetFragment.newInstance()
-                .show(activity.supportFragmentManager, SendMoneyBottomSheetFragment.TAG)
+            if (hasContactsPermission()) {
+                sendVm.refreshContactsAccess()
+                payVm.refreshContactsAccess()
+            }
+            val existing = activity.supportFragmentManager.findFragmentByTag(SendMoneyBottomSheetFragment.TAG)
+            if (existing == null) {
+                SendMoneyBottomSheetFragment.newInstance()
+                    .show(activity.supportFragmentManager, SendMoneyBottomSheetFragment.TAG)
+            }
         }
     }
 
     fun showPaySheet(preserveState: Boolean = false) {
-        if (!preserveState) {
-            payVm.clearMethod()
-            payVm.selectMethod(PayMethod.PAYBILL)
-        }
-        if (!hasContactsPermission()) {
-            contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
-        } else {
-            sendVm.refreshContactsAccess()
-            payVm.refreshContactsAccess()
-        }
-        val existing = activity.supportFragmentManager.findFragmentByTag(PayMoneyBottomSheetFragment.TAG)
-        if (existing == null) {
-            PayMoneyBottomSheetFragment.newInstance()
-                .show(activity.supportFragmentManager, PayMoneyBottomSheetFragment.TAG)
+        openPaymentOrExplain {
+            if (!preserveState) {
+                payVm.clearMethod()
+                payVm.selectMethod(PayMethod.PAYBILL)
+            }
+            if (hasContactsPermission()) {
+                sendVm.refreshContactsAccess()
+                payVm.refreshContactsAccess()
+            }
+            val existing = activity.supportFragmentManager.findFragmentByTag(PayMoneyBottomSheetFragment.TAG)
+            if (existing == null) {
+                PayMoneyBottomSheetFragment.newInstance()
+                    .show(activity.supportFragmentManager, PayMoneyBottomSheetFragment.TAG)
+            }
         }
     }
 
-    val startDestination = when {
-        !app.securePreferences.firstRunSetupDone -> Route.FirstRunSetup.path
-        smsGranted || skipPermission -> Route.List.path
-        else -> Route.Permission.path
+    val startDestination = if (!app.securePreferences.firstRunSetupDone) {
+        Route.FirstRunSetup.path
+    } else {
+        Route.List.path
     }
 
     fun navigateHome() {
@@ -464,6 +567,7 @@ private fun AuthenticatedApp(
         val draft = PendingPaymentReceipt.takeRestoreDraft() ?: return
         PendingPaymentReceipt.clear()
         activity.intent?.removeExtra(MainActivity.EXTRA_RETURN_TO_AMOUNT_AFTER_PIN_CANCEL)
+        instantHomeReturn = true
         navigateHome()
         when (draft.flow) {
             PendingPaymentReceipt.Flow.SEND -> {
@@ -527,14 +631,17 @@ private fun AuthenticatedApp(
     ) {
         val needCall = !hasCallPermission()
         val needState = !hasPhoneStatePermission()
-        if (needCall || needState) {
+        val lesson = phoneLessonFor(needCall, needState)
+        if (lesson != null) {
             pendingDialTxId = pendingId
-            callPermissionLauncher.launch(
-                buildList {
-                    if (needCall) add(Manifest.permission.CALL_PHONE)
-                    if (needState) add(Manifest.permission.READ_PHONE_STATE)
-                }.toTypedArray()
-            )
+            explainPhoneAccess(lesson) {
+                callPermissionLauncher.launch(
+                    buildList {
+                        if (needCall) add(Manifest.permission.CALL_PHONE)
+                        if (needState) add(Manifest.permission.READ_PHONE_STATE)
+                    }.toTypedArray()
+                )
+            }
             return
         }
         // After amount confirm: go straight to dial / M-Pesa PIN — no mid-flow biometrics.
@@ -603,10 +710,8 @@ private fun AuthenticatedApp(
                         "Payment automation is off — enable it in Profile",
                         Toast.LENGTH_LONG
                     ).show()
-                !accessibilityEnabled ->
-                    navController.navigate(Route.RepeatOnboarding(0).path)
-                needsPhoneState ->
-                    phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+                !accessibilityEnabled -> openPaymentAccessibilitySettings()
+                needsPhoneState -> requestPhoneStateWithGuide()
                 needsSimSetup() ->
                     navController.navigate(Route.Settings.path)
                 else -> dial()
@@ -653,43 +758,25 @@ private fun AuthenticatedApp(
         navController = navController,
         startDestination = startDestination,
         enterTransition = {
-            fadeIn(tween(120)) + slideInHorizontally(tween(160)) { it / 12 }
+            if (instantHomeReturn) EnterTransition.None
+            else fadeIn(tween(120)) + slideInHorizontally(tween(160)) { it / 12 }
         },
         exitTransition = {
-            fadeOut(tween(100))
+            if (instantHomeReturn) ExitTransition.None else fadeOut(tween(100))
         },
         popEnterTransition = {
-            fadeIn(tween(120))
+            if (instantHomeReturn) EnterTransition.None else fadeIn(tween(120))
         },
         popExitTransition = {
-            fadeOut(tween(100)) + slideOutHorizontally(tween(160)) { it / 12 }
+            if (instantHomeReturn) ExitTransition.None
+            else fadeOut(tween(100)) + slideOutHorizontally(tween(160)) { it / 12 }
         }
     ) {
         composable(Route.FirstRunSetup.path) {
             AdaptiveFrame { FirstRunSetupScreen(
-                onOpenAppSettings = {
-                    val intent = Intent(
-                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.fromParts("package", context.packageName, null)
-                    )
-                    context.startActivity(intent)
-                },
-                onOpenAccessibilitySettings = {
-                    app.securePreferences.accessibilityOnboardingSeen = true
-                    AccessibilityPreferred.markUserTurningOn(app.securePreferences)
-                    AccessibilityHelper.openAppAccessibilityDetails(context)
-                },
-                onSelectSim = { subId ->
-                    app.securePreferences.preferredSimSubscriptionId = subId
-                },
                 onFinished = {
                     app.securePreferences.firstRunSetupDone = true
-                    app.securePreferences.accessibilityOnboardingSeen = true
                     AppMetrics.firstRunCompleted()
-                    AppMetrics.smsPermission(hasSmsPermission())
-                    AppMetrics.accessibilityEnabled(
-                        AccessibilityHelper.isLipaBillServiceEnabled(context)
-                    )
                     smsGranted = hasSmsPermission()
                     listVm.setSmsPermission(smsGranted)
                     navController.navigate(Route.List.path) {
@@ -718,7 +805,6 @@ private fun AuthenticatedApp(
                     context.startActivity(intent)
                 },
                 onContinueWithout = {
-                    skipPermission = true
                     navController.navigate(Route.List.path) {
                         popUpTo(Route.Permission.path) { inclusive = true }
                     }
@@ -744,6 +830,14 @@ private fun AuthenticatedApp(
                 },
                 onOpenTickets = {
                     navController.navigate(Route.Tickets.path)
+                },
+                onRequestSms = {
+                    if (hasSmsPermission()) {
+                        smsGranted = true
+                        listVm.setSmsPermission(true)
+                    } else {
+                        navController.navigate(Route.Permission.path)
+                    }
                 },
                 onOpenSettings = {
                     navController.navigate(Route.Settings.path)
@@ -822,50 +916,15 @@ private fun AuthenticatedApp(
             AdaptiveFrame { RepeatConfirmScreen(
                 viewModel = repeatVm,
                 onBack = { navigateHome() },
-                onNeedAccessibility = {
-                    navController.navigate(Route.RepeatOnboarding(id).path)
-                },
+                onNeedAccessibility = { openPaymentAccessibilitySettings() },
                 onManualFallback = {
                     navController.navigate(Route.RepeatManual(id).path)
                 },
                 onOpenSimSettings = {
                     navController.navigate(Route.Settings.path)
                 },
-                onRequestPhoneStatePermission = {
-                    phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
-                },
+                onRequestPhoneStatePermission = { requestPhoneStateWithGuide() },
                 onConfirm = { runStepUpAndDial(repeatVm) }
-            ) }
-        }
-        composable(
-            route = Route.RepeatOnboarding.pattern,
-            arguments = listOf(navArgument("id") { type = NavType.LongType })
-        ) {
-            BackHandler { navigateHome() }
-            AdaptiveFrame { AccessibilityOnboardingScreen(
-                onOpenSettings = {
-                    app.securePreferences.accessibilityOnboardingSeen = true
-                    AccessibilityPreferred.markUserTurningOn(app.securePreferences)
-                    AccessibilityHelper.openAppAccessibilityDetails(context)
-                },
-                onOpenAppInfo = {
-                    app.securePreferences.accessibilityOnboardingSeen = true
-                    SideloadRestrictedSettings.openAppInfo(context)
-                },
-                onContinue = {
-                    app.securePreferences.accessibilityOnboardingSeen = true
-                    if (AccessibilityHelper.isLipaBillServiceEnabled(context)) {
-                        AccessibilityPreferred.markUserTurningOn(app.securePreferences)
-                        navigateHome()
-                    } else {
-                        Toast.makeText(
-                            context,
-                            "LipaBill service still off — enable it in Accessibility settings",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                },
-                onCancel = { navigateHome() }
             ) }
         }
         composable(
@@ -902,9 +961,7 @@ private fun AuthenticatedApp(
                 SettingsScreen(
                     viewModel = settingsVm,
                     onBack = { navigateHome() },
-                    onRequestPhoneStatePermission = {
-                        phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
-                    }
+                    onRequestPhoneStatePermission = { requestPhoneStateWithGuide() }
                 )
             }
         }

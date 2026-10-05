@@ -1,10 +1,12 @@
 package com.lipabill.app.ui.send
 
-import android.app.Dialog
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextField
@@ -15,37 +17,47 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.R
-import com.lipabill.app.security.AppSecurity
+import com.lipabill.app.ui.permissions.rememberContactsAccessOffer
+import com.lipabill.app.ui.permissions.paymentAccessDirective
+import com.lipabill.app.ui.permissions.rememberPaymentAccess
 import com.lipabill.app.ui.sheet.HorizontalRecipient
 import com.lipabill.app.ui.sheet.HorizontalRecipientRow
 import com.lipabill.app.ui.sheet.InAppKeyboard
 import com.lipabill.app.ui.sheet.MoneyConfirmDialog
 import com.lipabill.app.ui.sheet.MoneySheetScaffold
 import com.lipabill.app.ui.sheet.SheetFeedbackTone
+import com.lipabill.app.ussd.AccessibilityHelper
 import com.lipabill.app.ui.sheet.SheetInputStyle
-import com.lipabill.app.ui.sheet.expandForComposeContent
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
+import com.lipabill.app.ui.sheet.amountExceedsBalance
+import com.lipabill.app.ui.sheet.amountStepGuidance
 import com.lipabill.app.ui.sheet.formatSheetAmount
-import com.lipabill.app.ui.sheet.resolveSheetFeedback
+import com.lipabill.app.ui.sheet.moneySheetFeedback
+import com.lipabill.app.ui.sheet.expandedSheetDialog
+import com.lipabill.app.ui.sheet.themedComposeView
 import com.lipabill.app.ui.theme.HomeType
-import com.lipabill.app.ui.theme.LipaBillTheme
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.util.InterceptSystemIme
+import com.lipabill.app.ui.util.opensOnDigitKeys
+import com.lipabill.app.ui.util.asFieldPaste
 import com.lipabill.app.ui.util.bringIntoViewOnFocus
 import com.lipabill.app.ui.util.hideKeyboard
+import com.lipabill.app.ui.util.readClipboardText
+import com.lipabill.app.ui.permissions.AccessibilityPreferred
 import com.lipabill.app.ussd.UssdMenuBuilder
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
 import com.lipabill.app.viewmodel.SendMoneyViewModel
@@ -70,12 +82,7 @@ class SendMoneyBottomSheetFragment : BottomSheetDialogFragment() {
 
     override fun getTheme(): Int = R.style.Theme_LipaBill_BottomSheetDialog
 
-    override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-        val dialog = super.onCreateDialog(savedInstanceState) as BottomSheetDialog
-        AppSecurity.lockScreenCapture(dialog)
-        dialog.expandForComposeContent()
-        return dialog
-    }
+    override fun onCreateDialog(savedInstanceState: Bundle?) = expandedSheetDialog()
 
     override fun onDismiss(dialog: android.content.DialogInterface) {
         sendVm.resetSession()
@@ -86,28 +93,15 @@ class SendMoneyBottomSheetFragment : BottomSheetDialogFragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
-    ): View {
-        val app = requireActivity().application as LipaBillApp
-        return ComposeView(requireContext()).apply {
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            setContent {
-                val fontSize by app.fontSizeSp.collectAsStateWithLifecycle(initialValue = 12)
-                LipaBillTheme(fontSizeSp = fontSize) {
-                    SendMoneySheetContent(
-                        sendVm = sendVm,
-                        listVm = listVm,
-                        onConfirm = {
-                            // Keep sheet state until dial starts — dismiss resets the VM.
-                            host?.onSendSheetConfirm()
-                        }
-                    )
-                }
+    ): View = themedComposeView {
+        SendMoneySheetContent(
+            sendVm = sendVm,
+            listVm = listVm,
+            onConfirm = {
+                // Keep sheet state until dial starts — dismiss resets the VM.
+                host?.onSendSheetConfirm()
             }
-        }
+        )
     }
 
     companion object {
@@ -135,13 +129,26 @@ fun SendMoneySheetContent(
     }
     var showConfirm by remember { mutableStateOf(false) }
     var queryFocused by remember { mutableStateOf(false) }
-    val app = LocalContext.current.applicationContext as LipaBillApp
+    val context = LocalContext.current
+    val app = context.applicationContext as LipaBillApp
+    val paymentAccess = rememberPaymentAccess(
+        onAccessibility = {
+            AccessibilityPreferred.markUserTurningOn(app.securePreferences)
+            AccessibilityHelper.openAppAccessibilityDetails(context)
+        },
+        onChanged = { sendVm.refreshGates() }
+    )
+    val paymentMissing = paymentAccess.missing
+    val paymentBlock = paymentMissing.firstOrNull()
     val alwaysShowBalance by app.alwaysShowBalance.collectAsStateWithLifecycle()
     val pendingAmount = remember(state.amountInput) {
         RepeatTransactionViewModel.parseAmount(state.amountInput)
     }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    val offerContacts = rememberContactsAccessOffer {
+        sendVm.refreshContactsAccess()
+    }
 
     LaunchedEffect(Unit) {
         sendVm.refreshGates()
@@ -171,6 +178,15 @@ fun SendMoneySheetContent(
         step = SendSheetStep.Recipient
     }
 
+    fun pasteRecipient() {
+        val text = readClipboardText(context)?.asFieldPaste()
+        if (text.isNullOrBlank()) {
+            Toast.makeText(context, "Nothing to paste", Toast.LENGTH_SHORT).show()
+            return
+        }
+        sendVm.setQuery(text)
+    }
+
     val selectedName = state.selected?.let { it.name ?: it.normalizedPhone }
         ?: UssdMenuBuilder.normalizePhoneNumber(state.query)
         ?: state.query.trim().takeIf { it.isNotEmpty() }
@@ -178,23 +194,17 @@ fun SendMoneySheetContent(
         ?: UssdMenuBuilder.normalizePhoneNumber(state.query)?.let { "@$it" }
 
     val onAmountStep = step == SendSheetStep.Amount
-    val availableBalance = listState.latestBalance
-    val exceedsBalance = availableBalance != null &&
-        pendingAmount != null &&
-        pendingAmount > 0.0 &&
-        pendingAmount > availableBalance
-    val feedback = resolveSheetFeedback(
+    val exceedsBalance = amountExceedsBalance(listState.latestBalance, pendingAmount)
+    val feedback = moneySheetFeedback(
+        blockedDirective = paymentBlock?.let { paymentAccessDirective(paymentMissing) },
         status = state.statusMessage,
-        guidance = when {
-            onAmountStep && exceedsBalance ->
-                "That amount is more than your available balance."
-            onAmountStep && state.amountInput.isBlank() ->
-                "Enter an amount to continue."
-            onAmountStep && !state.amountValid ->
-                "Enter a valid amount to continue."
-            onAmountStep -> null
-            else -> state.guidanceMessage
-        }
+        guidance = amountStepGuidance(
+            onAmountStep = onAmountStep,
+            exceedsBalance = exceedsBalance,
+            amountInput = state.amountInput,
+            amountValid = state.amountValid,
+            detailsGuidance = state.guidanceMessage
+        )
     )
 
     MoneySheetScaffold(
@@ -245,29 +255,50 @@ fun SendMoneySheetContent(
         } else {
             {
                 InterceptSystemIme {
-                    OutlinedTextField(
-                        value = state.query,
-                        onValueChange = sendVm::setQuery,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .bringIntoViewOnFocus(delayMs = 80L)
-                            .onFocusChanged { queryFocused = it.isFocused },
-                        singleLine = true,
-                        readOnly = true,
-                        textStyle = SheetInputStyle,
-                        shape = RoundedCornerShape(14.dp),
-                        placeholder = {
-                            Text("Name or phone number", style = HomeType.body, color = Mute)
-                        }
-                    )
+                    val recipientFocus = remember { FocusRequester() }
+                    Box {
+                        OutlinedTextField(
+                            value = state.query,
+                            onValueChange = sendVm::setQuery,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .recordingPrivacyCover(state.query.isNotBlank())
+                                .focusRequester(recipientFocus)
+                                .bringIntoViewOnFocus(delayMs = 80L)
+                                .onFocusChanged {
+                                    queryFocused = it.isFocused
+                                    offerContacts(it.isFocused)
+                                },
+                            singleLine = true,
+                            readOnly = true,
+                            textStyle = SheetInputStyle,
+                            shape = RoundedCornerShape(14.dp),
+                            placeholder = {
+                                Text("Name or phone number", style = HomeType.body, color = Mute)
+                            }
+                        )
+                        Box(
+                            Modifier
+                                .matchParentSize()
+                                .pointerInput(Unit) {
+                                    detectTapGestures(
+                                        onTap = { recipientFocus.requestFocus() },
+                                        onLongPress = {
+                                            recipientFocus.requestFocus()
+                                            offerContacts(true)
+                                            pasteRecipient()
+                                        }
+                                    )
+                                }
+                        )
+                    }
                 }
             }
         },
         inAppTextKeyboard = if (!onAmountStep && queryFocused) {
             {
                 InAppKeyboard(
-                    startOnDigits = state.query.any { it.isDigit() } &&
-                        state.query.none { it.isLetter() },
+                    startOnDigits = state.query.opensOnDigitKeys(),
                     onChar = { ch ->
                         sendVm.setQuery(state.query + ch)
                     },
@@ -283,14 +314,23 @@ fun SendMoneySheetContent(
         } else {
             null
         },
-        ctaLabel = if (onAmountStep) "Send Now" else "Continue",
-        ctaEnabled = if (onAmountStep) {
+        ctaLabel = when {
+            paymentBlock != null -> paymentBlock.actionLabel
+            onAmountStep -> "Send Now"
+            else -> "Continue"
+        },
+        ctaEnabled = if (paymentBlock != null) {
+            true
+        } else if (onAmountStep) {
             state.canSend && !state.dialStarted
         } else {
             state.detailsValid
         },
         onCta = {
-            if (onAmountStep) {
+            val block = paymentBlock
+            if (block != null) {
+                paymentAccess.allow(block)
+            } else if (onAmountStep) {
                 showConfirm = true
             } else {
                 goToAmount()

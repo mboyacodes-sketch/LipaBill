@@ -7,6 +7,9 @@ package com.lipabill.app.data.sms
  */
 object MpesaSmsFilter {
 
+    /** "M-PESA balance" and reversal wording "M-PESA account balance". */
+    private val MPESA_BALANCE = Regex("mpesa(?: account)? balance")
+
     fun isMpesaSender(address: String?): Boolean {
         if (address.isNullOrBlank()) return false
         val normalized = address.trim()
@@ -24,9 +27,7 @@ object MpesaSmsFilter {
     fun isTransactionConfirmation(body: String?): Boolean {
         if (body.isNullOrBlank()) return false
         val hasConfirmed = body.contains("Confirmed", ignoreCase = true)
-        // "M-PESA balance", "MPESA balance", "M-Pesa balance", …
         val normalized = body.lowercase().replace("-", "")
-        val hasMpesaBalance = normalized.contains("mpesa balance")
-        return hasConfirmed && hasMpesaBalance
+        return hasConfirmed && MPESA_BALANCE.containsMatchIn(normalized)
     }
 }

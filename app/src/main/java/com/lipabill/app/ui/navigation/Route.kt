@@ -22,11 +22,6 @@ sealed class Route(val path: String) {
             const val pattern = "repeat/{id}?amount={amount}"
         }
     }
-    data class RepeatOnboarding(val id: Long) : Route("repeat_onboarding/$id") {
-        companion object {
-            const val pattern = "repeat_onboarding/{id}"
-        }
-    }
     data class RepeatManual(val id: Long, val amount: String = "") : Route(
         if (amount.isBlank()) "repeat_manual/$id"
         else "repeat_manual/$id?amount=${Uri.encode(amount)}"

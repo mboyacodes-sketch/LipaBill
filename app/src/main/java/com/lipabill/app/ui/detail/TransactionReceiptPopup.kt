@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Expense
@@ -68,7 +69,6 @@ import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.util.displayLabel
 import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.ui.util.formatTimestamp
-import com.lipabill.app.ui.util.isOutgoing
 import com.lipabill.app.ussd.UssdMenuBuilder
 
 private val DetailFill = Color(0xFFF7F8FA)
@@ -164,7 +164,10 @@ fun TransactionReceiptPopup(
                             color = Ink,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.recordingPrivacyCover(
+                                !tx.counterpartyName.isNullOrBlank()
+                            )
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
@@ -208,6 +211,7 @@ fun TransactionReceiptPopup(
                     DetailRow(
                         label = "Transaction ID",
                         value = tx.code,
+                        coverValue = true,
                         trailing = {
                             Icon(
                                 Icons.Outlined.ContentCopy,
@@ -223,7 +227,7 @@ fun TransactionReceiptPopup(
                     )
                     DetailRow("Type", typeLabel)
                     if (!tx.counterpartyPhone.isNullOrBlank()) {
-                        DetailRow("Phone", tx.counterpartyPhone)
+                        DetailRow("Phone", tx.counterpartyPhone, coverValue = true)
                     }
                 }
 
@@ -329,6 +333,7 @@ private fun DetailRow(
     label: String,
     value: String,
     emphasize: Boolean = false,
+    coverValue: Boolean = false,
     trailing: (@Composable () -> Unit)? = null
 ) {
     Row(
@@ -357,7 +362,8 @@ private fun DetailRow(
                 fontWeight = if (emphasize) FontWeight.Medium else FontWeight.Normal,
                 textAlign = TextAlign.End,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.recordingPrivacyCover(coverValue)
             )
             trailing?.invoke()
         }

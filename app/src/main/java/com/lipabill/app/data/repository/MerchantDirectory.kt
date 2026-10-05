@@ -8,6 +8,7 @@ import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.parser.digitsOnly
 import com.lipabill.app.data.parser.extractAccount
+import com.lipabill.app.data.parser.isPhoneLikeName
 import com.lipabill.app.data.parser.phoneContradicts
 import com.lipabill.app.data.parser.phonesMatch
 import kotlinx.coroutines.Dispatchers
@@ -115,6 +116,8 @@ class MerchantDirectory(
         val amount = tx.amount ?: return@withContext tx
         val now = System.currentTimeMillis()
         dao.prunePending(now - PENDING_TTL_MS)
+
+        if (!tx.type.isOutgoing()) return@withContext tx
 
         if (tx.type == TransactionType.PAYBILL ||
             tx.type == TransactionType.BUY_GOODS ||
@@ -292,13 +295,6 @@ class MerchantDirectory(
             n.startsWith("paybill ") && n.endsWith(identifier) ||
             n.startsWith("till ") && n.endsWith(identifier) ||
             n.startsWith("pochi ") && n.endsWith(identifier)
-    }
-
-    private fun isPhoneLikeName(name: String): Boolean {
-        val digits = name.filter { it.isDigit() }
-        if (digits.length < 9) return false
-        val letters = name.count { it.isLetter() }
-        return letters == 0
     }
 
     private fun normalizeName(name: String): String =

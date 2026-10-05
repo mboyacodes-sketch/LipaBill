@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ussd.UssdMenuBuilder
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
@@ -79,7 +80,9 @@ fun ManualRepeatScreen(
             Text(
                 text = details,
                 style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .recordingPrivacyCover(details != "Loading…")
             )
             Spacer(modifier = Modifier.height(Space.section))
             Button(

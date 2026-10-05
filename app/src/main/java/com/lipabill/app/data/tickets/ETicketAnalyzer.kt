@@ -334,22 +334,14 @@ object ETicketAnalyzer {
             val image = InputImage.fromBitmap(bitmap, 0)
             val result = recognizer.process(image).await()
             val hints = mutableListOf<ETicketTextParser.StationHint>()
-            val stationNames = listOf(
-                "Nairobi Terminus", "Mombasa Terminus", "Syokimau", "Athi River", "Emali",
-                "Mtito Andei", "Voi", "Miasenyi", "Mariakani", "Suswa", "Naivasha", "Mai Mahiu",
-                "Nairobi", "Mombasa"
-            )
+            val stationNames = SGR_STATIONS
             for (block in result.textBlocks) {
                 val box = block.boundingBox ?: continue
                 val blockText = block.text.orEmpty()
                 if (blockText.contains("Sold at", ignoreCase = true)) continue
                 for (name in stationNames.sortedByDescending { it.length }) {
                     if (blockText.contains(name, ignoreCase = true)) {
-                        val normalized = when {
-                            name.equals("Nairobi", true) -> "Nairobi Terminus"
-                            name.equals("Mombasa", true) -> "Mombasa Terminus"
-                            else -> name
-                        }
+                        val normalized = sgrStationName(name)
                         val lineBox = block.lines
                             .firstOrNull {
                                 it.text.contains(name, ignoreCase = true) &&

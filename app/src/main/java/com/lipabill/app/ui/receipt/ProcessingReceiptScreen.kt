@@ -1,5 +1,9 @@
 package com.lipabill.app.ui.receipt
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -66,7 +70,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.data.parser.extractAccount
+import com.lipabill.app.data.parser.isPhoneLikeName
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
+import com.lipabill.app.ui.permissions.PermissionGuideDialog
+import com.lipabill.app.ui.permissions.PermissionLesson
+import com.lipabill.app.ui.permissions.PermissionPromptMemory
+import com.lipabill.app.ui.permissions.permissionGranted
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Expense
@@ -103,6 +114,19 @@ fun ProcessingReceiptScreen(
     onBack: () -> Unit
 ) {
     val app = LocalContext.current.applicationContext as LipaBillApp
+    val context = LocalContext.current
+    var askNotifications by remember { mutableStateOf(false) }
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) PermissionPromptMemory.notificationsDeclined = true
+    }
+    LaunchedEffect(Unit) {
+        val needed = Build.VERSION.SDK_INT >= 33 &&
+            !context.permissionGranted(Manifest.permission.POST_NOTIFICATIONS) &&
+            !PermissionPromptMemory.notificationsDeclined
+        askNotifications = needed
+    }
     val snapshot = remember(auditId) { PendingPaymentReceipt.peek(auditId) }
     val attempt by app.repeatRepository.observeById(auditId)
         .collectAsStateWithLifecycle(initialValue = null)
@@ -127,8 +151,8 @@ fun ProcessingReceiptScreen(
     val dialName = snapshot?.counterpartyName ?: attempt?.counterpartyName
     // Prefer M-Pesa SMS name when the dial was a bare number / unknown contact.
     val name = when {
-        smsName != null && !isPhoneLikeLabel(smsName) -> smsName
-        smsName != null && (dialName == null || isPhoneLikeLabel(dialName)) -> smsName
+        smsName != null && !isPhoneLikeName(smsName) -> smsName
+        smsName != null && (dialName == null || isPhoneLikeName(dialName)) -> smsName
         else -> dialName ?: smsName
     }
     val phone = matchedTx?.counterpartyPhone?.takeIf { it.isNotBlank() }
@@ -136,7 +160,7 @@ fun ProcessingReceiptScreen(
         ?: attempt?.counterpartyPhone
     val type = snapshot?.type ?: matchedTx?.type ?: TransactionType.UNKNOWN
     val account = snapshot?.accountHint
-        ?: matchedTx?.rawBody?.let { accountFromRaw(it) }
+        ?: matchedTx?.rawBody?.let { extractAccount(it) }
     val startedAt = snapshot?.startedAtMillis ?: attempt?.createdAtMillis
         ?: System.currentTimeMillis()
 
@@ -317,6 +341,19 @@ fun ProcessingReceiptScreen(
             }
         }
     }
+    if (askNotifications) {
+        PermissionGuideDialog(
+            lesson = PermissionLesson.Notifications,
+            onAllow = {
+                askNotifications = false
+                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            },
+            onNotNow = {
+                askNotifications = false
+                PermissionPromptMemory.notificationsDeclined = true
+            }
+        )
+    }
 }
 
 private enum class ReceiptTag(val label: String) {
@@ -473,7 +510,8 @@ private fun PaymentDetailsBox(
                 PaymentField(
                     label = "To",
                     value = toValue,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    cover = true
                 )
                 if (idValue != null) {
                     Spacer(modifier = Modifier.width(12.dp))
@@ -481,14 +519,15 @@ private fun PaymentDetailsBox(
                         label = partyLabel,
                         value = idValue,
                         modifier = Modifier.width(110.dp),
-                        alignEnd = true
+                        alignEnd = true,
+                        cover = true
                     )
                 }
             }
 
             if (!account.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(16.dp))
-                PaymentField(label = "Account", value = account)
+                PaymentField(label = "Account", value = account, cover = true)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -572,7 +611,8 @@ private fun PaymentStub(tag: ReceiptTag, confirmCode: String?) {
                 color = Mute,
                 fontSize = 12.sp,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.recordingPrivacyCover(!confirmCode.isNullOrBlank())
             )
         }
     }
@@ -583,7 +623,8 @@ private fun PaymentField(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
-    alignEnd: Boolean = false
+    alignEnd: Boolean = false,
+    cover: Boolean = false
 ) {
     Column(
         modifier = modifier,
@@ -603,7 +644,8 @@ private fun PaymentField(
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 2,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.recordingPrivacyCover(cover)
         )
     }
 }
@@ -660,17 +702,4 @@ private fun PaymentTicketPerforation() {
             )
         }
     }
-}
-
-/** True when a "name" is really just a phone number (new/unknown recipient). */
-private fun isPhoneLikeLabel(value: String): Boolean {
-    val digits = value.filter { it.isDigit() }
-    if (digits.length < 9) return false
-    return value.none { it.isLetter() }
-}
-
-private fun accountFromRaw(raw: String): String? {
-    val match = Regex("""Account\s+(.+)""", RegexOption.IGNORE_CASE).find(raw.trim())
-        ?: return null
-    return match.groupValues[1].trim().takeIf { it.isNotEmpty() }
 }

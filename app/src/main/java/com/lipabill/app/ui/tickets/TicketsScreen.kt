@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Context
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -77,7 +76,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lipabill.app.data.model.BoardingLeg
 import com.lipabill.app.data.model.BoardingPassSnapshot
@@ -87,6 +85,9 @@ import com.lipabill.app.data.model.TicketStatus
 import com.lipabill.app.data.tickets.BookingConfirmationParser
 import com.lipabill.app.data.tickets.TicketDocumentKind
 import com.lipabill.app.ui.adapt.LocalWindowForm
+import com.lipabill.app.ui.permissions.PermissionGuideDialog
+import com.lipabill.app.ui.permissions.PermissionLesson
+import com.lipabill.app.ui.permissions.permissionGranted
 import com.lipabill.app.ui.adapt.WindowWidth
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
@@ -642,6 +643,7 @@ fun TicketDetailScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var attaching by remember { mutableStateOf(false) }
     var showAttachScanner by remember { mutableStateOf(false) }
+    var showCameraGuide by remember { mutableStateOf(false) }
     var attachLeg by remember { mutableStateOf<BoardingLeg?>(null) }
     var showBoardingQrDialog by remember { mutableStateOf(false) }
 
@@ -719,15 +721,26 @@ fun TicketDetailScreen(
 
     fun launchAttachScan(leg: BoardingLeg? = null) {
         attachLeg = leg
-        val granted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.CAMERA
-        ) == PackageManager.PERMISSION_GRANTED
+        val granted = context.permissionGranted(Manifest.permission.CAMERA)
         if (granted) {
             showAttachScanner = true
         } else {
-            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            showCameraGuide = true
         }
+    }
+
+    if (showCameraGuide) {
+        PermissionGuideDialog(
+            lesson = PermissionLesson.Camera,
+            onAllow = {
+                showCameraGuide = false
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            },
+            onNotNow = {
+                showCameraGuide = false
+                attachLeg = null
+            }
+        )
     }
 
     if (showAttachScanner) {

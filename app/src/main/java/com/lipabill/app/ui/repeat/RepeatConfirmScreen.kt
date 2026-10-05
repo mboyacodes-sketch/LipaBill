@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.sheet.AmountAddUpDialog
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.util.MoneyAmountVisualTransformation
@@ -106,14 +107,16 @@ fun RepeatConfirmScreen(
 
             Text(
                 text = "To ${tx.counterpartyName ?: "recipient"}",
-                style = MaterialTheme.typography.headlineMedium
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.recordingPrivacyCover(!tx.counterpartyName.isNullOrBlank())
             )
             if (!tx.counterpartyPhone.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(Space.tight))
                 Text(
                     text = tx.counterpartyPhone,
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.recordingPrivacyCover()
                 )
             }
             Spacer(modifier = Modifier.height(Space.block))

@@ -46,9 +46,6 @@ object AppMetrics {
     fun smsPermission(granted: Boolean) =
         log("sms_permission", bundleOf("granted" to granted))
 
-    fun accessibilityEnabled(enabled: Boolean) =
-        log("accessibility_enabled", bundleOf("enabled" to enabled))
-
     /** flow: send | pay | repeat — no amounts or recipients. */
     fun paymentStarted(flow: String) =
         log("payment_started", bundleOf("flow" to flow.take(16)))

@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.data.model.Ticket
 import com.lipabill.app.data.model.notesValue
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Expense
@@ -290,7 +291,8 @@ private fun EventDetailsBox(model: EventTicketUiModel) {
                         EventField(
                             label = "Attendee",
                             value = model.attendee,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            cover = true
                         )
                     }
                     if (!model.door.isNullOrBlank()) {
@@ -389,7 +391,8 @@ private fun EventField(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
-    alignEnd: Boolean = false
+    alignEnd: Boolean = false,
+    cover: Boolean = false
 ) {
     Column(
         modifier = modifier,
@@ -409,7 +412,8 @@ private fun EventField(
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 2,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.recordingPrivacyCover(cover)
         )
     }
 }

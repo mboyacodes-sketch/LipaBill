@@ -7,7 +7,18 @@ import android.provider.ContactsContract
 import androidx.core.content.ContextCompat
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.ussd.UssdMenuBuilder
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
 
 /**
@@ -81,4 +92,29 @@ object PhoneBookSearcher {
         }
         out
     }
+
+    /**
+     * Debounced contact search. [access] is only a retrigger when permission changes;
+     * the query itself is what gets searched.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
+    fun observeSearch(
+        scope: CoroutineScope,
+        query: Flow<String>,
+        access: Flow<Boolean>,
+        context: Context
+    ): StateFlow<List<SendContact>> =
+        combine(query, access) { q, _ -> q }
+            .debounce(250)
+            .flatMapLatest { q ->
+                flow {
+                    val trimmed = q.trim()
+                    if (trimmed.length < 2 || !hasPermission(context)) {
+                        emit(emptyList())
+                    } else {
+                        emit(search(context, trimmed))
+                    }
+                }
+            }
+            .stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
 }

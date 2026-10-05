@@ -186,7 +186,7 @@ fun InAppKeyboard(
             horizontalArrangement = Arrangement.spacedBy(KeyGap)
         ) {
             InAppKey(
-                weight = 1.5f,
+                weight = 1.35f,
                 accent = true,
                 onClick = {
                     digitsMode = !digitsMode

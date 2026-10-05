@@ -10,23 +10,18 @@ import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.parser.PaybillPasteParser
 import com.lipabill.app.data.repository.MerchantHit
 import com.lipabill.app.data.repository.SendContact
-import com.lipabill.app.ussd.AccessibilityHelper
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import com.lipabill.app.ussd.SimLine
-import com.lipabill.app.ussd.SimLineHelper
 import com.lipabill.app.ussd.UssdMenuBuilder
 import com.lipabill.app.ui.util.appendAmountKey as applyAmountKey
 import com.lipabill.app.ui.util.formatKesMoney
 import com.lipabill.app.ui.util.sanitizeAmountInput
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -63,7 +58,7 @@ data class PayMoneyUiState(
     val guidanceMessage: String? = null
 )
 
-@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
+@OptIn(ExperimentalCoroutinesApi::class)
 class PayMoneyViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as LipaBillApp
@@ -74,20 +69,12 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
     private val merchantQuery = MutableStateFlow("")
     private val contactsAccess = MutableStateFlow(PhoneBookSearcher.hasPermission(application))
 
-    private val phoneBookHits: StateFlow<List<SendContact>> =
-        combine(pochiQuery, contactsAccess) { q, _ -> q }
-            .debounce(250)
-            .flatMapLatest { q ->
-                flow {
-                    val trimmed = q.trim()
-                    if (trimmed.length < 2 || !PhoneBookSearcher.hasPermission(getApplication())) {
-                        emit(emptyList())
-                    } else {
-                        emit(PhoneBookSearcher.search(getApplication(), trimmed))
-                    }
-                }
-            }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    private val phoneBookHits: StateFlow<List<SendContact>> = PhoneBookSearcher.observeSearch(
+        viewModelScope,
+        pochiQuery,
+        contactsAccess,
+        application
+    )
 
     private val merchantHits = combine(_ui, merchantQuery) { state, q ->
         state.method to q
@@ -129,7 +116,7 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
             merchantHits = draft.hits,
             merchantQuery = merchantQ
         ).revalidate()
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PayMoneyUiState())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, PayMoneyUiState())
 
     private data class PochiDraft(
         val state: PayMoneyUiState,
@@ -146,23 +133,15 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
     fun refreshGates() {
         val ctx = getApplication<Application>()
         contactsAccess.value = PhoneBookSearcher.hasPermission(ctx)
-        val needsPerm = !SimLineHelper.hasPhoneStatePermission(ctx)
-        val lines = if (needsPerm) emptyList() else SimLineHelper.listActiveLines(ctx)
-        val selected = if (needsPerm) {
-            null
-        } else {
-            SimLineHelper.ensureSafaricomPreferred(app.securePreferences, lines)
-        }
-        val preferred = app.securePreferences.preferredSimSubscriptionId
+        val lines = ctx.paymentLineSnapshot(coordinator, app.securePreferences)
         _ui.update { state ->
             state.copy(
-                featureEnabled = coordinator.isFeatureEnabled(),
-                accessibilityEnabled = AccessibilityHelper.isLipaBillServiceEnabled(ctx),
-                simLines = lines,
-                selectedSubscriptionId = selected,
-                hasSavedSimPreference = preferred >= 0 &&
-                    lines.any { line -> line.subscriptionId == preferred && line.isSafaricom },
-                needsPhoneStatePermission = needsPerm
+                featureEnabled = lines.featureEnabled,
+                accessibilityEnabled = lines.accessibilityEnabled,
+                simLines = lines.simLines,
+                selectedSubscriptionId = lines.selectedSubscriptionId,
+                hasSavedSimPreference = lines.hasSavedSimPreference,
+                needsPhoneStatePermission = lines.needsPhoneStatePermission
             )
         }
     }
@@ -456,22 +435,13 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
 
     fun startDial(prepared: RepeatTransactionCoordinator.PreparedRepeat) {
         val state = uiState.value
-        val subId = state.selectedSubscriptionId
-        if (subId != null) {
-            app.securePreferences.preferredSimSubscriptionId = subId
-        }
-        coordinator.startDialing(prepared, subId)
-        val line = state.simLines.firstOrNull { it.subscriptionId == subId }
-        _ui.update {
-            it.copy(
-                dialStarted = true,
-                statusMessage = if (line != null) {
-                    "Payment on ${line.label} — enter PIN on the LipaBill keypad when prompted."
-                } else {
-                    "Payment started — enter PIN on the LipaBill keypad when prompted."
-                }
-            )
-        }
+        val status = dialStartedStatus(
+            app.securePreferences,
+            state.selectedSubscriptionId,
+            state.simLines
+        )
+        coordinator.startDialing(prepared, state.selectedSubscriptionId)
+        _ui.update { it.copy(dialStarted = true, statusMessage = status) }
     }
 
     fun confirmSummary(): Triple<String, String, String>? {
@@ -540,35 +510,35 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    private fun PayMoneyUiState.paybillGuidance(): String {
-        val q = merchantQuery.trim()
-        val label = q.take(28).let { if (q.length > 28) "$it…" else it }
-        return when {
-            q.isBlank() && businessNumber.isEmpty() ->
-                "Search a saved business, or type the paybill number (5+ digits)."
-            businessNumber.isEmpty() && merchantHits.isEmpty() && q.any { it.isLetter() } ->
-                "No saved business matches \"$label\". Type the paybill number (5+ digits) instead."
-            businessNumber.isEmpty() ->
-                "Enter a full paybill number (at least 5 digits)."
-            accountNumber.isBlank() ->
+    private fun PayMoneyUiState.paybillGuidance(): String =
+        savedNumberGuidance(businessNumber, "paybill") {
+            if (accountNumber.isBlank()) {
                 "Enter the account / shop code for this paybill."
-            else ->
+            } else {
                 "Add paybill number and account to continue."
+            }
         }
-    }
 
-    private fun PayMoneyUiState.tillGuidance(): String {
+    private fun PayMoneyUiState.tillGuidance(): String =
+        savedNumberGuidance(tillNumber, "till") {
+            "Add a till number to continue."
+        }
+
+    private fun PayMoneyUiState.savedNumberGuidance(
+        number: String,
+        noun: String,
+        afterNumber: () -> String
+    ): String {
         val q = merchantQuery.trim()
         val label = q.take(28).let { if (q.length > 28) "$it…" else it }
         return when {
-            q.isBlank() && tillNumber.isEmpty() ->
-                "Search a saved business, or type the till number (5+ digits)."
-            tillNumber.isEmpty() && merchantHits.isEmpty() && q.any { it.isLetter() } ->
-                "No saved business matches \"$label\". Type the till number (5+ digits) instead."
-            tillNumber.isEmpty() ->
-                "Enter a full till number (at least 5 digits)."
-            else ->
-                "Add a till number to continue."
+            q.isBlank() && number.isEmpty() ->
+                "Search a saved business, or type the $noun number (5+ digits)."
+            number.isEmpty() && merchantHits.isEmpty() && q.any { it.isLetter() } ->
+                "No saved business matches \"$label\". Type the $noun number (5+ digits) instead."
+            number.isEmpty() ->
+                "Enter a full $noun number (at least 5 digits)."
+            else -> afterNumber()
         }
     }
 

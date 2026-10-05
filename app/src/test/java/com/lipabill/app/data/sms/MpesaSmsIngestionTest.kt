@@ -148,6 +148,17 @@ class MpesaSmsIngestionTest {
     }
 
     @Test
+    fun reversal_is_an_incoming_credit() {
+        val tx = MpesaSmsIngestion.acceptAndParse("MPESA", REVERSAL_JULIUS_SMS, ts)
+        assertNotNull(tx)
+        assertEquals(TransactionType.REVERSED, tx!!.type)
+        assertEquals(125.0, tx.amount!!, 0.001)
+        assertEquals("JULIUS VIAZI SUPPLIER", tx.counterpartyName)
+        assertEquals(4801.97, tx.balance!!, 0.001)
+        assertFalse(tx.type.isOutgoing())
+    }
+
+    @Test
     fun blank_and_null_ignored() {
         assertNull(MpesaSmsIngestion.acceptAndParse("MPESA", null, ts))
         assertNull(MpesaSmsIngestion.acceptAndParse("MPESA", "", ts))

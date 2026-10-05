@@ -30,7 +30,6 @@ import com.lipabill.app.data.model.BoardingPassSnapshot
 import com.lipabill.app.data.model.notesValue
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.HomeType
-import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.LabelBlue
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.RouteBlue

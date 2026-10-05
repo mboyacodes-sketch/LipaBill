@@ -60,6 +60,41 @@ fun SheetFeedback(
     }
 }
 
+fun amountExceedsBalance(available: Double?, pending: Double?): Boolean =
+    available != null && pending != null && pending > 0.0 && pending > available
+
+/** Amount-step coaching, falling back to the details-step [detailsGuidance]. */
+fun amountStepGuidance(
+    onAmountStep: Boolean,
+    exceedsBalance: Boolean,
+    amountInput: String,
+    amountValid: Boolean,
+    detailsGuidance: String?
+): String? = when {
+    onAmountStep && exceedsBalance ->
+        "That amount is more than your available balance."
+    onAmountStep && amountInput.isBlank() ->
+        "Enter an amount to continue."
+    onAmountStep && !amountValid ->
+        "Enter a valid amount to continue."
+    onAmountStep -> null
+    else -> detailsGuidance
+}
+
+/**
+ * Payment-access copy wins over dial status, which wins over next-step guidance.
+ */
+fun moneySheetFeedback(
+    blockedDirective: String?,
+    status: String?,
+    guidance: String?
+): Pair<String, SheetFeedbackTone>? =
+    if (blockedDirective != null) {
+        blockedDirective to SheetFeedbackTone.Warning
+    } else {
+        resolveSheetFeedback(status, guidance)
+    }
+
 /** Prefer [status] (action result) over [guidance] (what to do next). */
 fun resolveSheetFeedback(
     status: String?,

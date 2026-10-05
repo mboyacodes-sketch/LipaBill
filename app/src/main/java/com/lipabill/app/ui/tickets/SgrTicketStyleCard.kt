@@ -50,6 +50,7 @@ import com.lipabill.app.data.model.notesValue
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.GeometricSansFamily
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
 import java.time.Instant
@@ -345,14 +346,20 @@ private fun SgrActiveTicketStack(
                     SgrBandCell("Depart time", model.departTime, Modifier.weight(1.15f), muted = isUsed)
                     SgrBandCell("Coach", model.coach, Modifier.weight(0.85f), muted = isUsed)
                     SgrBandCell("Train", model.train, Modifier.weight(0.95f), muted = isUsed)
-                    SgrBandCell("Ref", model.bookingRef, Modifier.weight(1.05f), muted = isUsed)
+                    SgrBandCell("Ref", model.bookingRef, Modifier.weight(1.05f), muted = isUsed, cover = true)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Passenger | Seat | Class — same placement as mock
                 Row(modifier = Modifier.fillMaxWidth()) {
-                    SgrMetaCell("Passenger", model.passenger, Modifier.weight(1.5f), muted = isUsed)
+                    SgrMetaCell(
+                        "Passenger",
+                        model.passenger,
+                        Modifier.weight(1.5f),
+                        muted = isUsed,
+                        cover = true
+                    )
                     SgrMetaCell(
                         "Seat",
                         model.seat,
@@ -431,7 +438,8 @@ private fun SgrActiveTicketStack(
                         fontSize = 14.sp,
                         fontFamily = GeometricSansFamily,
                         fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.recordingPrivacyCover()
                     )
                 }
             }
@@ -541,7 +549,8 @@ private fun SgrBandCell(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
-    muted: Boolean = false
+    muted: Boolean = false,
+    cover: Boolean = false
 ) {
     Column(modifier = modifier.padding(end = 4.dp)) {
         Text(
@@ -561,7 +570,8 @@ private fun SgrBandCell(
             fontFamily = GeometricSansFamily,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.recordingPrivacyCover(cover)
         )
     }
 }
@@ -572,7 +582,8 @@ private fun SgrMetaCell(
     value: String,
     modifier: Modifier = Modifier,
     muted: Boolean = false,
-    alignEnd: Boolean = false
+    alignEnd: Boolean = false,
+    cover: Boolean = false
 ) {
     Column(
         modifier = modifier.padding(end = if (alignEnd) 0.dp else 6.dp),
@@ -594,7 +605,8 @@ private fun SgrMetaCell(
             fontWeight = FontWeight.Bold,
             textAlign = if (alignEnd) TextAlign.End else TextAlign.Start,
             maxLines = 2,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.recordingPrivacyCover(cover)
         )
     }
 }

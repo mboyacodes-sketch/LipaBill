@@ -39,6 +39,13 @@ class MpesaSmsFilterTest {
     }
 
     @Test
+    fun accepts_reversal_account_balance_wording() {
+        assertTrue(
+            MpesaSmsFilter.isTransactionConfirmation(REVERSAL_JULIUS_SMS)
+        )
+    }
+
+    @Test
     fun rejects_bodies_missing_confirmed_or_balance() {
         assertFalse(MpesaSmsFilter.isTransactionConfirmation("Your new M-PESA PIN is 1234"))
         assertFalse(

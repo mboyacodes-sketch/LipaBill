@@ -6,9 +6,11 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -16,7 +18,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lipabill.app.LipaBillApp
 import com.lipabill.app.R
+import com.lipabill.app.ui.privacy.LocalRecordingPrivacy
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /** Pay and send sheet width. The rest of the UI follows the window size. */
 val ContentMaxWidth = 600.dp
@@ -41,8 +47,6 @@ val Debit = Ink
  * Prefer this (or MaterialTheme.colorScheme.primary) for filled buttons & emphasis.
  */
 val Accent = Color(0xFF2F4A6E)
-/** Pressed / deeper route blue. */
-val AccentDark = Color(0xFF243A58)
 /** Pastel fills for Pay / Metrics / Passes action circles. */
 val ActionPay = Color(0xFFD6E4F2)
 val ActionMetrics = Color(0xFFF3E9C8)
@@ -110,8 +114,6 @@ data class AppSpace(
     val chip: Dp,
     val card: Dp,
     val cardH: Dp,
-    val hero: Dp,
-    val button: Dp,
     val scale: Float
 )
 
@@ -129,8 +131,6 @@ fun appSpace(baseSp: Int): AppSpace {
         chip = s(8f),
         card = s(10f),
         cardH = s(11f),
-        hero = s(8f),
-        button = s(8f),
         scale = scale
     )
 }
@@ -159,10 +159,6 @@ object Space {
         @Composable @ReadOnlyComposable get() = LocalAppSpace.current.card
     val cardH: Dp
         @Composable @ReadOnlyComposable get() = LocalAppSpace.current.cardH
-    val hero: Dp
-        @Composable @ReadOnlyComposable get() = LocalAppSpace.current.hero
-    val button: Dp
-        @Composable @ReadOnlyComposable get() = LocalAppSpace.current.button
 }
 
 data class AppTypeScale(
@@ -174,7 +170,6 @@ data class AppTypeScale(
     val body: TextStyle,
     val caption: TextStyle,
     val label: TextStyle,
-    val nav: TextStyle,
     val sheetAmount: TextStyle,
     val sheetHeroAmount: TextStyle,
     /** Pay/Send text fields — regular weight, larger than body. */
@@ -207,7 +202,6 @@ fun appTypeScale(baseSp: Int): AppTypeScale {
         body = scaledStyle(12f, scale, FontWeight.Normal, line = 16f),
         caption = scaledStyle(11f, scale, FontWeight.Normal, line = 14f),
         label = scaledStyle(11f, scale, FontWeight.Medium, line = 14f),
-        nav = scaledStyle(10f, scale, FontWeight.Medium, line = 13f),
         sheetAmount = scaledStyle(30f, scale, FontWeight.Normal, line = 34f, tracking = -0.3f),
         sheetHeroAmount = scaledStyle(48f, scale, FontWeight.Normal, line = 54f, tracking = -0.8f),
         sheetInput = scaledStyle(17f, scale, FontWeight.Normal, line = 22f),
@@ -238,8 +232,6 @@ object HomeType {
         @Composable @ReadOnlyComposable get() = LocalAppType.current.caption
     val label: TextStyle
         @Composable @ReadOnlyComposable get() = LocalAppType.current.label
-    val nav: TextStyle
-        @Composable @ReadOnlyComposable get() = LocalAppType.current.nav
 }
 
 fun lipaTypography(baseSp: Int): Typography {
@@ -272,9 +264,15 @@ fun LipaBillTheme(
     val typeScale = remember(fontSizeSp) { appTypeScale(fontSizeSp) }
     val space = remember(fontSizeSp) { appSpace(fontSizeSp) }
     val typography = remember(fontSizeSp) { lipaTypography(fontSizeSp) }
+    val app = LocalContext.current.applicationContext as? LipaBillApp
+    val privacyFlow = remember(app) {
+        app?.recordingPrivacy ?: MutableStateFlow(false)
+    }
+    val recordingPrivacy by privacyFlow.collectAsStateWithLifecycle()
     CompositionLocalProvider(
         LocalAppType provides typeScale,
-        LocalAppSpace provides space
+        LocalAppSpace provides space,
+        LocalRecordingPrivacy provides recordingPrivacy
     ) {
         MaterialTheme(
             colorScheme = OffWhiteColors,

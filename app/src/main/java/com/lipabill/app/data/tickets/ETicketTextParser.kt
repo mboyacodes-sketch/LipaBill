@@ -5,7 +5,6 @@ import com.lipabill.app.data.model.TicketSource
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
-import java.time.Month
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -192,7 +191,7 @@ object ETicketTextParser {
             "sold at", "not transferable", "only valid for carriage"
         ).any { lower.contains(it) } ||
             Regex("""(?i)\bCoach\s*\d+\b""").containsMatchIn(text) &&
-            kenyaStations.any { lower.contains(it.lowercase(Locale.US)) }
+            SGR_STATIONS.any { lower.contains(it.lowercase(Locale.US)) }
         if (!looksSgr) return null
 
         val (from, to) = resolveSgrRoute(text, stationHints)
@@ -377,17 +376,6 @@ object ETicketTextParser {
         )
     }
 
-    private val kenyaStations = listOf(
-        "Nairobi Terminus", "Mombasa Terminus", "Syokimau", "Athi River", "Emali",
-        "Mtito Andei", "Voi", "Miasenyi", "Mariakani", "Suswa", "Naivasha", "Mai Mahiu",
-        "Nairobi", "Mombasa"
-    )
-
-    private val kenyaTermini = listOf(
-        "Nairobi Terminus", "Mombasa Terminus", "Syokimau", "Athi River", "Emali",
-        "Mtito Andei", "Voi", "Miasenyi", "Mariakani", "Suswa", "Naivasha", "Mai Mahiu"
-    )
-
     /**
      * Resolve Madaraka origin → destination.
      *
@@ -405,8 +393,8 @@ object ETicketTextParser {
             text,
             Regex("""(?i)Sold\s+at\s+([A-Za-z][A-Za-z .'-]{2,40})""")
         )?.let { raw ->
-            kenyaStations.firstOrNull { raw.contains(it, ignoreCase = true) }
-                ?.let { normalizeStation(it) }
+            SGR_STATIONS.firstOrNull { raw.contains(it, ignoreCase = true) }
+                ?.let { sgrStationName(it) }
         }
 
         val cleaned = text.replace(Regex("(?i)Sold\\s+at[^\\n\\r]*"), " ")
@@ -418,7 +406,7 @@ object ETicketTextParser {
         }
 
         val spatial = stationHints
-            .map { it.copy(name = normalizeStation(it.name)) }
+            .map { it.copy(name = sgrStationName(it.name)) }
             .distinctBy { it.name }
         if (spatial.size >= 2) {
             val origin = spatial.minBy { it.centerX }.name
@@ -444,10 +432,10 @@ object ETicketTextParser {
         }
 
         val arrow = Regex(
-            """(?i)(${kenyaTermini.joinToString("|") { Regex.escape(it) }})\s*(?:→|->|–|—|to)\s*(${kenyaTermini.joinToString("|") { Regex.escape(it) }})"""
+            """(?i)(${SGR_TERMINI.joinToString("|") { Regex.escape(it) }})\s*(?:→|->|–|—|to)\s*(${SGR_TERMINI.joinToString("|") { Regex.escape(it) }})"""
         ).find(cleaned)
         if (arrow != null) {
-            return normalizeStation(arrow.groupValues[1]) to normalizeStation(arrow.groupValues[2])
+            return sgrStationName(arrow.groupValues[1]) to sgrStationName(arrow.groupValues[2])
         }
 
         val uniqueOrdered = stations
@@ -465,7 +453,7 @@ object ETicketTextParser {
     private fun findStationMentions(text: String): List<Triple<Int, Int, String>> {
         val hits = mutableListOf<Triple<Int, Int, String>>()
         // Prefer full terminus names before bare city names
-        for (station in kenyaStations.sortedByDescending { it.length }) {
+        for (station in SGR_STATIONS.sortedByDescending { it.length }) {
             var start = 0
             while (true) {
                 val idx = text.indexOf(station, start, ignoreCase = true)
@@ -473,18 +461,12 @@ object ETicketTextParser {
                 // Skip if this span is already covered by a longer hit
                 val covered = hits.any { idx >= it.first && idx < it.first + it.second }
                 if (!covered) {
-                    hits += Triple(idx, station.length, normalizeStation(station))
+                    hits += Triple(idx, station.length, sgrStationName(station))
                 }
                 start = idx + station.length
             }
         }
         return hits.sortedBy { it.first }
-    }
-
-    private fun normalizeStation(name: String): String = when {
-        name.equals("Nairobi", true) -> "Nairobi Terminus"
-        name.equals("Mombasa", true) -> "Mombasa Terminus"
-        else -> name
     }
 
     private fun iataNear(text: String, label: String): String? {
@@ -545,7 +527,7 @@ object ETicketTextParser {
             """(?i)(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\s+of\s+([A-Za-z]+),?\s+(\d{4})"""
         ).find(text)?.let { m ->
             val day = m.groupValues[1].toIntOrNull()
-            val month = parseMonthName(m.groupValues[2])
+            val month = parseMonth(m.groupValues[2])
             val year = m.groupValues[3].toIntOrNull()
             if (day != null && month != null && year != null) {
                 return runCatching { LocalDate.of(year, month, day) }.getOrNull()
@@ -570,25 +552,6 @@ object ETicketTextParser {
             }
         }
         return null
-    }
-
-    private fun parseMonthName(raw: String): Month? {
-        val key = raw.trim().lowercase(Locale.ENGLISH)
-        val months = mapOf(
-            "january" to Month.JANUARY, "jan" to Month.JANUARY,
-            "february" to Month.FEBRUARY, "feb" to Month.FEBRUARY,
-            "march" to Month.MARCH, "mar" to Month.MARCH,
-            "april" to Month.APRIL, "apr" to Month.APRIL,
-            "may" to Month.MAY,
-            "june" to Month.JUNE, "jun" to Month.JUNE,
-            "july" to Month.JULY, "jul" to Month.JULY,
-            "august" to Month.AUGUST, "aug" to Month.AUGUST,
-            "september" to Month.SEPTEMBER, "sept" to Month.SEPTEMBER, "sep" to Month.SEPTEMBER,
-            "october" to Month.OCTOBER, "oct" to Month.OCTOBER,
-            "november" to Month.NOVEMBER, "nov" to Month.NOVEMBER,
-            "december" to Month.DECEMBER, "dec" to Month.DECEMBER
-        )
-        return months[key]
     }
 
     private fun parseTime(text: String): LocalTime? {

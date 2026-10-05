@@ -77,16 +77,6 @@ fun TransactionType.displayLabel(): String = when (this) {
     TransactionType.POCHI -> "Pochi La Biashara"
     TransactionType.WITHDRAW -> "Withdraw"
     TransactionType.DEPOSIT -> "Deposit"
+    TransactionType.REVERSED -> "Reversed"
     TransactionType.UNKNOWN -> "Unknown"
-}
-
-fun TransactionType.isOutgoing(): Boolean = when (this) {
-    TransactionType.SENT,
-    TransactionType.PAYBILL,
-    TransactionType.BUY_GOODS,
-    TransactionType.POCHI,
-    TransactionType.WITHDRAW -> true
-    TransactionType.RECEIVED,
-    TransactionType.DEPOSIT -> false
-    TransactionType.UNKNOWN -> true
 }

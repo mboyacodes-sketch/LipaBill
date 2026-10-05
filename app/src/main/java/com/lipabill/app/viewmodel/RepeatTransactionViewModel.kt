@@ -5,10 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.MpesaTransaction
-import com.lipabill.app.ussd.AccessibilityHelper
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import com.lipabill.app.ussd.SimLine
-import com.lipabill.app.ussd.SimLineHelper
 import com.lipabill.app.ussd.UssdMenuBuilder
 import com.lipabill.app.ui.util.formatKesMoney
 import com.lipabill.app.ui.util.sanitizeAmountInput
@@ -85,30 +83,24 @@ class RepeatTransactionViewModel(
         } else {
             null
         }
-        val ctx = getApplication<Application>()
-        val needsPerm = !SimLineHelper.hasPhoneStatePermission(ctx)
-        val lines = if (needsPerm) emptyList() else SimLineHelper.listActiveLines(ctx)
-        val selected = if (needsPerm) {
-            null
-        } else {
-            SimLineHelper.ensureSafaricomPreferred(app.securePreferences, lines)
-        }
-        val preferred = app.securePreferences.preferredSimSubscriptionId
+        val lines = getApplication<Application>().paymentLineSnapshot(
+            coordinator,
+            app.securePreferences
+        )
         _ui.value = RepeatConfirmUiState(
             transaction = tx,
             plan = plan,
             amountInput = amountInput,
             amountValid = amount != null,
-            featureEnabled = coordinator.isFeatureEnabled(),
-            accessibilityEnabled = AccessibilityHelper.isLipaBillServiceEnabled(ctx),
+            featureEnabled = lines.featureEnabled,
+            accessibilityEnabled = lines.accessibilityEnabled,
             canPay = tx != null && UssdMenuBuilder.canRepeat(tx),
             statusMessage = _ui.value.statusMessage,
             dialStarted = _ui.value.dialStarted,
-            simLines = lines,
-            selectedSubscriptionId = selected,
-            hasSavedSimPreference = preferred >= 0 &&
-                lines.any { line -> line.subscriptionId == preferred && line.isSafaricom },
-            needsPhoneStatePermission = needsPerm
+            simLines = lines.simLines,
+            selectedSubscriptionId = lines.selectedSubscriptionId,
+            hasSavedSimPreference = lines.hasSavedSimPreference,
+            needsPhoneStatePermission = lines.needsPhoneStatePermission
         )
     }
 
@@ -119,20 +111,14 @@ class RepeatTransactionViewModel(
     }
 
     fun startDial(prepared: RepeatTransactionCoordinator.PreparedRepeat) {
-        val subId = _ui.value.selectedSubscriptionId
-        if (subId != null) {
-            app.securePreferences.preferredSimSubscriptionId = subId
-        }
-        coordinator.startDialing(prepared, subId)
-        val line = _ui.value.simLines.firstOrNull { it.subscriptionId == subId }
-        _ui.value = _ui.value.copy(
-            dialStarted = true,
-            statusMessage = if (line != null) {
-                "Payment on ${line.label} — enter PIN on the LipaBill keypad when prompted."
-            } else {
-                "Payment started — enter PIN on the LipaBill keypad when prompted."
-            }
+        val state = _ui.value
+        val status = dialStartedStatus(
+            app.securePreferences,
+            state.selectedSubscriptionId,
+            state.simLines
         )
+        coordinator.startDialing(prepared, state.selectedSubscriptionId)
+        _ui.value = state.copy(dialStarted = true, statusMessage = status)
     }
 
     suspend fun logManualCopy() {

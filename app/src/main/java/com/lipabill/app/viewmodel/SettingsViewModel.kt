@@ -3,11 +3,11 @@ package com.lipabill.app.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.lipabill.app.BuildConfig
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.local.entity.RepeatAttemptEntity
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
 import com.lipabill.app.ussd.AccessibilityHelper
-import com.lipabill.app.ui.permissions.SideloadRestrictedSettings
 import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.ussd.SimLineHelper
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,6 +21,7 @@ data class SettingsUiState(
     val fontSizeSp: Int = 12,
     val alwaysShowBalance: Boolean = false,
     val favouritesSectionEnabled: Boolean = true,
+    val recordingPrivacy: Boolean = false,
     val repeatEnabled: Boolean = true,
     val lipaBillA11yEnabled: Boolean = false,
     val simLines: List<SimLine> = emptyList(),
@@ -68,6 +69,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         refresh()
     }
 
+    fun setRecordingPrivacy(enabled: Boolean) {
+        app.setRecordingPrivacy(enabled)
+        refresh()
+    }
+
     fun setRepeatEnabled(enabled: Boolean) {
         app.repeatCoordinator.setFeatureEnabled(enabled)
         refresh()
@@ -99,10 +105,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         openAccessibilitySettings()
     }
 
-    fun openAppInfoForRestrictedSettings() {
-        SideloadRestrictedSettings.openAppInfo(getApplication())
-    }
-
     private fun buildState(): SettingsUiState {
         val ctx = getApplication<Application>()
         val needsPerm = !SimLineHelper.hasPhoneStatePermission(ctx)
@@ -119,6 +121,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             fontSizeSp = app.securePreferences.uiFontSizeSp,
             alwaysShowBalance = app.securePreferences.alwaysShowBalance,
             favouritesSectionEnabled = app.securePreferences.favouritesSectionEnabled,
+            recordingPrivacy = BuildConfig.DEBUG && app.securePreferences.recordingPrivacy,
             repeatEnabled = app.securePreferences.repeatFeatureEnabled,
             lipaBillA11yEnabled = AccessibilityHelper.isLipaBillServiceEnabled(ctx),
             simLines = lines,

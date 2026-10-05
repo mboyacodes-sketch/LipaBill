@@ -11,12 +11,14 @@ internal const val REVERSE_WINDOW_MS = 23L * 60 * 60 * 1000
 
 /**
  * Opens Messages to Safaricom reverse short code 456 with the original
- * confirmation SMS body. Only valid within [REVERSE_WINDOW_MS] of the payment.
+ * confirmation SMS body. Incoming credits cannot be reversed. Outgoing
+ * payments stay valid within [REVERSE_WINDOW_MS].
  */
 fun canRequestMpesaReverse(
     tx: MpesaTransaction,
     nowMs: Long = System.currentTimeMillis()
 ): Boolean {
+    if (!tx.type.isOutgoing()) return false
     if (tx.rawBody.isBlank()) return false
     val age = nowMs - tx.timestampMillis
     return age in 0 until REVERSE_WINDOW_MS
