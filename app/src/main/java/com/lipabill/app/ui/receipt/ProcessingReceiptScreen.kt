@@ -80,6 +80,7 @@ import com.lipabill.app.ui.permissions.PermissionPromptMemory
 import com.lipabill.app.ui.permissions.permissionGranted
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.Income
@@ -95,12 +96,26 @@ import com.lipabill.app.ussd.RepeatOutcome
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
-private val DetailBorder = Color(0xFFE8E8E8)
-private val LabelGrey = Color(0xFF9CA3AF)
+private val DetailBorder: Color
+    @androidx.compose.runtime.Composable
+    @androidx.compose.runtime.ReadOnlyComposable
+    get() = Hairline
+
+private val LabelGrey: Color
+    @androidx.compose.runtime.Composable
+    @androidx.compose.runtime.ReadOnlyComposable
+    get() = Mute
 private val TagProcessingBg = Color(0xFFFFF4E5)
 private val TagProcessingFg = Color(0xFFB45309)
-private val TagDoneBg = Income.copy(alpha = 0.14f)
-private val TagDoneFg = Income
+private val TagDoneBg: Color
+    @androidx.compose.runtime.Composable
+    @androidx.compose.runtime.ReadOnlyComposable
+    get() = Income.copy(alpha = 0.14f)
+
+private val TagDoneFg: Color
+    @androidx.compose.runtime.Composable
+    @androidx.compose.runtime.ReadOnlyComposable
+    get() = Income
 private val TagWarnBg = Color(0xFFFEE2E2)
 private val TagWarnFg = Color(0xFFB91C1C)
 private val HaloGrey = Color(0xFF9CA3AF)
@@ -326,7 +341,7 @@ fun ProcessingReceiptScreen(
                     shape = RoundedCornerShape(26.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Accent,
-                        contentColor = CardWhite
+                        contentColor = OnAccent
                     )
                 ) {
                     Text(if (tag == ReceiptTag.DONE) "Done" else "Close")
@@ -659,6 +674,7 @@ private fun PaymentTicketPerforation() {
             .background(CardWhite),
         contentAlignment = Alignment.Center
     ) {
+        val dash = LabelGrey.copy(alpha = 0.55f)
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
@@ -679,7 +695,7 @@ private fun PaymentTicketPerforation() {
                 blendMode = BlendMode.Clear
             )
             drawLine(
-                color = LabelGrey.copy(alpha = 0.55f),
+                color = dash,
                 start = Offset(r + 4.dp.toPx(), cy),
                 end = Offset(size.width - r - 4.dp.toPx(), cy),
                 strokeWidth = 2.dp.toPx(),
