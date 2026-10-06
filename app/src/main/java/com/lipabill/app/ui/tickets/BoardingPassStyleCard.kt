@@ -27,6 +27,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.data.model.BoardingPassSnapshot
+import com.lipabill.app.data.model.firstNotesValue
+import com.lipabill.app.data.model.labeledPiece
 import com.lipabill.app.data.model.notesValue
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.HomeType
@@ -35,9 +37,8 @@ import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.RouteBlue
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.util.formatEventWhen
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import com.lipabill.app.ui.util.formatTravelClock
+import com.lipabill.app.ui.util.formatTravelDate
 import java.util.Locale
 
 /**
@@ -219,42 +220,28 @@ private fun BoardingPassSnapshot.toBoardingPassUiModel(orderId: String?): Boardi
         ?: extractIata(venue?.substringAfter("→"))
         ?: extractIata(title.orEmpty().substringAfter("→"))
 
-    val zoned = startsAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) }
-    val boardingTime = notes.notesValue("Boarding")
-    val departTime = notes.notesValue("Departure time") ?: notes.notesValue("Dep time")
-    val timeLabel = boardingTime ?: departTime
-        ?: zoned?.format(DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH))
+    val timeLabel = notes.firstNotesValue("Boarding", "Departure time", "Dep time")
+        ?: startsAtMillis?.let { formatTravelClock(it) }
 
-    val dateLabel = zoned?.format(DateTimeFormatter.ofPattern("d MMM, yyyy", Locale.ENGLISH))
+    val dateLabel = startsAtMillis?.let { formatTravelDate(it) }
         ?: startsAtMillis?.let { formatEventWhen(it) }
 
     val flightNo = (title ?: "").substringBefore("·").trim()
         .takeIf { it.isNotBlank() && it != "Boarding pass" }
         ?: Regex("""(?i)\b([A-Z0-9]{2}\s?\d{2,4})\b""").find(title.orEmpty())?.value
 
-    val seat = seatOrTier
-        ?.split("·")
-        ?.map { it.trim() }
-        ?.firstOrNull { it.startsWith("Seat", ignoreCase = true) }
-        ?.removePrefix("Seat")?.trim()
-        ?: notes.notesValue("Seat")
+    val seat = seatOrTier.labeledPiece("Seat") ?: notes.notesValue("Seat")
 
-    val gate = notes.notesValue("Gate")
-        ?: seatOrTier?.split("·")?.map { it.trim() }
-            ?.firstOrNull { it.startsWith("Gate", ignoreCase = true) }
-            ?.removePrefix("Gate")?.trim()
+    val gate = notes.notesValue("Gate") ?: seatOrTier.labeledPiece("Gate")
 
-    val rawClass = notes.notesValue("Cabin")
-        ?: notes.notesValue("Class")
+    val rawClass = notes.firstNotesValue("Cabin", "Class")
         ?: seatOrTier?.split("·")?.map { it.trim() }
             ?.firstOrNull {
                 it.contains("Economy", true) || it.contains("Business", true) ||
                     it.startsWith("Class", true) || it.startsWith("Cabin", true)
             }
 
-    val ticketNo = notes.notesValue("Ticket no")
-        ?: notes.notesValue("Ticket no.")
-        ?: orderId
+    val ticketNo = notes.firstNotesValue("Ticket no", "Ticket no.") ?: orderId
 
     return BoardingPassUiModel(
         fromCode = fromCode,
