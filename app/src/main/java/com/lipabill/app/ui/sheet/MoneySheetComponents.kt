@@ -52,6 +52,8 @@ import androidx.compose.ui.window.DialogProperties
 import com.lipabill.app.ui.components.BalanceAmountRow
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.OnAccent
+import com.lipabill.app.ui.theme.OnPastel
 import com.lipabill.app.ui.theme.ContentMaxWidth
 import kotlinx.coroutines.delay
 import com.lipabill.app.ui.theme.Expense
@@ -70,8 +72,14 @@ import com.lipabill.app.ui.util.formatMoneyInputLabel
 import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
 import com.lipabill.app.ui.util.systemBarsAndCutoutPadding
 
-private val SheetCanvas = Canvas
-private val SoftFill = SoftBlue
+private val SheetCanvas: androidx.compose.ui.graphics.Color
+    @androidx.compose.runtime.Composable
+    @androidx.compose.runtime.ReadOnlyComposable
+    get() = Canvas
+private val SoftFill: androidx.compose.ui.graphics.Color
+    @androidx.compose.runtime.Composable
+    @androidx.compose.runtime.ReadOnlyComposable
+    get() = SoftBlue
 private val AvatarPalette = AvatarPastels
 
 val SheetAmountStyle: TextStyle
@@ -288,7 +296,7 @@ fun MoneySheetScaffold(
             shape = RoundedCornerShape(26.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = Accent,
-                contentColor = CardWhite,
+                contentColor = OnAccent,
                 disabledContainerColor = SoftFill,
                 disabledContentColor = Mute
             )
@@ -565,7 +573,7 @@ private fun AvatarBadge(
             Text(
                 text = label.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
                 style = HomeType.rowTitle,
-                color = Ink,
+                color = OnPastel,
                 modifier = Modifier.recordingPrivacyCover()
             )
         }
@@ -847,7 +855,7 @@ fun MoneyConfirmDialog(
                 shape = RoundedCornerShape(26.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Accent,
-                    contentColor = CardWhite
+                    contentColor = OnAccent
                 )
             ) {
                 Text(confirmLabel, style = HomeType.rowTitle)
