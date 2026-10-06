@@ -63,6 +63,7 @@ import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.HomeType
@@ -155,6 +156,15 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Space.page, vertical = Space.pageV)
         ) {
+            SettingsSection("Appearance") {
+                SettingsSwitchRow(
+                    title = "Dark mode",
+                    subtitle = "Navy surfaces at night. Passes stay paper white.",
+                    checked = state.darkMode,
+                    onCheckedChange = viewModel::setDarkMode
+                )
+            }
+
             SettingsSection("Lock") {
                 SettingsValueRow(
                     title = "Lock after",
@@ -394,9 +404,9 @@ private fun SettingsSwitchRow(
             checked = checked,
             onCheckedChange = null,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = CardWhite,
+                checkedThumbColor = OnAccent,
                 checkedTrackColor = Accent,
-                uncheckedThumbColor = CardWhite,
+                uncheckedThumbColor = OnAccent,
                 uncheckedTrackColor = Mute.copy(alpha = 0.35f)
             )
         )
