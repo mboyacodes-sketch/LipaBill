@@ -31,9 +31,24 @@ object MpesaSmsFilter {
      * MPESA texts lack these.
      */
     fun isTransactionConfirmation(body: String?): Boolean {
-        if (body.isNullOrBlank()) return false
-        val hasConfirmed = body.contains("Confirmed", ignoreCase = true)
-        val normalized = body.lowercase().replace("-", "")
-        return hasConfirmed && MPESA_BALANCE.containsMatchIn(normalized)
+        val normalized = confirmedBody(body) ?: return false
+        return MPESA_BALANCE.containsMatchIn(normalized)
     }
+
+    /** Fuliza draw SMS. Kept apart from wallet receipts so one history cannot hide the other. */
+    fun isFulizaConfirmation(body: String?): Boolean {
+        val normalized = confirmedBody(body) ?: return false
+        return normalized.contains("fuliza") && normalized.contains("outstanding")
+    }
+
+    /** Lowercased confirmation text, or null when the SMS is not a Confirmed message. */
+    private fun confirmedBody(body: String?): String? {
+        if (body.isNullOrBlank()) return null
+        if (!body.contains("Confirmed", ignoreCase = true)) return null
+        return body.lowercase().replace("-", "")
+    }
+
+    /** Wallet receipt: confirmed M-PESA balance line, and not a Fuliza draw. */
+    fun isMpesaWalletConfirmation(body: String?): Boolean =
+        isTransactionConfirmation(body) && !isFulizaConfirmation(body)
 }
