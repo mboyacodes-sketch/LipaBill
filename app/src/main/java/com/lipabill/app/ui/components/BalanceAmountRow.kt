@@ -18,6 +18,7 @@ import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Expense
+import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.util.formatKes
@@ -46,7 +48,10 @@ private const val MASKED_BALANCE = "******"
 /** Only shrink home hero balance type (e.g. HomeType.balance ~44sp). */
 private const val HERO_FIT_MIN_SP = 28f
 
-private val EyeChipFill = Color(0xFFF1F0EB)
+private val EyeChipFill: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = SoftBlue
 private val AmountRowHeight = 48.dp
 private val EyeChipSize = 36.dp
 
