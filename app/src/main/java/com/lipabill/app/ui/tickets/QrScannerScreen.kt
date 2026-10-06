@@ -226,7 +226,7 @@ fun QrScannerScreen(
             Icon(
                 Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Close",
-                tint = CardWhite
+                tint = Color.White
             )
         }
 
@@ -246,14 +246,14 @@ fun QrScannerScreen(
             Text(
                 text = "Rear camera · hold steady on the QR",
                 style = HomeType.rowTitle,
-                color = CardWhite,
+                color = Color.White,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(Space.tight))
             Text(
                 text = cameraError ?: "Hold the code inside the frame",
                 style = HomeType.caption,
-                color = CardWhite.copy(alpha = 0.8f),
+                color = Color.White.copy(alpha = 0.8f),
                 textAlign = TextAlign.Center
             )
         }
