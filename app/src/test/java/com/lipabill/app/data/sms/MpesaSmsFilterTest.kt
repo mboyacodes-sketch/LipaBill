@@ -45,6 +45,16 @@ class MpesaSmsFilterTest {
     }
 
     @Test
+    fun fuliza_and_wallet_confirmations_stay_separate() {
+        val wallet =
+            "THX7K2LM9P Confirmed. Ksh1,500.00 sent to JOHN. New M-PESA balance is Ksh12,450.50."
+        assertTrue(MpesaSmsFilter.isFulizaConfirmation(FULIZA_DRAW_100_SMS))
+        assertFalse(MpesaSmsFilter.isMpesaWalletConfirmation(FULIZA_DRAW_100_SMS))
+        assertTrue(MpesaSmsFilter.isMpesaWalletConfirmation(wallet))
+        assertFalse(MpesaSmsFilter.isFulizaConfirmation(wallet))
+    }
+
+    @Test
     fun accepts_reversal_account_balance_wording() {
         assertTrue(
             MpesaSmsFilter.isTransactionConfirmation(REVERSAL_JULIUS_SMS)
