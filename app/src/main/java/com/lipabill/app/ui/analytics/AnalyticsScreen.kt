@@ -57,8 +57,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.ui.components.BalanceAmountRow
 import com.lipabill.app.ui.components.WalletAccountSwitch
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.HomeType
@@ -267,10 +269,15 @@ fun MetricsScreen(
                             Text(
                                 "${row.count} txn${if (row.count == 1) "" else "s"}",
                                 style = HomeType.caption,
-                                color = Mute
+                                color = Mute,
+                                modifier = Modifier.recordingPrivacyCover()
                             )
                         }
-                        Text(formatKes(row.total), style = HomeType.rowTitle)
+                        Text(
+                            formatKes(row.total),
+                            style = HomeType.rowTitle,
+                            modifier = Modifier.recordingPrivacyCover()
+                        )
                     }
                 }
             }
@@ -335,8 +342,8 @@ private fun RangeChipRow(
                 },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = Accent,
-                    selectedLabelColor = CardWhite,
-                    selectedLeadingIconColor = CardWhite,
+                    selectedLabelColor = OnAccent,
+                    selectedLeadingIconColor = OnAccent,
                     containerColor = CardWhite,
                     labelColor = Ink
                 ),
@@ -371,7 +378,7 @@ private fun YearChipRow(
                 label = { Text(year.toString(), style = HomeType.label) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = Accent,
-                    selectedLabelColor = CardWhite,
+                    selectedLabelColor = OnAccent,
                     containerColor = CardWhite,
                     labelColor = Ink
                 ),
@@ -472,6 +479,7 @@ private fun CashFlowChartCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(200.dp)
+                    .recordingPrivacyCover()
             )
             Spacer(modifier = Modifier.height(Space.gap))
             Row(
@@ -509,6 +517,9 @@ private fun IncomeExpenseLineChart(
     val maxY = remember(series) {
         max(series.maxOf { max(it.income, it.expense) }, 1.0)
     }
+    val grid = Hairline
+    val inflow = Income
+    val outflow = Expense
     Canvas(modifier = modifier) {
         val leftPad = 8.dp.toPx()
         val rightPad = 8.dp.toPx()
@@ -522,7 +533,7 @@ private fun IncomeExpenseLineChart(
         for (i in 0..3) {
             val y = topPad + chartH * i / 3f
             drawLine(
-                color = Hairline,
+                color = grid,
                 start = Offset(leftPad, y),
                 end = Offset(leftPad + chartW, y),
                 strokeWidth = 1.dp.toPx(),
@@ -564,8 +575,8 @@ private fun IncomeExpenseLineChart(
             }
         }
 
-        drawSeries(series.map { it.income }, Income)
-        drawSeries(series.map { it.expense }, Expense)
+        drawSeries(series.map { it.income }, inflow)
+        drawSeries(series.map { it.expense }, outflow)
     }
 }
 
@@ -589,7 +600,12 @@ private fun TypeBarChartCard(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(label, style = HomeType.label, color = Mute)
-                    Text(formatKes(total), style = HomeType.caption, color = Ink)
+                    Text(
+                        formatKes(total),
+                        style = HomeType.caption,
+                        color = Ink,
+                        modifier = Modifier.recordingPrivacyCover()
+                    )
                 }
                 Spacer(modifier = Modifier.height(Space.gap))
                 val fraction = if (maxTotal <= 0.0) 0f else (total / maxTotal).toFloat()
@@ -599,6 +615,7 @@ private fun TypeBarChartCard(
                         .height(8.dp)
                         .clip(RoundedCornerShape(999.dp))
                         .background(Hairline)
+                        .recordingPrivacyCover()
                 ) {
                     Box(
                         modifier = Modifier
@@ -629,7 +646,14 @@ private fun MetricTile(
     ) {
         Text(title, style = HomeType.label, color = Mute)
         Spacer(modifier = Modifier.height(Space.gap))
-        Text(value, style = HomeType.amount, color = valueColor, maxLines = 1, softWrap = false)
+        Text(
+            value,
+            style = HomeType.amount,
+            color = valueColor,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.recordingPrivacyCover()
+        )
     }
 }
 
@@ -662,7 +686,8 @@ private fun MetricStatCard(
             style = HomeType.rowTitle,
             color = tint,
             maxLines = 1,
-            softWrap = false
+            softWrap = false,
+            modifier = Modifier.recordingPrivacyCover()
         )
     }
 }
