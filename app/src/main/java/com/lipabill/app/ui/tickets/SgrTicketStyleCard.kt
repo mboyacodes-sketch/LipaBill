@@ -44,6 +44,7 @@ import com.lipabill.app.data.model.firstNotesValue
 import com.lipabill.app.data.model.notesValue
 import com.lipabill.app.ui.util.formatTravelClock
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.PaperTicket
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.GeometricSansFamily
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
@@ -72,6 +73,29 @@ private val SgrBand = Color(0xFFB5C4DF)
  */
 @Composable
 fun SgrTicketStyleCard(
+    ticket: Ticket,
+    pdf417: ImageBitmap?,
+    modifier: Modifier = Modifier,
+    stageColor: Color = SgrStage,
+    isUsed: Boolean = false,
+    showViewBoardingQr: Boolean = false,
+    onViewBoardingQr: (() -> Unit)? = null
+) {
+    PaperTicket {
+        SgrTicketStyleCardPaper(
+            ticket = ticket,
+            pdf417 = pdf417,
+            modifier = modifier,
+            stageColor = stageColor,
+            isUsed = isUsed,
+            showViewBoardingQr = showViewBoardingQr,
+            onViewBoardingQr = onViewBoardingQr
+        )
+    }
+}
+
+@Composable
+private fun SgrTicketStyleCardPaper(
     ticket: Ticket,
     pdf417: ImageBitmap?,
     modifier: Modifier = Modifier,
