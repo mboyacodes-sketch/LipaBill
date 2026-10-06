@@ -6,6 +6,7 @@ import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.prefs.SecurePreferences
 import com.lipabill.app.data.parser.MpesaSmsParser
+import com.lipabill.app.data.sms.LedgerNotifier
 import com.lipabill.app.data.sms.MpesaSmsFilter
 import com.lipabill.app.data.sms.SmsInboxReader
 import com.lipabill.app.ussd.UssdMenuBuilder
@@ -31,7 +32,8 @@ class TransactionRepository(
     private val dao: TransactionDao,
     private val inboxReader: SmsInboxReader,
     private val securePreferences: SecurePreferences,
-    private val merchantDirectory: MerchantDirectory
+    private val merchantDirectory: MerchantDirectory,
+    private val onNewTransaction: (MpesaTransaction) -> Unit = {}
 ) {
 
     fun observeTransactions(
@@ -45,13 +47,15 @@ class TransactionRepository(
         } else {
             dao.observeSearch(trimmed, type, limit)
         }
-        return combine(source, dao.observeRecent(NAME_LINK_SCAN_LIMIT)) { list, wide ->
-            val directory = CounterpartyNameLinker.buildPhoneDirectoryFromTransactions(
-                wide.map { it.toListItem() }
-            )
-            CounterpartyNameLinker.enrichAll(list.map { it.toListItem() }, directory)
-        }.flowOn(Dispatchers.Default)
+        return enrichList(source)
     }
+
+    private val nameLinks = dao.observeRecent(NAME_LINK_SCAN_LIMIT)
+
+    private fun enrichList(source: Flow<List<TransactionEntity>>): Flow<List<MpesaTransaction>> =
+        combine(source, nameLinks) { list, wide ->
+            CounterpartyNameLinker.enrichAll(list.map { it.toListItem() }, phoneDirectory(wide))
+        }.flowOn(Dispatchers.Default)
 
     /**
      * Past Send Money recipients consolidated by normalized phone.
@@ -72,13 +76,14 @@ class TransactionRepository(
         limit: Int = 12
     ): Flow<List<MerchantHit>> = merchantDirectory.observeSearch(type, query, limit)
 
+    /** Full history for one ledger. M-Pesa and Fuliza are not mixed in this query. */
+    fun observeWallet(fuliza: Boolean): Flow<List<MpesaTransaction>> =
+        enrichList(dao.observeWallet(if (fuliza) 1 else 0))
+
     fun observeById(id: Long): Flow<MpesaTransaction?> =
-        combine(dao.observeById(id), dao.observeRecent(NAME_LINK_SCAN_LIMIT)) { entity, wide ->
+        combine(dao.observeById(id), nameLinks) { entity, wide ->
             val tx = entity?.toDomain() ?: return@combine null
-            val directory = CounterpartyNameLinker.buildPhoneDirectoryFromTransactions(
-                wide.map { it.toListItem() }
-            )
-            CounterpartyNameLinker.enrich(tx, directory)
+            CounterpartyNameLinker.enrich(tx, phoneDirectory(wide))
         }.flowOn(Dispatchers.Default)
 
     suspend fun upsert(tx: MpesaTransaction): Boolean = withContext(Dispatchers.IO) {
@@ -89,7 +94,12 @@ class TransactionRepository(
         val enriched = merchantDirectory.enrichIncomingSms(tx)
         val withPhone = enrichSingleFromDirectory(enriched)
         val rowId = dao.insertIgnore(TransactionEntity.fromDomain(withPhone))
-        if (rowId != -1L) return@withContext true
+        if (rowId != -1L) {
+            if (LedgerNotifier.isFresh(withPhone.timestampMillis)) {
+                onNewTransaction(withPhone.copy(id = rowId))
+            }
+            return@withContext true
+        }
         // Already present — refresh money fields from the latest parse (fixes bad amounts).
         dao.updateParsedMoneyByCode(
             code = withPhone.code,
@@ -118,7 +128,7 @@ class TransactionRepository(
             linkPhonesByName()
             return@withContext 0
         }
-        val parsed = inboxReader.parseAll(maxMessages = SmsInboxReader.DEFAULT_MAX_MESSAGES)
+        val parsed = inboxReader.parseAll()
         if (parsed.isEmpty()) {
             // Keep any already-imported history; only mark backfill done when we could
             // actually query the inbox (permission granted above).
@@ -212,6 +222,9 @@ class TransactionRepository(
         updated
     }
 
+    private fun phoneDirectory(rows: List<TransactionEntity>): Map<String, String> =
+        CounterpartyNameLinker.buildPhoneDirectoryFromTransactions(rows.map { it.toListItem() })
+
     private suspend fun buildNamePhoneDirectory(limit: Int): Map<String, String> {
         val rows = dao.getNamedCounterparties(limit)
         return CounterpartyNameLinker.buildPhoneDirectory(
@@ -258,8 +271,6 @@ class TransactionRepository(
 
     companion object {
         const val LIST_LIMIT = 80
-        const val ANALYTICS_LIMIT = 500
-        const val SMS_SCAN_LIMIT = SmsInboxReader.DEFAULT_MAX_MESSAGES
         const val SEND_SCAN_LIMIT = 250
         const val FREQUENT_LIMIT = 12
         const val NAME_LINK_SCAN_LIMIT = 500
