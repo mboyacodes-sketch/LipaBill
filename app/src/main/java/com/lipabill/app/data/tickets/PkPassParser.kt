@@ -180,7 +180,6 @@ object PkPassParser {
         val hasDateStyle: Boolean,
         val hasTimeStyle: Boolean
     ) {
-        val isDateField: Boolean get() = hasDateStyle || hasTimeStyle
         val name: String get() = label.ifBlank { key }.lowercase(Locale.US).trim()
         val isEnd: Boolean get() = name in END_LABELS ||
             name.startsWith("end ") ||
