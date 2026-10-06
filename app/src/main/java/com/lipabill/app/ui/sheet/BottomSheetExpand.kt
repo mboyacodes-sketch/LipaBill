@@ -37,7 +37,10 @@ fun Fragment.themedComposeView(content: @Composable () -> Unit): View {
             val fontSize by app.fontSizeSp.collectAsStateWithLifecycle(
                 initialValue = app.fontSizeSp.value
             )
-            LipaBillTheme(fontSizeSp = fontSize, content = content)
+            val darkMode by app.darkMode.collectAsStateWithLifecycle(
+                initialValue = app.darkMode.value
+            )
+            LipaBillTheme(fontSizeSp = fontSize, darkTheme = darkMode, content = content)
         }
     }
 }
@@ -61,7 +64,8 @@ fun newExpandedBottomSheetDialog(context: Context, themeResId: Int): BottomSheet
  * without a later height jump.
  */
 fun BottomSheetDialog.expandForComposeContent() {
-    window?.let { enableSheetEdgeToEdge(it) }
+    val dark = (context.applicationContext as? LipaBillApp)?.darkMode?.value == true
+    window?.let { enableSheetEdgeToEdge(it, dark) }
     val sheet = findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
         ?: return
     sheet.setBackgroundResource(android.R.color.transparent)
@@ -80,13 +84,13 @@ fun BottomSheetDialog.expandForComposeContent() {
 
 /**
  * Dialogs are not a ComponentActivity, so they cannot call enableEdgeToEdge().
- * This is the same contract: draw behind the system bars with dark icons.
+ * Light icons when the app is in dark mode.
  */
-private fun enableSheetEdgeToEdge(window: Window) {
+private fun enableSheetEdgeToEdge(window: Window, dark: Boolean) {
     WindowCompat.setDecorFitsSystemWindows(window, false)
     WindowCompat.getInsetsController(window, window.decorView).apply {
-        isAppearanceLightStatusBars = true
-        isAppearanceLightNavigationBars = true
+        isAppearanceLightStatusBars = !dark
+        isAppearanceLightNavigationBars = !dark
     }
     if (Build.VERSION.SDK_INT >= 30) {
         window.attributes = window.attributes.apply {
