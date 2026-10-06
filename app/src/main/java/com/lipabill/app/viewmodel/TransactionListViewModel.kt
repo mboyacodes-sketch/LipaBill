@@ -5,17 +5,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.MpesaTransaction
-import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.repository.SendContact
-import com.lipabill.app.data.repository.TransactionRepository
 import com.lipabill.app.ui.util.displayLabel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -154,7 +150,6 @@ data class DayGroup(
     val items: List<MpesaTransaction>
 )
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class TransactionListViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repo = (application as LipaBillApp).repository
@@ -172,19 +167,8 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     private val customStart = MutableStateFlow<LocalDate?>(null)
     private val customEnd = MutableStateFlow<LocalDate?>(null)
 
-    private val transactions = searchQuery.flatMapLatest { q ->
-        repo.observeTransactions(
-            query = q,
-            type = null,
-            limit = TransactionRepository.LIST_LIMIT
-        )
-    }
-
-    private val analyticsSource = repo.observeTransactions(
-        query = "",
-        type = null,
-        limit = TransactionRepository.ANALYTICS_LIMIT
-    )
+    private val mpesaLedger = repo.observeWallet(fuliza = false)
+    private val fulizaLedger = repo.observeWallet(fuliza = true)
 
     private val scan = combine(isScanning, scanMessage) { a, b -> a to b }
     private val rangeState = combine(
@@ -201,12 +185,11 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
 
     private val listCore: StateFlow<TransactionListUiState> = combine(
         combine(
-            combine(transactions, analyticsSource, walletAccount) { txs, analytics, account ->
-                val mpesa = analytics.filter { it.type != TransactionType.FULIZA }
-                val fuliza = analytics.filter { it.type == TransactionType.FULIZA }
+            combine(mpesaLedger, fulizaLedger, walletAccount, searchQuery) { mpesa, fuliza, account, query ->
+                val ledger = if (account == WalletAccount.FULIZA) fuliza else mpesa
                 WalletSlice(
-                    visible = txs.onWallet(account),
-                    analytics = if (account == WalletAccount.FULIZA) fuliza else mpesa,
+                    visible = ledger.filter { it.matchesLedgerQuery(query) },
+                    analytics = ledger,
                     mpesaBalance = mpesa.firstOrNull { it.balance != null }?.balance,
                     fulizaOutstanding = fuliza.firstOrNull { it.balance != null }?.balance,
                     account = account
@@ -496,9 +479,13 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         return income to expense
     }
 
-    private fun List<MpesaTransaction>.onWallet(account: WalletAccount): List<MpesaTransaction> {
-        val fuliza = account == WalletAccount.FULIZA
-        return filter { (it.type == TransactionType.FULIZA) == fuliza }
+    private fun MpesaTransaction.matchesLedgerQuery(query: String): Boolean {
+        val q = query.trim()
+        if (q.isEmpty()) return true
+        return counterpartyName?.contains(q, ignoreCase = true) == true ||
+            counterpartyPhone?.contains(q, ignoreCase = true) == true ||
+            code.contains(q, ignoreCase = true) ||
+            amount?.toString()?.contains(q, ignoreCase = true) == true
     }
 
     private fun groupByDay(txs: List<MpesaTransaction>): List<DayGroup> {
