@@ -15,6 +15,8 @@ import com.lipabill.app.viewmodel.TransactionListViewModel
 @Composable
 fun MainShellScreen(
     listVm: TransactionListViewModel,
+    openReceiptId: Long? = null,
+    onReceiptOpened: () -> Unit = {},
     onRepeatTransaction: (Long) -> Unit = {},
     onOpenSend: () -> Unit = {},
     onOpenSendTo: (SendContact) -> Unit = {},
@@ -30,6 +32,8 @@ fun MainShellScreen(
     ) { innerPadding ->
         TransactionListScreen(
             viewModel = listVm,
+            openReceiptId = openReceiptId,
+            onReceiptOpened = onReceiptOpened,
             onRepeatTransaction = onRepeatTransaction,
             modifier = Modifier
                 .fillMaxSize()
