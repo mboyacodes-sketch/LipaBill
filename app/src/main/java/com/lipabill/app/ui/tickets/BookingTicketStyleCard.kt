@@ -37,6 +37,7 @@ import com.lipabill.app.data.model.labeledPiece
 import com.lipabill.app.data.model.notesValue
 import com.lipabill.app.data.tickets.KNOWN_IATA
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.PaperTicket
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.LabelBlue
@@ -55,6 +56,25 @@ import java.util.Locale
  */
 @Composable
 fun BookingTicketStyleCard(
+    ticket: Ticket,
+    pdf417: ImageBitmap?,
+    onChangeDate: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    qrBitmap: ImageBitmap? = null
+) {
+    PaperTicket {
+        BookingTicketStyleCardPaper(
+            ticket = ticket,
+            pdf417 = pdf417,
+            onChangeDate = onChangeDate,
+            modifier = modifier,
+            qrBitmap = qrBitmap
+        )
+    }
+}
+
+@Composable
+private fun BookingTicketStyleCardPaper(
     ticket: Ticket,
     pdf417: ImageBitmap?,
     onChangeDate: (() -> Unit)?,
