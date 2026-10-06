@@ -6,10 +6,9 @@ import android.provider.Telephony
 import com.lipabill.app.data.model.MpesaTransaction
 
 /**
- * Reads historical M-Pesa SMS from the device inbox.
- * Only messages whose sender/header is MPESA (or M-PESA) are included.
- * Wallet receipts and Fuliza draws are queried separately, with no shared cap,
- * so every matching confirmation on the phone can be imported.
+ * Reads M-Pesa confirmations from the device inbox.
+ * Wallet receipts and Fuliza draws come from one query, with no row cap.
+ * A date bound limits a refresh to messages newer than the last scan.
  * Does not upload inbox contents.
  */
 class SmsInboxReader(private val context: Context) {
@@ -22,33 +21,30 @@ class SmsInboxReader(private val context: Context) {
 
     fun hasSmsPermission(): Boolean = context.hasMpesaSmsPermission()
 
-    /** Every M-PESA wallet confirmation in the inbox. Fuliza draws are not included. */
-    fun readMpesaMessages(): List<RawSms> = readInbox(
-        extraSelection = "${Telephony.Sms.BODY} LIKE ? AND ${Telephony.Sms.BODY} LIKE ?",
-        extraArgs = arrayOf("%Confirmed%", "%balance%"),
-        acceptBody = MpesaSmsFilter::isMpesaWalletConfirmation
+    /**
+     * Confirmations whose sender is MPESA.
+     * [newerThanMillis] keeps already-imported history out of the provider query.
+     */
+    fun readMessages(newerThanMillis: Long? = null): List<RawSms> = readInbox(
+        extraSelection = CONFIRMED_SELECTION,
+        extraArgs = CONFIRMED_ARGS,
+        acceptBody = MpesaSmsFilter::isTransactionConfirmation,
+        newerThanMillis = newerThanMillis
     )
 
-    /** Every Fuliza draw confirmation in the inbox. */
-    fun readFulizaMessages(): List<RawSms> = readInbox(
-        extraSelection = "${Telephony.Sms.BODY} LIKE ? AND ${Telephony.Sms.BODY} LIKE ? AND ${Telephony.Sms.BODY} LIKE ?",
-        extraArgs = arrayOf("%Confirmed%", "%Fuliza%", "%outstanding%"),
-        acceptBody = MpesaSmsFilter::isFulizaConfirmation
-    )
-
-    fun parseAll(): List<MpesaTransaction> =
-        (readMpesaMessages() + readFulizaMessages()).mapNotNull { raw ->
+    fun parseAll(newerThanMillis: Long? = null): List<MpesaTransaction> =
+        readMessages(newerThanMillis).mapNotNull { raw ->
             MpesaSmsIngestion.acceptAndParse(raw.address, raw.body, raw.dateMillis)
         }
 
     private fun readInbox(
         extraSelection: String,
         extraArgs: Array<String>,
-        acceptBody: (String) -> Boolean
+        acceptBody: (String) -> Boolean,
+        newerThanMillis: Long?
     ): List<RawSms> {
         if (!hasSmsPermission()) return emptyList()
-        val selection = "(${Telephony.Sms.ADDRESS} LIKE ? OR ${Telephony.Sms.ADDRESS} LIKE ?) AND $extraSelection"
-        val selectionArgs = arrayOf("%MPESA%", "%M-PESA%", *extraArgs)
+        val (selection, selectionArgs) = inboxQuery(extraSelection, extraArgs, newerThanMillis)
         val results = mutableListOf<RawSms>()
         val cursor: Cursor? = try {
             context.contentResolver.query(
@@ -79,10 +75,41 @@ class SmsInboxReader(private val context: Context) {
     }
 
     companion object {
+        /** Confirmed, and either a balance line or a Fuliza outstanding line. */
+        private const val CONFIRMED_SELECTION =
+            "${Telephony.Sms.BODY} LIKE ? AND (" +
+                "${Telephony.Sms.BODY} LIKE ? OR (" +
+                "${Telephony.Sms.BODY} LIKE ? AND ${Telephony.Sms.BODY} LIKE ?))"
+
+        private val CONFIRMED_ARGS = arrayOf("%Confirmed%", "%balance%", "%Fuliza%", "%outstanding%")
+
         val INBOX_PROJECTION = arrayOf(
             Telephony.Sms.ADDRESS,
             Telephony.Sms.BODY,
             Telephony.Sms.DATE
         )
+
+        internal fun inboxQuery(
+            extraSelection: String,
+            extraArgs: Array<String>,
+            newerThanMillis: Long?
+        ): Pair<String, Array<String>> {
+            val selection = buildString {
+                append("(${Telephony.Sms.ADDRESS} LIKE ? OR ${Telephony.Sms.ADDRESS} LIKE ?)")
+                append(" AND ")
+                append(extraSelection)
+                if (newerThanMillis != null) {
+                    append(" AND ")
+                    append(Telephony.Sms.DATE)
+                    append(" > ?")
+                }
+            }
+            val args = ArrayList<String>(2 + extraArgs.size + 1)
+            args += "%MPESA%"
+            args += "%M-PESA%"
+            args.addAll(extraArgs)
+            if (newerThanMillis != null) args += newerThanMillis.toString()
+            return selection to args.toTypedArray()
+        }
     }
 }
