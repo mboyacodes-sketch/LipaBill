@@ -14,6 +14,22 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions ORDER BY timestampMillis DESC LIMIT :limit")
     fun observeRecent(limit: Int): Flow<List<TransactionEntity>>
 
+    /**
+     * One ledger at a time. [fuliza] = 1 is Fuliza draws only; 0 is every other M-Pesa type.
+     * No row cap — the inbox import is the bound.
+     */
+    @Query(
+        """
+        SELECT * FROM transactions
+        WHERE (
+            (:fuliza = 1 AND type = 'FULIZA')
+            OR (:fuliza = 0 AND type != 'FULIZA')
+        )
+        ORDER BY timestampMillis DESC
+        """
+    )
+    fun observeWallet(fuliza: Int): Flow<List<TransactionEntity>>
+
     @Query("SELECT * FROM transactions WHERE id = :id LIMIT 1")
     fun observeById(id: Long): Flow<TransactionEntity?>
 
