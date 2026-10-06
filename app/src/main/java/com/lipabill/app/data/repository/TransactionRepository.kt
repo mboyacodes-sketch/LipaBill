@@ -6,8 +6,10 @@ import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.prefs.SecurePreferences
 import com.lipabill.app.data.parser.MpesaSmsParser
+import com.lipabill.app.data.sms.InboxScan
 import com.lipabill.app.data.sms.LedgerNotifier
 import com.lipabill.app.data.sms.MpesaSmsFilter
+import com.lipabill.app.data.sms.MpesaSmsIngestion
 import com.lipabill.app.data.sms.SmsInboxReader
 import com.lipabill.app.ussd.UssdMenuBuilder
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +17,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 data class SendContact(
@@ -35,6 +39,8 @@ class TransactionRepository(
     private val merchantDirectory: MerchantDirectory,
     private val onNewTransaction: (MpesaTransaction) -> Unit = {}
 ) {
+
+    private val rescanLock = Mutex()
 
     fun observeTransactions(
         query: String = "",
@@ -116,33 +122,72 @@ class TransactionRepository(
     }
 
     /**
-     * Re-query inbox and insert any new messages (deduped by transaction code).
-     * Existing Room rows are never deleted here — only additive inserts.
+     * Import confirmations that are not already stored.
+     * The first scan reads the whole inbox. Later scans only ask for messages
+     * newer than the last one considered, and rows already saved are left untouched.
      * @return number of newly inserted rows
      */
     suspend fun rescanInbox(): Int = withContext(Dispatchers.IO) {
+        rescanLock.withLock { importNewConfirmations() }
+    }
+
+    private suspend fun importNewConfirmations(): Int {
         purgeNonConfirmationsIfNeeded()
         repairParsedAmountsIfNeeded()
         // Without SMS access, leave prior rows alone and do not mark backfill complete.
         if (!inboxReader.hasSmsPermission()) {
             linkPhonesByName()
-            return@withContext 0
+            return 0
         }
-        val parsed = inboxReader.parseAll()
-        if (parsed.isEmpty()) {
-            // Keep any already-imported history; only mark backfill done when we could
-            // actually query the inbox (permission granted above).
-            securePreferences.smsBackfillDone = true
-            linkPhonesByName()
-            return@withContext 0
+        val since = InboxScan.newerThanMillis(
+            historyImported = securePreferences.inboxHistoryImported,
+            highWaterMillis = securePreferences.inboxHighWaterMillis
+        )
+        val incoming = inboxReader.readMessages(newerThanMillis = since)
+        val known = dao.allCodes().toHashSet()
+        var newestSeen = securePreferences.inboxHighWaterMillis
+        var directory: Map<String, String>? = null
+        val pending = ArrayList<MpesaTransaction>()
+        for (sms in incoming) {
+            if (sms.dateMillis > newestSeen) newestSeen = sms.dateMillis
+            val quickCode = MpesaSmsParser.receiptCode(sms.body)
+            if (quickCode != null && quickCode in known) continue
+            val parsed = MpesaSmsIngestion.acceptAndParse(
+                sms.address,
+                sms.body,
+                sms.dateMillis
+            ) ?: continue
+            if (!known.add(parsed.code)) continue
+            val enriched = if (InboxScan.mayMatchPendingDial(parsed.timestampMillis)) {
+                merchantDirectory.enrichIncomingSms(parsed)
+            } else {
+                parsed
+            }
+            val withPhone = if (enriched.counterpartyPhone.isNullOrBlank()) {
+                val names = directory ?: buildNamePhoneDirectory(NAME_LINK_SCAN_LIMIT)
+                    .also { directory = it }
+                CounterpartyNameLinker.enrich(enriched, names)
+            } else {
+                enriched
+            }
+            pending.add(withPhone)
         }
         var inserted = 0
-        for (tx in parsed) {
-            if (upsert(tx)) inserted++
+        if (pending.isNotEmpty()) {
+            val ids = dao.insertIgnoreAll(pending.map { TransactionEntity.fromDomain(it) })
+            pending.forEachIndexed { index, tx ->
+                val rowId = ids.getOrNull(index) ?: return@forEachIndexed
+                if (rowId == -1L) return@forEachIndexed
+                inserted++
+                if (LedgerNotifier.isFresh(tx.timestampMillis)) {
+                    onNewTransaction(tx.copy(id = rowId))
+                }
+            }
         }
         securePreferences.smsBackfillDone = true
-        linkPhonesByName()
-        inserted
+        securePreferences.markInboxCaughtUp(newestSeen)
+        if (inserted > 0) linkPhonesByName()
+        return inserted
     }
 
     suspend fun backfillIfNeeded(): Int {
