@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
@@ -114,17 +115,19 @@ fun BalanceAmountRow(
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
-                modifier = if (alwaysShow) {
-                    Modifier
-                } else {
-                    Modifier.clickable(
-                        interactionSource = interaction,
-                        indication = null,
-                        role = Role.Button,
-                        onClickLabel = if (revealed) "Hide balance" else "Show balance",
-                        onClick = toggle
-                    )
-                }
+                modifier = Modifier.recordingPrivacyCover().then(
+                    if (alwaysShow) {
+                        Modifier
+                    } else {
+                        Modifier.clickable(
+                            interactionSource = interaction,
+                            indication = null,
+                            role = Role.Button,
+                            onClickLabel = if (revealed) "Hide balance" else "Show balance",
+                            onClick = toggle
+                        )
+                    }
+                )
             )
         }
         return
@@ -155,6 +158,7 @@ fun BalanceAmountRow(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .weight(1f)
+                .recordingPrivacyCover()
                 .clickable(
                     interactionSource = interaction,
                     indication = null,
