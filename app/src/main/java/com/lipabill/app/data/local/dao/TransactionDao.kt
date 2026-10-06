@@ -62,6 +62,12 @@ interface TransactionDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIgnore(entity: TransactionEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnoreAll(entities: List<TransactionEntity>): List<Long>
+
+    @Query("SELECT code FROM transactions")
+    suspend fun allCodes(): List<String>
+
     @Query("SELECT COUNT(*) FROM transactions")
     suspend fun count(): Int
 
