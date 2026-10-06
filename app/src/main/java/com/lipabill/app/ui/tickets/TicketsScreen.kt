@@ -483,11 +483,8 @@ private enum class PassCategory(val label: String) {
 private fun Ticket.passCategory(): PassCategory =
     if (isRailTravel) PassCategory.SGR else PassCategory.EVENTS
 
-private fun Ticket.occasionMillis(): Long? =
-    startsAtMillis ?: boardingStartsAtMillis ?: returnBoardingStartsAtMillis
-
 private fun Ticket.isOnDay(zone: ZoneId, day: LocalDate): Boolean {
-    val millis = occasionMillis() ?: return false
+    val millis = occasionMillis ?: return false
     return Instant.ofEpochMilli(millis).atZone(zone).toLocalDate() == day
 }
 
@@ -516,13 +513,13 @@ private fun buildPassList(
     val pool = tickets.filter { category == null || it.passCategory() == category }
     val heroes = pool
         .filter { it.isOnDay(zone, today) && it.effectiveStatus() != TicketStatus.USED }
-        .sortedBy { it.occasionMillis() ?: Long.MAX_VALUE }
+        .sortedBy { it.occasionMillis ?: Long.MAX_VALUE }
     val heroIds = heroes.map { it.id }.toSet()
     val rest = pool.filter { it.id !in heroIds }
     val order = compareBy<Ticket>(
         { it.effectiveStatus() == TicketStatus.USED },
-        { it.occasionMillis() == null },
-        { it.occasionMillis() ?: Long.MAX_VALUE }
+        { it.occasionMillis == null },
+        { it.occasionMillis ?: Long.MAX_VALUE }
     )
     val items = mutableListOf<PassListItem>()
     if (heroes.isNotEmpty()) {
@@ -602,7 +599,7 @@ private fun TodayPassCard(
     ticket: Ticket,
     onClick: () -> Unit
 ) {
-    val schedule = formatEventSchedule(ticket.occasionMillis(), ticket.notes)
+    val schedule = formatEventSchedule(ticket.occasionMillis, ticket.notes)
     val time = schedule.time
     val place = listOfNotNull(
         ticket.venue?.takeIf { it.isNotBlank() },
@@ -1223,7 +1220,7 @@ fun TicketDetailScreen(
                         onViewBoardingQr = { showBoardingQrDialog = true }
                     )
 
-                    if (!isUsed) {
+                    if (!isUsed && (!current.hasBoardingPass || current.canMarkUsedFromEventDay())) {
                         Spacer(modifier = Modifier.height(16.dp))
                         if (!current.hasBoardingPass) {
                             Button(
@@ -1442,7 +1439,7 @@ fun TicketDetailScreen(
                 }
             }
 
-            if (!isUsed && (
+            if (!isUsed && current.canMarkUsedFromEventDay() && (
                     !current.isTravelTicket ||
                         current.hasBoardingPass ||
                         (current.isReturnTrip && current.hasReturnBoardingPass)
