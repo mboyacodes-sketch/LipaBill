@@ -31,6 +31,7 @@ import com.lipabill.app.data.model.firstNotesValue
 import com.lipabill.app.data.model.labeledPiece
 import com.lipabill.app.data.model.notesValue
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.PaperTicket
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.LabelBlue
 import com.lipabill.app.ui.theme.Mute
@@ -47,6 +48,29 @@ import java.util.Locale
  */
 @Composable
 fun BoardingPassStyleCard(
+    snapshot: BoardingPassSnapshot,
+    pdf417: ImageBitmap,
+    orderId: String?,
+    onReplace: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    headline: String = "Boarding Pass",
+    barcodeIsQr: Boolean = false
+) {
+    PaperTicket {
+        BoardingPassStyleCardPaper(
+            snapshot = snapshot,
+            pdf417 = pdf417,
+            orderId = orderId,
+            onReplace = onReplace,
+            modifier = modifier,
+            headline = headline,
+            barcodeIsQr = barcodeIsQr
+        )
+    }
+}
+
+@Composable
+private fun BoardingPassStyleCardPaper(
     snapshot: BoardingPassSnapshot,
     pdf417: ImageBitmap,
     orderId: String?,
