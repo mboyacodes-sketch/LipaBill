@@ -32,6 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.data.model.Ticket
 import com.lipabill.app.data.model.TicketSource
+import com.lipabill.app.data.model.firstNotesValue
+import com.lipabill.app.data.model.labeledPiece
 import com.lipabill.app.data.model.notesValue
 import com.lipabill.app.data.tickets.KNOWN_IATA
 import com.lipabill.app.ui.theme.CardWhite
@@ -42,9 +44,8 @@ import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.RouteBlue
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.util.formatEventWhen
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import com.lipabill.app.ui.util.formatTravelClock
+import com.lipabill.app.ui.util.formatTravelDate
 import java.util.Locale
 
 /**
@@ -528,11 +529,9 @@ private fun Ticket.toBookingTicketUiModel(): BookingTicketUiModel {
             Regex("""\b(\d{1,2}:\d{2})\b""").find(part)?.groupValues?.getOrNull(1)
         }
 
-    val zoned = startsAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) }
-    val timeLabel = zoned?.format(DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH))
-        ?: notes.notesValue("Departure time")
-        ?: notes.notesValue("Dep time")
-    val dateLabel = zoned?.format(DateTimeFormatter.ofPattern("d MMM, yyyy", Locale.ENGLISH))
+    val timeLabel = startsAtMillis?.let { formatTravelClock(it) }
+        ?: notes.firstNotesValue("Departure time", "Dep time")
+    val dateLabel = startsAtMillis?.let { formatTravelDate(it) }
         ?: startsAtMillis?.let { formatEventWhen(it) }
 
     val flightNo = title.substringBefore("·").trim()
@@ -540,15 +539,9 @@ private fun Ticket.toBookingTicketUiModel(): BookingTicketUiModel {
             !it.equals("Flight itinerary", true) && !it.equals("Booking", true) }
         ?: Regex("""(?i)\b([A-Z0-9]{2}\s?\d{2,4})\b""").find(title)?.value
 
-    val seat = seatOrTier
-        ?.split("·")
-        ?.map { it.trim() }
-        ?.firstOrNull { it.startsWith("Seat", ignoreCase = true) }
-        ?.removePrefix("Seat")?.trim()
-        ?: notes.notesValue("Seat")
+    val seat = seatOrTier.labeledPiece("Seat") ?: notes.notesValue("Seat")
 
-    val rawClass = notes.notesValue("Class")
-        ?: notes.notesValue("Cabin")
+    val rawClass = notes.firstNotesValue("Class", "Cabin")
         ?: seatOrTier?.split("·")?.map { it.trim() }
             ?.firstOrNull {
                 it.contains("Economy", true) || it.contains("Business", true) ||
@@ -557,8 +550,8 @@ private fun Ticket.toBookingTicketUiModel(): BookingTicketUiModel {
             ?.replace(Regex("""(?i)^(Class|Cabin)\s*"""), "")?.trim()
 
     val classLabel = friendlyCabinLabel(rawClass)
-    val terminal = notes.notesValue("Dep terminal") ?: notes.notesValue("Terminal")
-    val ticketNo = notes.notesValue("Ticket no") ?: notes.notesValue("Ticket no.")
+    val terminal = notes.firstNotesValue("Dep terminal", "Terminal")
+    val ticketNo = notes.firstNotesValue("Ticket no", "Ticket no.")
     val totalLabel = notes.notesValue("Total")?.let { t ->
         if (t.contains("KES", true)) t.take(22) else "KES ${t.take(18)}"
     }
