@@ -47,16 +47,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.auth.AuthUiState
 import com.lipabill.app.ui.theme.Accent
+import com.lipabill.app.ui.theme.Canvas as ThemeCanvas
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.GeometricSansFamily
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
 
-private val AuthCream = Color(0xFFF7F6F0)
-private val AuthHeadline = Accent
-private val AuthRing = Accent.copy(alpha = 0.12f)
+private val AuthCream: Color
+    @androidx.compose.runtime.Composable
+    @androidx.compose.runtime.ReadOnlyComposable
+    get() = ThemeCanvas
+
+private val AuthHeadline: Color
+    @androidx.compose.runtime.Composable
+    @androidx.compose.runtime.ReadOnlyComposable
+    get() = Accent
 
 @Composable
 fun AuthGateScreen(
@@ -198,7 +206,7 @@ private fun LockedContent(
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Accent,
-                    contentColor = CardWhite
+                    contentColor = OnAccent
                 )
             ) {
                 Text(
@@ -240,12 +248,13 @@ private fun FingerprintBadge(
         contentAlignment = Alignment.Center,
         modifier = Modifier.size(140.dp)
     ) {
+        val ring = Accent.copy(alpha = 0.12f)
         Canvas(modifier = Modifier.fillMaxSize().alpha(ringPulse)) {
             val c = Offset(size.width / 2f, size.height / 2f)
             val maxR = size.minDimension * 0.48f
-            drawCircle(color = AuthRing, radius = maxR, center = c)
-            drawCircle(color = AuthRing.copy(alpha = 0.18f), radius = maxR * 0.78f, center = c)
-            drawCircle(color = AuthRing.copy(alpha = 0.28f), radius = maxR * 0.58f, center = c)
+            drawCircle(color = ring, radius = maxR, center = c)
+            drawCircle(color = ring.copy(alpha = 0.18f), radius = maxR * 0.78f, center = c)
+            drawCircle(color = ring.copy(alpha = 0.28f), radius = maxR * 0.58f, center = c)
         }
         Box(
             modifier = Modifier
@@ -272,13 +281,15 @@ private fun FingerprintBadge(
 
 @Composable
 private fun AuthBackdropBlobs() {
+    val wash = SoftBlue
+    val navy = Accent
     Canvas(modifier = Modifier.fillMaxSize()) {
         val w = size.width
         val h = size.height
         // Soft mint wash top-right
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(SoftBlue.copy(alpha = 0.55f), Color.Transparent),
+                colors = listOf(wash.copy(alpha = 0.55f), Color.Transparent),
                 center = Offset(w * 0.92f, h * 0.08f),
                 radius = w * 0.55f
             ),
@@ -288,7 +299,7 @@ private fun AuthBackdropBlobs() {
         // Soft green wash bottom-left behind illustration
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(Accent.copy(alpha = 0.08f), Color.Transparent),
+                colors = listOf(navy.copy(alpha = 0.08f), Color.Transparent),
                 center = Offset(w * 0.15f, h * 0.72f),
                 radius = w * 0.7f
             ),
@@ -303,7 +314,7 @@ private fun AuthBackdropBlobs() {
             lineTo(0f, h)
             close()
         }
-        drawPath(hill, color = Accent.copy(alpha = 0.06f))
+        drawPath(hill, color = navy.copy(alpha = 0.06f))
     }
 }
 
