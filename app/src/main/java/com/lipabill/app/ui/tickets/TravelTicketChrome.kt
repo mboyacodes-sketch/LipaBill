@@ -125,6 +125,7 @@ fun TravelTicketPerforation() {
                 .clip(CircleShape)
                 .background(Canvas)
         )
+        val perforation = LabelBlue.copy(alpha = 0.55f)
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
@@ -133,7 +134,7 @@ fun TravelTicketPerforation() {
                 .padding(horizontal = 14.dp)
         ) {
             drawLine(
-                color = LabelBlue.copy(alpha = 0.55f),
+                color = perforation,
                 start = Offset(0f, 0f),
                 end = Offset(size.width, 0f),
                 strokeWidth = 2.dp.toPx(),
