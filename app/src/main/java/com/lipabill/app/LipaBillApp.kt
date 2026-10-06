@@ -13,6 +13,7 @@ import com.lipabill.app.data.repository.MerchantSnapshotStore
 import com.lipabill.app.data.repository.RepeatAttemptRepository
 import com.lipabill.app.data.repository.TicketRepository
 import com.lipabill.app.data.repository.TransactionRepository
+import com.lipabill.app.data.sms.LedgerNotifier
 import com.lipabill.app.data.sms.SmsInboxReader
 import com.lipabill.app.data.tickets.TicketDocumentImporter
 import com.lipabill.app.data.tickets.TicketDocumentKind
@@ -121,11 +122,13 @@ class LipaBillApp : Application() {
             dao = db.merchantDao(),
             snapshotStore = MerchantSnapshotStore(this)
         )
+        val ledgerNotifier = LedgerNotifier(this)
         repository = TransactionRepository(
             dao = db.transactionDao(),
             inboxReader = SmsInboxReader(this),
             securePreferences = securePreferences,
-            merchantDirectory = merchantDirectory
+            merchantDirectory = merchantDirectory,
+            onNewTransaction = ledgerNotifier::show
         )
         repeatRepository = RepeatAttemptRepository(db.repeatAttemptDao())
         ticketRepository = TicketRepository(db.ticketDao())
