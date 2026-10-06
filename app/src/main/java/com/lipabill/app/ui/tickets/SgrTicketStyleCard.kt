@@ -40,7 +40,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.data.model.Ticket
+import com.lipabill.app.data.model.firstNotesValue
 import com.lipabill.app.data.model.notesValue
+import com.lipabill.app.ui.util.formatTravelClock
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.GeometricSansFamily
@@ -656,11 +658,9 @@ internal fun Ticket.toSgrTicketUiModel(): SgrTicketUiModel {
 
     val zoned = startsAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) }
     val dateFmt = DateTimeFormatter.ofPattern("MMM d, EEE", Locale.ENGLISH)
-    val timeFmt = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
 
-    val departTime = zoned?.format(timeFmt)
-        ?: notes.notesValue("Departure time")
-        ?: notes.notesValue("Time")
+    val departTime = zoned?.let { formatTravelClock(it) }
+        ?: notes.firstNotesValue("Departure time", "Time")
         ?: "—"
 
     val durationMinutes = estimateSgrDurationMinutes(fromParts.first, toParts.first)
@@ -669,7 +669,7 @@ internal fun Ticket.toSgrTicketUiModel(): SgrTicketUiModel {
     } else {
         null
     }
-    val arriveTime = arriveZoned?.format(timeFmt) ?: "—"
+    val arriveTime = arriveZoned?.let { formatTravelClock(it) } ?: "—"
     val departDate = zoned?.format(dateFmt) ?: "—"
     val arriveDate = arriveZoned?.format(dateFmt) ?: departDate
 
@@ -710,10 +710,7 @@ internal fun Ticket.toSgrTicketUiModel(): SgrTicketUiModel {
         ?: "—"
 
     val passenger = notes.notesValue("Passenger") ?: "Traveler"
-    val travelClass = notes.notesValue("Class")
-        ?: notes.notesValue("Cabin")
-        ?: notes.notesValue("Tier")
-        ?: "Standard"
+    val travelClass = notes.firstNotesValue("Class", "Cabin", "Tier") ?: "Standard"
 
     val serviceBadge = when {
         title.contains("Express", true) || notes.contains("Express", true) -> "Express"
