@@ -63,6 +63,7 @@ import com.lipabill.app.ui.sheet.moneySheetFeedback
 import com.lipabill.app.ui.sheet.expandedSheetDialog
 import com.lipabill.app.ui.sheet.themedComposeView
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Ink
@@ -658,7 +659,7 @@ private fun MethodChipRow(
                 Text(
                     text = method.shortLabel(),
                     style = HomeType.label,
-                    color = if (isSelected) CardWhite else Ink,
+                    color = if (isSelected) OnAccent else Ink,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
