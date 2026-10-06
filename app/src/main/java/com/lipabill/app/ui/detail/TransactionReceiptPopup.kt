@@ -60,6 +60,7 @@ import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.HomeType
@@ -72,8 +73,15 @@ import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.ui.util.formatTimestamp
 import com.lipabill.app.ussd.UssdMenuBuilder
 
-private val DetailFill = Color(0xFFF7F8FA)
-private val LabelGrey = Color(0xFF9CA3AF)
+private val DetailFill: Color
+    @androidx.compose.runtime.Composable
+    @androidx.compose.runtime.ReadOnlyComposable
+    get() = SoftBlue
+
+private val LabelGrey: Color
+    @androidx.compose.runtime.Composable
+    @androidx.compose.runtime.ReadOnlyComposable
+    get() = Mute
 
 /**
  * Floating ticket-style receipt. Host must blur the content underneath
@@ -302,7 +310,7 @@ private fun StatusPill(text: String, filled: Boolean) {
     Text(
         text = text,
         style = HomeType.label,
-        color = if (filled) CardWhite else Ink,
+        color = if (filled) OnAccent else Ink,
         modifier = Modifier
             .clip(RoundedCornerShape(16.dp))
             .background(if (filled) Accent else DetailFill)
@@ -388,6 +396,7 @@ private fun TicketPerforation() {
             .height(16.dp)
             .background(CardWhite)
     ) {
+        val dash = LabelGrey.copy(alpha = 0.5f)
         Canvas(modifier = Modifier.fillMaxWidth().height(16.dp)) {
             val r = 8.dp.toPx()
             val cy = size.height / 2f
@@ -404,7 +413,7 @@ private fun TicketPerforation() {
                 blendMode = BlendMode.Clear
             )
             drawLine(
-                color = LabelGrey.copy(alpha = 0.5f),
+                color = dash,
                 start = Offset(r + 4.dp.toPx(), cy),
                 end = Offset(size.width - r - 4.dp.toPx(), cy),
                 strokeWidth = 1.5.dp.toPx(),
