@@ -112,6 +112,7 @@ import com.lipabill.app.ui.util.formatActivityTime
 import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
 import com.lipabill.app.ui.util.rememberHideKeyboard
+import com.lipabill.app.viewmodel.DayGroup
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import com.lipabill.app.viewmodel.WalletAccount
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -161,6 +162,8 @@ private object HomeMock {
 fun TransactionListScreen(
     viewModel: TransactionListViewModel,
     modifier: Modifier = Modifier,
+    openReceiptId: Long? = null,
+    onReceiptOpened: () -> Unit = {},
     onRepeatTransaction: (Long) -> Unit = {},
     onSend: () -> Unit = {},
     onSendTo: (SendContact) -> Unit = {},
@@ -178,6 +181,12 @@ fun TransactionListScreen(
     val alwaysShowBalance by app.alwaysShowBalance.collectAsStateWithLifecycle()
     val favouritesSectionEnabled by app.favouritesSectionEnabled.collectAsStateWithLifecycle()
     var receiptTxId by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(openReceiptId) {
+        val id = openReceiptId ?: return@LaunchedEffect
+        if (id <= 0L) return@LaunchedEffect
+        receiptTxId = id
+        onReceiptOpened()
+    }
     val paymentsReady = rememberPaymentAccessNeeds().isEmpty()
 
     LaunchedEffect(state.scanMessage) {
@@ -186,7 +195,6 @@ fun TransactionListScreen(
         viewModel.clearScanMessage()
     }
 
-    val flat = remember(state.grouped) { state.grouped.flatMap { it.items } }
     val frequent = state.frequentContacts
     val showFrequent = favouritesSectionEnabled && frequent.isNotEmpty() &&
         state.account == WalletAccount.MPESA
@@ -275,7 +283,7 @@ fun TransactionListScreen(
                 showFrequent = showFrequent,
                 account = state.account,
                 onAccountSelected = viewModel::setWalletAccount,
-                flat = flat,
+                grouped = state.grouped,
                 hasSmsPermission = state.hasSmsPermission,
                 searchQuery = state.searchQuery,
                 onQueryChange = viewModel::setSearchQuery,
@@ -401,7 +409,7 @@ fun TransactionListScreen(
 
                 transactionFeed(
                     account = state.account,
-                    flat = flat,
+                    grouped = state.grouped,
                     hasSmsPermission = state.hasSmsPermission,
                     searchQuery = state.searchQuery,
                     onQueryChange = viewModel::setSearchQuery,
@@ -482,7 +490,7 @@ private fun HomeExpandedPane(
     showFrequent: Boolean,
     account: WalletAccount,
     onAccountSelected: (WalletAccount) -> Unit,
-    flat: List<MpesaTransaction>,
+    grouped: List<DayGroup>,
     hasSmsPermission: Boolean,
     searchQuery: String,
     onQueryChange: (String) -> Unit,
@@ -568,7 +576,7 @@ private fun HomeExpandedPane(
                 ) {
                     transactionFeed(
                         account = account,
-                        flat = flat,
+                        grouped = grouped,
                         hasSmsPermission = hasSmsPermission,
                         searchQuery = searchQuery,
                         onQueryChange = onQueryChange,
@@ -1114,7 +1122,7 @@ private fun TransactionRow(
 
 private fun LazyListScope.transactionFeed(
     account: WalletAccount,
-    flat: List<MpesaTransaction>,
+    grouped: List<DayGroup>,
     hasSmsPermission: Boolean,
     searchQuery: String,
     onQueryChange: (String) -> Unit,
@@ -1156,7 +1164,7 @@ private fun LazyListScope.transactionFeed(
             Spacer(modifier = Modifier.height(6.dp))
         }
     }
-    if (!hasSmsPermission && searchQuery.isBlank() && flat.isNotEmpty()) {
+    if (!hasSmsPermission && searchQuery.isBlank() && grouped.isNotEmpty()) {
         item(key = "sms-prompt") {
             SmsAccessPrompt(
                 compact = true,
@@ -1165,7 +1173,7 @@ private fun LazyListScope.transactionFeed(
             )
         }
     }
-    if (flat.isEmpty()) {
+    if (grouped.isEmpty()) {
         item(key = "empty") {
             EmptyState(
                 hasPermission = hasSmsPermission,
@@ -1176,12 +1184,25 @@ private fun LazyListScope.transactionFeed(
             )
         }
     } else {
-        items(items = flat, key = { it.id }) { tx ->
-            TransactionRow(
-                tx = tx,
-                onClick = { onOpenTransaction(tx.id) },
-                modifier = Modifier.fillMaxWidth().sheet()
-            )
+        grouped.forEach { day ->
+            item(key = "day-${day.date}") {
+                Text(
+                    text = day.label,
+                    style = HomeType.label,
+                    color = Mute,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .sheet()
+                        .padding(top = 14.dp, bottom = 2.dp)
+                )
+            }
+            items(items = day.items, key = { it.id }) { tx ->
+                TransactionRow(
+                    tx = tx,
+                    onClick = { onOpenTransaction(tx.id) },
+                    modifier = Modifier.fillMaxWidth().sheet()
+                )
+            }
         }
     }
 }
