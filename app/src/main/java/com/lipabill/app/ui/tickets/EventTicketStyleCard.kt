@@ -49,6 +49,7 @@ import com.lipabill.app.data.model.notesValue
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.PaperTicket
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.Ink
@@ -59,7 +60,10 @@ private val EventDetailBorder = Color(0xFFE8E8E8)
 private val EventLabelGrey = Color(0xFF9CA3AF)
 
 /** Solid stage behind the event ticket — brand blue (distinct from SGR’s near-black). */
-val EventStage = Accent
+val EventStage: Color
+    @androidx.compose.runtime.Composable
+    @androidx.compose.runtime.ReadOnlyComposable
+    get() = Accent
 
 /**
  * Event ticket — white perforated card on a solid brand-blue stage.
@@ -68,6 +72,27 @@ val EventStage = Accent
  */
 @Composable
 fun EventTicketStyleCard(
+    ticket: Ticket,
+    qrBitmap: ImageBitmap?,
+    onChangeDate: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    stageColor: Color = EventStage,
+    isUsed: Boolean = false
+) {
+    PaperTicket {
+        EventTicketStyleCardPaper(
+            ticket = ticket,
+            qrBitmap = qrBitmap,
+            onChangeDate = onChangeDate,
+            modifier = modifier,
+            stageColor = stageColor,
+            isUsed = isUsed
+        )
+    }
+}
+
+@Composable
+private fun EventTicketStyleCardPaper(
     ticket: Ticket,
     qrBitmap: ImageBitmap?,
     onChangeDate: (() -> Unit)?,
