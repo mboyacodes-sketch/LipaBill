@@ -33,6 +33,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
@@ -232,7 +233,7 @@ fun AmountAddUpDialog(
                 shape = RoundedCornerShape(24.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Accent,
-                    contentColor = CardWhite
+                    contentColor = OnAccent
                 )
             ) {
                 Text("Use total", style = HomeType.rowTitle)
