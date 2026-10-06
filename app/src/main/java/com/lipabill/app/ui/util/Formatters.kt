@@ -7,6 +7,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -33,6 +34,16 @@ private val eventDateFormat: DateTimeFormatter =
     DateTimeFormatter.ofPattern("d MMMM, yyyy", Locale.ENGLISH)
 private val eventTimeFormat: DateTimeFormatter =
     DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
+private val travelDateFormat: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("d MMM, yyyy", Locale.ENGLISH)
+
+fun formatTravelClock(millis: Long): String =
+    Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).format(eventTimeFormat)
+
+fun formatTravelClock(zoned: ZonedDateTime): String = zoned.format(eventTimeFormat)
+
+fun formatTravelDate(millis: Long): String =
+    Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).format(travelDateFormat)
 
 data class EventSchedule(val date: String?, val time: String?)
 
