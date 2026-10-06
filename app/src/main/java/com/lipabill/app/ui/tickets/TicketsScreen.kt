@@ -94,7 +94,9 @@ import com.lipabill.app.ui.permissions.PermissionLesson
 import com.lipabill.app.ui.permissions.permissionGranted
 import com.lipabill.app.ui.adapt.WindowWidth
 import com.lipabill.app.ui.theme.Canvas
+import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.GeometricSansFamily
 import com.lipabill.app.ui.theme.HomeType
@@ -238,7 +240,7 @@ fun TicketsScreen(
             FloatingActionButton(
                 onClick = { addMode = AddTicketMode.CHOOSER },
                 containerColor = Accent,
-                contentColor = CardWhite
+                contentColor = OnAccent
             ) {
                 Icon(Icons.Outlined.Add, contentDescription = "Add pass")
             }
@@ -575,7 +577,7 @@ private fun PassChip(
     Text(
         text = label,
         style = HomeType.label,
-        color = if (selected) CardWhite else Ink,
+        color = if (selected) OnAccent else Ink,
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
             .background(if (selected) Accent else CardWhite)
@@ -702,7 +704,7 @@ private fun TicketListRow(
                 spotColor = Color.Black.copy(alpha = 0.06f)
             )
             .clip(RoundedCornerShape(18.dp))
-            .background(if (used) Color(0xFFE4E2DC) else CardWhite)
+            .background(if (used) Hairline else CardWhite)
             .clickable(onClick = onClick)
             .padding(horizontal = Space.card, vertical = Space.cardH),
         verticalAlignment = Alignment.CenterVertically
@@ -714,7 +716,7 @@ private fun TicketListRow(
             modifier = Modifier
                 .size(44.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(if (used) Color(0xFFD5D2CB) else SoftBlue)
+                .background(if (used) Canvas else SoftBlue)
                 .padding(10.dp)
         )
         Spacer(modifier = Modifier.size(Space.block))
