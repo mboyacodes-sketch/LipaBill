@@ -108,6 +108,27 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_AMOUNT_PARSE_REPAIR_DONE, false)
         set(value) = prefs.edit().putBoolean(KEY_AMOUNT_PARSE_REPAIR_DONE, value).apply()
 
+    /** When true, screens use the navy night palette. Passes stay paper white. */
+    var darkMode: Boolean
+        get() = prefs.getBoolean(KEY_DARK_MODE, false)
+        set(value) = prefs.edit().putBoolean(KEY_DARK_MODE, value).apply()
+
+    /** When true, the inbox has been read once without a date bound. Later scans stay incremental. */
+    val inboxHistoryImported: Boolean
+        get() = prefs.getBoolean(KEY_INBOX_HISTORY_IMPORTED, false)
+
+    /** Newest SMS date already considered. Later scans read strictly after this, minus a short overlap. */
+    val inboxHighWaterMillis: Long
+        get() = prefs.getLong(KEY_INBOX_HIGH_WATER, 0L)
+
+    fun markInboxCaughtUp(highWaterMillis: Long) {
+        val next = maxOf(inboxHighWaterMillis, highWaterMillis)
+        prefs.edit()
+            .putBoolean(KEY_INBOX_HISTORY_IMPORTED, true)
+            .putLong(KEY_INBOX_HIGH_WATER, next)
+            .apply()
+    }
+
     companion object {
         private const val PREFS_FILE = "lipabill_secure_prefs"
         private const val KEY_AUTH_REQUIRED = "auth_required"
@@ -116,6 +137,9 @@ class SecurePreferences(context: Context) {
         private const val KEY_BACKFILL_DONE = "sms_backfill_done"
         private const val KEY_CONFIRMATION_PURGE_DONE = "confirmation_filter_purge_v1"
         private const val KEY_AMOUNT_PARSE_REPAIR_DONE = "amount_parse_repair_v2"
+        private const val KEY_DARK_MODE = "dark_mode"
+        private const val KEY_INBOX_HISTORY_IMPORTED = "inbox_history_imported_v1"
+        private const val KEY_INBOX_HIGH_WATER = "inbox_high_water_millis"
         private const val KEY_REPEAT_ENABLED = "repeat_feature_enabled"
         private const val KEY_A11Y_ONBOARDING_SEEN = "a11y_onboarding_seen"
         private const val KEY_A11Y_PREFERRED_ON = "a11y_preferred_on"
