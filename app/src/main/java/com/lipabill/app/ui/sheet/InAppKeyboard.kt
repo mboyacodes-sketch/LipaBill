@@ -48,7 +48,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-private val KeyboardCanvas = Canvas
+private val KeyboardCanvas: Color
+    @Composable
+    @androidx.compose.runtime.ReadOnlyComposable
+    get() = Canvas
 
 /** Large type on compact keys — keep overall keyboard height tight. */
 private val KeyHeight = 42.dp
