@@ -94,7 +94,10 @@ import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.ActionMetrics
 import com.lipabill.app.ui.theme.ActionPay
 import com.lipabill.app.ui.theme.ActionTickets
+import com.lipabill.app.ui.theme.BrandNavy
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.OnAccent
+import com.lipabill.app.ui.theme.OnPastel
 import com.lipabill.app.ui.theme.Canvas as CreamCanvas
 import com.lipabill.app.ui.theme.Debit
 import com.lipabill.app.ui.theme.HomeType
@@ -243,6 +246,7 @@ fun TransactionListScreen(
             .hideKeyboardOnOutsideTap()
     ) {
         // Left page swoosh — mirror of the design’s top-right leaf (stays clear of status icons).
+        val swoosh = Accent
         Canvas(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -260,14 +264,14 @@ fun TransactionListScreen(
                 cubicTo(w * 0.12f, h * 0.82f, w * 0.05f, h * 0.72f, 0f, h * 0.55f)
                 close()
             }
-            drawPath(leaf, color = Accent.copy(alpha = 0.88f))
+            drawPath(leaf, color = swoosh.copy(alpha = 0.88f))
             val soft = Path().apply {
                 moveTo(0f, 0f)
                 lineTo(w * 0.38f, 0f)
                 cubicTo(w * 0.30f, h * 0.22f, w * 0.22f, h * 0.38f, 0f, h * 0.32f)
                 close()
             }
-            drawPath(soft, color = Accent.copy(alpha = 0.50f))
+            drawPath(soft, color = swoosh.copy(alpha = 0.50f))
         }
 
         if (window == WindowWidth.Expanded) {
@@ -326,6 +330,7 @@ fun TransactionListScreen(
                     .statusBarsPadding()
                     .then(if (showingReceipt) Modifier.blur(14.dp) else Modifier)
             ) {
+                val homeSheet = CreamCanvas
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
@@ -421,7 +426,7 @@ fun TransactionListScreen(
                         receiptTxId = id
                     },
                     pageMargin = pageMargin,
-                    sheetColor = CreamCanvas,
+                    sheetColor = homeSheet,
                     headerShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
                     onSeeAll = {
                         scope.launch { listState.animateScrollToItem(txHeaderIndex) }
@@ -682,6 +687,8 @@ private fun BalanceSection(
             .background(CardWhite)
     ) {
         // Mirrored leaf — anchored to the right edge of the pill.
+        val leafNavy = Accent
+        val leafWash = SoftBlue
         Canvas(modifier = Modifier.matchParentSize()) {
             val w = size.width
             val h = size.height
@@ -703,7 +710,7 @@ private fun BalanceSection(
                 lineTo(w, 0f)
                 close()
             }
-            drawPath(leaf, color = Accent.copy(alpha = 0.90f))
+            drawPath(leaf, color = leafNavy.copy(alpha = 0.90f))
             val highlight = Path().apply {
                 moveTo(mirrorX(w * 0.28f), 0f)
                 cubicTo(
@@ -715,9 +722,9 @@ private fun BalanceSection(
                 lineTo(w, 0f)
                 close()
             }
-            drawPath(highlight, color = Accent.copy(alpha = 0.45f))
+            drawPath(highlight, color = leafNavy.copy(alpha = 0.45f))
             drawCircle(
-                color = SoftBlue.copy(alpha = 0.35f),
+                color = leafWash.copy(alpha = 0.35f),
                 radius = h * 0.38f,
                 center = Offset(mirrorX(w * 0.06f), h * 0.12f)
             )
@@ -778,7 +785,7 @@ private fun QuickActionsRow(
             onClick = onSend,
             enabled = sendPayEnabled,
             face = Accent,
-            iconTint = CardWhite
+            iconTint = OnAccent
         )
         QuickAction(
             icon = Icons.Outlined.Payments,
@@ -786,21 +793,21 @@ private fun QuickActionsRow(
             onClick = onDeposit,
             enabled = sendPayEnabled,
             face = ActionPay,
-            iconTint = Accent
+            iconTint = BrandNavy
         )
         QuickAction(
             icon = Icons.Outlined.BarChart,
             label = "Metrics",
             onClick = onDetails,
             face = ActionMetrics,
-            iconTint = Accent
+            iconTint = BrandNavy
         )
         QuickAction(
             icon = Icons.Outlined.ConfirmationNumber,
             label = "Passes",
             onClick = onTickets,
             face = ActionTickets,
-            iconTint = Accent
+            iconTint = BrandNavy
         )
     }
 }
@@ -997,7 +1004,7 @@ private fun FrequentContactsRow(
                     Text(
                         text = name.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
                         style = HomeType.rowTitle,
-                        color = Ink,
+                        color = OnPastel,
                         modifier = Modifier.recordingPrivacyCover()
                     )
                 }
@@ -1060,7 +1067,7 @@ private fun TransactionRow(
             Text(
                 text = initial,
                 style = HomeType.rowTitle,
-                color = Ink,
+                color = OnPastel,
                 modifier = Modifier.recordingPrivacyCover(named)
             )
         }
