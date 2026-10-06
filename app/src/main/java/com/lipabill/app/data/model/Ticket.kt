@@ -1,5 +1,8 @@
 package com.lipabill.app.data.model
 
+import java.time.Instant
+import java.time.ZoneId
+
 enum class TicketBarcodeFormat {
     QR_CODE,
     CODE_128,
@@ -67,9 +70,13 @@ data class Ticket(
     val returnBoardingSeatOrTier: String? = null,
     val returnBoardingNotes: String? = null
 ) {
+    /** Booking time, else outbound boarding, else the return leg. */
+    val occasionMillis: Long?
+        get() = startsAtMillis ?: boardingStartsAtMillis ?: returnBoardingStartsAtMillis
+
     fun effectiveStatus(nowMillis: Long = System.currentTimeMillis()): TicketStatus {
         if (status == TicketStatus.USED) return TicketStatus.USED
-        val start = startsAtMillis ?: boardingStartsAtMillis ?: returnBoardingStartsAtMillis
+        val start = occasionMillis
         if (start != null && start < nowMillis) return TicketStatus.PAST_DUE
         return when (status) {
             TicketStatus.PAST_DUE -> TicketStatus.PAST_DUE
@@ -78,6 +85,20 @@ data class Ticket(
     }
 
     val isTravelTicket: Boolean get() = expectsBoardingPass
+
+    /**
+     * "Mark as used" is for the event's local calendar day and after.
+     * A pass later the same day can still be marked used. Undated passes stay available.
+     */
+    fun canMarkUsedFromEventDay(
+        nowMillis: Long = System.currentTimeMillis(),
+        zone: ZoneId = ZoneId.systemDefault()
+    ): Boolean {
+        val start = occasionMillis ?: return true
+        val eventDay = Instant.ofEpochMilli(start).atZone(zone).toLocalDate()
+        val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
+        return !today.isBefore(eventDay)
+    }
 
     /** Booking saved, outbound boarding not attached yet. */
     val isConfirmationOnly: Boolean get() = expectsBoardingPass && !hasBoardingPass
@@ -124,32 +145,66 @@ data class Ticket(
         }
 
     fun boardingSnapshot(leg: BoardingLeg): BoardingPassSnapshot? = when (leg) {
-        BoardingLeg.OUTBOUND -> {
-            if (!hasBoardingPass) null
-            else BoardingPassSnapshot(
-                barcodeValue = boardingBarcodeValue.orEmpty(),
-                barcodeFormat = boardingBarcodeFormat,
-                title = boardingTitle,
-                venue = boardingVenue,
-                startsAtMillis = boardingStartsAtMillis,
-                seatOrTier = boardingSeatOrTier,
-                notes = boardingNotes
-            )
-        }
-        BoardingLeg.RETURN -> {
-            if (!hasReturnBoardingPass) null
-            else BoardingPassSnapshot(
-                barcodeValue = returnBoardingBarcodeValue.orEmpty(),
-                barcodeFormat = returnBoardingBarcodeFormat,
-                title = returnBoardingTitle,
-                venue = returnBoardingVenue,
-                startsAtMillis = returnBoardingStartsAtMillis,
-                seatOrTier = returnBoardingSeatOrTier,
-                notes = returnBoardingNotes
-            )
-        }
+        BoardingLeg.OUTBOUND -> legSnapshot(
+            attached = hasBoardingPass,
+            barcodeValue = boardingBarcodeValue,
+            barcodeFormat = boardingBarcodeFormat,
+            title = boardingTitle,
+            venue = boardingVenue,
+            startsAtMillis = boardingStartsAtMillis,
+            seatOrTier = boardingSeatOrTier,
+            notes = boardingNotes
+        )
+        BoardingLeg.RETURN -> legSnapshot(
+            attached = hasReturnBoardingPass,
+            barcodeValue = returnBoardingBarcodeValue,
+            barcodeFormat = returnBoardingBarcodeFormat,
+            title = returnBoardingTitle,
+            venue = returnBoardingVenue,
+            startsAtMillis = returnBoardingStartsAtMillis,
+            seatOrTier = returnBoardingSeatOrTier,
+            notes = returnBoardingNotes
+        )
+    }
+
+    private fun legSnapshot(
+        attached: Boolean,
+        barcodeValue: String?,
+        barcodeFormat: TicketBarcodeFormat?,
+        title: String?,
+        venue: String?,
+        startsAtMillis: Long?,
+        seatOrTier: String?,
+        notes: String?
+    ): BoardingPassSnapshot? {
+        if (!attached) return null
+        return BoardingPassSnapshot(
+            barcodeValue = barcodeValue.orEmpty(),
+            barcodeFormat = barcodeFormat,
+            title = title,
+            venue = venue,
+            startsAtMillis = startsAtMillis,
+            seatOrTier = seatOrTier,
+            notes = notes
+        )
     }
 }
+
+/** First matching `Label: value` segment, in the order given. */
+fun String?.firstNotesValue(vararg labels: String): String? {
+    for (label in labels) {
+        notesValue(label)?.let { return it }
+    }
+    return null
+}
+
+/** A `Prefix …` piece inside a " · "-joined field, with the prefix removed. */
+fun String?.labeledPiece(prefix: String): String? =
+    this?.split("·")
+        ?.map { it.trim() }
+        ?.firstOrNull { it.startsWith(prefix, ignoreCase = true) }
+        ?.removePrefix(prefix)
+        ?.trim()
 
 /** Value of a `Label: value` segment in ticket notes joined by " · ". */
 fun String?.notesValue(label: String): String? {
