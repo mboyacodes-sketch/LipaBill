@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
@@ -65,6 +66,8 @@ import com.lipabill.app.ui.permissions.FirstRunSetupScreen
 import com.lipabill.app.ui.permissions.PaymentAccessDialog
 import com.lipabill.app.ui.permissions.PaymentAccessNeed
 import com.lipabill.app.ui.permissions.PermissionGuideDialog
+import com.lipabill.app.ui.permissions.PermissionPromptMemory
+import com.lipabill.app.ui.permissions.permissionGranted
 import com.lipabill.app.ui.permissions.missingPaymentAccess
 import com.lipabill.app.ui.permissions.PermissionLesson
 import com.lipabill.app.ui.permissions.SmsPermissionScreen
@@ -174,7 +177,13 @@ class MainActivity : AppCompatActivity(),
     companion object {
         const val EXTRA_RETURN_TO_AMOUNT_AFTER_PIN_CANCEL =
             "com.lipabill.app.RETURN_TO_AMOUNT_AFTER_PIN_CANCEL"
+        const val EXTRA_OPEN_RECEIPT_ID = "com.lipabill.app.OPEN_RECEIPT_ID"
     }
+}
+
+private fun receiptIdOf(intent: Intent?): Long? {
+    val id = intent?.getLongExtra(MainActivity.EXTRA_OPEN_RECEIPT_ID, 0L) ?: return null
+    return id.takeIf { it > 0L }
 }
 
 @Composable
@@ -263,6 +272,7 @@ private fun AuthenticatedApp(
             ) == true
         )
     }
+    var openReceiptId by remember { mutableStateOf(receiptIdOf(activity.intent)) }
     var instantHomeReturn by remember { mutableStateOf(false) }
     LaunchedEffect(instantHomeReturn) {
         if (instantHomeReturn) instantHomeReturn = false
@@ -277,6 +287,7 @@ private fun AuthenticatedApp(
             ) {
                 returnToAmountAfterPinCancel = true
             }
+            receiptIdOf(intent)?.let { openReceiptId = it }
         }
         activity.addOnNewIntentListener(listener)
         onDispose { activity.removeOnNewIntentListener(listener) }
@@ -617,6 +628,12 @@ private fun AuthenticatedApp(
         }
     }
 
+    LaunchedEffect(openReceiptId) {
+        val id = openReceiptId ?: return@LaunchedEffect
+        if (id <= 0L || !app.securePreferences.firstRunSetupDone) return@LaunchedEffect
+        navigateHome()
+    }
+
     fun navigateRepeat(txId: Long, amount: String = "") {
         if (!app.repeatCoordinator.isFeatureEnabled()) {
             navController.navigate(Route.RepeatManual(txId, amount).path)
@@ -881,8 +898,37 @@ private fun AuthenticatedApp(
             }
         }
         composable(Route.List.path) {
+            var askNotifications by remember { mutableStateOf(false) }
+            val notificationLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { granted ->
+                if (!granted) PermissionPromptMemory.notificationsDeclined = true
+            }
+            LaunchedEffect(Unit) {
+                askNotifications = Build.VERSION.SDK_INT >= 33 &&
+                    !context.permissionGranted(Manifest.permission.POST_NOTIFICATIONS) &&
+                    !PermissionPromptMemory.notificationsDeclined
+            }
+            if (askNotifications) {
+                PermissionGuideDialog(
+                    lesson = PermissionLesson.Notifications,
+                    onAllow = {
+                        askNotifications = false
+                        notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    },
+                    onNotNow = {
+                        askNotifications = false
+                        PermissionPromptMemory.notificationsDeclined = true
+                    }
+                )
+            }
             MainShellScreen(
                 listVm = listVm,
+                openReceiptId = openReceiptId,
+                onReceiptOpened = {
+                    openReceiptId = null
+                    activity.intent?.removeExtra(MainActivity.EXTRA_OPEN_RECEIPT_ID)
+                },
                 onRepeatTransaction = { id -> navigateRepeat(id) },
                 onOpenSend = { attemptPayment { showSendSheet() } },
                 onOpenSendTo = { contact -> attemptPayment { showSendSheet(preselect = contact) } },
