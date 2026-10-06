@@ -58,9 +58,10 @@ enum class PermissionLesson(
         allowLabel = "Allow camera"
     ),
     Notifications(
-        title = "Payment status on this phone",
-        body = "While a payment is in progress, LipaBill can notify you if it needs you " +
-            "or when the result is ready. You can finish the payment without alerts.",
+        title = "M-Pesa alerts on this phone",
+        body = "LipaBill can notify you when an M-Pesa confirmation arrives, " +
+            "and if a payment you started needs you. " +
+            "You can use the app without alerts.",
         allowLabel = "Allow notifications"
     )
 }
