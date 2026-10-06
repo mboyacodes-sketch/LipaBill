@@ -122,22 +122,26 @@ class MainActivity : AppCompatActivity(),
     override fun onCreate(savedInstanceState: Bundle?) {
         // Before super.onCreate so Android 14 and earlier match the edge-to-edge
         // layout Android 15 enforces for targetSdk 35+.
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.light(
-                scrim = AndroidColor.TRANSPARENT,
-                darkScrim = AndroidColor.TRANSPARENT
-            ),
-            navigationBarStyle = SystemBarStyle.light(
+        val night = (application as LipaBillApp).darkMode.value
+        val barStyle = if (night) {
+            SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+        } else {
+            SystemBarStyle.light(
                 scrim = AndroidColor.TRANSPARENT,
                 darkScrim = AndroidColor.TRANSPARENT
             )
+        }
+        enableEdgeToEdge(
+            statusBarStyle = barStyle,
+            navigationBarStyle = barStyle
         )
         super.onCreate(savedInstanceState)
         captureIncomingDocument(intent)
         val app = application as LipaBillApp
         setContent {
             val fontSize by app.fontSizeSp.collectAsStateWithLifecycle()
-            LipaBillTheme(fontSizeSp = fontSize) {
+            val darkMode by app.darkMode.collectAsStateWithLifecycle()
+            LipaBillTheme(fontSizeSp = fontSize, darkTheme = darkMode) {
                 Surface(
                     modifier = Modifier
                         .fillMaxSize()
