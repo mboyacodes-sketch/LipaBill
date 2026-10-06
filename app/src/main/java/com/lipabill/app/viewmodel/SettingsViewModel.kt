@@ -22,6 +22,7 @@ data class SettingsUiState(
     val alwaysShowBalance: Boolean = false,
     val favouritesSectionEnabled: Boolean = true,
     val recordingPrivacy: Boolean = false,
+    val darkMode: Boolean = false,
     val repeatEnabled: Boolean = true,
     val lipaBillA11yEnabled: Boolean = false,
     val simLines: List<SimLine> = emptyList(),
@@ -66,6 +67,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setFavouritesSectionEnabled(enabled: Boolean) {
         app.setFavouritesSectionEnabled(enabled)
+        refresh()
+    }
+
+    fun setDarkMode(enabled: Boolean) {
+        app.setDarkMode(enabled)
         refresh()
     }
 
@@ -122,6 +128,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             alwaysShowBalance = app.securePreferences.alwaysShowBalance,
             favouritesSectionEnabled = app.securePreferences.favouritesSectionEnabled,
             recordingPrivacy = BuildConfig.DEBUG && app.securePreferences.recordingPrivacy,
+            darkMode = app.securePreferences.darkMode,
             repeatEnabled = app.securePreferences.repeatFeatureEnabled,
             lipaBillA11yEnabled = AccessibilityHelper.isLipaBillServiceEnabled(ctx),
             simLines = lines,
