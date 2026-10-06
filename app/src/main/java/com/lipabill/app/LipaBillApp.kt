@@ -63,6 +63,9 @@ class LipaBillApp : Application() {
     private val _recordingPrivacy = MutableStateFlow(false)
     val recordingPrivacy: StateFlow<Boolean> = _recordingPrivacy.asStateFlow()
 
+    private val _darkMode = MutableStateFlow(false)
+    val darkMode: StateFlow<Boolean> = _darkMode.asStateFlow()
+
     private val _openedPass = MutableStateFlow<OpenedPass>(OpenedPass.Idle)
     val openedPass: StateFlow<OpenedPass> = _openedPass.asStateFlow()
 
@@ -105,6 +108,7 @@ class LipaBillApp : Application() {
         _alwaysShowBalance.value = securePreferences.alwaysShowBalance
         _favouritesSectionEnabled.value = securePreferences.favouritesSectionEnabled
         _recordingPrivacy.value = debugRecordingPrivacy()
+        _darkMode.value = securePreferences.darkMode
         // Existing installs already past first launch — don't force the new setup wizard.
         if (!securePreferences.firstRunSetupDone &&
             (securePreferences.smsBackfillDone ||
@@ -184,6 +188,11 @@ class LipaBillApp : Application() {
     fun setFavouritesSectionEnabled(enabled: Boolean) {
         securePreferences.favouritesSectionEnabled = enabled
         _favouritesSectionEnabled.value = enabled
+    }
+
+    fun setDarkMode(enabled: Boolean) {
+        securePreferences.darkMode = enabled
+        _darkMode.value = enabled
     }
 
     fun setRecordingPrivacy(enabled: Boolean) {
