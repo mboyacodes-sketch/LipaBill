@@ -24,7 +24,8 @@ fun MainShellScreen(
     onOpenMetrics: () -> Unit = {},
     onOpenTickets: () -> Unit = {},
     onRequestSms: () -> Unit = {},
-    onOpenSettings: () -> Unit = {}
+    onOpenSettings: () -> Unit = {},
+    onOpenHabits: () -> Unit = {}
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -46,7 +47,8 @@ fun MainShellScreen(
             onTickets = onOpenTickets,
             onRequestSms = onRequestSms,
             onRescan = { listVm.rescanInbox() },
-            onOpenSettings = onOpenSettings
+            onOpenSettings = onOpenSettings,
+            onOpenHabits = onOpenHabits
         )
     }
 }
