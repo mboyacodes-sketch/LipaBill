@@ -46,6 +46,12 @@
         <intent>
             <action android:name="com.android.settings.action.SETTINGS_SEARCH" />
         </intent>
+        <!-- Venue directions: Google Maps, or any app that handles geo: searches. -->
+        <package android:name="com.google.android.apps.maps" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
     </queries>
 
     <application
