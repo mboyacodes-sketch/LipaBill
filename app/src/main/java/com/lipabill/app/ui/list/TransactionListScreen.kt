@@ -77,6 +77,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
@@ -87,6 +88,7 @@ import com.lipabill.app.ui.adapt.WindowWidth
 import com.lipabill.app.ui.components.BalanceAmountRow
 import com.lipabill.app.ui.components.WalletAccountSwitch
 import com.lipabill.app.ui.detail.TransactionReceiptPopup
+import com.lipabill.app.ui.engage.EngageHomeSection
 import com.lipabill.app.ui.sheet.InAppKeyboard
 import com.lipabill.app.ui.sheet.SheetInputStyle
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
@@ -116,6 +118,7 @@ import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
 import com.lipabill.app.ui.util.rememberHideKeyboard
 import com.lipabill.app.viewmodel.DayGroup
+import com.lipabill.app.viewmodel.EngagementViewModel
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import com.lipabill.app.viewmodel.WalletAccount
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -175,7 +178,8 @@ fun TransactionListScreen(
     onTickets: () -> Unit = {},
     onRequestSms: () -> Unit = {},
     onRescan: () -> Unit = {},
-    onOpenSettings: () -> Unit = {}
+    onOpenSettings: () -> Unit = {},
+    onOpenHabits: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -183,6 +187,8 @@ fun TransactionListScreen(
     val app = context.applicationContext as LipaBillApp
     val alwaysShowBalance by app.alwaysShowBalance.collectAsStateWithLifecycle()
     val favouritesSectionEnabled by app.favouritesSectionEnabled.collectAsStateWithLifecycle()
+    val engageVm: EngagementViewModel = viewModel()
+    val engage by engageVm.uiState.collectAsStateWithLifecycle()
     var receiptTxId by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(openReceiptId) {
         val id = openReceiptId ?: return@LaunchedEffect
@@ -318,6 +324,15 @@ fun TransactionListScreen(
                 onKeyboardDone = {
                     searchFocused = false
                     focusManager.clearFocus(force = true)
+                },
+                engageSection = {
+                    EngageHomeSection(
+                        state = engage,
+                        onOpen = onOpenHabits,
+                        modifier = Modifier
+                            .padding(horizontal = pageMargin)
+                            .padding(top = HomeMock.SectionGap)
+                    )
                 }
             )
         } else Column(modifier = Modifier.fillMaxSize()) {
@@ -392,6 +407,13 @@ fun TransactionListScreen(
                         )
                     }
                     Spacer(modifier = Modifier.height(HomeMock.SectionGap))
+                }
+                item(key = "engage") {
+                    EngageHomeSection(
+                        state = engage,
+                        onOpen = onOpenHabits,
+                        modifier = Modifier.padding(horizontal = pageMargin)
+                    )
                 }
                 if (showFrequent) {
                     item(key = "frequent") {
@@ -514,7 +536,8 @@ private fun HomeExpandedPane(
     onOpenTransaction: (Long) -> Unit,
     onKey: (String) -> Unit,
     onBackspace: () -> Unit,
-    onKeyboardDone: () -> Unit
+    onKeyboardDone: () -> Unit,
+    engageSection: @Composable () -> Unit = {}
 ) {
     Row(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -547,6 +570,7 @@ private fun HomeExpandedPane(
                 sendPayEnabled = sendPayEnabled,
                 modifier = Modifier.padding(horizontal = pageMargin)
             )
+            engageSection()
             if (showFrequent) {
                 Spacer(modifier = Modifier.height(HomeMock.SectionGap))
                 Column(modifier = Modifier.padding(horizontal = pageMargin)) {
