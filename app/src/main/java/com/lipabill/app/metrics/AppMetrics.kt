@@ -43,6 +43,14 @@ object AppMetrics {
 
     fun firstRunCompleted() = log("first_run_completed")
 
+    fun challengeStarted(templateId: String) =
+        log("challenge_started", bundleOf("template" to templateId.take(32)))
+
+    fun challengeCompleted(templateId: String) =
+        log("challenge_completed", bundleOf("template" to templateId.take(32)))
+
+    fun checkInCompleted() = log("checkin_completed")
+
     fun smsPermission(granted: Boolean) =
         log("sms_permission", bundleOf("granted" to granted))
 
