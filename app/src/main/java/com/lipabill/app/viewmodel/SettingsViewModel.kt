@@ -23,6 +23,8 @@ data class SettingsUiState(
     val favouritesSectionEnabled: Boolean = true,
     val recordingPrivacy: Boolean = false,
     val darkMode: Boolean = false,
+    val challengesEnabled: Boolean = false,
+    val weeklyCheckInEnabled: Boolean = false,
     val repeatEnabled: Boolean = true,
     val lipaBillA11yEnabled: Boolean = false,
     val simLines: List<SimLine> = emptyList(),
@@ -72,6 +74,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setDarkMode(enabled: Boolean) {
         app.setDarkMode(enabled)
+        refresh()
+    }
+
+    fun setChallengesEnabled(enabled: Boolean) {
+        app.setChallengesEnabled(enabled)
+        refresh()
+    }
+
+    fun setWeeklyCheckInEnabled(enabled: Boolean) {
+        app.setWeeklyCheckInEnabled(enabled)
         refresh()
     }
 
@@ -129,6 +141,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             favouritesSectionEnabled = app.securePreferences.favouritesSectionEnabled,
             recordingPrivacy = BuildConfig.DEBUG && app.securePreferences.recordingPrivacy,
             darkMode = app.securePreferences.darkMode,
+            challengesEnabled = app.securePreferences.challengesEnabled,
+            weeklyCheckInEnabled = app.securePreferences.weeklyCheckInEnabled,
             repeatEnabled = app.securePreferences.repeatFeatureEnabled,
             lipaBillA11yEnabled = AccessibilityHelper.isLipaBillServiceEnabled(ctx),
             simLines = lines,
