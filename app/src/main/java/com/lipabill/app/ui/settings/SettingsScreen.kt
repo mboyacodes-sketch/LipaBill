@@ -48,6 +48,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.lipabill.app.R
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -83,6 +85,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBack: (() -> Unit)? = null,
     onRequestPhoneStatePermission: () -> Unit = {},
+    onCheckForUpdate: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -156,6 +159,21 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Space.page, vertical = Space.pageV)
         ) {
+            SettingsSection(stringResource(R.string.settings_habits)) {
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_challenges_title),
+                    subtitle = stringResource(R.string.settings_challenges_body),
+                    checked = state.challengesEnabled,
+                    onCheckedChange = viewModel::setChallengesEnabled
+                )
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_checkin_title),
+                    subtitle = stringResource(R.string.settings_checkin_body),
+                    checked = state.weeklyCheckInEnabled,
+                    onCheckedChange = viewModel::setWeeklyCheckInEnabled
+                )
+            }
+
             SettingsSection("Appearance") {
                 SettingsSwitchRow(
                     title = "Dark mode",
@@ -289,6 +307,13 @@ fun SettingsScreen(
             }
 
             SettingsSection("About") {
+                SettingsNavRow(
+                    title = stringResource(R.string.settings_check_update),
+                    subtitle = stringResource(R.string.settings_check_update_body),
+                    showChevron = true,
+                    onClick = onCheckForUpdate
+                )
+                SettingsDivider()
                 SettingsNavRow(
                     title = "Privacy",
                     action = "",
