@@ -37,7 +37,8 @@ class TransactionRepository(
     private val inboxReader: SmsInboxReader,
     private val securePreferences: SecurePreferences,
     private val merchantDirectory: MerchantDirectory,
-    private val onNewTransaction: (MpesaTransaction) -> Unit = {}
+    private val onNewTransaction: (MpesaTransaction) -> Unit = {},
+    var afterInsert: (suspend () -> Unit)? = null
 ) {
 
     private val rescanLock = Mutex()
@@ -104,6 +105,7 @@ class TransactionRepository(
             if (LedgerNotifier.isFresh(withPhone.timestampMillis)) {
                 onNewTransaction(withPhone.copy(id = rowId))
             }
+            afterInsert?.invoke()
             return@withContext true
         }
         // Already present — refresh money fields from the latest parse (fixes bad amounts).
@@ -186,7 +188,10 @@ class TransactionRepository(
         }
         securePreferences.smsBackfillDone = true
         securePreferences.markInboxCaughtUp(newestSeen)
-        if (inserted > 0) linkPhonesByName()
+        if (inserted > 0) {
+            linkPhonesByName()
+            afterInsert?.invoke()
+        }
         return inserted
     }
 
