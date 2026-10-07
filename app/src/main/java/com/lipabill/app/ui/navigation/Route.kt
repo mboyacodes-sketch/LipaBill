@@ -9,6 +9,7 @@ sealed class Route(val path: String) {
     data object FirstRunSetup : Route("first_run_setup")
     data object Metrics : Route("metrics")
     data object Tickets : Route("tickets")
+    data object Habits : Route("habits")
     data class TicketDetail(val id: Long) : Route("ticket/$id") {
         companion object {
             const val pattern = "ticket/{id}"
