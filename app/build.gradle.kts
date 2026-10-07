@@ -23,8 +23,8 @@ android {
         applicationId = "com.lipabill.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 23
-        versionName = "2.0.2"
+        versionCode = 24
+        versionName = "2.0.3"
         // Real devices are arm64; drop x86/x86_64 emulator ABIs from shipped APKs.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -163,6 +163,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-process:2.8.7")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("androidx.navigation:navigation-compose:2.8.8")
 
     implementation("androidx.compose.ui:ui")
@@ -201,6 +202,11 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-crashlytics")
+    // In-app update API for every variant. The full downloader stays on internal
+    // so Play builds do not ship the App Distribution installer.
+    implementation("com.google.firebase:firebase-appdistribution-api:16.0.0-beta20")
+    add("internalImplementation", "com.google.firebase:firebase-appdistribution:16.0.0-beta20")
+    add("playImplementation", "com.google.android.play:app-update:2.1.0")
 
     testImplementation("junit:junit:4.13.2")
 }
