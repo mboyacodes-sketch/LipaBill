@@ -8,7 +8,10 @@ import com.lipabill.app.data.model.TransactionType
 
 @Entity(
     tableName = "transactions",
-    indices = [Index(value = ["code"], unique = true)]
+    indices = [
+        Index(value = ["code"], unique = true),
+        Index(value = ["timestampMillis"])
+    ]
 )
 data class TransactionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
