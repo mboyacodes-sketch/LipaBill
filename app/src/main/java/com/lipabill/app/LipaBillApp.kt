@@ -8,6 +8,7 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import com.lipabill.app.auth.AuthManager
 import com.lipabill.app.data.local.AppDatabase
 import com.lipabill.app.data.prefs.SecurePreferences
+import com.lipabill.app.data.repository.EngagementRepository
 import com.lipabill.app.data.repository.MerchantDirectory
 import com.lipabill.app.data.repository.MerchantSnapshotStore
 import com.lipabill.app.data.repository.RepeatAttemptRepository
@@ -18,6 +19,7 @@ import com.lipabill.app.data.sms.SmsInboxReader
 import com.lipabill.app.data.tickets.TicketDocumentImporter
 import com.lipabill.app.data.tickets.TicketDocumentKind
 import com.lipabill.app.data.sms.SmsInboxSyncWatcher
+import com.lipabill.app.engage.EngagementScheduler
 import com.lipabill.app.metrics.AppCrashReporting
 import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
@@ -48,6 +50,10 @@ class LipaBillApp : Application() {
         private set
     lateinit var smsInboxSyncWatcher: SmsInboxSyncWatcher
         private set
+    lateinit var engagement: EngagementRepository
+        private set
+    lateinit var engagementScheduler: EngagementScheduler
+        private set
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -65,6 +71,10 @@ class LipaBillApp : Application() {
 
     private val _darkMode = MutableStateFlow(false)
     val darkMode: StateFlow<Boolean> = _darkMode.asStateFlow()
+    private val _challengesEnabled = MutableStateFlow(false)
+    val challengesEnabled: StateFlow<Boolean> = _challengesEnabled.asStateFlow()
+    private val _weeklyCheckInEnabled = MutableStateFlow(false)
+    val weeklyCheckInEnabled: StateFlow<Boolean> = _weeklyCheckInEnabled.asStateFlow()
 
     private val _openedPass = MutableStateFlow<OpenedPass>(OpenedPass.Idle)
     val openedPass: StateFlow<OpenedPass> = _openedPass.asStateFlow()
@@ -109,6 +119,8 @@ class LipaBillApp : Application() {
         _favouritesSectionEnabled.value = securePreferences.favouritesSectionEnabled
         _recordingPrivacy.value = debugRecordingPrivacy()
         _darkMode.value = securePreferences.darkMode
+        _challengesEnabled.value = securePreferences.challengesEnabled
+        _weeklyCheckInEnabled.value = securePreferences.weeklyCheckInEnabled
         // Existing installs already past first launch — don't force the new setup wizard.
         if (!securePreferences.firstRunSetupDone &&
             (securePreferences.smsBackfillDone ||
@@ -142,8 +154,22 @@ class LipaBillApp : Application() {
             repeatRepository = repeatRepository,
             transactionRepository = repository
         )
+        engagement = EngagementRepository(
+            challenges = db.challengeDao(),
+            transactions = db.transactionDao()
+        )
+        engagementScheduler = EngagementScheduler(this)
+        repository.afterInsert = {
+            if (securePreferences.challengesEnabled) {
+                val end = engagement.evaluate()
+                if (end != null) engagementScheduler.scheduleChallengeEnd(end)
+            }
+        }
         smsInboxSyncWatcher = SmsInboxSyncWatcher(this, repository)
         smsInboxSyncWatcher.start()
+        if (securePreferences.challengesEnabled || securePreferences.weeklyCheckInEnabled) {
+            engagementScheduler.ensureScheduled()
+        }
 
         appScope.launch {
             runCatching { merchantDirectory.restoreFromSnapshotIfEmpty() }
@@ -161,6 +187,13 @@ class LipaBillApp : Application() {
                         repository.repairParsedAmountsIfNeeded()
                         repository.rescanInbox()
                         repository.linkPhonesByName()
+                        if (securePreferences.challengesEnabled) {
+                            val end = engagement.evaluate()
+                            if (end != null) engagementScheduler.scheduleChallengeEnd(end)
+                        }
+                        if (securePreferences.challengesEnabled || securePreferences.weeklyCheckInEnabled) {
+                            engagementScheduler.ensureScheduled()
+                        }
                     } catch (_: Exception) {
                         // ignore — pull-to-refresh remains available
                     }
@@ -193,6 +226,18 @@ class LipaBillApp : Application() {
     fun setDarkMode(enabled: Boolean) {
         securePreferences.darkMode = enabled
         _darkMode.value = enabled
+    }
+
+    fun setChallengesEnabled(enabled: Boolean) {
+        securePreferences.challengesEnabled = enabled
+        _challengesEnabled.value = enabled
+        if (enabled) engagementScheduler.ensureScheduled()
+    }
+
+    fun setWeeklyCheckInEnabled(enabled: Boolean) {
+        securePreferences.weeklyCheckInEnabled = enabled
+        _weeklyCheckInEnabled.value = enabled
+        if (enabled) engagementScheduler.ensureScheduled()
     }
 
     fun setRecordingPrivacy(enabled: Boolean) {
