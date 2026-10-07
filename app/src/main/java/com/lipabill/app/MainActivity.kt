@@ -60,6 +60,7 @@ import com.lipabill.app.ui.analytics.MetricsScreen
 import com.lipabill.app.ui.auth.AuthGateScreen
 import com.lipabill.app.ui.main.MainShellScreen
 import com.lipabill.app.ui.navigation.Route
+import com.lipabill.app.update.AppUpdates
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
 import com.lipabill.app.ui.permissions.AccessibilityToggleCoachDialog
 import com.lipabill.app.ui.permissions.FirstRunSetupScreen
@@ -182,6 +183,7 @@ class MainActivity : AppCompatActivity(),
         const val EXTRA_RETURN_TO_AMOUNT_AFTER_PIN_CANCEL =
             "com.lipabill.app.RETURN_TO_AMOUNT_AFTER_PIN_CANCEL"
         const val EXTRA_OPEN_RECEIPT_ID = "com.lipabill.app.OPEN_RECEIPT_ID"
+        const val EXTRA_OPEN_CHECK_IN = "com.lipabill.app.OPEN_CHECK_IN"
     }
 }
 
@@ -266,6 +268,9 @@ private fun AuthenticatedApp(
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
     val host = activity as MainActivity
+    LaunchedEffect(Unit) {
+        AppUpdates.check(activity, manual = false)
+    }
     val pendingPkPassUri = host.incomingDocumentUri
     val openedPass by app.openedPass.collectAsStateWithLifecycle()
     var returnToAmountAfterPinCancel by remember {
@@ -277,6 +282,9 @@ private fun AuthenticatedApp(
         )
     }
     var openReceiptId by remember { mutableStateOf(receiptIdOf(activity.intent)) }
+    var openCheckIn by remember {
+        mutableStateOf(activity.intent?.getBooleanExtra(MainActivity.EXTRA_OPEN_CHECK_IN, false) == true)
+    }
     var instantHomeReturn by remember { mutableStateOf(false) }
     LaunchedEffect(instantHomeReturn) {
         if (instantHomeReturn) instantHomeReturn = false
@@ -292,6 +300,9 @@ private fun AuthenticatedApp(
                 returnToAmountAfterPinCancel = true
             }
             receiptIdOf(intent)?.let { openReceiptId = it }
+            if (intent.getBooleanExtra(MainActivity.EXTRA_OPEN_CHECK_IN, false)) {
+                openCheckIn = true
+            }
         }
         activity.addOnNewIntentListener(listener)
         onDispose { activity.removeOnNewIntentListener(listener) }
@@ -637,6 +648,10 @@ private fun AuthenticatedApp(
         if (id <= 0L || !app.securePreferences.firstRunSetupDone) return@LaunchedEffect
         navigateHome()
     }
+    LaunchedEffect(openCheckIn) {
+        if (!openCheckIn || !app.securePreferences.firstRunSetupDone) return@LaunchedEffect
+        navController.navigate(Route.Habits.path) { launchSingleTop = true }
+    }
 
     fun navigateRepeat(txId: Long, amount: String = "") {
         if (!app.repeatCoordinator.isFeatureEnabled()) {
@@ -933,6 +948,9 @@ private fun AuthenticatedApp(
                     openReceiptId = null
                     activity.intent?.removeExtra(MainActivity.EXTRA_OPEN_RECEIPT_ID)
                 },
+                onOpenHabits = {
+                    navController.navigate(Route.Habits.path) { launchSingleTop = true }
+                },
                 onRepeatTransaction = { id -> navigateRepeat(id) },
                 onOpenSend = { attemptPayment { showSendSheet() } },
                 onOpenSendTo = { contact -> attemptPayment { showSendSheet(preselect = contact) } },
@@ -955,6 +973,19 @@ private fun AuthenticatedApp(
                     navController.navigate(Route.Settings.path)
                 }
             )
+        }
+        composable(Route.Habits.path) {
+            BackHandler { navigateHome() }
+            AdaptiveFrame {
+                com.lipabill.app.ui.engage.HabitsScreen(
+                    startQuiz = openCheckIn,
+                    onQuizOpened = {
+                        openCheckIn = false
+                        activity.intent?.removeExtra(MainActivity.EXTRA_OPEN_CHECK_IN)
+                    },
+                    onBack = { navigateHome() }
+                )
+            }
         }
         composable(Route.Metrics.path) {
             BackHandler { navigateHome() }
@@ -1075,7 +1106,8 @@ private fun AuthenticatedApp(
                 SettingsScreen(
                     viewModel = settingsVm,
                     onBack = { navigateHome() },
-                    onRequestPhoneStatePermission = { requestPhoneStateWithGuide() }
+                    onRequestPhoneStatePermission = { requestPhoneStateWithGuide() },
+                    onCheckForUpdate = { AppUpdates.check(activity, manual = true) }
                 )
             }
         }
