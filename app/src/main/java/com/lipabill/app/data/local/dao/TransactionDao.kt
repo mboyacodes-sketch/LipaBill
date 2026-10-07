@@ -30,6 +30,20 @@ interface TransactionDao {
     )
     fun observeWallet(fuliza: Int): Flow<List<TransactionEntity>>
 
+    /**
+     * Rows whose timestamp falls in [startInclusive, endExclusive).
+     * Used by challenge and check-in windows. Backed by index_transactions_timestampMillis.
+     */
+    @Query(
+        """
+        SELECT id, counterpartyName, type, amount, timestampMillis
+        FROM transactions
+        WHERE timestampMillis >= :startInclusive AND timestampMillis < :endExclusive
+        ORDER BY timestampMillis ASC, id ASC
+        """
+    )
+    suspend fun listBetween(startInclusive: Long, endExclusive: Long): List<WindowTransactionRow>
+
     @Query("SELECT * FROM transactions WHERE id = :id LIMIT 1")
     fun observeById(id: Long): Flow<TransactionEntity?>
 
@@ -144,6 +158,14 @@ data class AmountRepairRow(
     val balance: Double?,
     val cost: Double?,
     val rawBody: String,
+    val timestampMillis: Long
+)
+
+data class WindowTransactionRow(
+    val id: Long,
+    val counterpartyName: String?,
+    val type: TransactionType,
+    val amount: Double?,
     val timestampMillis: Long
 )
 
