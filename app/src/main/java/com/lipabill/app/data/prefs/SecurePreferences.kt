@@ -113,6 +113,16 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_DARK_MODE, false)
         set(value) = prefs.edit().putBoolean(KEY_DARK_MODE, value).apply()
 
+    /** When true, the home screen can start a no-spend challenge. Default off. */
+    var challengesEnabled: Boolean
+        get() = prefs.getBoolean(KEY_CHALLENGES, false)
+        set(value) = prefs.edit().putBoolean(KEY_CHALLENGES, value).apply()
+
+    /** When true, the weekly spending check-in is offered. Default off. */
+    var weeklyCheckInEnabled: Boolean
+        get() = prefs.getBoolean(KEY_WEEKLY_CHECKIN, false)
+        set(value) = prefs.edit().putBoolean(KEY_WEEKLY_CHECKIN, value).apply()
+
     /** When true, the inbox has been read once without a date bound. Later scans stay incremental. */
     val inboxHistoryImported: Boolean
         get() = prefs.getBoolean(KEY_INBOX_HISTORY_IMPORTED, false)
@@ -138,6 +148,8 @@ class SecurePreferences(context: Context) {
         private const val KEY_CONFIRMATION_PURGE_DONE = "confirmation_filter_purge_v1"
         private const val KEY_AMOUNT_PARSE_REPAIR_DONE = "amount_parse_repair_v2"
         private const val KEY_DARK_MODE = "dark_mode"
+        private const val KEY_CHALLENGES = "challenges_enabled"
+        private const val KEY_WEEKLY_CHECKIN = "weekly_checkin_enabled"
         private const val KEY_INBOX_HISTORY_IMPORTED = "inbox_history_imported_v1"
         private const val KEY_INBOX_HIGH_WATER = "inbox_high_water_millis"
         private const val KEY_REPEAT_ENABLED = "repeat_feature_enabled"
