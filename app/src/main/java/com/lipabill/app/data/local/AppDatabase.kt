@@ -10,15 +10,20 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.security.crypto.EncryptedFile
 import androidx.security.crypto.MasterKey
+import com.lipabill.app.data.local.dao.ChallengeDao
 import com.lipabill.app.data.local.dao.MerchantDao
 import com.lipabill.app.data.local.dao.RepeatAttemptDao
 import com.lipabill.app.data.local.dao.TicketDao
 import com.lipabill.app.data.local.dao.TransactionDao
+import com.lipabill.app.data.local.entity.ChallengeAchievementEntity
+import com.lipabill.app.data.local.entity.ChallengeEntity
+import com.lipabill.app.data.local.entity.CheckInStreakEntity
 import com.lipabill.app.data.local.entity.MerchantEntity
 import com.lipabill.app.data.local.entity.PendingMerchantPaymentEntity
 import com.lipabill.app.data.local.entity.RepeatAttemptEntity
 import com.lipabill.app.data.local.entity.TicketEntity
 import com.lipabill.app.data.local.entity.TransactionEntity
+import com.lipabill.app.data.local.entity.WeeklyCheckInEntity
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import java.io.File
 import java.security.SecureRandom
@@ -29,9 +34,13 @@ import java.security.SecureRandom
         RepeatAttemptEntity::class,
         MerchantEntity::class,
         PendingMerchantPaymentEntity::class,
-        TicketEntity::class
+        TicketEntity::class,
+        ChallengeEntity::class,
+        ChallengeAchievementEntity::class,
+        WeeklyCheckInEntity::class,
+        CheckInStreakEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -40,6 +49,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun repeatAttemptDao(): RepeatAttemptDao
     abstract fun merchantDao(): MerchantDao
     abstract fun ticketDao(): TicketDao
+    abstract fun challengeDao(): ChallengeDao
 
     companion object {
         private const val TAG = "LipaBill.Db"
