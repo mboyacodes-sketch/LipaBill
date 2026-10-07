@@ -1,10 +1,14 @@
 package com.lipabill.app.ui.tickets
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ContentCut
 import androidx.compose.material.icons.outlined.Event
+import androidx.compose.material.icons.outlined.NearMe
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,6 +45,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -225,6 +232,7 @@ private fun EventCongratsHeader(isUsed: Boolean) {
 
 @Composable
 private fun EventDetailsBox(model: EventTicketUiModel) {
+    val context = LocalContext.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -262,7 +270,10 @@ private fun EventDetailsBox(model: EventTicketUiModel) {
                         EventField(
                             label = "Venue",
                             value = model.venue,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            onClick = model.mapsQuery?.let { query ->
+                                { openVenueInMaps(context, query) }
+                            }
                         )
                     }
                     if (!model.tier.isNullOrBlank()) {
@@ -395,10 +406,17 @@ private fun EventField(
     value: String,
     modifier: Modifier = Modifier,
     alignEnd: Boolean = false,
-    cover: Boolean = false
+    cover: Boolean = false,
+    onClick: (() -> Unit)? = null
 ) {
     Column(
-        modifier = modifier,
+        modifier = modifier.then(
+            if (onClick != null) {
+                Modifier.clickable(role = Role.Button, onClick = onClick)
+            } else {
+                Modifier
+            }
+        ),
         horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start
     ) {
         Text(
@@ -418,6 +436,47 @@ private fun EventField(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.recordingPrivacyCover(cover)
         )
+        if (onClick != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Outlined.NearMe,
+                    contentDescription = null,
+                    tint = Accent,
+                    modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Open in Maps",
+                    color = Accent,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+/** Search Google Maps for a venue. Falls back to the browser if Maps is not installed. */
+private fun openVenueInMaps(context: android.content.Context, venue: String) {
+    val query = venue.trim()
+    if (query.isEmpty()) return
+    val encoded = Uri.encode(query)
+    val maps = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$encoded")).apply {
+        setPackage("com.google.android.apps.maps")
+    }
+    try {
+        context.startActivity(maps)
+    } catch (_: ActivityNotFoundException) {
+        runCatching {
+            context.startActivity(
+                Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse("https://www.google.com/maps/search/?api=1&query=$encoded")
+                )
+            )
+        }
     }
 }
 
@@ -480,6 +539,8 @@ private fun EventTicketPerforation(showScissors: Boolean = true) {
 private data class EventTicketUiModel(
     val eventTitle: String,
     val venue: String?,
+    /** Full place name used for the Maps search. Routes (with →) are omitted. */
+    val mapsQuery: String?,
     val dateLabel: String?,
     val timeLabel: String?,
     val seat: String?,
@@ -542,6 +603,7 @@ private fun Ticket.toEventTicketUiModel(): EventTicketUiModel {
     return EventTicketUiModel(
         eventTitle = eventTitle.take(48),
         venue = venueLabel?.take(40),
+        mapsQuery = venueLabel?.trim()?.takeIf { it.isNotEmpty() },
         dateLabel = dateLabel?.take(48),
         timeLabel = timeLabel?.take(32),
         seat = seat?.take(8),
