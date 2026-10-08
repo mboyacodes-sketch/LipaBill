@@ -34,13 +34,15 @@ class LedgerNotifier(private val context: Context) {
         val (title, body) = ledgerNotificationCopy(tx)
         val open = PendingIntent.getActivity(
             context,
-            tx.id.toInt(),
+            tx.code.hashCode(),
             Intent(context, MainActivity::class.java).apply {
+                action = MainActivity.ACTION_OPEN_RECEIPT
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP
-                data = Uri.parse("lipabill://receipt/${tx.id}")
+                data = Uri.parse(receiptOpenData(tx.id, tx.code))
                 putExtra(MainActivity.EXTRA_OPEN_RECEIPT_ID, tx.id)
+                putExtra(MainActivity.EXTRA_OPEN_RECEIPT_CODE, tx.code)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
