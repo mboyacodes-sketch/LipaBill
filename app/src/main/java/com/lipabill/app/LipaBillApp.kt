@@ -22,6 +22,7 @@ import com.lipabill.app.data.sms.SmsInboxSyncWatcher
 import com.lipabill.app.engage.EngagementScheduler
 import com.lipabill.app.metrics.AppCrashReporting
 import com.lipabill.app.metrics.AppMetrics
+import com.lipabill.app.metrics.TicketImportResult
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import kotlinx.coroutines.CoroutineScope
@@ -88,7 +89,10 @@ class LipaBillApp : Application() {
             for (uri in uris) {
                 val outcome = runCatching { importOnePass(uri) }
                 outcome.onSuccess { id -> if (savedId == null) savedId = id }
-                    .onFailure { failure = it.message?.ifBlank { null } ?: "Couldn’t read that pass." }
+                    .onFailure { error ->
+                        AppMetrics.ticketImportFailure("share", error)
+                        failure = error.message?.ifBlank { null } ?: "Couldn’t read that pass."
+                    }
             }
             _openedPass.value = when (val id = savedId) {
                 null -> OpenedPass.Failed(failure ?: "Couldn’t read that pass.")
@@ -104,9 +108,17 @@ class LipaBillApp : Application() {
     private suspend fun importOnePass(uri: Uri): Long {
         val draft = TicketDocumentImporter.import(this, uri, TicketDocumentKind.PKPASS)
             .copy(expectsBoardingPass = false, hasBoardingPass = true)
-        return ticketRepository.addImportOrUpdateArt(draft)
-            ?: ticketRepository.existingTicketId(draft.barcodeValue, draft.orderId)
-            ?: throw IllegalArgumentException("That ticket is already saved.")
+        val inserted = ticketRepository.addImport(draft)
+        if (inserted != null) {
+            AppMetrics.ticketImport("share", TicketImportResult.Saved)
+            return inserted
+        }
+        val existing = ticketRepository.existingTicketId(draft.barcodeValue, draft.orderId)
+        if (existing != null) {
+            AppMetrics.ticketImport("share", TicketImportResult.Duplicate)
+            return existing
+        }
+        throw IllegalArgumentException("That ticket is already saved.")
     }
 
     override fun onCreate() {
@@ -185,7 +197,7 @@ class LipaBillApp : Application() {
                         merchantDirectory.restoreFromSnapshotIfEmpty()
                         repository.purgeNonConfirmationsIfNeeded()
                         repository.repairParsedAmountsIfNeeded()
-                        repository.rescanInbox()
+                        AppMetrics.ledgerRefresh(repository.rescanInbox())
                         repository.linkPhonesByName()
                         if (securePreferences.challengesEnabled) {
                             val end = engagement.evaluate()
@@ -194,8 +206,8 @@ class LipaBillApp : Application() {
                         if (securePreferences.challengesEnabled || securePreferences.weeklyCheckInEnabled) {
                             engagementScheduler.ensureScheduled()
                         }
-                    } catch (_: Exception) {
-                        // ignore — pull-to-refresh remains available
+                    } catch (error: Exception) {
+                        AppMetrics.ledgerRefreshFailed(error)
                     }
                 }
             }
