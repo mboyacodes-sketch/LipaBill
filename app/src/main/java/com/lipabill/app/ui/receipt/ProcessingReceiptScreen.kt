@@ -1,7 +1,6 @@
 package com.lipabill.app.ui.receipt
 
 import android.Manifest
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -77,7 +76,7 @@ import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.permissions.PermissionGuideDialog
 import com.lipabill.app.ui.permissions.PermissionLesson
 import com.lipabill.app.ui.permissions.PermissionPromptMemory
-import com.lipabill.app.ui.permissions.permissionGranted
+import com.lipabill.app.ui.permissions.shouldOfferPostNotifications
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.OnAccent
@@ -121,6 +120,12 @@ private val TagWarnFg = Color(0xFFB91C1C)
 private val HaloGrey = Color(0xFF9CA3AF)
 private val HaloMist = Color(0xFFD1D5DB)
 
+/** After the PIN is sent, leave if the confirmation SMS has not arrived. */
+private const val SMS_ARRIVAL_WAIT_MS = 10_000L
+
+/** Confirmed receipt stays up long enough to read, then returns home. */
+private const val CONFIRMED_HOLD_MS = 2_500L
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProcessingReceiptScreen(
@@ -137,10 +142,7 @@ fun ProcessingReceiptScreen(
         if (!granted) PermissionPromptMemory.notificationsDeclined = true
     }
     LaunchedEffect(Unit) {
-        val needed = Build.VERSION.SDK_INT >= 33 &&
-            !context.permissionGranted(Manifest.permission.POST_NOTIFICATIONS) &&
-            !PermissionPromptMemory.notificationsDeclined
-        askNotifications = needed
+        askNotifications = context.shouldOfferPostNotifications()
     }
     val snapshot = remember(auditId) { PendingPaymentReceipt.peek(auditId) }
     val attempt by app.repeatRepository.observeById(auditId)
@@ -207,6 +209,16 @@ fun ProcessingReceiptScreen(
         attempt?.outcome == RepeatOutcome.USER_CANCELLED &&
             attempt?.detail != "pending" -> ReceiptTag.CANCELLED
         else -> ReceiptTag.PROCESSING
+    }
+
+    LaunchedEffect(matchedTx?.id, attempt?.outcome) {
+        when {
+            matchedTx != null -> delay(CONFIRMED_HOLD_MS)
+            attempt?.outcome == RepeatOutcome.COMPLETED_TO_PIN -> delay(SMS_ARRIVAL_WAIT_MS)
+            else -> return@LaunchedEffect
+        }
+        PendingPaymentReceipt.clear()
+        onDone()
     }
 
     val headerTitle = when (tag) {
@@ -325,7 +337,9 @@ fun ProcessingReceiptScreen(
                     PaymentTicketPerforation()
                     PaymentStub(
                         tag = tag,
-                        confirmCode = confirmCode
+                        confirmCode = confirmCode,
+                        waitingOnSms = tag == ReceiptTag.PROCESSING &&
+                            attempt?.outcome == RepeatOutcome.COMPLETED_TO_PIN
                     )
                 }
 
@@ -564,7 +578,11 @@ private fun PaymentDetailsBox(
 }
 
 @Composable
-private fun PaymentStub(tag: ReceiptTag, confirmCode: String?) {
+private fun PaymentStub(
+    tag: ReceiptTag,
+    confirmCode: String?,
+    waitingOnSms: Boolean
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -620,7 +638,8 @@ private fun PaymentStub(tag: ReceiptTag, confirmCode: String?) {
             Text(
                 text = when {
                     !confirmCode.isNullOrBlank() -> "Ref $confirmCode"
-                    tag == ReceiptTag.PROCESSING -> "Stay on this screen for live update"
+                    waitingOnSms -> "Heading home if the SMS is slow"
+                    tag == ReceiptTag.PROCESSING -> "Updates when the SMS arrives"
                     else -> "Return home when ready"
                 },
                 color = Mute,
