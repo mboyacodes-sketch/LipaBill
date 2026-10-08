@@ -39,7 +39,7 @@ class SharedTicketInputTest {
     @Test
     fun an_oversized_pass_json_is_dropped() {
         val zip = zipWith("pass.json" to "x".repeat(MAX_PASS_JSON_BYTES + 1))
-        assertNull(readPkPassZip(ByteArrayInputStream(zip)).passJson)
+        assertNull(passJsonFromZip(ByteArrayInputStream(zip)))
     }
 
     private fun zipWith(file: Pair<String, String>): ByteArray {
