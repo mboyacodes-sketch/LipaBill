@@ -68,7 +68,13 @@ data class Ticket(
     val returnBoardingVenue: String? = null,
     val returnBoardingStartsAtMillis: Long? = null,
     val returnBoardingSeatOrTier: String? = null,
-    val returnBoardingNotes: String? = null
+    val returnBoardingNotes: String? = null,
+    /** Banner from a .pkpass (strip, else background, else thumbnail). Relative to app files. */
+    val passHeroPath: String? = null,
+    /** Organizer logo, or the pass icon when there is no logo. */
+    val passLogoPath: String? = null,
+    /** Artwork Apple Wallet draws above the barcode. */
+    val passFooterPath: String? = null
 ) {
     /** Booking time, else outbound boarding, else the return leg. */
     val occasionMillis: Long?
