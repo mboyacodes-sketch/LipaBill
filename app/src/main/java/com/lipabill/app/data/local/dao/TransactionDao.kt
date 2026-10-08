@@ -47,6 +47,12 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE id = :id LIMIT 1")
     fun observeById(id: Long): Flow<TransactionEntity?>
 
+    @Query("SELECT code FROM transactions WHERE id = :id LIMIT 1")
+    suspend fun codeForId(id: Long): String?
+
+    @Query("SELECT id FROM transactions WHERE code = :code LIMIT 1")
+    suspend fun idForCode(code: String): Long?
+
     @Query(
         """
         SELECT * FROM transactions
