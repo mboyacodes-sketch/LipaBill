@@ -75,15 +75,96 @@ object AppDatabaseMigrations {
         }
     }
 
-    /** Artwork paths copied out of a .pkpass. Null on tickets saved before this. */
-    val MIGRATION_9_10 = object : Migration(9, 10) {
+    /**
+     * Version 10 briefly stored pass artwork paths. Installs that never had those
+     * columns are already on the version 11 ticket table.
+     */
+    val MIGRATION_9_11 = object : Migration(9, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) = Unit
+    }
+
+    /** Drops the pass artwork columns added in version 10. Ticket rows stay. */
+    val MIGRATION_10_11 = object : Migration(10, 11) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE `tickets` ADD COLUMN `passHeroPath` TEXT")
-            db.execSQL("ALTER TABLE `tickets` ADD COLUMN `passLogoPath` TEXT")
-            db.execSQL("ALTER TABLE `tickets` ADD COLUMN `passFooterPath` TEXT")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `tickets_new` (
+                  `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                  `title` TEXT NOT NULL,
+                  `venue` TEXT,
+                  `startsAtMillis` INTEGER,
+                  `seatOrTier` TEXT,
+                  `barcodeFormat` TEXT NOT NULL,
+                  `barcodeValue` TEXT NOT NULL,
+                  `orderId` TEXT,
+                  `source` TEXT NOT NULL,
+                  `status` TEXT NOT NULL,
+                  `createdAtMillis` INTEGER NOT NULL,
+                  `notes` TEXT,
+                  `expectsBoardingPass` INTEGER NOT NULL,
+                  `hasBoardingPass` INTEGER NOT NULL,
+                  `boardingBarcodeValue` TEXT,
+                  `boardingBarcodeFormat` TEXT,
+                  `boardingTitle` TEXT,
+                  `boardingVenue` TEXT,
+                  `boardingStartsAtMillis` INTEGER,
+                  `boardingSeatOrTier` TEXT,
+                  `boardingNotes` TEXT,
+                  `hasReturnBoardingPass` INTEGER NOT NULL,
+                  `returnBoardingBarcodeValue` TEXT,
+                  `returnBoardingBarcodeFormat` TEXT,
+                  `returnBoardingTitle` TEXT,
+                  `returnBoardingVenue` TEXT,
+                  `returnBoardingStartsAtMillis` INTEGER,
+                  `returnBoardingSeatOrTier` TEXT,
+                  `returnBoardingNotes` TEXT
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                INSERT INTO `tickets_new` (
+                  `id`, `title`, `venue`, `startsAtMillis`, `seatOrTier`, `barcodeFormat`,
+                  `barcodeValue`, `orderId`, `source`, `status`, `createdAtMillis`, `notes`,
+                  `expectsBoardingPass`, `hasBoardingPass`, `boardingBarcodeValue`,
+                  `boardingBarcodeFormat`, `boardingTitle`, `boardingVenue`,
+                  `boardingStartsAtMillis`, `boardingSeatOrTier`, `boardingNotes`,
+                  `hasReturnBoardingPass`, `returnBoardingBarcodeValue`,
+                  `returnBoardingBarcodeFormat`, `returnBoardingTitle`, `returnBoardingVenue`,
+                  `returnBoardingStartsAtMillis`, `returnBoardingSeatOrTier`, `returnBoardingNotes`
+                )
+                SELECT
+                  `id`, `title`, `venue`, `startsAtMillis`, `seatOrTier`, `barcodeFormat`,
+                  `barcodeValue`, `orderId`, `source`, `status`, `createdAtMillis`, `notes`,
+                  `expectsBoardingPass`, `hasBoardingPass`, `boardingBarcodeValue`,
+                  `boardingBarcodeFormat`, `boardingTitle`, `boardingVenue`,
+                  `boardingStartsAtMillis`, `boardingSeatOrTier`, `boardingNotes`,
+                  `hasReturnBoardingPass`, `returnBoardingBarcodeValue`,
+                  `returnBoardingBarcodeFormat`, `returnBoardingTitle`, `returnBoardingVenue`,
+                  `returnBoardingStartsAtMillis`, `returnBoardingSeatOrTier`, `returnBoardingNotes`
+                FROM `tickets`
+                """.trimIndent()
+            )
+            db.execSQL("DROP TABLE `tickets`")
+            db.execSQL("ALTER TABLE `tickets_new` RENAME TO `tickets`")
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_tickets_barcodeValue` ON `tickets` (`barcodeValue`)"
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_tickets_boardingBarcodeValue` ON `tickets` (`boardingBarcodeValue`)"
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_tickets_returnBoardingBarcodeValue` ON `tickets` (`returnBoardingBarcodeValue`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_tickets_orderId` ON `tickets` (`orderId`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_tickets_createdAtMillis` ON `tickets` (`createdAtMillis`)"
+            )
         }
     }
 
     /** Migrations that preserve data. Add new ones at the end of this list. */
-    val ALL: Array<Migration> = arrayOf(MIGRATION_8_9, MIGRATION_9_10)
+    val ALL: Array<Migration> = arrayOf(MIGRATION_8_9, MIGRATION_9_11, MIGRATION_10_11)
 }
