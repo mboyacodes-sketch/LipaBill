@@ -4,19 +4,46 @@ import android.content.Context
 import android.os.Bundle
 import com.google.firebase.analytics.FirebaseAnalytics
 import com.lipabill.app.BuildConfig
+import com.lipabill.app.ussd.RepeatOutcome
+
+/** Closed values for [AppMetrics.permissionResult]. */
+enum class PermissionKind(val key: String) {
+    Sms("sms"),
+    Contacts("contacts"),
+    Camera("camera"),
+    Notifications("notifications"),
+    Phone("phone")
+}
+
+/** Closed values for [AppMetrics.setupBlocked]. */
+enum class SetupBlocker(val key: String) {
+    NoSms("no_sms"),
+    NoAccessibility("no_accessibility"),
+    NoSim("no_sim"),
+    NoSafaricom("no_safaricom"),
+    NotificationsOff("notifications_off")
+}
+
+/** Closed values for [AppMetrics.ticketImport]. */
+enum class TicketImportResult(val key: String) {
+    Saved("saved"),
+    Duplicate("duplicate"),
+    Unreadable("unreadable")
+}
 
 /**
- * Thin Firebase Analytics wrapper — **product metrics only**.
+ * Product metrics only. Params are the enums above — never SMS text, amounts,
+ * phone numbers, PINs, receipt codes, names, or ticket barcodes.
  *
- * Never log: SMS bodies, amounts, phone numbers, PINs, receipt codes,
- * counterparties, ticket barcodes, or raw USSD dialog text.
- *
- * No-ops when [BuildConfig.FIREBASE_ANALYTICS] is false (missing google-services.json).
+ * No-ops when [BuildConfig.FIREBASE_ANALYTICS] is false.
  */
 object AppMetrics {
 
     @Volatile
     private var analytics: FirebaseAnalytics? = null
+
+    @Volatile
+    private var activePaymentFlow: String? = null
 
     fun init(context: Context) {
         if (!BuildConfig.FIREBASE_ANALYTICS) return
@@ -51,12 +78,77 @@ object AppMetrics {
 
     fun checkInCompleted() = log("checkin_completed")
 
-    fun smsPermission(granted: Boolean) =
-        log("sms_permission", bundleOf("granted" to granted))
+    fun smsPermission(granted: Boolean) {
+        permissionResult(PermissionKind.Sms, granted)
+        if (!granted) setupBlocked(SetupBlocker.NoSms)
+    }
 
-    /** flow: send | pay | repeat — no amounts or recipients. */
-    fun paymentStarted(flow: String) =
-        log("payment_started", bundleOf("flow" to flow.take(16)))
+    fun contactsPermission(granted: Boolean) =
+        permissionResult(PermissionKind.Contacts, granted)
+
+    fun cameraPermission(granted: Boolean) =
+        permissionResult(PermissionKind.Camera, granted)
+
+    fun phonePermission(granted: Boolean) =
+        permissionResult(PermissionKind.Phone, granted)
+
+    fun notificationPermission(granted: Boolean) {
+        permissionResult(PermissionKind.Notifications, granted)
+        if (!granted) setupBlocked(SetupBlocker.NotificationsOff)
+    }
+
+    /** flow is send, pay, or repeat. */
+    fun paymentStarted(flow: String) {
+        val safe = flow.take(16)
+        activePaymentFlow = safe
+        log("payment_started", bundleOf("flow" to safe))
+    }
+
+    fun paymentFinished(outcome: RepeatOutcome) {
+        val result = paymentFinishResult(outcome) ?: return
+        log(
+            "payment_finished",
+            bundleOf(
+                "flow" to (activePaymentFlow ?: "unknown"),
+                "result" to result
+            )
+        )
+    }
+
+    fun setupBlocked(blocker: SetupBlocker) =
+        log("setup_blocked", bundleOf("blocker" to blocker.key))
+
+    fun permissionResult(kind: PermissionKind, granted: Boolean) =
+        log("permission_result", bundleOf("kind" to kind.key, "granted" to granted))
+
+    /** [source] is pkpass, pdf, share, or camera. */
+    fun ticketImport(source: String, result: TicketImportResult, error: Throwable? = null) {
+        log("ticket_import", bundleOf("source" to source.take(16), "result" to result.key))
+        if (result == TicketImportResult.Unreadable && error != null) {
+            AppCrashReporting.recordCaught(error)
+        }
+    }
+
+    fun ticketImportFailure(source: String, error: Throwable) {
+        val duplicate = error is IllegalArgumentException &&
+            error.message.orEmpty().let { it.contains("already saved") || it.contains("already used") }
+        ticketImport(
+            source,
+            if (duplicate) TicketImportResult.Duplicate else TicketImportResult.Unreadable,
+            error
+        )
+    }
+
+    /** Manual scans pass [includeUnchanged]. Background scans report new rows only. */
+    fun ledgerRefresh(inserted: Int, includeUnchanged: Boolean = false) {
+        if (inserted <= 0 && !includeUnchanged) return
+        log("ledger_refresh", bundleOf("result" to ledgerRefreshResult(inserted)))
+    }
+
+    fun ledgerRefreshFailed(error: Throwable? = null) {
+        log("ledger_refresh", bundleOf("result" to "error"))
+        if (error != null && error !is SecurityException) AppCrashReporting.recordCaught(error)
+    }
 
     fun paymentAborted(flow: String, reason: String) =
         log(
@@ -92,3 +184,14 @@ object AppMetrics {
             }
         }
 }
+
+internal fun paymentFinishResult(outcome: RepeatOutcome): String? = when (outcome) {
+    RepeatOutcome.COMPLETED_TO_PIN -> "completed"
+    RepeatOutcome.USER_CANCELLED -> "cancelled"
+    RepeatOutcome.ABORTED_MISMATCH -> "wrong_menu"
+    RepeatOutcome.ABORTED_ERROR, RepeatOutcome.AUTH_FAILED -> "failed"
+    RepeatOutcome.MANUAL_COPY -> null
+}
+
+internal fun ledgerRefreshResult(inserted: Int): String =
+    if (inserted > 0) "added" else "unchanged"
