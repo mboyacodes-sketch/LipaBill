@@ -69,10 +69,12 @@ import com.lipabill.app.ui.permissions.FirstRunSetupScreen
 import com.lipabill.app.ui.permissions.PaymentAccessDialog
 import com.lipabill.app.ui.permissions.PaymentAccessNeed
 import com.lipabill.app.ui.permissions.PermissionGuideDialog
-import com.lipabill.app.ui.permissions.PermissionPromptMemory
 import com.lipabill.app.ui.permissions.permissionGranted
 import com.lipabill.app.ui.permissions.shouldOfferPostNotifications
 import com.lipabill.app.ui.permissions.missingPaymentAccess
+import com.lipabill.app.ui.permissions.onNotificationPermission
+import com.lipabill.app.ui.permissions.onNotificationsDismissed
+import com.lipabill.app.ui.permissions.toBlocker
 import com.lipabill.app.ui.permissions.PermissionLesson
 import com.lipabill.app.ui.permissions.SmsPermissionScreen
 import com.lipabill.app.ui.permissions.phoneLessonFor
@@ -92,6 +94,7 @@ import com.lipabill.app.ui.tickets.TicketsScreen
 import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
 import com.lipabill.app.device.HandheldDeviceGate
 import com.lipabill.app.metrics.AppMetrics
+import com.lipabill.app.metrics.SetupBlocker
 import com.lipabill.app.region.KenyaRegionGate
 import com.lipabill.app.ui.device.UnsupportedDeviceScreen
 import com.lipabill.app.ussd.AccessibilityHelper
@@ -380,7 +383,7 @@ private fun AuthenticatedApp(
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (!granted) PermissionPromptMemory.notificationsDeclined = true
+        onNotificationPermission(granted)
     }
     var permanentlyDenied by remember { mutableStateOf(false) }
     var pendingDialTxId by remember { mutableStateOf<Long?>(null) }
@@ -485,9 +488,11 @@ private fun AuthenticatedApp(
     }
 
     fun openPaymentOrExplain(open: () -> Unit) {
-        if (context.missingPaymentAccess().isEmpty()) {
+        val missing = context.missingPaymentAccess()
+        if (missing.isEmpty()) {
             open()
         } else {
+            missing.first().toBlocker()?.let(AppMetrics::setupBlocked)
             pendingPaymentOpen = open
             paymentAccessPrompt = true
         }
@@ -496,9 +501,15 @@ private fun AuthenticatedApp(
     val callPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
+        val askedCall = result.containsKey(Manifest.permission.CALL_PHONE)
+        val askedState = result.containsKey(Manifest.permission.READ_PHONE_STATE)
         val callOk = result[Manifest.permission.CALL_PHONE] == true
         val stateOk = result[Manifest.permission.READ_PHONE_STATE] == true ||
             hasPhoneStatePermission()
+        if (askedCall || askedState) {
+            val granted = (!askedCall || callOk) && (!askedState || result[Manifest.permission.READ_PHONE_STATE] == true)
+            AppMetrics.phonePermission(granted)
+        }
         phoneStateRefreshKey++
         if (paymentAccessPrompt) {
             finishPaymentAccessIfReady()
@@ -521,7 +532,8 @@ private fun AuthenticatedApp(
 
     val phoneStatePermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) {
+    ) { granted ->
+        AppMetrics.phonePermission(granted)
         phoneStateRefreshKey++
         if (paymentAccessPrompt) finishPaymentAccessIfReady()
     }
@@ -867,10 +879,18 @@ private fun AuthenticatedApp(
                         "Payment automation is off — enable it in Profile",
                         Toast.LENGTH_LONG
                     ).show()
-                !accessibilityEnabled -> openPaymentAccessibilitySettings()
-                needsPhoneState -> requestPhoneStateWithGuide()
-                needsSimSetup() ->
+                !accessibilityEnabled -> {
+                    AppMetrics.setupBlocked(SetupBlocker.NoAccessibility)
+                    openPaymentAccessibilitySettings()
+                }
+                needsPhoneState -> {
+                    AppMetrics.setupBlocked(SetupBlocker.NoSim)
+                    requestPhoneStateWithGuide()
+                }
+                needsSimSetup() -> {
+                    AppMetrics.setupBlocked(SetupBlocker.NoSim)
                     navController.navigate(Route.Settings.path)
+                }
                 else -> dial()
             }
         }
@@ -1175,7 +1195,7 @@ private fun AuthenticatedApp(
             },
             onNotNow = {
                 offerNotifications = false
-                PermissionPromptMemory.notificationsDeclined = true
+                onNotificationsDismissed()
             }
         )
     }
