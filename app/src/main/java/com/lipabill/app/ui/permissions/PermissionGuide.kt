@@ -15,6 +15,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import com.lipabill.app.metrics.AppMetrics
+import com.lipabill.app.metrics.SetupBlocker
 
 /**
  * One permission lesson, shown only when that access is missing.
@@ -89,6 +91,16 @@ object PermissionPromptMemory {
     var notificationsDeclined: Boolean = false
 }
 
+fun onNotificationPermission(granted: Boolean) {
+    AppMetrics.notificationPermission(granted)
+    if (!granted) PermissionPromptMemory.notificationsDeclined = true
+}
+
+fun onNotificationsDismissed() {
+    PermissionPromptMemory.notificationsDeclined = true
+    AppMetrics.setupBlocked(SetupBlocker.NotificationsOff)
+}
+
 /** Notification access is asked when alerts become useful, not when Home first opens. */
 fun Context.shouldOfferPostNotifications(): Boolean =
     Build.VERSION.SDK_INT >= 33 &&
@@ -125,6 +137,7 @@ fun rememberContactsAccessOffer(onGranted: () -> Unit): (focused: Boolean) -> Un
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
+        AppMetrics.contactsPermission(granted)
         if (granted) onGranted() else PermissionPromptMemory.contactsDeclined = true
     }
     if (show) {
