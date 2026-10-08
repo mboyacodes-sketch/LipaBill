@@ -51,6 +51,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.lipabill.app.ui.components.BalanceAmountRow
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
+import com.lipabill.app.ui.util.SecureKeyboardWindow
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.OnPastel
@@ -665,6 +666,7 @@ fun AmountKeypad(
     actionEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    SecureKeyboardWindow()
     // Calculator-style grid: digits left, ops on the right.
     val rows = listOf(
         listOf(
@@ -695,6 +697,7 @@ fun AmountKeypad(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .recordingPrivacyCover()
             .clip(RoundedCornerShape(20.dp))
             .background(SheetCanvas)
             .padding(Space.block),
