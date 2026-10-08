@@ -82,6 +82,7 @@ import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.repository.SendContact
+import com.lipabill.app.data.sms.ReceiptOpenRequest
 import com.lipabill.app.ui.adapt.LocalWindowForm
 import com.lipabill.app.ui.permissions.rememberPaymentAccessNeeds
 import com.lipabill.app.ui.adapt.WindowWidth
@@ -122,6 +123,8 @@ import com.lipabill.app.viewmodel.EngagementViewModel
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import com.lipabill.app.viewmodel.WalletAccount
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
@@ -168,7 +171,7 @@ private object HomeMock {
 fun TransactionListScreen(
     viewModel: TransactionListViewModel,
     modifier: Modifier = Modifier,
-    openReceiptId: Long? = null,
+    openReceipt: ReceiptOpenRequest? = null,
     onReceiptOpened: () -> Unit = {},
     onRepeatTransaction: (Long) -> Unit = {},
     onSend: () -> Unit = {},
@@ -190,10 +193,17 @@ fun TransactionListScreen(
     val engageVm: EngagementViewModel = viewModel()
     val engage by engageVm.uiState.collectAsStateWithLifecycle()
     var receiptTxId by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(openReceiptId) {
-        val id = openReceiptId ?: return@LaunchedEffect
-        if (id <= 0L) return@LaunchedEffect
-        receiptTxId = id
+    LaunchedEffect(openReceipt?.id, openReceipt?.code) {
+        val request = openReceipt ?: return@LaunchedEffect
+        val resolved = viewModel.resolveReceiptId(request.id, request.code)
+        if (resolved == null) {
+            onReceiptOpened()
+            return@LaunchedEffect
+        }
+        receiptTxId = resolved
+        // Wait until the row is on screen before forgetting the notification request.
+        // Clearing earlier lets a home navigation recreate this screen with nothing to open.
+        viewModel.observeTransaction(resolved).filterNotNull().first()
         onReceiptOpened()
     }
     val paymentsReady = rememberPaymentAccessNeeds().isEmpty()
