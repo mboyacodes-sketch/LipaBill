@@ -93,6 +93,19 @@ class TransactionRepository(
             CounterpartyNameLinker.enrich(tx, phoneDirectory(wide))
         }.flowOn(Dispatchers.Default)
 
+    /**
+     * Notification taps prefer the stored row id, then the M-Pesa confirmation code
+     * when that id is missing or belongs to a different payment.
+     */
+    suspend fun resolveReceiptId(id: Long?, code: String?): Long? = withContext(Dispatchers.IO) {
+        if (id != null && id > 0L) {
+            val stored = dao.codeForId(id)
+            if (stored != null && (code.isNullOrBlank() || stored == code)) return@withContext id
+        }
+        val trimmed = code?.trim().orEmpty()
+        if (trimmed.isNotEmpty()) dao.idForCode(trimmed) else null
+    }
+
     suspend fun upsert(tx: MpesaTransaction): Boolean = withContext(Dispatchers.IO) {
         // Skip non-confirmation SMS (promos, PIN notices, etc.)
         if (tx.rawBody.isNotBlank() && !MpesaSmsFilter.isTransactionConfirmation(tx.rawBody)) {
