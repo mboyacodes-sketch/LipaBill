@@ -75,7 +75,8 @@ import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.permissions.PermissionGuideDialog
 import com.lipabill.app.ui.permissions.PermissionLesson
-import com.lipabill.app.ui.permissions.PermissionPromptMemory
+import com.lipabill.app.ui.permissions.onNotificationPermission
+import com.lipabill.app.ui.permissions.onNotificationsDismissed
 import com.lipabill.app.ui.permissions.shouldOfferPostNotifications
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
@@ -139,7 +140,7 @@ fun ProcessingReceiptScreen(
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (!granted) PermissionPromptMemory.notificationsDeclined = true
+        onNotificationPermission(granted)
     }
     LaunchedEffect(Unit) {
         askNotifications = context.shouldOfferPostNotifications()
@@ -379,7 +380,7 @@ fun ProcessingReceiptScreen(
             },
             onNotNow = {
                 askNotifications = false
-                PermissionPromptMemory.notificationsDeclined = true
+                onNotificationsDismissed()
             }
         )
     }
