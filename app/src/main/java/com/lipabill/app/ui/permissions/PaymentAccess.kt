@@ -21,6 +21,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.lipabill.app.metrics.AppMetrics
+import com.lipabill.app.metrics.SetupBlocker
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ussd.AccessibilityHelper
 
@@ -41,6 +43,12 @@ enum class PaymentAccessNeed(val line: String, val actionLabel: String) {
         line = "Accessibility — fill the M-Pesa screens for that payment",
         actionLabel = "Turn on Accessibility"
     )
+}
+
+fun PaymentAccessNeed.toBlocker(): SetupBlocker? = when (this) {
+    PaymentAccessNeed.Accessibility -> SetupBlocker.NoAccessibility
+    PaymentAccessNeed.PhoneState -> SetupBlocker.NoSim
+    PaymentAccessNeed.Phone -> null
 }
 
 fun Context.missingPaymentAccess(): List<PaymentAccessNeed> = buildList {
@@ -86,13 +94,20 @@ fun rememberPaymentAccess(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+    val onPhonePermission: (Boolean) -> Unit = { granted ->
+        AppMetrics.phonePermission(granted)
+        refresh()
+    }
     val phoneLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { refresh() }
+        ActivityResultContracts.RequestPermission(),
+        onPhonePermission
+    )
     val simLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { refresh() }
+        ActivityResultContracts.RequestPermission(),
+        onPhonePermission
+    )
     val allow: (PaymentAccessNeed) -> Unit = { need ->
+        need.toBlocker()?.let(AppMetrics::setupBlocked)
         when (need) {
             PaymentAccessNeed.Phone -> phoneLauncher.launch(Manifest.permission.CALL_PHONE)
             PaymentAccessNeed.PhoneState ->
