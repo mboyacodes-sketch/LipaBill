@@ -5,16 +5,14 @@ import android.net.Uri
 import com.lipabill.app.data.model.TicketBarcodeFormat
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedInputStream
 import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
-import java.util.zip.ZipInputStream
 
 /**
  * Parsed Apple Wallet pass (.pkpass = ZIP with pass.json).
- * Signature/manifest are ignored — we only need the scannable barcode + labels.
+ * Signature/manifest are ignored — we keep the barcode, labels, and pass artwork.
  */
 data class ParsedPkPass(
     val title: String,
@@ -24,7 +22,8 @@ data class ParsedPkPass(
     val barcodeValue: String,
     val barcodeFormat: TicketBarcodeFormat,
     val orderId: String?,
-    val notes: String?
+    val notes: String?,
+    val images: PkPassImages = PkPassImages()
 )
 
 object PkPassParser {
@@ -57,31 +56,13 @@ object PkPassParser {
     }
 
     fun parse(input: InputStream): ParsedPkPass {
-        val passJson = readPassJson(input)
+        val zip = readPkPassZip(input)
+        val passJson = zip.passJson
             ?: throw IllegalArgumentException("Not a valid .pkpass (missing pass.json)")
-        return mapPassJson(JSONObject(passJson))
+        return mapPassJson(JSONObject(passJson), zip.images)
     }
 
-    private fun readPassJson(input: InputStream): String? {
-        ZipInputStream(BufferedInputStream(input)).use { zip ->
-            var entry = zip.nextEntry
-            while (entry != null) {
-                val name = entry.name.replace('\\', '/')
-                val base = name.substringAfterLast('/')
-                if (!entry.isDirectory &&
-                    base.equals("pass.json", ignoreCase = true) &&
-                    !name.contains("__MACOSX")
-                ) {
-                    return zip.readBytes().toString(Charsets.UTF_8)
-                }
-                zip.closeEntry()
-                entry = zip.nextEntry
-            }
-        }
-        return null
-    }
-
-    private fun mapPassJson(root: JSONObject): ParsedPkPass {
+    private fun mapPassJson(root: JSONObject, images: PkPassImages): ParsedPkPass {
         val barcode = pickBarcode(root)
             ?: throw IllegalArgumentException("This pass has no barcode to scan at the gate")
 
@@ -126,7 +107,8 @@ object PkPassParser {
             barcodeValue = barcode.message,
             barcodeFormat = barcode.format,
             orderId = serial,
-            notes = notes
+            notes = notes,
+            images = images
         )
     }
 
