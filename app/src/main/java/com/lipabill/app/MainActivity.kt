@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
@@ -53,7 +52,9 @@ import androidx.navigation.navArgument
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.lipabill.app.auth.AuthUiState
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.data.sms.ReceiptOpenRequest
 import com.lipabill.app.data.sms.hasMpesaSmsPermission
+import com.lipabill.app.data.sms.receiptOpenRequestFrom
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.data.tickets.PkPassIntents
 import com.lipabill.app.ui.analytics.MetricsScreen
@@ -63,12 +64,14 @@ import com.lipabill.app.ui.navigation.Route
 import com.lipabill.app.update.AppUpdates
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
 import com.lipabill.app.ui.permissions.AccessibilityToggleCoachDialog
+import com.lipabill.app.ui.permissions.HibernationExemptionPrompt
 import com.lipabill.app.ui.permissions.FirstRunSetupScreen
 import com.lipabill.app.ui.permissions.PaymentAccessDialog
 import com.lipabill.app.ui.permissions.PaymentAccessNeed
 import com.lipabill.app.ui.permissions.PermissionGuideDialog
 import com.lipabill.app.ui.permissions.PermissionPromptMemory
 import com.lipabill.app.ui.permissions.permissionGranted
+import com.lipabill.app.ui.permissions.shouldOfferPostNotifications
 import com.lipabill.app.ui.permissions.missingPaymentAccess
 import com.lipabill.app.ui.permissions.PermissionLesson
 import com.lipabill.app.ui.permissions.SmsPermissionScreen
@@ -137,6 +140,7 @@ class MainActivity : AppCompatActivity(),
             navigationBarStyle = barStyle
         )
         super.onCreate(savedInstanceState)
+        acceptReceiptIntent(intent)
         captureIncomingDocument(intent)
         val app = application as LipaBillApp
         setContent {
@@ -159,7 +163,51 @@ class MainActivity : AppCompatActivity(),
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // A new tap must open again, even if this payment was already shown.
+        deliveredReceiptKey = null
+        acceptReceiptIntent(intent)
         captureIncomingDocument(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // The task can come forward with the notification intent already on the activity.
+        acceptReceiptIntent(intent)
+    }
+
+    /**
+     * Receipt a notification asked to open. Held on the activity so the lock screen
+     * can come and go without dropping it.
+     */
+    var pendingReceipt by mutableStateOf<ReceiptOpenRequest?>(null)
+        private set
+
+    /** Stops a resume from opening the same receipt again after it has been shown. */
+    private var deliveredReceiptKey: String? = null
+
+    fun clearPendingReceipt() {
+        pendingReceipt?.let { deliveredReceiptKey = it.deliveryKey() }
+        pendingReceipt = null
+        val current = intent ?: return
+        current.removeExtra(EXTRA_OPEN_RECEIPT_ID)
+        current.removeExtra(EXTRA_OPEN_RECEIPT_CODE)
+        if (current.dataString?.startsWith("lipabill://receipt/") == true) {
+            current.data = null
+        }
+        if (current.action == ACTION_OPEN_RECEIPT) {
+            current.action = null
+        }
+    }
+
+    private fun acceptReceiptIntent(intent: Intent?) {
+        if (intent == null) return
+        val request = receiptOpenRequestFrom(
+            extraId = intent.getLongExtra(EXTRA_OPEN_RECEIPT_ID, 0L),
+            extraCode = intent.getStringExtra(EXTRA_OPEN_RECEIPT_CODE),
+            dataString = intent.dataString
+        ) ?: return
+        if (request.deliveryKey() == deliveredReceiptKey) return
+        pendingReceipt = request
     }
 
     /** Local copy of a pass opened from another app. Survives the lock screen. */
@@ -180,16 +228,13 @@ class MainActivity : AppCompatActivity(),
     }
 
     companion object {
+        const val ACTION_OPEN_RECEIPT = "com.lipabill.app.action.OPEN_RECEIPT"
         const val EXTRA_RETURN_TO_AMOUNT_AFTER_PIN_CANCEL =
             "com.lipabill.app.RETURN_TO_AMOUNT_AFTER_PIN_CANCEL"
         const val EXTRA_OPEN_RECEIPT_ID = "com.lipabill.app.OPEN_RECEIPT_ID"
+        const val EXTRA_OPEN_RECEIPT_CODE = "com.lipabill.app.OPEN_RECEIPT_CODE"
         const val EXTRA_OPEN_CHECK_IN = "com.lipabill.app.OPEN_CHECK_IN"
     }
-}
-
-private fun receiptIdOf(intent: Intent?): Long? {
-    val id = intent?.getLongExtra(MainActivity.EXTRA_OPEN_RECEIPT_ID, 0L) ?: return null
-    return id.takeIf { it > 0L }
 }
 
 @Composable
@@ -281,7 +326,7 @@ private fun AuthenticatedApp(
             ) == true
         )
     }
-    var openReceiptId by remember { mutableStateOf(receiptIdOf(activity.intent)) }
+    val openReceipt = host.pendingReceipt
     var openCheckIn by remember {
         mutableStateOf(activity.intent?.getBooleanExtra(MainActivity.EXTRA_OPEN_CHECK_IN, false) == true)
     }
@@ -299,7 +344,6 @@ private fun AuthenticatedApp(
             ) {
                 returnToAmountAfterPinCancel = true
             }
-            receiptIdOf(intent)?.let { openReceiptId = it }
             if (intent.getBooleanExtra(MainActivity.EXTRA_OPEN_CHECK_IN, false)) {
                 openCheckIn = true
             }
@@ -332,6 +376,12 @@ private fun AuthenticatedApp(
             PackageManager.PERMISSION_GRANTED
 
     var smsGranted by remember { mutableStateOf(hasSmsPermission()) }
+    var offerNotifications by remember { mutableStateOf(false) }
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) PermissionPromptMemory.notificationsDeclined = true
+    }
     var permanentlyDenied by remember { mutableStateOf(false) }
     var pendingDialTxId by remember { mutableStateOf<Long?>(null) }
     var phoneStateRefreshKey by remember { mutableStateOf(0) }
@@ -349,6 +399,9 @@ private fun AuthenticatedApp(
         val granted = result.values.all { it }
         smsGranted = granted
         AppMetrics.smsPermission(granted)
+        if (granted && context.shouldOfferPostNotifications()) {
+            offerNotifications = true
+        }
         if (!granted) {
             permanentlyDenied =
                 supportsRestrictedSmsUnlock ||
@@ -643,11 +696,6 @@ private fun AuthenticatedApp(
         }
     }
 
-    LaunchedEffect(openReceiptId) {
-        val id = openReceiptId ?: return@LaunchedEffect
-        if (id <= 0L || !app.securePreferences.firstRunSetupDone) return@LaunchedEffect
-        navigateHome()
-    }
     LaunchedEffect(openCheckIn) {
         if (!openCheckIn || !app.securePreferences.firstRunSetupDone) return@LaunchedEffect
         navController.navigate(Route.Habits.path) { launchSingleTop = true }
@@ -718,6 +766,17 @@ private fun AuthenticatedApp(
         listOf(SendMoneyBottomSheetFragment.TAG, PayMoneyBottomSheetFragment.TAG).forEach { tag ->
             (activity.supportFragmentManager.findFragmentByTag(tag) as? BottomSheetDialogFragment)
                 ?.dismissAllowingStateLoss()
+        }
+    }
+
+    LaunchedEffect(openReceipt) {
+        if (openReceipt == null || !app.securePreferences.firstRunSetupDone) return@LaunchedEffect
+        dismissMoneySheets()
+        // Already on Home: navigating again recreates the list and drops the receipt.
+        if (navController.currentDestination?.route == Route.List.path) return@LaunchedEffect
+        val popped = navController.popBackStack(Route.List.path, inclusive = false)
+        if (!popped) {
+            navController.navigate(Route.List.path) { launchSingleTop = true }
         }
     }
 
@@ -917,37 +976,10 @@ private fun AuthenticatedApp(
             }
         }
         composable(Route.List.path) {
-            var askNotifications by remember { mutableStateOf(false) }
-            val notificationLauncher = rememberLauncherForActivityResult(
-                ActivityResultContracts.RequestPermission()
-            ) { granted ->
-                if (!granted) PermissionPromptMemory.notificationsDeclined = true
-            }
-            LaunchedEffect(Unit) {
-                askNotifications = Build.VERSION.SDK_INT >= 33 &&
-                    !context.permissionGranted(Manifest.permission.POST_NOTIFICATIONS) &&
-                    !PermissionPromptMemory.notificationsDeclined
-            }
-            if (askNotifications) {
-                PermissionGuideDialog(
-                    lesson = PermissionLesson.Notifications,
-                    onAllow = {
-                        askNotifications = false
-                        notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    },
-                    onNotNow = {
-                        askNotifications = false
-                        PermissionPromptMemory.notificationsDeclined = true
-                    }
-                )
-            }
             MainShellScreen(
                 listVm = listVm,
-                openReceiptId = openReceiptId,
-                onReceiptOpened = {
-                    openReceiptId = null
-                    activity.intent?.removeExtra(MainActivity.EXTRA_OPEN_RECEIPT_ID)
-                },
+                openReceipt = openReceipt,
+                onReceiptOpened = { host.clearPendingReceipt() },
                 onOpenHabits = {
                     navController.navigate(Route.Habits.path) { launchSingleTop = true }
                 },
@@ -1125,5 +1157,26 @@ private fun AuthenticatedApp(
                 )
             }
         }
+    }
+
+    val onHome = navBackStackEntry?.destination?.route == Route.List.path
+    HibernationExemptionPrompt(
+        enabled = onHome &&
+            !offerNotifications &&
+            !showAccessibilityReenable &&
+            !paymentAccessPrompt
+    )
+    if (offerNotifications) {
+        PermissionGuideDialog(
+            lesson = PermissionLesson.Notifications,
+            onAllow = {
+                offerNotifications = false
+                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            },
+            onNotNow = {
+                offerNotifications = false
+                PermissionPromptMemory.notificationsDeclined = true
+            }
+        )
     }
 }
