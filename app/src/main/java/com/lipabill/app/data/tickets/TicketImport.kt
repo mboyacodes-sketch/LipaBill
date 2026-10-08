@@ -18,18 +18,10 @@ data class TicketImport(
     val source: TicketSource,
     /** Flight / SGR — show booking + boarding UI. False for one-shot event tickets. */
     val expectsBoardingPass: Boolean = false,
-    val hasBoardingPass: Boolean = true,
-    val passHeroPath: String? = null,
-    val passLogoPath: String? = null,
-    val passFooterPath: String? = null
-) {
-    fun hasPassArt(): Boolean =
-        !passHeroPath.isNullOrBlank() ||
-            !passLogoPath.isNullOrBlank() ||
-            !passFooterPath.isNullOrBlank()
-}
+    val hasBoardingPass: Boolean = true
+)
 
-fun ParsedPkPass.toTicketImport(art: SavedPassArt = SavedPassArt()): TicketImport = TicketImport(
+fun ParsedPkPass.toTicketImport(): TicketImport = TicketImport(
     title = title,
     venue = venue,
     startsAtMillis = startsAtMillis,
@@ -40,8 +32,5 @@ fun ParsedPkPass.toTicketImport(art: SavedPassArt = SavedPassArt()): TicketImpor
     notes = notes,
     source = TicketSource.PKPASS,
     expectsBoardingPass = false,
-    hasBoardingPass = true,
-    passHeroPath = art.hero,
-    passLogoPath = art.logo,
-    passFooterPath = art.footer
+    hasBoardingPass = true
 )
