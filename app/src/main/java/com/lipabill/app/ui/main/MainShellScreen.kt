@@ -8,6 +8,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.lipabill.app.data.repository.SendContact
+import com.lipabill.app.data.sms.ReceiptOpenRequest
 import com.lipabill.app.ui.list.TransactionListScreen
 import com.lipabill.app.ui.util.imeAndNavBarsPadding
 import com.lipabill.app.viewmodel.TransactionListViewModel
@@ -15,7 +16,7 @@ import com.lipabill.app.viewmodel.TransactionListViewModel
 @Composable
 fun MainShellScreen(
     listVm: TransactionListViewModel,
-    openReceiptId: Long? = null,
+    openReceipt: ReceiptOpenRequest? = null,
     onReceiptOpened: () -> Unit = {},
     onRepeatTransaction: (Long) -> Unit = {},
     onOpenSend: () -> Unit = {},
@@ -33,7 +34,7 @@ fun MainShellScreen(
     ) { innerPadding ->
         TransactionListScreen(
             viewModel = listVm,
-            openReceiptId = openReceiptId,
+            openReceipt = openReceipt,
             onReceiptOpened = onReceiptOpened,
             onRepeatTransaction = onRepeatTransaction,
             modifier = Modifier
