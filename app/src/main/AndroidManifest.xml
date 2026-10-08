@@ -15,6 +15,10 @@
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Metrics only: do not declare the advertising ID even if Firebase merges it. -->
+    <uses-permission
+        android:name="com.google.android.gms.permission.AD_ID"
+        tools:node="remove" />
     <!-- Firebase Analytics (metrics only) + ML Kit model delivery -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -90,6 +94,12 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Payment alerts open the matching receipt, including when the app is already running. -->
+            <intent-filter>
+                <action android:name="com.lipabill.app.action.OPEN_RECEIPT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="lipabill" android:host="receipt" />
+            </intent-filter>
             <!-- Open Apple Wallet .pkpass from Files / email / share sheet.
                  Senders often use octet-stream or zip, and content URIs hide the
                  filename, so match both the Apple type and .pkpass paths. -->
@@ -105,18 +115,19 @@
                 <data android:mimeType="application/zip" />
                 <data android:mimeType="application/x-zip-compressed" />
             </intent-filter>
+            <!-- content:// only. file:// is not a grant, and a wildcard mime would
+                 offer LipaBill for every share whose path happens to contain .pkpass. -->
             <intent-filter tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="content" />
-                <data android:scheme="file" />
                 <data android:mimeType="application/vnd.apple.pkpass" />
                 <data android:mimeType="application/vnd.apple.pkpasses" />
                 <data android:mimeType="application/octet-stream" />
                 <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip" />
                 <data android:mimeType="application/x-zip-compressed" />
-                <data android:mimeType="*/*" />
                 <!-- pathPattern stops at dots, so repeat for names that already contain some. -->
                 <data android:pathPattern=".*\\.pkpass" />
                 <data android:pathPattern=".*\\..*\\.pkpass" />
@@ -135,6 +146,19 @@
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/pdf" />
+            </intent-filter>
+        </activity>
+
+        <!-- Privacy Dashboard and the app's permission page open this to explain access. -->
+        <activity
+            android:name=".ui.permissions.DataAccessRationaleActivity"
+            android:exported="true"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE"
+            android:theme="@style/Theme.LipaBill">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE_FOR_PERIOD" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 
