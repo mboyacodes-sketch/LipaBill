@@ -8,6 +8,7 @@ import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.ussd.UssdMenuBuilder
+import com.lipabill.app.ui.util.appendAmountKey as applyAmountKey
 import com.lipabill.app.ui.util.formatKesMoney
 import com.lipabill.app.ui.util.sanitizeAmountInput
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,7 +59,7 @@ class RepeatTransactionViewModel(
                     amountSeeded = true
                     val seed = when {
                         !initialAmount.isNullOrBlank() -> sanitizeAmountInput(initialAmount)
-                        else -> "0"
+                        else -> ""
                     }
                     refresh(tx, amountInput = seed)
                 } else {
@@ -74,6 +75,14 @@ class RepeatTransactionViewModel(
 
     fun setAmountInput(value: String) {
         refresh(_ui.value.transaction ?: transaction.value, sanitizeAmountInput(value))
+    }
+
+    fun appendAmountKey(key: String) {
+        setAmountInput(applyAmountKey(_ui.value.amountInput, key))
+    }
+
+    fun deleteAmountKey() {
+        setAmountInput(_ui.value.amountInput.dropLast(1))
     }
 
     private fun refresh(tx: MpesaTransaction?, amountInput: String) {
