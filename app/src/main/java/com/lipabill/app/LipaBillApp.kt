@@ -103,9 +103,9 @@ class LipaBillApp : Application() {
 
     private suspend fun importOnePass(uri: Uri): Long {
         val draft = TicketDocumentImporter.import(this, uri, TicketDocumentKind.PKPASS)
-        return ticketRepository.addImport(
-            draft.copy(expectsBoardingPass = false, hasBoardingPass = true)
-        ) ?: ticketRepository.existingTicketId(draft.barcodeValue, draft.orderId)
+            .copy(expectsBoardingPass = false, hasBoardingPass = true)
+        return ticketRepository.addImportOrUpdateArt(draft)
+            ?: ticketRepository.existingTicketId(draft.barcodeValue, draft.orderId)
             ?: throw IllegalArgumentException("That ticket is already saved.")
     }
 
