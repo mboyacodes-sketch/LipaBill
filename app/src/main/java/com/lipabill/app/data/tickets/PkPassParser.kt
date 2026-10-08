@@ -5,14 +5,18 @@ import android.net.Uri
 import com.lipabill.app.data.model.TicketBarcodeFormat
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import java.util.zip.ZipInputStream
 
 /**
  * Parsed Apple Wallet pass (.pkpass = ZIP with pass.json).
- * Signature/manifest are ignored — we keep the barcode, labels, and pass artwork.
+ * Signature/manifest are ignored — we only need the scannable barcode + labels.
  */
 data class ParsedPkPass(
     val title: String,
@@ -22,8 +26,7 @@ data class ParsedPkPass(
     val barcodeValue: String,
     val barcodeFormat: TicketBarcodeFormat,
     val orderId: String?,
-    val notes: String?,
-    val images: PkPassImages = PkPassImages()
+    val notes: String?
 )
 
 object PkPassParser {
@@ -56,13 +59,12 @@ object PkPassParser {
     }
 
     fun parse(input: InputStream): ParsedPkPass {
-        val zip = readPkPassZip(input)
-        val passJson = zip.passJson
+        val passJson = passJsonFromZip(input)
             ?: throw IllegalArgumentException("Not a valid .pkpass (missing pass.json)")
-        return mapPassJson(JSONObject(passJson), zip.images)
+        return mapPassJson(JSONObject(passJson))
     }
 
-    private fun mapPassJson(root: JSONObject, images: PkPassImages): ParsedPkPass {
+    private fun mapPassJson(root: JSONObject): ParsedPkPass {
         val barcode = pickBarcode(root)
             ?: throw IllegalArgumentException("This pass has no barcode to scan at the gate")
 
@@ -107,8 +109,7 @@ object PkPassParser {
             barcodeValue = barcode.message,
             barcodeFormat = barcode.format,
             orderId = serial,
-            notes = notes,
-            images = images
+            notes = notes
         )
     }
 
@@ -366,4 +367,50 @@ object PkPassParser {
         }
         return null
     }
+}
+
+internal const val MAX_PASS_JSON_BYTES = 256 * 1024
+internal const val MAX_SHARED_TICKET_BYTES = 20 * 1024 * 1024
+
+/** Copies until [maxBytes]. Returns false when the stream is empty or larger than the cap. */
+internal fun copyAtMost(input: InputStream, output: OutputStream, maxBytes: Int): Boolean {
+    if (maxBytes <= 0) return false
+    val buf = ByteArray(8192)
+    var total = 0
+    while (true) {
+        val n = input.read(buf)
+        if (n < 0) break
+        if (n > maxBytes - total) return false
+        output.write(buf, 0, n)
+        total += n
+    }
+    return total > 0
+}
+
+internal fun readAtMost(input: InputStream, maxBytes: Int): ByteArray? {
+    val out = ByteArrayOutputStream()
+    return if (copyAtMost(input, out, maxBytes)) out.toByteArray() else null
+}
+
+/** pass.json from a .pkpass, or null when it is missing or larger than the cap. */
+internal fun passJsonFromZip(input: InputStream): String? {
+    var passJson: String? = null
+    ZipInputStream(BufferedInputStream(input)).use { zip ->
+        var entry = zip.nextEntry
+        while (entry != null && passJson == null) {
+            val name = entry.name.replace('\\', '/')
+            val base = name.substringAfterLast('/')
+            val safeName = !name.startsWith("/") && !name.split('/').contains("..")
+            if (!entry.isDirectory &&
+                safeName &&
+                base.equals("pass.json", ignoreCase = true) &&
+                !name.contains("__MACOSX")
+            ) {
+                passJson = readAtMost(zip, MAX_PASS_JSON_BYTES)?.toString(Charsets.UTF_8)
+            }
+            zip.closeEntry()
+            entry = zip.nextEntry
+        }
+    }
+    return passJson
 }
