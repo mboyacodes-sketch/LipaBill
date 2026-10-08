@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lipabill.app.LipaBillApp
+import com.lipabill.app.metrics.AppMetrics
+import com.lipabill.app.metrics.SetupBlocker
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.ui.util.displayLabel
@@ -278,15 +280,24 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             isScanning.value = true
             scanMessage.value = null
             try {
+                if (!hasSmsPermission.value) {
+                    AppMetrics.setupBlocked(SetupBlocker.NoSms)
+                    AppMetrics.ledgerRefreshFailed()
+                    scanMessage.value = "SMS permission required to scan inbox"
+                    return@launch
+                }
                 val inserted = repo.rescanInbox()
+                AppMetrics.ledgerRefresh(inserted, includeUnchanged = true)
                 scanMessage.value = if (inserted == 0) {
                     "Inbox scanned — no new M-Pesa messages"
                 } else {
                     "Added $inserted new transaction${if (inserted == 1) "" else "s"}"
                 }
-            } catch (_: SecurityException) {
+            } catch (error: SecurityException) {
+                AppMetrics.ledgerRefreshFailed(error)
                 scanMessage.value = "SMS permission required to scan inbox"
             } catch (e: Exception) {
+                AppMetrics.ledgerRefreshFailed(e)
                 scanMessage.value = "Scan failed: ${e.message ?: "unknown error"}"
             } finally {
                 isScanning.value = false
