@@ -47,7 +47,10 @@ class TicketRepository(
         boardingVenue: String? = null,
         boardingStartsAtMillis: Long? = null,
         boardingSeatOrTier: String? = null,
-        boardingNotes: String? = null
+        boardingNotes: String? = null,
+        passHeroPath: String? = null,
+        passLogoPath: String? = null,
+        passFooterPath: String? = null
     ): Long? = withContext(Dispatchers.IO) {
         val payload = barcodeValue.trim()
         if (payload.isEmpty()) return@withContext null
@@ -82,7 +85,10 @@ class TicketRepository(
                 boardingVenue = boardingVenue?.trim()?.ifBlank { null },
                 boardingStartsAtMillis = boardingStartsAtMillis,
                 boardingSeatOrTier = boardingSeatOrTier?.trim()?.ifBlank { null },
-                boardingNotes = boardingNotes?.trim()?.ifBlank { null }
+                boardingNotes = boardingNotes?.trim()?.ifBlank { null },
+                passHeroPath = passHeroPath?.trim()?.ifBlank { null },
+                passLogoPath = passLogoPath?.trim()?.ifBlank { null },
+                passFooterPath = passFooterPath?.trim()?.ifBlank { null }
             )
         )
     }
@@ -99,57 +105,53 @@ class TicketRepository(
     }
 
     suspend fun addImport(draft: TicketImport): Long? {
-        return if (draft.expectsBoardingPass && !draft.hasBoardingPass) {
-            add(
-                title = draft.title,
-                barcodeValue = draft.barcodeValue,
-                source = draft.source,
-                venue = draft.venue,
-                startsAtMillis = draft.startsAtMillis,
-                seatOrTier = draft.seatOrTier,
-                orderId = draft.orderId,
-                notes = draft.notes,
-                barcodeFormat = draft.barcodeFormat,
-                expectsBoardingPass = true,
-                hasBoardingPass = false
-            )
-        } else if (draft.expectsBoardingPass && draft.hasBoardingPass) {
-            add(
-                title = draft.title,
-                barcodeValue = draft.barcodeValue,
-                source = draft.source,
-                venue = draft.venue,
-                startsAtMillis = draft.startsAtMillis,
-                seatOrTier = draft.seatOrTier,
-                orderId = draft.orderId,
-                notes = draft.notes,
-                barcodeFormat = draft.barcodeFormat,
-                expectsBoardingPass = true,
-                hasBoardingPass = true,
-                boardingBarcodeValue = draft.barcodeValue,
-                boardingBarcodeFormat = draft.barcodeFormat,
-                boardingTitle = draft.title,
-                boardingVenue = draft.venue,
-                boardingStartsAtMillis = draft.startsAtMillis,
-                boardingSeatOrTier = draft.seatOrTier,
-                boardingNotes = draft.notes
-            )
-        } else {
-            add(
-                title = draft.title,
-                barcodeValue = draft.barcodeValue,
-                source = draft.source,
-                venue = draft.venue,
-                startsAtMillis = draft.startsAtMillis,
-                seatOrTier = draft.seatOrTier,
-                orderId = draft.orderId,
-                notes = draft.notes,
-                barcodeFormat = draft.barcodeFormat,
-                expectsBoardingPass = false,
-                hasBoardingPass = true
-            )
-        }
+        val boarding = draft.expectsBoardingPass && draft.hasBoardingPass
+        return add(
+            title = draft.title,
+            barcodeValue = draft.barcodeValue,
+            source = draft.source,
+            venue = draft.venue,
+            startsAtMillis = draft.startsAtMillis,
+            seatOrTier = draft.seatOrTier,
+            orderId = draft.orderId,
+            notes = draft.notes,
+            barcodeFormat = draft.barcodeFormat,
+            expectsBoardingPass = draft.expectsBoardingPass,
+            // Event passes are one barcode. Travel bookings keep the draft's boarding flag.
+            hasBoardingPass = if (draft.expectsBoardingPass) draft.hasBoardingPass else true,
+            boardingBarcodeValue = draft.barcodeValue.takeIf { boarding },
+            boardingBarcodeFormat = draft.barcodeFormat.takeIf { boarding },
+            boardingTitle = draft.title.takeIf { boarding },
+            boardingVenue = draft.venue.takeIf { boarding },
+            boardingStartsAtMillis = draft.startsAtMillis.takeIf { boarding },
+            boardingSeatOrTier = draft.seatOrTier.takeIf { boarding },
+            boardingNotes = draft.notes.takeIf { boarding },
+            passHeroPath = draft.passHeroPath,
+            passLogoPath = draft.passLogoPath,
+            passFooterPath = draft.passFooterPath
+        )
     }
+
+    /**
+     * Inserts [draft]. If that barcode is already saved and this import has pass
+     * artwork, stores the artwork on the existing ticket and returns its id.
+     */
+    suspend fun addImportOrUpdateArt(draft: TicketImport): Long? {
+        addImport(draft)?.let { return it }
+        if (!draft.hasPassArt()) return null
+        val existing = existingTicketId(draft.barcodeValue, draft.orderId) ?: return null
+        setPassArtwork(existing, draft.passHeroPath, draft.passLogoPath, draft.passFooterPath)
+        return existing
+    }
+
+    private suspend fun setPassArtwork(id: Long, hero: String?, logo: String?, footer: String?) =
+        withContext(Dispatchers.IO) {
+            val heroPath = hero?.trim()?.ifBlank { null }
+            val logoPath = logo?.trim()?.ifBlank { null }
+            val footerPath = footer?.trim()?.ifBlank { null }
+            if (heroPath == null && logoPath == null && footerPath == null) return@withContext
+            dao.updatePassArtwork(id, heroPath, logoPath, footerPath)
+        }
 
     /**
      * Attaches boarding-pass details without changing booking confirmation fields.
@@ -191,7 +193,7 @@ class TicketRepository(
                 returnBoardingNotes = draft.notes?.trim()?.ifBlank { null }
             )
         }
-        dao.update(updated)
+        dao.update(updated.fillingPassArt(draft))
         ticketId
     }
 
@@ -253,6 +255,13 @@ class TicketRepository(
         if (codes.size >= 2) return codes.all { h.contains(it) }
         return needle.length >= 4 && h.contains(needle.uppercase(Locale.US).take(24))
     }
+
+    /** Keeps artwork already on the ticket. Fills a slot only when it is empty. */
+    private fun TicketEntity.fillingPassArt(draft: TicketImport) = copy(
+        passHeroPath = passHeroPath ?: draft.passHeroPath?.trim()?.ifBlank { null },
+        passLogoPath = passLogoPath ?: draft.passLogoPath?.trim()?.ifBlank { null },
+        passFooterPath = passFooterPath ?: draft.passFooterPath?.trim()?.ifBlank { null }
+    )
 
     private fun mirroredRouteMatch(draft: String, outboundVenue: String?): Boolean {
         if (outboundVenue.isNullOrBlank() || !outboundVenue.contains("→")) return false
