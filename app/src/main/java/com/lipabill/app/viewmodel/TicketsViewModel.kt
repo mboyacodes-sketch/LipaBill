@@ -11,7 +11,6 @@ import com.lipabill.app.data.model.TicketBarcodeFormat
 import com.lipabill.app.data.model.TicketSource
 import com.lipabill.app.data.model.TicketStatus
 import com.lipabill.app.data.tickets.BookingConfirmationParser
-import com.lipabill.app.data.tickets.PassArtworkStore
 import com.lipabill.app.data.tickets.TicketDocumentImporter
 import com.lipabill.app.data.tickets.TicketDocumentKind
 import com.lipabill.app.data.tickets.TicketImport
@@ -63,9 +62,9 @@ class TicketsViewModel(
         val draft = TicketDocumentImporter.import(context, uri, kind)
         when (kind) {
             TicketDocumentKind.EVENT, TicketDocumentKind.PKPASS -> {
-                val event = draft.copy(expectsBoardingPass = false, hasBoardingPass = true)
-                app.ticketRepository.addImportOrUpdateArt(event)
-                    ?: throw IllegalArgumentException("That ticket is already saved.")
+                app.ticketRepository.addImport(
+                    draft.copy(expectsBoardingPass = false, hasBoardingPass = true)
+                ) ?: throw IllegalArgumentException("That ticket is already saved.")
             }
             TicketDocumentKind.FLIGHT_E_TICKET -> {
                 app.ticketRepository.addImport(
@@ -73,7 +72,7 @@ class TicketsViewModel(
                 ) ?: throw IllegalArgumentException("That booking is already saved.")
             }
             else -> {
-                app.ticketRepository.addImportOrUpdateArt(draft)
+                app.ticketRepository.addImport(draft)
                     ?: throw IllegalArgumentException("That ticket is already saved.")
             }
         }
@@ -144,10 +143,9 @@ class TicketDetailViewModel(
         }
 
     fun delete(onDone: () -> Unit) {
-        val current = ticket.value ?: return
+        val id = ticket.value?.id ?: return
         viewModelScope.launch {
-            app.ticketRepository.delete(current.id)
-            PassArtworkStore.delete(app, current)
+            app.ticketRepository.delete(id)
             onDone()
         }
     }
