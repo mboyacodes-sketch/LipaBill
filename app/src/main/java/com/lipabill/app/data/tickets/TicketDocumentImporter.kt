@@ -23,20 +23,14 @@ object TicketDocumentImporter {
         return when {
             isPkPass && kind == TicketDocumentKind.FLIGHT_E_TICKET -> {
                 // Wallet pass on the flight path = boarding already in hand
-                importPkPass(context, uri).copy(
+                PkPassParser.parse(context, uri).toTicketImport().copy(
                     expectsBoardingPass = true,
                     hasBoardingPass = true
                 )
             }
-            isPkPass -> importPkPass(context, uri)
+            isPkPass -> PkPassParser.parse(context, uri).toTicketImport()
             else -> ETicketAnalyzer.analyze(context, uri, kind)
         }
-    }
-
-    private fun importPkPass(context: Context, uri: Uri): TicketImport {
-        val parsed = PkPassParser.parse(context, uri)
-        val art = PassArtworkStore.save(context, parsed.barcodeValue, parsed.images)
-        return parsed.toTicketImport(art)
     }
 
     private fun displayName(context: Context, uri: Uri): String? {
