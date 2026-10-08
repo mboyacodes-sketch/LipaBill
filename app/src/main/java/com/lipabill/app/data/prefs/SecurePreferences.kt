@@ -93,6 +93,14 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_RECORDING_PRIVACY, false)
         set(value) = prefs.edit().putBoolean(KEY_RECORDING_PRIVACY, value).apply()
 
+    /**
+     * True after the one-time explanation of Android's unused-app hibernation.
+     * SMS and phone access can be reset if the app sits unused for months.
+     */
+    var hibernationPromptShown: Boolean
+        get() = prefs.getBoolean(KEY_HIBERNATION_PROMPT_SHOWN, false)
+        set(value) = prefs.edit().putBoolean(KEY_HIBERNATION_PROMPT_SHOWN, value).apply()
+
     /** When true, first-run permissions + SIM setup has been completed. */
     var firstRunSetupDone: Boolean
         get() = prefs.getBoolean(KEY_FIRST_RUN_SETUP_DONE, false)
@@ -160,6 +168,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_ALWAYS_SHOW_BALANCE = "always_show_balance"
         private const val KEY_FAVOURITES_SECTION = "favourites_section_enabled"
         private const val KEY_RECORDING_PRIVACY = "recording_privacy"
+        private const val KEY_HIBERNATION_PROMPT_SHOWN = "hibernation_prompt_shown"
         private const val KEY_FIRST_RUN_SETUP_DONE = "first_run_setup_done"
         const val DEFAULT_TIMEOUT_MS = 2 * 60 * 1000L
         const val DEFAULT_FONT_SIZE_SP = 12
