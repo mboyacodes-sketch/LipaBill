@@ -258,9 +258,15 @@ object ETicketAnalyzer {
     private fun renderPdf(context: Context, uri: Uri): List<Bitmap> {
         val cache = File(context.cacheDir, "eticket-${System.currentTimeMillis()}.pdf")
         try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(cache).use { output -> input.copyTo(output) }
-            } ?: return emptyList()
+            val wrote = context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(cache).use { output ->
+                    copyAtMost(input, output, MAX_SHARED_TICKET_BYTES)
+                }
+            } ?: false
+            if (!wrote) {
+                cache.delete()
+                return emptyList()
+            }
 
             ParcelFileDescriptor.open(cache, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
                 PdfRenderer(pfd).use { renderer ->
