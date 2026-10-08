@@ -157,6 +157,9 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     fun observeTransaction(id: Long): kotlinx.coroutines.flow.Flow<MpesaTransaction?> =
         repo.observeById(id)
 
+    suspend fun resolveReceiptId(id: Long?, code: String?): Long? =
+        repo.resolveReceiptId(id, code)
+
     private val isScanning = MutableStateFlow(false)
     private val scanMessage = MutableStateFlow<String?>(null)
     private val hasSmsPermission = MutableStateFlow(false)
