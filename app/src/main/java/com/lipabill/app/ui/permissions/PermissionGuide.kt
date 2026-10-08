@@ -3,6 +3,7 @@ package com.lipabill.app.ui.permissions
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.AlertDialog
@@ -63,6 +64,12 @@ enum class PermissionLesson(
             "and if a payment you started needs you. " +
             "You can use the app without alerts.",
         allowLabel = "Allow notifications"
+    ),
+    Hibernation(
+        title = "Keep M-Pesa access",
+        body = "If you do not open LipaBill for a few months, Android can remove SMS and phone access. " +
+            "History updates and payments then wait until you allow them again.",
+        allowLabel = "Keep access"
     )
 }
 
@@ -81,6 +88,12 @@ object PermissionPromptMemory {
     var contactsDeclined: Boolean = false
     var notificationsDeclined: Boolean = false
 }
+
+/** Notification access is asked when alerts become useful, not when Home first opens. */
+fun Context.shouldOfferPostNotifications(): Boolean =
+    Build.VERSION.SDK_INT >= 33 &&
+        !permissionGranted(Manifest.permission.POST_NOTIFICATIONS) &&
+        !PermissionPromptMemory.notificationsDeclined
 
 @Composable
 fun PermissionGuideDialog(
