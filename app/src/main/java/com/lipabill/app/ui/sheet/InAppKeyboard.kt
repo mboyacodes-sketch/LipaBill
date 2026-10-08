@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
@@ -44,6 +45,7 @@ import com.lipabill.app.ui.theme.LocalAppType
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.util.SecureKeyboardWindow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -112,6 +114,7 @@ fun InAppKeyboard(
     /** Start on the digit pad (useful for phone / account fields). */
     startOnDigits: Boolean = false
 ) {
+    SecureKeyboardWindow()
     var digitsMode by remember(startOnDigits) { mutableStateOf(startOnDigits) }
     var shift by remember { mutableStateOf(false) }
     val rows = if (digitsMode) DigitRows else LetterRows
@@ -122,6 +125,7 @@ fun InAppKeyboard(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .recordingPrivacyCover()
             .clip(RoundedCornerShape(20.dp))
             .background(KeyboardCanvas)
             .padding(Space.gap),
