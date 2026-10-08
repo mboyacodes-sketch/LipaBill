@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Telephony
 import com.lipabill.app.data.repository.TransactionRepository
+import com.lipabill.app.metrics.AppMetrics
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -66,11 +67,9 @@ class SmsInboxSyncWatcher(
         debounceJob = scope.launch {
             if (!immediate) delay(DEBOUNCE_MS)
             try {
-                repository.rescanInbox()
-            } catch (_: SecurityException) {
-                // permission revoked mid-flight
-            } catch (_: Exception) {
-                // keep quiet — Room list will refresh on next successful sync
+                AppMetrics.ledgerRefresh(repository.rescanInbox())
+            } catch (error: Exception) {
+                AppMetrics.ledgerRefreshFailed(error)
             }
         }
     }
