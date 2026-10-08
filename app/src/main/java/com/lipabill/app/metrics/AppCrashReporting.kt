@@ -3,6 +3,7 @@ package com.lipabill.app.metrics
 import android.content.Context
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.lipabill.app.BuildConfig
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Firebase Crashlytics — crash / non-fatal reporting only.
@@ -28,5 +29,14 @@ object AppCrashReporting {
             // Never setUserId to a phone number or SIM id.
             crashlytics = cx
         }
+    }
+
+    /** Type and stack only. The original message can contain a phone or amount. */
+    fun recordCaught(error: Throwable) {
+        if (error is CancellationException) return
+        val cx = crashlytics ?: return
+        val safe = Exception(error.javaClass.simpleName.ifBlank { "Exception" })
+        safe.stackTrace = error.stackTrace.take(16).toTypedArray()
+        runCatching { cx.recordException(safe) }
     }
 }
