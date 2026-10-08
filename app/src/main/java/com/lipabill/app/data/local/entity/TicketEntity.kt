@@ -47,7 +47,10 @@ data class TicketEntity(
     val returnBoardingVenue: String? = null,
     val returnBoardingStartsAtMillis: Long? = null,
     val returnBoardingSeatOrTier: String? = null,
-    val returnBoardingNotes: String? = null
+    val returnBoardingNotes: String? = null,
+    val passHeroPath: String? = null,
+    val passLogoPath: String? = null,
+    val passFooterPath: String? = null
 ) {
     fun toDomain(): Ticket = Ticket(
         id = id,
@@ -78,7 +81,10 @@ data class TicketEntity(
         returnBoardingVenue = returnBoardingVenue,
         returnBoardingStartsAtMillis = returnBoardingStartsAtMillis,
         returnBoardingSeatOrTier = returnBoardingSeatOrTier,
-        returnBoardingNotes = returnBoardingNotes
+        returnBoardingNotes = returnBoardingNotes,
+        passHeroPath = passHeroPath,
+        passLogoPath = passLogoPath,
+        passFooterPath = passFooterPath
     )
 
     companion object {
@@ -111,7 +117,10 @@ data class TicketEntity(
             returnBoardingVenue = ticket.returnBoardingVenue,
             returnBoardingStartsAtMillis = ticket.returnBoardingStartsAtMillis,
             returnBoardingSeatOrTier = ticket.returnBoardingSeatOrTier,
-            returnBoardingNotes = ticket.returnBoardingNotes
+            returnBoardingNotes = ticket.returnBoardingNotes,
+            passHeroPath = ticket.passHeroPath,
+            passLogoPath = ticket.passLogoPath,
+            passFooterPath = ticket.passFooterPath
         )
     }
 }
