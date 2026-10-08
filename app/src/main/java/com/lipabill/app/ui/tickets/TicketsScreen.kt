@@ -709,16 +709,28 @@ private fun TicketListRow(
             .padding(horizontal = Space.card, vertical = Space.cardH),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            if (ticket.isConfirmationOnly) Icons.Outlined.Sms else Icons.Outlined.ConfirmationNumber,
-            contentDescription = null,
-            tint = if (used) Mute else Accent,
-            modifier = Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(if (used) Canvas else SoftBlue)
-                .padding(10.dp)
-        )
+        val art = rememberPassImage(ticket.passHeroPath ?: ticket.passLogoPath)
+        if (art != null) {
+            Image(
+                bitmap = art,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+            )
+        } else {
+            Icon(
+                if (ticket.isConfirmationOnly) Icons.Outlined.Sms else Icons.Outlined.ConfirmationNumber,
+                contentDescription = null,
+                tint = if (used) Mute else Accent,
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (used) Canvas else SoftBlue)
+                    .padding(10.dp)
+            )
+        }
         Spacer(modifier = Modifier.size(Space.block))
         Column(modifier = Modifier.weight(1f)) {
             Text(
