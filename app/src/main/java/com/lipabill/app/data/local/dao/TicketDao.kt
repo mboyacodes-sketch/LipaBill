@@ -64,6 +64,17 @@ interface TicketDao {
     @Query("UPDATE tickets SET startsAtMillis = :startsAtMillis WHERE id = :id")
     suspend fun updateStartsAt(id: Long, startsAtMillis: Long?)
 
+    @Query(
+        """
+        UPDATE tickets SET
+          passHeroPath = COALESCE(:hero, passHeroPath),
+          passLogoPath = COALESCE(:logo, passLogoPath),
+          passFooterPath = COALESCE(:footer, passFooterPath)
+        WHERE id = :id
+        """
+    )
+    suspend fun updatePassArtwork(id: Long, hero: String?, logo: String?, footer: String?)
+
     @Query("DELETE FROM tickets WHERE id = :id")
     suspend fun deleteById(id: Long)
 }
