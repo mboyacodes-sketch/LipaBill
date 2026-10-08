@@ -51,6 +51,10 @@ fun Fragment.themedComposeView(content: @Composable () -> Unit): View {
  */
 fun newExpandedBottomSheetDialog(context: Context, themeResId: Int): BottomSheetDialog {
     return object : BottomSheetDialog(context, themeResId) {
+        init {
+            secureMoneyWindow(window, context)
+        }
+
         override fun onStart() {
             super.onStart()
             expandForComposeContent()
@@ -65,7 +69,10 @@ fun newExpandedBottomSheetDialog(context: Context, themeResId: Int): BottomSheet
  */
 fun BottomSheetDialog.expandForComposeContent() {
     val dark = (context.applicationContext as? LipaBillApp)?.darkMode?.value == true
-    window?.let { enableSheetEdgeToEdge(it, dark) }
+    window?.let {
+        enableSheetEdgeToEdge(it, dark)
+        secureMoneyWindow(it, context)
+    }
     val sheet = findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
         ?: return
     sheet.setBackgroundResource(android.R.color.transparent)
@@ -86,6 +93,16 @@ fun BottomSheetDialog.expandForComposeContent() {
  * Dialogs are not a ComponentActivity, so they cannot call enableEdgeToEdge().
  * Light icons when the app is in dark mode.
  */
+private fun secureMoneyWindow(window: Window?, context: Context) {
+    if (window == null) return
+    val recording = (context.applicationContext as? LipaBillApp)?.recordingPrivacy?.value == true
+    if (recording) {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    } else {
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+}
+
 private fun enableSheetEdgeToEdge(window: Window, dark: Boolean) {
     WindowCompat.setDecorFitsSystemWindows(window, false)
     WindowCompat.getInsetsController(window, window.decorView).apply {
