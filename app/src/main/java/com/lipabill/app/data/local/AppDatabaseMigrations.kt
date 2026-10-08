@@ -75,6 +75,15 @@ object AppDatabaseMigrations {
         }
     }
 
+    /** Artwork paths copied out of a .pkpass. Null on tickets saved before this. */
+    val MIGRATION_9_10 = object : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `tickets` ADD COLUMN `passHeroPath` TEXT")
+            db.execSQL("ALTER TABLE `tickets` ADD COLUMN `passLogoPath` TEXT")
+            db.execSQL("ALTER TABLE `tickets` ADD COLUMN `passFooterPath` TEXT")
+        }
+    }
+
     /** Migrations that preserve data. Add new ones at the end of this list. */
-    val ALL: Array<Migration> = arrayOf(MIGRATION_8_9)
+    val ALL: Array<Migration> = arrayOf(MIGRATION_8_9, MIGRATION_9_10)
 }
