@@ -86,6 +86,8 @@ import com.lipabill.app.data.model.Ticket
 import com.lipabill.app.data.model.TicketBarcodeFormat
 import com.lipabill.app.data.model.TicketStatus
 import com.lipabill.app.OpenedPass
+import com.lipabill.app.metrics.AppMetrics
+import com.lipabill.app.metrics.TicketImportResult
 import com.lipabill.app.data.tickets.BookingConfirmationParser
 import com.lipabill.app.data.tickets.TicketDocumentKind
 import com.lipabill.app.ui.adapt.LocalWindowForm
@@ -150,20 +152,27 @@ fun TicketsScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var importing by remember { mutableStateOf(false) }
 
-    suspend fun importDocument(uri: Uri, kind: TicketDocumentKind = pendingDocumentKind) {
+    suspend fun importDocument(
+        uri: Uri,
+        kind: TicketDocumentKind = pendingDocumentKind,
+        source: String = ticketImportSource(kind)
+    ) {
         if (importing) return
         importing = true
         try {
             val id = viewModel.addFromDocument(context, uri, kind)
             if (id == null) {
+                AppMetrics.ticketImport(source, TicketImportResult.Duplicate)
                 error = "That ticket is already saved, or has no usable code."
             } else {
+                AppMetrics.ticketImport(source, TicketImportResult.Saved)
                 addMode = null
                 pendingDocumentKind = TicketDocumentKind.AUTO
                 onOpenTicket(id)
             }
         } catch (t: Throwable) {
             if (t is CancellationException) throw t
+            AppMetrics.ticketImportFailure(source, t)
             error = t.message?.takeIf { it.isNotBlank() }
                 ?: "Couldn’t read that ticket file."
         } finally {
@@ -198,7 +207,7 @@ fun TicketsScreen(
     LaunchedEffect(queuedPass) {
         val uri = queuedPass ?: return@LaunchedEffect
         onPendingPkPassConsumed()
-        importDocument(uri, TicketDocumentKind.AUTO)
+        importDocument(uri, TicketDocumentKind.AUTO, source = "share")
     }
     LaunchedEffect(openedPass) {
         when (val pass = openedPass) {
@@ -709,28 +718,16 @@ private fun TicketListRow(
             .padding(horizontal = Space.card, vertical = Space.cardH),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val art = rememberPassImage(ticket.passHeroPath ?: ticket.passLogoPath)
-        if (art != null) {
-            Image(
-                bitmap = art,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(12.dp))
-            )
-        } else {
-            Icon(
-                if (ticket.isConfirmationOnly) Icons.Outlined.Sms else Icons.Outlined.ConfirmationNumber,
-                contentDescription = null,
-                tint = if (used) Mute else Accent,
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (used) Canvas else SoftBlue)
-                    .padding(10.dp)
-            )
-        }
+        Icon(
+            if (ticket.isConfirmationOnly) Icons.Outlined.Sms else Icons.Outlined.ConfirmationNumber,
+            contentDescription = null,
+            tint = if (used) Mute else Accent,
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(if (used) Canvas else SoftBlue)
+                .padding(10.dp)
+        )
         Spacer(modifier = Modifier.size(Space.block))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -970,9 +967,14 @@ fun TicketDetailScreen(
         attaching = true
         try {
             val ok = viewModel.attachBoardingPass(context, uri, attachLeg)
+            AppMetrics.ticketImport(
+                "pdf",
+                if (ok) TicketImportResult.Saved else TicketImportResult.Duplicate
+            )
             if (!ok) error = "Couldn’t attach that boarding pass (duplicate QR or unreadable)."
         } catch (t: Throwable) {
             if (t is CancellationException) throw t
+            AppMetrics.ticketImportFailure("pdf", t)
             error = t.message?.takeIf { it.isNotBlank() }
                 ?: "Couldn’t read that boarding pass."
         } finally {
@@ -984,6 +986,7 @@ fun TicketDetailScreen(
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
+        AppMetrics.cameraPermission(granted)
         if (granted) {
             showAttachScanner = true
         } else {
@@ -1046,6 +1049,14 @@ fun TicketDetailScreen(
                     attaching = true
                     try {
                         val ok = viewModel.attachBoardingPassScan(contents, leg)
+                        AppMetrics.ticketImport(
+                            "camera",
+                            when {
+                                contents.isBlank() -> TicketImportResult.Unreadable
+                                ok -> TicketImportResult.Saved
+                                else -> TicketImportResult.Duplicate
+                            }
+                        )
                         if (!ok) error = "Couldn’t attach that code (already used elsewhere)."
                     } finally {
                         attaching = false
@@ -1752,6 +1763,9 @@ private fun pickEventDateTime(
         cal.get(Calendar.DAY_OF_MONTH)
     ).show()
 }
+
+private fun ticketImportSource(kind: TicketDocumentKind): String =
+    if (kind == TicketDocumentKind.PKPASS) "pkpass" else "pdf"
 
 private fun findActivity(context: Context): android.app.Activity? {
     var ctx = context
