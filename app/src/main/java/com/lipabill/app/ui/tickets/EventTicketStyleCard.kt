@@ -108,9 +108,6 @@ private fun EventTicketStyleCardPaper(
     isUsed: Boolean = false
 ) {
     val model = remember(ticket) { ticket.toEventTicketUiModel() }
-    val hero = rememberPassImage(ticket.passHeroPath)
-    val logo = rememberPassImage(ticket.passLogoPath)
-    val footer = rememberPassImage(ticket.passFooterPath)
 
     val tear = rememberTicketTear(
         used = isUsed,
@@ -141,17 +138,7 @@ private fun EventTicketStyleCardPaper(
                     .clip(topShape)
                     .background(CardWhite)
             ) {
-                if (hero != null) {
-                    Image(
-                        bitmap = hero,
-                        contentDescription = ticket.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(168.dp)
-                    )
-                }
-                EventCongratsHeader(isUsed = isUsed, logo = logo)
+                EventCongratsHeader(isUsed = isUsed)
                 Spacer(modifier = Modifier.height(12.dp))
                 EventDetailsBox(model = model)
                 if (onChangeDate != null && !isUsed) {
@@ -190,17 +177,6 @@ private fun EventTicketStyleCardPaper(
                 if (isUsed) {
                     EventTicketPerforation(showScissors = false)
                 }
-                if (footer != null) {
-                    Image(
-                        bitmap = footer,
-                        contentDescription = null,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .padding(horizontal = 20.dp, vertical = 8.dp)
-                    )
-                }
                 EventQrStub(qrBitmap = qrBitmap, model = model, isUsed = isUsed)
             }
         }
@@ -208,7 +184,7 @@ private fun EventTicketStyleCardPaper(
 }
 
 @Composable
-private fun EventCongratsHeader(isUsed: Boolean, logo: ImageBitmap?) {
+private fun EventCongratsHeader(isUsed: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -221,23 +197,12 @@ private fun EventCongratsHeader(isUsed: Boolean, logo: ImageBitmap?) {
                 .border(2.dp, if (isUsed) Mute else Accent, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            if (logo != null && !isUsed) {
-                Image(
-                    bitmap = logo,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Outlined.Check,
-                    contentDescription = null,
-                    tint = if (isUsed) Mute else Accent,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
+            Icon(
+                imageVector = Icons.Outlined.Check,
+                contentDescription = null,
+                tint = if (isUsed) Mute else Accent,
+                modifier = Modifier.size(26.dp)
+            )
         }
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
