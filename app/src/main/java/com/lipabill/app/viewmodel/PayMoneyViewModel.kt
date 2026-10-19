@@ -8,6 +8,7 @@ import com.lipabill.app.data.contacts.PhoneBookSearcher
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.parser.PaybillPasteParser
+import com.lipabill.app.data.parser.sanitizeAccountNumber
 import com.lipabill.app.data.repository.MerchantHit
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
@@ -182,10 +183,12 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    private val amountResume = AmountStepResume()
+
     /** Full reset when the sheet is dismissed. */
     fun resetSession() {
         clearMethod()
-        resumeOnAmountStep = false
+        amountResume.clear()
     }
 
     /**
@@ -246,18 +249,10 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
                 }
             }
         }
-        resumeOnAmountStep = true
+        amountResume.mark()
     }
 
-    /** True once after [restoreAmountEntry]; sheet should land on Amount. */
-    var resumeOnAmountStep: Boolean = false
-        private set
-
-    fun consumeResumeOnAmountStep(): Boolean {
-        val value = resumeOnAmountStep
-        resumeOnAmountStep = false
-        return value
-    }
+    fun consumeResumeOnAmountStep(): Boolean = amountResume.consume()
 
     fun setMerchantQuery(value: String) {
         merchantQuery.value = value
@@ -277,7 +272,11 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun selectMerchant(hit: MerchantHit) {
-        merchantQuery.value = hit.displayName
+        merchantQuery.value = if (hit.type == TransactionType.PAYBILL) {
+            hit.identifier
+        } else {
+            hit.displayName
+        }
         when (hit.type) {
             TransactionType.PAYBILL -> {
                 _ui.update {
@@ -304,7 +303,7 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
 
     fun setAccountNumber(value: String) {
         _ui.update {
-            it.copy(accountNumber = value.filter { ch -> ch.isLetterOrDigit() }.take(20))
+            it.copy(accountNumber = sanitizeAccountNumber(value))
         }
     }
 
@@ -327,7 +326,7 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
             )
         }
         if (amount.isNotBlank()) {
-            resumeOnAmountStep = true
+            amountResume.mark()
         }
         return true
     }
@@ -433,15 +432,16 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
         return coordinator.prepareSession(tx, amount)
     }
 
-    fun startDial(prepared: RepeatTransactionCoordinator.PreparedRepeat) {
+    fun startDial(prepared: RepeatTransactionCoordinator.PreparedRepeat): Boolean {
         val state = uiState.value
-        val status = dialStartedStatus(
+        val status = coordinator.startDialWithStatus(
+            prepared,
             app.securePreferences,
             state.selectedSubscriptionId,
             state.simLines
-        )
-        coordinator.startDialing(prepared, state.selectedSubscriptionId)
+        ) ?: return false
         _ui.update { it.copy(dialStarted = true, statusMessage = status) }
+        return true
     }
 
     fun confirmSummary(): Triple<String, String, String>? {

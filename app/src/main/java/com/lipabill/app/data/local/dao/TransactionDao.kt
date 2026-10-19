@@ -94,6 +94,25 @@ interface TransactionDao {
     @Query("SELECT id, amount, balance, cost, rawBody, timestampMillis FROM transactions")
     suspend fun getAllForAmountRepair(): List<AmountRepairRow>
 
+    @Query("SELECT id, type, counterpartyName, rawBody, timestampMillis FROM transactions")
+    suspend fun getAllForClassification(): List<ClassificationRepairRow>
+
+    @Query(
+        """
+        UPDATE transactions
+        SET type = :type,
+            counterpartyName = COALESCE(:name, counterpartyName),
+            counterpartyPhone = COALESCE(:phone, counterpartyPhone)
+        WHERE id = :id
+        """
+    )
+    suspend fun updateParty(
+        id: Long,
+        type: TransactionType,
+        name: String?,
+        phone: String?
+    ): Int
+
     @Query(
         """
         UPDATE transactions
@@ -149,6 +168,17 @@ interface TransactionDao {
         """
     )
     suspend fun updatePhoneIfMissing(id: Long, phone: String): Int
+
+    /** Newest M-PESA wallet balance. Fuliza outstanding is a separate ledger. */
+    @Query(
+        """
+        SELECT balance FROM transactions
+        WHERE type != 'FULIZA' AND balance IS NOT NULL
+        ORDER BY timestampMillis DESC
+        LIMIT 1
+        """
+    )
+    suspend fun latestMpesaBalance(): Double?
 }
 
 /** Lightweight projection for confirmation-body purge. */
@@ -156,6 +186,14 @@ data class TransactionPurgeRow(
     val id: Long,
     val code: String,
     val rawBody: String
+)
+
+data class ClassificationRepairRow(
+    val id: Long,
+    val type: TransactionType,
+    val counterpartyName: String?,
+    val rawBody: String,
+    val timestampMillis: Long
 )
 
 data class AmountRepairRow(

@@ -1,7 +1,5 @@
 package com.lipabill.app.ui.repeat
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.layout.Column
@@ -30,6 +28,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.util.copyPlainText
 import com.lipabill.app.ussd.UssdMenuBuilder
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
 
@@ -87,8 +86,7 @@ fun ManualRepeatScreen(
             Spacer(modifier = Modifier.height(Space.section))
             Button(
                 onClick = {
-                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("LipaBill repeat", details))
+                    context.copyPlainText("LipaBill repeat", details)
                     Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                     onCopied()
                 },

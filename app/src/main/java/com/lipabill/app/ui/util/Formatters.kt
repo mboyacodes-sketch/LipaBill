@@ -98,14 +98,9 @@ fun formatEventWhen(millis: Long): String {
     } else {
         ""
     }
-    val day = when (date) {
-        today -> "Today"
-        today.plusDays(1) -> "Tomorrow"
-        today.minusDays(1) -> "Yesterday"
-        else -> {
-            val pattern = if (date.year == today.year) "EEE, d MMM" else "EEE, d MMM yyyy"
-            date.format(DateTimeFormatter.ofPattern(pattern, Locale.UK))
-        }
+    val day = relativeDayLabel(date, today, includeTomorrow = true) { d ->
+        val pattern = if (d.year == today.year) "EEE, d MMM" else "EEE, d MMM yyyy"
+        d.format(DateTimeFormatter.ofPattern(pattern, Locale.UK))
     }
     return day + time
 }
@@ -117,12 +112,29 @@ fun formatActivityTime(millis: Long): String {
     val date = zoned.toLocalDate()
     val today = LocalDate.now(zone)
     val time = zoned.format(DateTimeFormatter.ofPattern("h:mm a", Locale.UK))
-    val day = when (date) {
-        today -> "Today"
-        today.minusDays(1) -> "Yesterday"
-        else -> date.format(DateTimeFormatter.ofPattern("d MMM", Locale.UK))
+    val day = relativeDayLabel(date, today, includeTomorrow = false) { d ->
+        d.format(DateTimeFormatter.ofPattern("d MMM", Locale.UK))
     }
     return "$day, $time"
+}
+
+private fun relativeDayLabel(
+    date: LocalDate,
+    today: LocalDate,
+    includeTomorrow: Boolean,
+    farFormat: (LocalDate) -> String
+): String = when {
+    date == today -> "Today"
+    includeTomorrow && date == today.plusDays(1) -> "Tomorrow"
+    date == today.minusDays(1) -> "Yesterday"
+    else -> farFormat(date)
+}
+
+/** Short name for the home filter chips. */
+fun TransactionType.chipLabel(): String = when (this) {
+    TransactionType.BUY_GOODS -> "Till"
+    TransactionType.POCHI -> "Pochi"
+    else -> displayLabel()
 }
 
 fun TransactionType.displayLabel(): String = when (this) {
@@ -135,5 +147,7 @@ fun TransactionType.displayLabel(): String = when (this) {
     TransactionType.DEPOSIT -> "Deposit"
     TransactionType.REVERSED -> "Reversed"
     TransactionType.FULIZA -> "Fuliza"
+    TransactionType.SAVINGS -> "Savings"
+    TransactionType.AIRTIME -> "Airtime"
     TransactionType.UNKNOWN -> "Unknown"
 }

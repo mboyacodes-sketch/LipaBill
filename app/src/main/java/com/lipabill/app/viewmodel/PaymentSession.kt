@@ -7,6 +7,20 @@ import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.ussd.SimLineHelper
 
+/**
+ * Starts the USSD dial and returns the status line to show, or null if dialing failed.
+ */
+fun RepeatTransactionCoordinator.startDialWithStatus(
+    prepared: RepeatTransactionCoordinator.PreparedRepeat,
+    preferences: SecurePreferences,
+    subscriptionId: Int?,
+    lines: List<SimLine>
+): String? {
+    val status = dialStartedStatus(preferences, subscriptionId, lines)
+    if (!startDialing(prepared, subscriptionId)) return null
+    return status
+}
+
 /** SIM and accessibility gates shared by Send, Pay, and Repeat. */
 data class PaymentLineSnapshot(
     val featureEnabled: Boolean,
@@ -54,5 +68,25 @@ fun dialStartedStatus(
         "Payment on ${line.label} — enter PIN on the LipaBill keypad when prompted."
     } else {
         "Payment started — enter PIN on the LipaBill keypad when prompted."
+    }
+}
+
+/** One-shot flag so Send/Pay reopen on the amount step after PIN cancel. */
+class AmountStepResume {
+    var pending: Boolean = false
+        private set
+
+    fun mark() {
+        pending = true
+    }
+
+    fun clear() {
+        pending = false
+    }
+
+    fun consume(): Boolean {
+        val value = pending
+        pending = false
+        return value
     }
 }

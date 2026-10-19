@@ -286,4 +286,63 @@ class MpesaSmsParserTest {
         assertEquals("ZZZ00NOISE", tx.code)
         assertEquals(99.0, tx.amount!!, 0.001)
     }
+
+    @Test
+    fun unknown_wording_from_person_is_received() {
+        val body =
+            "ABC12DEF34 Confirmed. Ksh500.00 has been credited to your account from JANE DOE 0712345678 " +
+                "on 2/4/24 at 3:10 PM. New M-PESA balance is Ksh1,800.00. Transaction cost, Ksh0.00."
+        val tx = MpesaSmsParser.parse(body, ts)
+        assertEquals(TransactionType.RECEIVED, tx.type)
+        assertEquals("JANE DOE", tx.counterpartyName)
+        assertEquals("0712345678", tx.counterpartyPhone)
+        assertEquals(500.0, tx.amount!!, 0.001)
+        assertEquals(1800.0, tx.balance!!, 0.001)
+    }
+
+    @Test
+    fun unknown_wording_to_business_is_sent() {
+        val body =
+            "MOV88BANK1 Confirmed. Ksh2,000.00 moved to EQUITY BANK on 3/4/24 at 9:00 AM. " +
+                "New M-PESA balance is Ksh500.00."
+        val tx = MpesaSmsParser.parse(body, ts)
+        assertEquals(TransactionType.SENT, tx.type)
+        assertEquals("EQUITY BANK", tx.counterpartyName)
+        assertNull(tx.counterpartyPhone)
+        assertEquals(2000.0, tx.amount!!, 0.001)
+    }
+
+    @Test
+    fun unknown_wording_keeps_masked_phone() {
+        val body =
+            "MSK44XXXX1 Confirmed. Ksh80.00 forwarded from PETER KAMAU 2547*****678 " +
+                "on 4/4/24 at 1:00 PM. New M-PESA balance is Ksh900.00."
+        val tx = MpesaSmsParser.parse(body, ts)
+        assertEquals(TransactionType.RECEIVED, tx.type)
+        assertEquals("PETER KAMAU", tx.counterpartyName)
+        assertEquals("2547*****678", tx.counterpartyPhone)
+    }
+
+    @Test
+    fun unknown_wording_for_account_is_paybill() {
+        val body =
+            "ACC77BILL2 Confirmed. Ksh350.00 settled with KPLC PREPAID for account 0145999 " +
+                "on 5/4/24 at 8:00 AM. New M-PESA balance is Ksh2,000.00."
+        val tx = MpesaSmsParser.parse(body, ts)
+        assertEquals(TransactionType.PAYBILL, tx.type)
+        assertEquals("KPLC PREPAID", tx.counterpartyName)
+        assertNull(tx.counterpartyPhone)
+        assertEquals(350.0, tx.amount!!, 0.001)
+    }
+
+    @Test
+    fun unknown_wording_names_a_person_when_direction_is_unclear() {
+        val body =
+            "SHR40NAME1 Confirmed. Ksh40.00 shared alongside AMINA WAIRIMU 0711222333 " +
+                "on 6/4/24 at 1:00 PM. New M-PESA balance is Ksh10.00."
+        val tx = MpesaSmsParser.parse(body, ts)
+        assertEquals(TransactionType.UNKNOWN, tx.type)
+        assertEquals("AMINA WAIRIMU", tx.counterpartyName)
+        assertEquals("0711222333", tx.counterpartyPhone)
+    }
 }

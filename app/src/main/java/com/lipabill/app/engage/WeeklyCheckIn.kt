@@ -53,7 +53,7 @@ object WeeklySummaryBuilder {
         for (tx in inWeek) {
             val signed = signedSpendCents(tx)
             spend += signed
-            if (tx.type.isOutgoing() && tx.amountCents > 0L) {
+            if (tx.type.isOutgoing() && tx.type != TransactionType.SAVINGS && tx.amountCents > 0L) {
                 categories[tx.type] = (categories[tx.type] ?: 0L) + tx.amountCents
             }
         }
@@ -74,6 +74,7 @@ object WeeklySummaryBuilder {
     /** Outgoing amounts add. Reversals and negative amounts subtract. */
     fun signedSpendCents(tx: ChallengeTransaction): Long = when {
         tx.type == TransactionType.REVERSED -> -kotlin.math.abs(tx.amountCents)
+        tx.type == TransactionType.SAVINGS -> 0L
         tx.amountCents < 0L -> tx.amountCents
         tx.type.isOutgoing() -> tx.amountCents
         else -> 0L
@@ -100,6 +101,7 @@ object WeeklySummaryBuilder {
                 tx.timestampMillis >= dayStart &&
                     tx.timestampMillis < dayEnd &&
                     tx.type.isOutgoing() &&
+                    tx.type != TransactionType.SAVINGS &&
                     tx.amountCents > 0L
             }
             if (!spent) quiet++

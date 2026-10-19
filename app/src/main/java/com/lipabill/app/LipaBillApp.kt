@@ -24,6 +24,7 @@ import com.lipabill.app.metrics.AppCrashReporting
 import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.metrics.TicketImportResult
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
+import com.lipabill.app.tickets.PassReminderScheduler
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -181,6 +182,11 @@ class LipaBillApp : Application() {
         smsInboxSyncWatcher.start()
         if (securePreferences.challengesEnabled || securePreferences.weeklyCheckInEnabled) {
             engagementScheduler.ensureScheduled()
+        }
+        appScope.launch {
+            ticketRepository.observeAll().collect { tickets ->
+                runCatching { PassReminderScheduler(this@LipaBillApp).sync(tickets) }
+            }
         }
 
         appScope.launch {

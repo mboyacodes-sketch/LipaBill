@@ -3,12 +3,9 @@ package com.lipabill.app.ui.tickets
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,7 +13,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,7 +20,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.ContentCut
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.NearMe
 import androidx.compose.material3.Icon
@@ -35,18 +30,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -130,13 +118,13 @@ private fun EventTicketStyleCardPaper(
         Column(modifier = Modifier.fillMaxWidth()) {
             // ── Top piece (details) ──────────────────────────────────
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .offset(y = tear.topLift)
-                    .shadow(if (isUsed) 10.dp else 12.dp, topShape, clip = false)
-                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                    .clip(topShape)
-                    .background(CardWhite)
+                modifier = Modifier.tornTopPiece(
+                    tear = tear,
+                    shape = topShape,
+                    isUsed = isUsed,
+                    usedShadow = 10.dp,
+                    restShadow = 12.dp
+                )
             ) {
                 EventCongratsHeader(isUsed = isUsed)
                 Spacer(modifier = Modifier.height(12.dp))
@@ -161,18 +149,8 @@ private fun EventTicketStyleCardPaper(
 
             Spacer(modifier = Modifier.height(tear.gap))
 
-            // ── QR stub (falls away when used) ───────────────────────
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .offset(y = tear.stubDrop)
-                    .shadow(tear.stubShadow, stubShape, clip = false)
-                    .graphicsLayer {
-                        rotationZ = tear.stubTilt
-                        compositingStrategy = CompositingStrategy.Offscreen
-                    }
-                    .clip(stubShape)
-                    .background(CardWhite)
+                modifier = Modifier.tornStubPiece(tear, stubShape)
             ) {
                 if (isUsed) {
                     EventTicketPerforation(showScissors = false)
@@ -233,18 +211,7 @@ private fun EventCongratsHeader(isUsed: Boolean) {
 @Composable
 private fun EventDetailsBox(model: EventTicketUiModel) {
     val context = LocalContext.current
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 18.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp)
-                .border(BorderStroke(1.dp, EventDetailBorder), RoundedCornerShape(12.dp))
-                .padding(horizontal = 16.dp, vertical = 18.dp)
-        ) {
+    TicketDetailsFrame(title = "EVENT DETAILS", borderColor = EventDetailBorder) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -252,14 +219,16 @@ private fun EventDetailsBox(model: EventTicketUiModel) {
                 EventField(
                     label = "Event",
                     value = model.eventTitle,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    cover = true
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 EventField(
                     label = "Seat No.",
                     value = model.seat ?: "—",
                     modifier = Modifier.width(72.dp),
-                    alignEnd = true
+                    alignEnd = true,
+                    cover = !model.seat.isNullOrBlank()
                 )
             }
 
@@ -271,6 +240,7 @@ private fun EventDetailsBox(model: EventTicketUiModel) {
                             label = "Venue",
                             value = model.venue,
                             modifier = Modifier.weight(1f),
+                            cover = true,
                             onClick = model.mapsQuery?.let { query ->
                                 { openVenueInMaps(context, query) }
                             }
@@ -305,7 +275,8 @@ private fun EventDetailsBox(model: EventTicketUiModel) {
                             label = "Door",
                             value = model.door,
                             modifier = Modifier.width(72.dp),
-                            alignEnd = true
+                            alignEnd = true,
+                            cover = true
                         )
                     }
                 }
@@ -329,19 +300,6 @@ private fun EventDetailsBox(model: EventTicketUiModel) {
                 }
             }
         }
-
-        Text(
-            text = "EVENT DETAILS",
-            color = Color(0xFF6B7280),
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.8.sp,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .background(CardWhite)
-                .padding(horizontal = 10.dp)
-        )
-    }
 }
 
 @Composable
@@ -364,6 +322,7 @@ private fun EventQrStub(
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .size(110.dp)
+                    .recordingPrivacyCover()
                     .graphicsLayer { alpha = if (isUsed) UsedPassAlpha else 1f }
                     .background(CardWhite)
             )
@@ -394,7 +353,8 @@ private fun EventQrStub(
                 color = Mute,
                 fontSize = 12.sp,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.recordingPrivacyCover(!ref.isNullOrBlank())
             )
         }
     }
@@ -409,53 +369,38 @@ private fun EventField(
     cover: Boolean = false,
     onClick: (() -> Unit)? = null
 ) {
-    Column(
-        modifier = modifier.then(
-            if (onClick != null) {
-                Modifier.clickable(role = Role.Button, onClick = onClick)
-            } else {
-                Modifier
-            }
-        ),
-        horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start
-    ) {
-        Text(
-            text = label,
-            color = EventLabelGrey,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Normal,
-            maxLines = 1
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = value,
-            color = Ink,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.recordingPrivacyCover(cover)
-        )
-        if (onClick != null) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Outlined.NearMe,
-                    contentDescription = null,
-                    tint = Accent,
-                    modifier = Modifier.size(13.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "Open in Maps",
-                    color = Accent,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1
-                )
+    TicketMetaField(
+        label = label,
+        value = value,
+        labelColor = EventLabelGrey,
+        modifier = modifier,
+        alignEnd = alignEnd,
+        cover = cover,
+        onClick = onClick,
+        footer = if (onClick == null) {
+            null
+        } else {
+            {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Outlined.NearMe,
+                        contentDescription = null,
+                        tint = Accent,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Open in Maps",
+                        color = Accent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                }
             }
         }
-    }
+    )
 }
 
 /** Search Google Maps for a venue. Falls back to the browser if Maps is not installed. */
@@ -481,59 +426,12 @@ private fun openVenueInMaps(context: android.content.Context, venue: String) {
 }
 
 @Composable
-private fun EventTicketPerforation(showScissors: Boolean = true) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(if (showScissors) 28.dp else 20.dp)
-            .background(CardWhite),
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .matchParentSize()
-        ) {
-            val r = 10.dp.toPx()
-            val cy = size.height / 2f
-            drawCircle(
-                color = Color.Black,
-                radius = r,
-                center = Offset(0f, cy),
-                blendMode = BlendMode.Clear
-            )
-            drawCircle(
-                color = Color.Black,
-                radius = r,
-                center = Offset(size.width, cy),
-                blendMode = BlendMode.Clear
-            )
-            drawLine(
-                color = EventLabelGrey.copy(alpha = 0.55f),
-                start = Offset(r + 4.dp.toPx(), cy),
-                end = Offset(size.width - r - 4.dp.toPx(), cy),
-                strokeWidth = 2.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
-            )
-        }
-        if (showScissors) {
-            Box(
-                modifier = Modifier
-                    .size(24.dp)
-                    .background(CardWhite, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.ContentCut,
-                    contentDescription = "Cut along perforation when used",
-                    tint = EventLabelGrey,
-                    modifier = Modifier
-                        .size(16.dp)
-                        .rotate(-45f)
-                )
-            }
-        }
-    }
+private fun EventTicketPerforation(showScissors: Boolean) {
+    PunchedTicketPerforation(
+        ink = EventLabelGrey,
+        showScissors = showScissors,
+        scissorsDescription = "Cut along perforation when used"
+    )
 }
 
 private data class EventTicketUiModel(

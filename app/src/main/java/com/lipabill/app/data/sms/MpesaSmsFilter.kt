@@ -32,8 +32,36 @@ object MpesaSmsFilter {
      */
     fun isTransactionConfirmation(body: String?): Boolean {
         val normalized = confirmedBody(body) ?: return false
-        return MPESA_BALANCE.containsMatchIn(normalized)
+        if (!MPESA_BALANCE.containsMatchIn(normalized)) return false
+        return !balanceEnquiry(normalized)
     }
+
+    /**
+     * A balance check reports the wallet figure and moves no money.
+     */
+    fun isBalanceEnquiry(body: String?): Boolean {
+        val normalized = confirmedBody(body) ?: return false
+        return balanceEnquiry(normalized)
+    }
+
+    private fun balanceEnquiry(normalized: String): Boolean {
+        if (!normalized.contains("balance was")) return false
+        return !hasMoneyMovement(normalized)
+    }
+
+    private fun hasMoneyMovement(normalized: String): Boolean =
+        normalized.contains("sent to") ||
+            normalized.contains("sent ksh") ||
+            normalized.contains("paid to") ||
+            normalized.contains("you have received") ||
+            normalized.contains("withdraw") ||
+            normalized.contains("airtime") ||
+            normalized.contains("give ksh") ||
+            normalized.contains("transferred") ||
+            normalized.contains("fuliza") ||
+            normalized.contains("bought") ||
+            normalized.contains("reversed") ||
+            normalized.contains("deposit")
 
     /** Fuliza draw SMS. Kept apart from wallet receipts so one history cannot hide the other. */
     fun isFulizaConfirmation(body: String?): Boolean {

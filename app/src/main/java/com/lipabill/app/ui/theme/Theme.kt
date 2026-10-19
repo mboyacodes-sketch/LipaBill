@@ -1,8 +1,5 @@
 package com.lipabill.app.ui.theme
 
-import android.content.Context
-import android.content.ContextWrapper
-import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
@@ -28,9 +25,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lipabill.app.BuildConfig
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.R
 import com.lipabill.app.ui.privacy.LocalRecordingPrivacy
+import com.lipabill.app.ui.util.findComponentActivity
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /** Pay and send sheet width. The rest of the UI follows the window size. */
@@ -372,7 +371,7 @@ fun LipaBillTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val activity = view.context.findActivity() ?: return@SideEffect
+            val activity = view.context.findComponentActivity() ?: return@SideEffect
             val bar = if (darkTheme) {
                 SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
             } else {
@@ -389,7 +388,7 @@ fun LipaBillTheme(
         LocalAppType provides typeScale,
         LocalAppSpace provides space,
         LocalLipaColors provides colors,
-        LocalRecordingPrivacy provides recordingPrivacy
+        LocalRecordingPrivacy provides (BuildConfig.DEBUG && recordingPrivacy)
     ) {
         MaterialTheme(
             colorScheme = colors.toScheme(darkTheme),
@@ -397,10 +396,4 @@ fun LipaBillTheme(
             content = content
         )
     }
-}
-
-private fun Context.findActivity(): ComponentActivity? = when (this) {
-    is ComponentActivity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
 }

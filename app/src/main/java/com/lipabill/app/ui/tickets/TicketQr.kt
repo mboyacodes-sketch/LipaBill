@@ -65,7 +65,7 @@ fun encodeTicketBarcode(
  * Flight boarding pass only — **Aztec via ZXing, no QR fallback**.
  * Encodes the IATA BCBP payload exactly as on the pass (scanned or rebuilt).
  */
-fun encodeAztecBoardingPass(
+private fun encodeAztecBoardingPass(
     bcbpPayload: String,
     sizePx: Int = 512
 ): ImageBitmap? {

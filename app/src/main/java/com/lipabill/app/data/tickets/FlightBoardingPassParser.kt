@@ -344,7 +344,7 @@ object FlightBoardingPassParser {
         val parts = raw.replace('.', ':').split(':')
         val h = parts.getOrNull(0)?.toIntOrNull() ?: return null
         val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
-        return runCatching { LocalTime.of(h, m) }.getOrNull()
+        return clockFromParts(h, m)
     }
 
     /** 23JUN → LocalDate (year inferred: current, or next year if already past). */

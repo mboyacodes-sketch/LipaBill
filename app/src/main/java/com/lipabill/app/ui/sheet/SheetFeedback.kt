@@ -69,12 +69,14 @@ fun amountStepGuidance(
     exceedsBalance: Boolean,
     amountInput: String,
     amountValid: Boolean,
-    detailsGuidance: String?
+    detailsGuidance: String?,
+    /** Fuliza may cover the gap, so the over-balance note stays on the amount line. */
+    fulizaCoversShortfall: Boolean = false
 ): String? = when {
+    onAmountStep && exceedsBalance && fulizaCoversShortfall -> null
     onAmountStep && exceedsBalance ->
         "That amount is more than your available balance."
-    onAmountStep && amountInput.isBlank() ->
-        "Enter an amount to continue."
+    onAmountStep && amountInput.isBlank() -> null
     onAmountStep && !amountValid ->
         "Enter a valid amount to continue."
     onAmountStep -> null
@@ -96,7 +98,7 @@ fun moneySheetFeedback(
     }
 
 /** Prefer [status] (action result) over [guidance] (what to do next). */
-fun resolveSheetFeedback(
+private fun resolveSheetFeedback(
     status: String?,
     guidance: String?
 ): Pair<String, SheetFeedbackTone>? {

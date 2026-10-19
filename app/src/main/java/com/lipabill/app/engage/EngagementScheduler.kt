@@ -1,16 +1,8 @@
 package com.lipabill.app.engage
 
-import android.Manifest
-import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -19,6 +11,8 @@ import androidx.work.WorkerParameters
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.MainActivity
 import com.lipabill.app.R
+import com.lipabill.app.notify.mainActivityPendingIntent
+import com.lipabill.app.notify.postLipaBill
 import java.util.concurrent.TimeUnit
 
 class EngagementScheduler(private val context: Context) {
@@ -110,53 +104,20 @@ class WeeklyCheckInWorker(
 class CheckInNotifier(private val context: Context) {
 
     fun show() {
-        if (Build.VERSION.SDK_INT >= 33 &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            return
+        val open = context.mainActivityPendingIntent(REQUEST) {
+            putExtra(MainActivity.EXTRA_OPEN_CHECK_IN, true)
         }
-        val manager = NotificationManagerCompat.from(context)
-        ensureChannel(manager)
-        val open = PendingIntent.getActivity(
-            context,
-            REQUEST,
-            Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP
-                putExtra(MainActivity.EXTRA_OPEN_CHECK_IN, true)
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        context.postLipaBill(
+            channelId = CHANNEL_ID,
+            channelName = context.getString(R.string.checkin_channel_name),
+            channelDescription = context.getString(R.string.checkin_channel_description),
+            importance = NotificationManager.IMPORTANCE_DEFAULT,
+            notifyId = NOTIFY_ID,
+            title = context.getString(R.string.checkin_notification_title),
+            body = context.getString(R.string.checkin_notification_body),
+            contentIntent = open,
+            priority = NotificationCompat.PRIORITY_DEFAULT
         )
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_lipabill)
-            .setContentTitle(context.getString(R.string.checkin_notification_title))
-            .setContentText(context.getString(R.string.checkin_notification_body))
-            .setContentIntent(open)
-            .setAutoCancel(true)
-            .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-            .build()
-        try {
-            manager.notify(NOTIFY_ID, notification)
-        } catch (_: SecurityException) {
-            // Permission was revoked between the check and the post.
-        }
-    }
-
-    private fun ensureChannel(manager: NotificationManagerCompat) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        if (manager.getNotificationChannel(CHANNEL_ID) != null) return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            context.getString(R.string.checkin_channel_name),
-            NotificationManager.IMPORTANCE_DEFAULT
-        ).apply {
-            description = context.getString(R.string.checkin_channel_description)
-        }
-        manager.createNotificationChannel(channel)
     }
 
     companion object {

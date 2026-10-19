@@ -85,6 +85,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBack: (() -> Unit)? = null,
     onRequestPhoneStatePermission: () -> Unit = {},
+    onOptInFuliza: () -> Unit = {},
     onCheckForUpdate: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -236,7 +237,7 @@ fun SettingsScreen(
                     SettingsDivider()
                     SettingsSwitchRow(
                         title = "Blur for recording",
-                        subtitle = "Debug only. Blurs names, numbers, references, and the PIN pad.",
+                        subtitle = "Debug only. Blurs names, numbers, references, and ticket codes.",
                         checked = state.recordingPrivacy,
                         onCheckedChange = viewModel::setRecordingPrivacy
                     )
@@ -294,6 +295,13 @@ fun SettingsScreen(
                     subtitle = "Fills the M-Pesa screens. Off copies the details instead.",
                     checked = state.repeatEnabled,
                     onCheckedChange = viewModel::setRepeatEnabled
+                )
+                SettingsDivider()
+                SettingsNavRow(
+                    title = "Opt in to Fuliza",
+                    subtitle = "Opens *334#, then Loans and Savings, then Fuliza. You accept the terms on the next screen.",
+                    action = "Start",
+                    onClick = onOptInFuliza
                 )
             }
 

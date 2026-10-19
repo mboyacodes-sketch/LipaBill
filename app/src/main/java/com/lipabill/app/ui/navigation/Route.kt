@@ -4,6 +4,7 @@ import android.net.Uri
 
 sealed class Route(val path: String) {
     data object List : Route("list")
+    data object Profile : Route("profile")
     data object Settings : Route("settings")
     data object Permission : Route("permission")
     data object FirstRunSetup : Route("first_run_setup")

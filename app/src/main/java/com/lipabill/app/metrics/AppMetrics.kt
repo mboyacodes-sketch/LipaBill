@@ -49,6 +49,13 @@ object AppMetrics {
         if (!BuildConfig.FIREBASE_ANALYTICS) return
         runCatching {
             val fa = FirebaseAnalytics.getInstance(context.applicationContext)
+            fa.setConsent(
+                mapOf(
+                    FirebaseAnalytics.ConsentType.AD_STORAGE to FirebaseAnalytics.ConsentStatus.DENIED,
+                    FirebaseAnalytics.ConsentType.AD_USER_DATA to FirebaseAnalytics.ConsentStatus.DENIED,
+                    FirebaseAnalytics.ConsentType.AD_PERSONALIZATION to FirebaseAnalytics.ConsentStatus.DENIED
+                )
+            )
             fa.setAnalyticsCollectionEnabled(true)
             fa.setSessionTimeoutDuration(30 * 60 * 1000L)
             analytics = fa

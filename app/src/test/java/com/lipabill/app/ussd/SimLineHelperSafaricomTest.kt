@@ -1,5 +1,6 @@
 package com.lipabill.app.ussd
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -57,6 +58,18 @@ class SimLineHelperSafaricomTest {
         val found = SimLineHelper.findSafaricom(lines)
         assertNotNull(found)
         assertTrue(found!!.subscriptionId == 2)
+    }
+
+    @Test
+    fun payLine_uses_the_saved_safaricom_sim() {
+        val lines = listOf(
+            sim(id = 1, safaricom = true),
+            sim(id = 2, safaricom = false),
+            sim(id = 3, safaricom = true)
+        )
+        assertEquals(3, SimLineHelper.payLine(lines, preferredSubscriptionId = 3)?.subscriptionId)
+        assertEquals(1, SimLineHelper.payLine(lines, preferredSubscriptionId = 2)?.subscriptionId)
+        assertNull(SimLineHelper.payLine(listOf(sim(id = 2, safaricom = false)), 2))
     }
 
     @Test

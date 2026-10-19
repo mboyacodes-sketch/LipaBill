@@ -65,7 +65,8 @@ fun FirstRunSetupScreen(
             Text(
                 text = "History uses SMS, kept encrypted on this phone. " +
                     "Send and Pay use the phone and your Safaricom SIM. " +
-                    "Filling M-Pesa screens uses Accessibility, only for a payment you confirmed. " +
+                    "Filling M-Pesa USSD screens uses Accessibility Service, " +
+                    "only for a Send, Pay, or Repeat payment you confirmed. " +
                     "Looking up a name uses contacts. Scanning a pass uses the camera. " +
                     "Payment alerts use notifications.",
                 style = MaterialTheme.typography.bodyLarge,

@@ -86,6 +86,42 @@ class UssdMenuBuilderTest {
     fun missing_amount_can_repeat_with_destination() {
         assertTrue(UssdMenuBuilder.canRepeat(tx(TransactionType.SENT, amount = null)))
     }
+
+    @Test
+    fun shortfall_watches_for_fuliza_prompt() {
+        val plan = UssdMenuBuilder.build(
+            tx(TransactionType.SENT, amount = 500.0),
+            mpesaBalance = 120.0
+        )
+        assertNotNull(plan)
+        assertTrue(plan!!.watchFuliza)
+        assertEquals("500", (plan.actions.last() as UssdAction.TypeValue).value)
+    }
+
+    @Test
+    fun covered_amount_does_not_watch_for_fuliza() {
+        val plan = UssdMenuBuilder.build(
+            tx(TransactionType.PAYBILL, amount = 100.0, phone = "888880", raw = "Account 12345"),
+            mpesaBalance = 400.0
+        )
+        assertNotNull(plan)
+        assertFalse(plan!!.watchFuliza)
+    }
+
+    @Test
+    fun fuliza_opt_in_follows_loans_then_fuliza_then_opt_in() {
+        val plan = UssdMenuBuilder.fulizaOptIn()
+        assertEquals(3, plan.actions.size)
+        assertFalse(plan.watchFuliza)
+        val loans = plan.actions[0] as UssdAction.ChooseMenu
+        val fuliza = plan.actions[1] as UssdAction.ChooseMenu
+        val optIn = plan.actions[2] as UssdAction.ChooseMenu
+        assertTrue(loans.labels.any { it.contains("loans and savings") })
+        assertTrue(fuliza.labels.any { it.contains("fuliza") })
+        assertTrue(fuliza.excludeLabels.any { it.contains("biashara") })
+        assertTrue(optIn.labels.any { it.contains("opt in") })
+        assertTrue(optIn.excludeLabels.any { it.contains("opt out") })
+    }
 }
 
 class UssdMenuMatcherTest {
@@ -214,6 +250,56 @@ class ConfirmDetectorTest {
         val summary = ConfirmDetector.summaryLines(yesNo)
         assertTrue(summary.contains("JANE DOE"))
         assertFalse(summary.contains("1. Yes"))
+    }
+}
+
+class FulizaPromptTest {
+
+    private val offer = """
+        Insufficient M-PESA balance to send Ksh500.00.
+        Fuliza M-PESA amount is Ksh380.00
+        Access fee Ksh3.80
+        1. Accept
+        2. Decline
+    """.trimIndent()
+
+    @Test
+    fun detects_fuliza_accept_decline() {
+        assertTrue(FulizaPrompt.isOffer(offer))
+        assertEquals("1", ConfirmDetector.resolveYes(offer))
+        assertEquals("2", ConfirmDetector.resolveNo(offer))
+        val summary = ConfirmDetector.summaryLines(offer)
+        assertTrue(summary.contains("Fuliza"))
+        assertTrue(summary.contains("380"))
+        assertFalse(summary.contains("1. Accept"))
+    }
+
+    @Test
+    fun ignores_fuliza_submenu() {
+        val menu = """
+            Fuliza M-PESA
+            1. Opt In
+            2. Check Balance
+            3. Opt Out
+        """.trimIndent()
+        assertFalse(FulizaPrompt.isOffer(menu))
+        assertEquals(
+            "1",
+            UssdMenuMatcher.resolveChoice(
+                menu,
+                labels = listOf("opt in"),
+                excludeLabels = listOf("opt out")
+            )
+        )
+    }
+
+    @Test
+    fun ordinary_yes_no_is_not_a_fuliza_offer() {
+        assertFalse(
+            FulizaPrompt.isOffer(
+                "Send money to JANE\nKsh 100.00\n1. Yes\n2. No"
+            )
+        )
     }
 }
 

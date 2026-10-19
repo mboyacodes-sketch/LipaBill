@@ -92,6 +92,7 @@ import com.lipabill.app.data.tickets.BookingConfirmationParser
 import com.lipabill.app.data.tickets.TicketDocumentKind
 import com.lipabill.app.ui.adapt.LocalWindowForm
 import com.lipabill.app.ui.permissions.PermissionGuideDialog
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.permissions.PermissionLesson
 import com.lipabill.app.ui.permissions.permissionGranted
 import com.lipabill.app.ui.adapt.WindowWidth
@@ -109,6 +110,7 @@ import com.lipabill.app.ui.theme.RouteBlue
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.util.findComponentActivity
 import com.lipabill.app.ui.util.formatEventSchedule
 import com.lipabill.app.ui.util.formatEventWhen
 import com.lipabill.app.viewmodel.TicketDetailViewModel
@@ -118,7 +120,9 @@ import com.lipabill.app.viewmodel.phaseLabel
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Calendar
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -268,11 +272,11 @@ fun TicketsScreen(
             var category by remember { mutableStateOf<PassCategory?>(null) }
             val zone = remember { ZoneId.systemDefault() }
             val today = remember { LocalDate.now(zone) }
-            val eventCount = visibleTickets.count { it.passCategory() == PassCategory.EVENTS }
-            val sgrCount = visibleTickets.count { it.passCategory() == PassCategory.SGR }
-            LaunchedEffect(eventCount, sgrCount) {
-                if (category == PassCategory.EVENTS && eventCount == 0) category = null
-                if (category == PassCategory.SGR && sgrCount == 0) category = null
+            val counts = PassCategory.entries.associateWith { cat ->
+                visibleTickets.count { it.passCategory() == cat }
+            }
+            LaunchedEffect(counts) {
+                if (category != null && (counts[category] ?: 0) == 0) category = null
             }
             val entries = remember(visibleTickets, category, today) {
                 buildPassList(visibleTickets, category, zone, today)
@@ -291,8 +295,7 @@ fun TicketsScreen(
             ) {
                 PassCategoryChips(
                     selected = category,
-                    eventCount = eventCount,
-                    sgrCount = sgrCount,
+                    counts = counts,
                     onSelect = { category = it },
                     modifier = Modifier.padding(horizontal = sidePad, vertical = Space.gap)
                 )
@@ -456,7 +459,7 @@ private fun EmptyTickets(
             Text("No passes yet", style = HomeType.section, color = RouteBlue)
             Spacer(modifier = Modifier.height(Space.gap))
             Text(
-                text = "Add an event ticket, or paste your SGR booking SMS. More travel types coming soon.",
+                text = "Add an event ticket or an SGR booking SMS.",
                 style = HomeType.body,
                 color = Mute,
                 textAlign = TextAlign.Center
@@ -491,8 +494,10 @@ private enum class PassCategory(val label: String) {
     SGR("SGR")
 }
 
-private fun Ticket.passCategory(): PassCategory =
-    if (isRailTravel) PassCategory.SGR else PassCategory.EVENTS
+private fun Ticket.passCategory(): PassCategory = when {
+    isRailTravel -> PassCategory.SGR
+    else -> PassCategory.EVENTS
+}
 
 private fun Ticket.isOnDay(zone: ZoneId, day: LocalDate): Boolean {
     val millis = occasionMillis ?: return false
@@ -552,8 +557,7 @@ private fun buildPassList(
 @Composable
 private fun PassCategoryChips(
     selected: PassCategory?,
-    eventCount: Int,
-    sgrCount: Int,
+    counts: Map<PassCategory, Int>,
     onSelect: (PassCategory?) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -565,8 +569,7 @@ private fun PassCategoryChips(
     ) {
         PassChip("All", selected = selected == null, onClick = { onSelect(null) })
         PassCategory.entries.forEach { cat ->
-            val count = if (cat == PassCategory.EVENTS) eventCount else sgrCount
-            if (count > 0) {
+            if ((counts[cat] ?: 0) > 0) {
                 PassChip(
                     cat.label,
                     selected = selected == cat,
@@ -616,71 +619,130 @@ private fun TodayPassCard(
         ticket.venue?.takeIf { it.isNotBlank() },
         ticket.seatOrTier?.takeIf { it.isNotBlank() }
     ).joinToString(" · ")
+    val zoned = ticket.occasionMillis?.let {
+        Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())
+    }
+    val dayNumber = zoned?.dayOfMonth?.toString()
+    val month = zoned?.format(DateTimeFormatter.ofPattern("MMM", Locale.ENGLISH))?.uppercase(Locale.ENGLISH)
+    val countdown = ticket.occasionMillis?.let { start ->
+        val minutes = (start - System.currentTimeMillis()) / 60_000L
+        when {
+            minutes < 0 -> null
+            minutes < 60 -> "Starting soon"
+            minutes < 120 -> "In 1 hour"
+            minutes < 18 * 60 -> "In ${minutes / 60} hours"
+            else -> null
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(10.dp, RoundedCornerShape(24.dp), spotColor = Color.Black.copy(alpha = 0.10f))
-            .clip(RoundedCornerShape(24.dp))
-            .background(CardWhite)
+            .shadow(16.dp, RoundedCornerShape(28.dp), spotColor = Accent.copy(alpha = 0.35f))
+            .clip(RoundedCornerShape(28.dp))
+            .background(Accent)
             .clickable(onClick = onClick)
     ) {
-        Box(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(4.dp)
-                .background(Accent)
-        )
-        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+                .padding(start = 14.dp, end = 18.dp, top = 14.dp, bottom = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(CardWhite)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text(
                     text = "TODAY",
                     style = HomeType.label,
                     color = Accent,
-                    letterSpacing = 1.2.sp
+                    letterSpacing = 1.1.sp
                 )
-                Spacer(modifier = Modifier.weight(1f))
                 Text(
-                    text = ticket.passCategory().label,
-                    style = HomeType.caption,
-                    color = Mute
-                )
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = time ?: ticket.title,
-                color = Ink,
-                fontFamily = GeometricSansFamily,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = if (time != null) 32.sp else 24.sp,
-                lineHeight = if (time != null) 36.sp else 28.sp,
-                letterSpacing = (-0.4).sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (time != null) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = ticket.title,
+                    text = dayNumber ?: "—",
                     color = Ink,
                     fontFamily = GeometricSansFamily,
                     fontWeight = FontWeight.SemiBold,
-                    fontSize = 18.sp,
-                    lineHeight = 22.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    fontSize = 32.sp,
+                    lineHeight = 34.sp
                 )
+                if (month != null) {
+                    Text(
+                        text = month,
+                        style = HomeType.label,
+                        color = Mute,
+                        letterSpacing = 0.8.sp
+                    )
+                }
             }
-            if (place.isNotBlank()) {
+            Spacer(modifier = Modifier.size(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = ticket.passCategory().label,
+                        style = HomeType.caption,
+                        color = OnAccent.copy(alpha = 0.72f)
+                    )
+                    if (countdown != null) {
+                        Spacer(modifier = Modifier.weight(1f))
+                        Text(
+                            text = countdown,
+                            style = HomeType.caption,
+                            color = OnAccent
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = place,
-                    style = HomeType.caption,
-                    color = Mute,
+                    text = ticket.title,
+                    color = OnAccent,
+                    fontFamily = GeometricSansFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 20.sp,
+                    lineHeight = 24.sp,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.recordingPrivacyCover()
                 )
+                if (time != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = time,
+                        color = OnAccent,
+                        fontFamily = GeometricSansFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp,
+                        lineHeight = 20.sp
+                    )
+                }
+                if (place.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = place,
+                        style = HomeType.caption,
+                        color = OnAccent.copy(alpha = 0.78f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.recordingPrivacyCover()
+                    )
+                }
             }
         }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(OnAccent.copy(alpha = 0.18f))
+        )
+        Text(
+            text = "Open pass",
+            style = HomeType.label,
+            color = OnAccent,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)
+        )
     }
 }
 
@@ -718,8 +780,11 @@ private fun TicketListRow(
             .padding(horizontal = Space.card, vertical = Space.cardH),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            if (ticket.isConfirmationOnly) Icons.Outlined.Sms else Icons.Outlined.ConfirmationNumber,
+            Icon(
+            when {
+                ticket.isConfirmationOnly -> Icons.Outlined.Sms
+                else -> Icons.Outlined.ConfirmationNumber
+            },
             contentDescription = null,
             tint = if (used) Mute else Accent,
             modifier = Modifier
@@ -735,18 +800,25 @@ private fun TicketListRow(
                 style = HomeType.rowTitle,
                 color = if (used) Mute else Ink,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.recordingPrivacyCover()
             )
             val subtitle = buildList {
                 ticket.orderId?.takeIf { ticket.isConfirmationOnly }?.let { add("Ref $it") }
-                ticket.startsAtMillis?.let { start ->
-                    val schedule = formatEventSchedule(start, ticket.notes)
-                    add(listOfNotNull(schedule.date, schedule.time).joinToString(" · "))
-                }
-                ticket.seatOrTier?.let { add(it) }
-                    ?: ticket.venue?.let { add(it) }
+                    ticket.startsAtMillis?.let { start ->
+                        val schedule = formatEventSchedule(start, ticket.notes)
+                        add(listOfNotNull(schedule.date, schedule.time).joinToString(" · "))
+                    }
+                    ticket.seatOrTier?.let { add(it) }
+                        ?: ticket.venue?.let { add(it) }
             }.joinToString(" · ").ifBlank { ticket.phaseLabel() }
-            Text(subtitle, style = HomeType.caption, color = Mute, maxLines = 2)
+            Text(
+                subtitle,
+                style = HomeType.caption,
+                color = Mute,
+                maxLines = 2,
+                modifier = Modifier.recordingPrivacyCover(subtitle.isNotBlank())
+            )
         }
         Text(
             text = badge,
@@ -772,7 +844,7 @@ private fun AddTicketChooserDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Space.gap)) {
                 Text(
-                    text = "Event = one upload. SGR = booking SMS first, then boarding pass on the ticket.",
+                    text = "Event = one upload. SGR = booking SMS first.",
                     style = HomeType.body,
                     color = Mute
                 )
@@ -825,7 +897,9 @@ private fun PasteConfirmationDialog(
                     onValueChange = { message = it },
                     label = { Text("Confirmation message") },
                     minLines = 5,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .recordingPrivacyCover(message.isNotBlank()),
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Sentences
                     )
@@ -865,7 +939,9 @@ private fun ManualTicketDialog(
                     onValueChange = { title = it },
                     label = { Text("Event / title") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .recordingPrivacyCover(title.isNotBlank()),
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Words
                     )
@@ -876,14 +952,18 @@ private fun ManualTicketDialog(
                     label = { Text("Ticket code / QR payload") },
                     singleLine = false,
                     minLines = 2,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .recordingPrivacyCover(code.isNotBlank())
                 )
                 OutlinedTextField(
                     value = venue,
                     onValueChange = { venue = it },
                     label = { Text("Venue (optional)") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .recordingPrivacyCover(venue.isNotBlank())
                 )
                 OutlinedButton(
                     onClick = {
@@ -943,7 +1023,7 @@ fun TicketDetailScreen(
         if (!boostScanBrightness) {
             return@DisposableEffect onDispose { }
         }
-        val win = findActivity(view.context)?.window
+        val win = view.context.findComponentActivity()?.window
         val previousBrightness = win?.attributes?.screenBrightness
             ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         if (win != null) {
@@ -1098,7 +1178,10 @@ fun TicketDetailScreen(
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 17.sp,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.recordingPrivacyCover(
+                                !isRailDetail && !current?.title.isNullOrBlank()
+                            )
                         )
                     },
                     navigationIcon = {
@@ -1118,7 +1201,13 @@ fun TicketDetailScreen(
                 )
             } else {
                 TopAppBar(
-                    title = { Text(current?.title ?: "Ticket", style = HomeType.greeting) },
+                    title = {
+                        Text(
+                            current?.title ?: "Ticket",
+                            style = HomeType.greeting,
+                            modifier = Modifier.recordingPrivacyCover(!current?.title.isNullOrBlank())
+                        )
+                    },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -1151,7 +1240,9 @@ fun TicketDetailScreen(
         val returnQr = rememberBoardingQr(if (isRail) returnSnap else null)
 
         // Event QR (non-travel)
-        val eventGateCode = current.gateBarcodeValue.takeIf { !current.isTravelTicket }
+        val eventGateCode = current.gateBarcodeValue.takeIf {
+            !current.isTravelTicket
+        }
         val hasEventPayload = !eventGateCode.isNullOrBlank() &&
             !BookingConfirmationParser.isConfirmationPlaceholder(eventGateCode) &&
             !eventGateCode.startsWith("ETKT:", ignoreCase = true) &&
@@ -1233,7 +1324,10 @@ fun TicketDetailScreen(
                         color = Color.White,
                         fontSize = 26.sp,
                         fontFamily = GeometricSansFamily,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.recordingPrivacyCover(
+                            !sgrHeader?.headerRoute.isNullOrBlank() && sgrHeader?.headerRoute != "SGR"
+                        )
                     )
                     Spacer(modifier = Modifier.height(20.dp))
                     SgrTicketStyleCard(
@@ -1341,7 +1435,9 @@ fun TicketDetailScreen(
                                     bitmap = outboundQr,
                                     contentDescription = "Boarding QR code",
                                     contentScale = ContentScale.Fit,
-                                    modifier = Modifier.size(240.dp)
+                                    modifier = Modifier
+                                        .size(240.dp)
+                                        .recordingPrivacyCover()
                                 )
                             }
                             Spacer(modifier = Modifier.height(12.dp))
@@ -1628,7 +1724,8 @@ private fun TravelBoardingLegBlock(
                     text = snapshot.title ?: headline,
                     style = HomeType.rowTitle,
                     color = Ink,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.recordingPrivacyCover(!snapshot.title.isNullOrBlank())
                 )
                 Spacer(modifier = Modifier.height(Space.block))
                 Text(
@@ -1766,12 +1863,3 @@ private fun pickEventDateTime(
 
 private fun ticketImportSource(kind: TicketDocumentKind): String =
     if (kind == TicketDocumentKind.PKPASS) "pkpass" else "pdf"
-
-private fun findActivity(context: Context): android.app.Activity? {
-    var ctx = context
-    while (ctx is android.content.ContextWrapper) {
-        if (ctx is android.app.Activity) return ctx
-        ctx = ctx.baseContext
-    }
-    return null
-}

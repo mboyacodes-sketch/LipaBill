@@ -19,15 +19,35 @@ object AppCrashReporting {
     private var crashlytics: FirebaseCrashlytics? = null
 
     fun init(context: Context) {
-        if (!BuildConfig.FIREBASE_CRASHLYTICS) return
-        runCatching {
-            val cx = FirebaseCrashlytics.getInstance()
-            cx.setCrashlyticsCollectionEnabled(true)
-            cx.setCustomKey("build_flavor", if (BuildConfig.SIDELOAD_DISTRIBUTION) "internal" else "play")
-            cx.setCustomKey("app_version", BuildConfig.VERSION_NAME)
-            cx.setCustomKey("version_code", BuildConfig.VERSION_CODE)
-            // Never setUserId to a phone number or SIM id.
-            crashlytics = cx
+        if (BuildConfig.FIREBASE_CRASHLYTICS) {
+            runCatching {
+                val cx = FirebaseCrashlytics.getInstance()
+                cx.setCrashlyticsCollectionEnabled(true)
+                cx.setCustomKey("build_flavor", if (BuildConfig.SIDELOAD_DISTRIBUTION) "internal" else "play")
+                cx.setCustomKey("app_version", BuildConfig.VERSION_NAME)
+                cx.setCustomKey("version_code", BuildConfig.VERSION_CODE)
+                // Never setUserId to a phone number or SIM id.
+                crashlytics = cx
+            }
+        }
+        installSafeUncaughtHandler()
+    }
+
+    /**
+     * Crashlytics otherwise uploads the original exception message, which can
+     * contain a phone number or an amount. The handler records the type and stack.
+     */
+    private fun installSafeUncaughtHandler() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            val safe = Exception(error.javaClass.simpleName.ifBlank { "Exception" })
+            safe.stackTrace = error.stackTrace.take(16).toTypedArray()
+            if (previous != null) {
+                previous.uncaughtException(thread, safe)
+            } else {
+                crashlytics?.let { runCatching { it.recordException(safe) } }
+                android.os.Process.killProcess(android.os.Process.myPid())
+            }
         }
     }
 

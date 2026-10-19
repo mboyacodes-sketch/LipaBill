@@ -26,6 +26,10 @@ class TicketRepository(
     fun observeById(id: Long): Flow<Ticket?> =
         dao.observeById(id).map { it?.toDomain() }
 
+    suspend fun get(id: Long): Ticket? = withContext(Dispatchers.IO) {
+        dao.getById(id)?.toDomain()
+    }
+
     /**
      * Inserts a ticket. Returns id, or null if the barcode / booking ref already exists.
      */

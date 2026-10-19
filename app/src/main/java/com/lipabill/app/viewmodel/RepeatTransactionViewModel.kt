@@ -119,15 +119,16 @@ class RepeatTransactionViewModel(
         return coordinator.prepareSession(tx, amount)
     }
 
-    fun startDial(prepared: RepeatTransactionCoordinator.PreparedRepeat) {
+    fun startDial(prepared: RepeatTransactionCoordinator.PreparedRepeat): Boolean {
         val state = _ui.value
-        val status = dialStartedStatus(
+        val status = coordinator.startDialWithStatus(
+            prepared,
             app.securePreferences,
             state.selectedSubscriptionId,
             state.simLines
-        )
-        coordinator.startDialing(prepared, state.selectedSubscriptionId)
+        ) ?: return false
         _ui.value = state.copy(dialStarted = true, statusMessage = status)
+        return true
     }
 
     suspend fun logManualCopy() {

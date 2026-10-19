@@ -28,7 +28,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -170,13 +169,13 @@ private fun SgrActiveTicketStack(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .offset(y = tear.topLift)
-                .shadow(if (isUsed) 8.dp else 14.dp, topShape, clip = false)
-                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                .clip(topShape)
-                .background(CardWhite)
+            modifier = Modifier.tornTopPiece(
+                tear = tear,
+                shape = topShape,
+                isUsed = isUsed,
+                usedShadow = 8.dp,
+                restShadow = 14.dp
+            )
         ) {
             Column(
                 modifier = Modifier
@@ -340,8 +339,20 @@ private fun SgrActiveTicketStack(
                         .padding(horizontal = 14.dp, vertical = 12.dp)
                 ) {
                     SgrBandCell("Depart time", model.departTime, Modifier.weight(1.15f), muted = isUsed)
-                    SgrBandCell("Coach", model.coach, Modifier.weight(0.85f), muted = isUsed)
-                    SgrBandCell("Train", model.train, Modifier.weight(0.95f), muted = isUsed)
+                    SgrBandCell(
+                        "Coach",
+                        model.coach,
+                        Modifier.weight(0.85f),
+                        muted = isUsed,
+                        cover = model.coach != "—"
+                    )
+                    SgrBandCell(
+                        "Train",
+                        model.train,
+                        Modifier.weight(0.95f),
+                        muted = isUsed,
+                        cover = model.train != "—"
+                    )
                     SgrBandCell("Ref", model.bookingRef, Modifier.weight(1.05f), muted = isUsed, cover = true)
                 }
 
@@ -361,7 +372,8 @@ private fun SgrActiveTicketStack(
                         model.seat,
                         Modifier.weight(0.85f),
                         muted = isUsed,
-                        alignEnd = false
+                        alignEnd = false,
+                        cover = model.seat != "—"
                     )
                     SgrMetaCell(
                         "Class",
@@ -390,25 +402,16 @@ private fun SgrActiveTicketStack(
                 }
             }
 
-            SgrTicketPerforation(notchColor = stageColor)
+            SgrTicketPerforation(stageColor)
         }
 
         Spacer(modifier = Modifier.height(tear.gap))
 
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .offset(y = tear.stubDrop)
-                .shadow(tear.stubShadow, stubShape, clip = false)
-                .graphicsLayer {
-                    rotationZ = tear.stubTilt
-                    compositingStrategy = CompositingStrategy.Offscreen
-                }
-                .clip(stubShape)
-                .background(CardWhite)
+            modifier = Modifier.tornStubPiece(tear, stubShape)
         ) {
             if (isUsed) {
-                SgrTicketPerforation(notchColor = stageColor)
+                SgrTicketPerforation(stageColor)
             }
             Box(
                 modifier = Modifier
@@ -425,6 +428,7 @@ private fun SgrActiveTicketStack(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(64.dp)
+                            .recordingPrivacyCover()
                             .graphicsLayer { alpha = if (isUsed) UsedPassAlpha else 1f }
                     )
                 } else {
@@ -609,44 +613,12 @@ private fun SgrMetaCell(
 
 @Composable
 private fun SgrTicketPerforation(notchColor: Color) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(22.dp)
-            .background(CardWhite)
-    ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .offset(x = (-11).dp)
-                .size(22.dp)
-                .clip(CircleShape)
-                .background(notchColor)
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .offset(x = 11.dp)
-                .size(22.dp)
-                .clip(CircleShape)
-                .background(notchColor)
-        )
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .align(Alignment.Center)
-                .padding(horizontal = 16.dp)
-        ) {
-            drawLine(
-                color = SgrDash,
-                start = Offset(0f, 0f),
-                end = Offset(size.width, 0f),
-                strokeWidth = 2.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
-            )
-        }
-    }
+    NotchTicketPerforation(
+        notchColor = notchColor,
+        dashColor = SgrDash,
+        bandHeight = 22.dp,
+        dashInset = 16.dp
+    )
 }
 
 data class SgrTicketUiModel(

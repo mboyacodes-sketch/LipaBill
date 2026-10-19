@@ -8,6 +8,7 @@ import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.local.entity.RepeatAttemptEntity
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
 import com.lipabill.app.ussd.AccessibilityHelper
+import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.ussd.SimLineHelper
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -95,6 +96,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setRepeatEnabled(enabled: Boolean) {
         app.repeatCoordinator.setFeatureEnabled(enabled)
         refresh()
+    }
+
+    suspend fun prepareFulizaOptIn(): RepeatTransactionCoordinator.PreparedRepeat =
+        app.repeatCoordinator.prepareFulizaOptIn()
+
+    fun startFulizaOptIn(prepared: RepeatTransactionCoordinator.PreparedRepeat): Boolean {
+        val subId = _ui.value.preferredSimSubscriptionId
+        return app.repeatCoordinator.startDialing(prepared, subId)
     }
 
     fun setPreferredSim(subscriptionId: Int) {

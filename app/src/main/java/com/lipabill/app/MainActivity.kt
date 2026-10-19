@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import android.graphics.Color as AndroidColor
+import android.view.WindowManager
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -63,13 +64,14 @@ import com.lipabill.app.ui.main.MainShellScreen
 import com.lipabill.app.ui.navigation.Route
 import com.lipabill.app.update.AppUpdates
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
-import com.lipabill.app.ui.permissions.AccessibilityToggleCoachDialog
+import com.lipabill.app.ui.permissions.AccessibilityServiceDisclosureDialog
 import com.lipabill.app.ui.permissions.HibernationExemptionPrompt
 import com.lipabill.app.ui.permissions.FirstRunSetupScreen
 import com.lipabill.app.ui.permissions.PaymentAccessDialog
 import com.lipabill.app.ui.permissions.PaymentAccessNeed
 import com.lipabill.app.ui.permissions.PermissionGuideDialog
 import com.lipabill.app.ui.permissions.permissionGranted
+import com.lipabill.app.ui.permissions.rememberAccessibilityEnableRequest
 import com.lipabill.app.ui.permissions.shouldOfferPostNotifications
 import com.lipabill.app.ui.permissions.missingPaymentAccess
 import com.lipabill.app.ui.permissions.onNotificationPermission
@@ -97,6 +99,8 @@ import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.metrics.SetupBlocker
 import com.lipabill.app.region.KenyaRegionGate
 import com.lipabill.app.ui.device.UnsupportedDeviceScreen
+import com.lipabill.app.pay.PayLink
+import com.lipabill.app.ui.paylink.PayProfileScreen
 import com.lipabill.app.ussd.AccessibilityHelper
 import com.lipabill.app.ussd.PendingPaymentReceipt
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
@@ -143,12 +147,16 @@ class MainActivity : AppCompatActivity(),
             navigationBarStyle = barStyle
         )
         super.onCreate(savedInstanceState)
+        applyCaptureProtection()
         acceptReceiptIntent(intent)
+        acceptPayIntent(intent)
         captureIncomingDocument(intent)
         val app = application as LipaBillApp
         setContent {
             val fontSize by app.fontSizeSp.collectAsStateWithLifecycle()
             val darkMode by app.darkMode.collectAsStateWithLifecycle()
+            val recording by app.recordingPrivacy.collectAsStateWithLifecycle()
+            SideEffect { applyCaptureProtection(recording) }
             LipaBillTheme(fontSizeSp = fontSize, darkTheme = darkMode) {
                 Surface(
                     modifier = Modifier
@@ -163,12 +171,25 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
+    /** Screenshots, recents, and screen capture stay off for the whole session. */
+    fun applyCaptureProtection(
+        recording: Boolean = BuildConfig.DEBUG && (application as LipaBillApp).recordingPrivacy.value
+    ) {
+        if (recording) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         // A new tap must open again, even if this payment was already shown.
         deliveredReceiptKey = null
+        deliveredPayToken = null
         acceptReceiptIntent(intent)
+        acceptPayIntent(intent)
         captureIncomingDocument(intent)
     }
 
@@ -176,6 +197,7 @@ class MainActivity : AppCompatActivity(),
         super.onResume()
         // The task can come forward with the notification intent already on the activity.
         acceptReceiptIntent(intent)
+        acceptPayIntent(intent)
     }
 
     /**
@@ -187,6 +209,27 @@ class MainActivity : AppCompatActivity(),
 
     /** Stops a resume from opening the same receipt again after it has been shown. */
     private var deliveredReceiptKey: String? = null
+
+    /** Pay link that should open Send. Held across the lock screen. */
+    var pendingPay by mutableStateOf<PayLink.Target?>(null)
+        private set
+
+    private var deliveredPayToken: String? = null
+
+    fun clearPendingPay() {
+        pendingPay?.let { deliveredPayToken = it.token }
+        pendingPay = null
+        val current = intent ?: return
+        if (PayLink.parse(current.dataString) != null) {
+            current.data = null
+        }
+    }
+
+    private fun acceptPayIntent(intent: Intent?) {
+        val target = PayLink.parse(intent?.dataString) ?: return
+        if (target.token == deliveredPayToken) return
+        pendingPay = target
+    }
 
     fun clearPendingReceipt() {
         pendingReceipt?.let { deliveredReceiptKey = it.deliveryKey() }
@@ -237,6 +280,7 @@ class MainActivity : AppCompatActivity(),
         const val EXTRA_OPEN_RECEIPT_ID = "com.lipabill.app.OPEN_RECEIPT_ID"
         const val EXTRA_OPEN_RECEIPT_CODE = "com.lipabill.app.OPEN_RECEIPT_CODE"
         const val EXTRA_OPEN_CHECK_IN = "com.lipabill.app.OPEN_CHECK_IN"
+        const val EXTRA_OPEN_TICKET_ID = "com.lipabill.app.OPEN_TICKET_ID"
     }
 }
 
@@ -293,8 +337,8 @@ private fun LipaBillRoot(
                         authError = null
                         app.authManager.authenticate(activity) { authError = it }
                     },
-                    onContinueWithoutLock = {
-                        app.authManager.continueWithoutLockScreen()
+                    onOpenLockSettings = {
+                        activity.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
                     },
                     onAutoPrompt = {
                         authError = null
@@ -333,6 +377,9 @@ private fun AuthenticatedApp(
     var openCheckIn by remember {
         mutableStateOf(activity.intent?.getBooleanExtra(MainActivity.EXTRA_OPEN_CHECK_IN, false) == true)
     }
+    var openTicketId by remember {
+        mutableStateOf(activity.intent?.getLongExtra(MainActivity.EXTRA_OPEN_TICKET_ID, 0L) ?: 0L)
+    }
     var instantHomeReturn by remember { mutableStateOf(false) }
     LaunchedEffect(instantHomeReturn) {
         if (instantHomeReturn) instantHomeReturn = false
@@ -350,6 +397,8 @@ private fun AuthenticatedApp(
             if (intent.getBooleanExtra(MainActivity.EXTRA_OPEN_CHECK_IN, false)) {
                 openCheckIn = true
             }
+            val ticketId = intent.getLongExtra(MainActivity.EXTRA_OPEN_TICKET_ID, 0L)
+            if (ticketId != 0L) openTicketId = ticketId
         }
         activity.addOnNewIntentListener(listener)
         onDispose { activity.removeOnNewIntentListener(listener) }
@@ -441,19 +490,16 @@ private fun AuthenticatedApp(
     }
 
     if (showAccessibilityReenable) {
-        AccessibilityToggleCoachDialog(
-            currentlyEnabled = false,
-            titleOverride = "Turn Accessibility back on",
-            bodyOverride = "Android turns LipaBill Accessibility off after each update. " +
-                AccessibilityHelper.coachMessage(turningOn = true),
-            dismissLabel = "Not now",
-            onConfirmOpen = {
+        AccessibilityServiceDisclosureDialog(
+            titleOverride = "Turn Accessibility Service back on",
+            bodyPrefix = "Android turns LipaBill’s Accessibility Service off after each update.",
+            onContinueToSettings = {
                 showAccessibilityReenable = false
                 dismissedA11yReenableThisSession = true
                 AccessibilityPreferred.markUserTurningOn(app.securePreferences)
                 AccessibilityHelper.openAppAccessibilityDetails(context)
             },
-            onDismiss = {
+            onNotNow = {
                 showAccessibilityReenable = false
                 dismissedA11yReenableThisSession = true
             }
@@ -546,10 +592,24 @@ private fun AuthenticatedApp(
         phoneLessonAllow = onAllow
     }
 
+    /** Opens system Accessibility settings. Call only after prominent disclosure. */
     fun openPaymentAccessibilitySettings() {
         app.securePreferences.accessibilityOnboardingSeen = true
         AccessibilityPreferred.markUserTurningOn(app.securePreferences)
         AccessibilityHelper.openAppAccessibilityDetails(context)
+    }
+
+    val accessibilityEnable = rememberAccessibilityEnableRequest {
+        openPaymentAccessibilitySettings()
+    }
+    accessibilityEnable.Dialog()
+
+    /** Direct paths that did not already show [AccessibilityServiceDisclosureDialog]. */
+    fun requestAccessibilityEnable(
+        titleOverride: String? = null,
+        bodyPrefix: String? = null
+    ) {
+        accessibilityEnable.request(titleOverride, bodyPrefix)
     }
 
     fun allowNextPaymentAccess() {
@@ -561,6 +621,7 @@ private fun AuthenticatedApp(
             PaymentAccessNeed.Accessibility -> {
                 skipOpenAfterAccessibility = true
                 pendingPaymentOpen = null
+                // PaymentAccessDialog already showed the AccessibilityService disclosure.
                 openPaymentAccessibilitySettings()
             }
             null -> finishPaymentAccessIfReady()
@@ -621,6 +682,7 @@ private fun AuthenticatedApp(
     val listVm: TransactionListViewModel = viewModel(viewModelStoreOwner = activity)
     val sendVm: SendMoneyViewModel = viewModel(viewModelStoreOwner = activity)
     val payVm: PayMoneyViewModel = viewModel(viewModelStoreOwner = activity)
+    val settingsVm: SettingsViewModel = viewModel(viewModelStoreOwner = activity)
 
     LaunchedEffect(smsGranted) {
         listVm.setSmsPermission(smsGranted)
@@ -695,6 +757,57 @@ private fun AuthenticatedApp(
         open()
     }
 
+    fun openIncomingPay(target: PayLink.Target) {
+        attemptPayment {
+            val amount = target.amountShillings?.toString().orEmpty()
+            val fm = activity.supportFragmentManager
+            when (target.kind) {
+                PayLink.Kind.PHONE -> {
+                    listOf(SendMoneyBottomSheetFragment.TAG, PayMoneyBottomSheetFragment.TAG)
+                        .forEach { tag ->
+                            (fm.findFragmentByTag(tag) as? BottomSheetDialogFragment)
+                                ?.dismissAllowingStateLoss()
+                        }
+                    sendVm.restoreAmountEntry(
+                        phone = target.identifier,
+                        name = null,
+                        amountInput = amount
+                    )
+                    refreshPaymentContacts()
+                    SendMoneyBottomSheetFragment.newInstance()
+                        .show(fm, SendMoneyBottomSheetFragment.TAG)
+                }
+                PayLink.Kind.TILL -> {
+                    listOf(SendMoneyBottomSheetFragment.TAG, PayMoneyBottomSheetFragment.TAG)
+                        .forEach { tag ->
+                            (fm.findFragmentByTag(tag) as? BottomSheetDialogFragment)
+                                ?.dismissAllowingStateLoss()
+                        }
+                    payVm.restoreAmountEntry(
+                        method = PayMethod.TILL,
+                        amountInput = amount,
+                        tillNumber = target.identifier
+                    )
+                    showPaySheet(preserveState = true)
+                }
+                PayLink.Kind.PAYBILL -> {
+                    listOf(SendMoneyBottomSheetFragment.TAG, PayMoneyBottomSheetFragment.TAG)
+                        .forEach { tag ->
+                            (fm.findFragmentByTag(tag) as? BottomSheetDialogFragment)
+                                ?.dismissAllowingStateLoss()
+                        }
+                    payVm.restoreAmountEntry(
+                        method = PayMethod.PAYBILL,
+                        amountInput = amount,
+                        businessNumber = target.identifier,
+                        accountNumber = target.account.orEmpty()
+                    )
+                    showPaySheet(preserveState = true)
+                }
+            }
+        }
+    }
+
     val startDestination = if (!app.securePreferences.firstRunSetupDone) {
         Route.FirstRunSetup.path
     } else {
@@ -711,6 +824,14 @@ private fun AuthenticatedApp(
     LaunchedEffect(openCheckIn) {
         if (!openCheckIn || !app.securePreferences.firstRunSetupDone) return@LaunchedEffect
         navController.navigate(Route.Habits.path) { launchSingleTop = true }
+    }
+
+    LaunchedEffect(openTicketId) {
+        val id = openTicketId
+        if (id == 0L || !app.securePreferences.firstRunSetupDone) return@LaunchedEffect
+        navController.navigate(Route.TicketDetail(id).path) { launchSingleTop = true }
+        openTicketId = 0L
+        activity.intent?.removeExtra(MainActivity.EXTRA_OPEN_TICKET_ID)
     }
 
     fun navigateRepeat(txId: Long, amount: String = "") {
@@ -795,7 +916,7 @@ private fun AuthenticatedApp(
     fun runStepUpAndDial(
         flow: String,
         prepare: suspend () -> RepeatTransactionCoordinator.PreparedRepeat?,
-        startDial: (RepeatTransactionCoordinator.PreparedRepeat) -> Unit,
+        startDial: (RepeatTransactionCoordinator.PreparedRepeat) -> Boolean,
         pendingId: Long? = null
     ) {
         val needCall = !hasCallPermission()
@@ -813,7 +934,6 @@ private fun AuthenticatedApp(
             }
             return
         }
-        // After amount confirm: go straight to dial / M-Pesa PIN — no mid-flow biometrics.
         scope.launch {
             val prepared = prepare()
             if (prepared == null) {
@@ -826,7 +946,14 @@ private fun AuthenticatedApp(
                 return@launch
             }
             AppMetrics.paymentStarted(flow)
-            startDial(prepared)
+            if (!startDial(prepared)) {
+                Toast.makeText(
+                    context,
+                    "Payment didn’t start. Turn off other accessibility services, then try again.",
+                    Toast.LENGTH_LONG
+                ).show()
+                return@launch
+            }
             PendingPaymentReceipt.capture(prepared)
             dismissMoneySheets()
             navController.navigate(Route.Processing(prepared.auditId).path) {
@@ -863,6 +990,51 @@ private fun AuthenticatedApp(
         )
     }
 
+    fun runFulizaOptIn() {
+        val needCall = !hasCallPermission()
+        val needState = !hasPhoneStatePermission()
+        val lesson = phoneLessonFor(needCall, needState)
+        if (lesson != null) {
+            explainPhoneAccess(lesson) {
+                callPermissionLauncher.launch(
+                    buildList {
+                        if (needCall) add(Manifest.permission.CALL_PHONE)
+                        if (needState) add(Manifest.permission.READ_PHONE_STATE)
+                    }.toTypedArray()
+                )
+            }
+            return
+        }
+        settingsVm.refresh()
+        val state = settingsVm.uiState.value
+        when {
+            !state.repeatEnabled ->
+                Toast.makeText(
+                    context,
+                    "Turn on automatic repeat in Settings to fill the Fuliza menus",
+                    Toast.LENGTH_LONG
+                ).show()
+            !state.lipaBillA11yEnabled -> requestAccessibilityEnable()
+            state.simLines.size > 1 && state.preferredSimSubscriptionId == null ->
+                Toast.makeText(
+                    context,
+                    "Choose the M-Pesa line in Settings first",
+                    Toast.LENGTH_LONG
+                ).show()
+            else -> scope.launch {
+                val prepared = settingsVm.prepareFulizaOptIn()
+                AppMetrics.paymentStarted("fuliza_opt_in")
+                if (!settingsVm.startFulizaOptIn(prepared)) {
+                    Toast.makeText(
+                        context,
+                        "Payment didn’t start. Turn off other accessibility services, then try again.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
     SideEffect {
         fun gateConfirm(
             refresh: () -> Unit,
@@ -881,7 +1053,7 @@ private fun AuthenticatedApp(
                     ).show()
                 !accessibilityEnabled -> {
                     AppMetrics.setupBlocked(SetupBlocker.NoAccessibility)
-                    openPaymentAccessibilitySettings()
+                    requestAccessibilityEnable()
                 }
                 needsPhoneState -> {
                     AppMetrics.setupBlocked(SetupBlocker.NoSim)
@@ -925,6 +1097,20 @@ private fun AuthenticatedApp(
     }
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val pendingPay = host.pendingPay
+    LaunchedEffect(pendingPay, navBackStackEntry?.destination?.route) {
+        val target = pendingPay ?: return@LaunchedEffect
+        if (!app.securePreferences.firstRunSetupDone) return@LaunchedEffect
+        if (navBackStackEntry?.destination?.route == Route.FirstRunSetup.path) return@LaunchedEffect
+        host.clearPendingPay()
+        if (navController.currentDestination?.route != Route.List.path) {
+            val popped = navController.popBackStack(Route.List.path, inclusive = false)
+            if (!popped) {
+                navController.navigate(Route.List.path) { launchSingleTop = true }
+            }
+        }
+        openIncomingPay(target)
+    }
     LaunchedEffect(navBackStackEntry?.destination?.route) {
         val route = navBackStackEntry?.destination?.route ?: return@LaunchedEffect
         val screen = route.substringBefore('/').substringBefore('?').ifBlank { route }
@@ -1023,8 +1209,23 @@ private fun AuthenticatedApp(
                 },
                 onOpenSettings = {
                     navController.navigate(Route.Settings.path)
+                },
+                onOpenProfile = {
+                    navController.navigate(Route.Profile.path)
                 }
             )
+        }
+        composable(Route.Profile.path) {
+            BackHandler { navController.popBackStack() }
+            AdaptiveFrame {
+                PayProfileScreen(
+                    onBack = { navController.popBackStack() },
+                    onPay = { target ->
+                        navController.popBackStack()
+                        openIncomingPay(target)
+                    }
+                )
+            }
         }
         composable(Route.Habits.path) {
             BackHandler { navigateHome() }
@@ -1113,7 +1314,7 @@ private fun AuthenticatedApp(
             AdaptiveFrame { RepeatConfirmScreen(
                 viewModel = repeatVm,
                 onBack = { navigateHome() },
-                onNeedAccessibility = { openPaymentAccessibilitySettings() },
+                onNeedAccessibility = { requestAccessibilityEnable() },
                 onManualFallback = {
                     navController.navigate(Route.RepeatManual(id).path)
                 },
@@ -1153,12 +1354,12 @@ private fun AuthenticatedApp(
         }
         composable(Route.Settings.path) {
             BackHandler { navigateHome() }
-            val settingsVm: SettingsViewModel = viewModel()
             AdaptiveFrame {
                 SettingsScreen(
                     viewModel = settingsVm,
                     onBack = { navigateHome() },
                     onRequestPhoneStatePermission = { requestPhoneStateWithGuide() },
+                    onOptInFuliza = { runFulizaOptIn() },
                     onCheckForUpdate = { AppUpdates.check(activity, manual = true) }
                 )
             }

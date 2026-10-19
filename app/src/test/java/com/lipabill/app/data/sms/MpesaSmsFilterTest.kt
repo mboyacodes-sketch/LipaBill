@@ -62,6 +62,14 @@ class MpesaSmsFilterTest {
     }
 
     @Test
+    fun rejects_balance_enquiry() {
+        val enquiry =
+            "DQ91IB986 Confirmed. Your M-PESA balance was Ksh339.00 on 2/7/13 at 6:46 PM."
+        assertTrue(MpesaSmsFilter.isBalanceEnquiry(enquiry))
+        assertFalse(MpesaSmsFilter.isTransactionConfirmation(enquiry))
+    }
+
+    @Test
     fun rejects_bodies_missing_confirmed_or_balance() {
         assertFalse(MpesaSmsFilter.isTransactionConfirmation("Your new M-PESA PIN is 1234"))
         assertFalse(

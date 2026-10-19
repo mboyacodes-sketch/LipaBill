@@ -182,36 +182,36 @@ fun BalanceAmountRow(
             )
         }
         if (eyeInCircle) {
-            Box(
-                modifier = Modifier
-                    .size(EyeChipSize)
-                    .clip(CircleShape)
-                    .background(EyeChipFill)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        role = Role.Button,
-                        onClick = toggle
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                eyeContent()
+                Box(
+                    modifier = Modifier
+                        .size(EyeChipSize)
+                        .clip(CircleShape)
+                        .background(EyeChipFill)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            role = Role.Button,
+                            onClick = toggle
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    eyeContent()
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(EyeChipSize)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            role = Role.Button,
+                            onClick = toggle
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    eyeContent()
+                }
             }
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(EyeChipSize)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        role = Role.Button,
-                        onClick = toggle
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                eyeContent()
-            }
-        }
     }
 }
 

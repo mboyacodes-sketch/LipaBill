@@ -135,12 +135,10 @@ object BookingConfirmationParser {
             """(?i)\bTime\s*[:\-]?\s*(\d{1,2}[:.]\d{2})\s*(am|pm)?\b"""
         ).find(text) ?: return null
         val raw = m.groupValues[1].replace('.', ':')
-        val ampm = m.groupValues.getOrNull(2)?.lowercase(Locale.US)
+        val ampm = m.groupValues.getOrNull(2)
         val parts = raw.split(':')
-        var hour = parts[0].toIntOrNull() ?: return null
+        val hour = parts[0].toIntOrNull() ?: return null
         val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
-        if (ampm == "pm" && hour < 12) hour += 12
-        if (ampm == "am" && hour == 12) hour = 0
-        return runCatching { LocalTime.of(hour, minute) }.getOrNull()
+        return clockFromParts(hour, minute, ampm)
     }
 }

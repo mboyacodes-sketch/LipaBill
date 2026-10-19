@@ -19,6 +19,12 @@
     <uses-permission
         android:name="com.google.android.gms.permission.AD_ID"
         tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.ACCESS_ADSERVICES_AD_ID"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.ACCESS_ADSERVICES_ATTRIBUTION"
+        tools:node="remove" />
     <!-- Firebase Analytics (metrics only) + ML Kit model delivery -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -60,7 +66,7 @@
 
     <application
         android:name=".LipaBillApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:networkSecurityConfig="@xml/network_security_config"
@@ -100,9 +106,14 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="lipabill" android:host="receipt" />
             </intent-filter>
-            <!-- Open Apple Wallet .pkpass from Files / email / share sheet.
-                 Senders often use octet-stream or zip, and content URIs hide the
-                 filename, so match both the Apple type and .pkpass paths. -->
+            <!-- Pay code. Shared links use lipabill://. https://lipabill.app is not claimed until that host serves asset links. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="lipabill" android:host="p" android:pathPrefix="/" />
+            </intent-filter>
+            <!-- Apple Wallet passes. Generic zip and PDF shares stay in the in-app picker. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <action android:name="android.intent.action.SEND" />
@@ -111,9 +122,6 @@
                 <data android:mimeType="application/vnd.apple.pkpass" />
                 <data android:mimeType="application/vnd.apple.pkpasses" />
                 <data android:mimeType="application/vnd-apple.pkpass" />
-                <!-- WhatsApp sends .pkpass as a zip, with the filename only inside the file. -->
-                <data android:mimeType="application/zip" />
-                <data android:mimeType="application/x-zip-compressed" />
             </intent-filter>
             <!-- content:// only. file:// is not a grant, and a wildcard mime would
                  offer LipaBill for every share whose path happens to contain .pkpass. -->
@@ -124,28 +132,20 @@
                 <data android:scheme="content" />
                 <data android:mimeType="application/vnd.apple.pkpass" />
                 <data android:mimeType="application/vnd.apple.pkpasses" />
-                <data android:mimeType="application/octet-stream" />
-                <data android:mimeType="application/zip" />
-                <data android:mimeType="application/x-zip" />
-                <data android:mimeType="application/x-zip-compressed" />
+                <data
+                    android:scheme="content"
+                    android:mimeType="application/zip"
+                    android:pathSuffix=".pkpass" />
+                <data
+                    android:scheme="content"
+                    android:mimeType="application/x-zip-compressed"
+                    android:pathSuffix=".pkpass" />
                 <!-- pathPattern stops at dots, so repeat for names that already contain some. -->
                 <data android:pathPattern=".*\\.pkpass" />
                 <data android:pathPattern=".*\\..*\\.pkpass" />
                 <data android:pathPattern=".*\\..*\\..*\\.pkpass" />
                 <data android:pathPattern=".*\\..*\\..*\\..*\\.pkpass" />
                 <data android:pathSuffix=".pkpass" />
-            </intent-filter>
-            <!-- Open / share e-ticket PDFs -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:mimeType="application/pdf" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/pdf" />
             </intent-filter>
         </activity>
 
@@ -166,7 +166,7 @@
             android:name=".data.sms.MpesaSmsReceiver"
             android:exported="true"
             android:permission="android.permission.BROADCAST_SMS">
-            <intent-filter android:priority="999">
+            <intent-filter>
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>

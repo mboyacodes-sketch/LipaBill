@@ -1,8 +1,6 @@
 package com.lipabill.app.ussd
 
-import java.security.SecureRandom
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SecurePinKeypadTest {
@@ -17,11 +15,11 @@ class SecurePinKeypadTest {
     }
 
     @Test
-    fun a_shuffled_pad_still_has_every_digit() {
-        val rows = securePinKeyRows(SecureRandom())
-        val digits = rows.flatten().filter { it.length == 1 && it[0].isDigit() }
-        assertEquals(10, digits.toSet().size)
-        assertTrue(digits.containsAll(('0'..'9').map(Char::toString)))
-        assertEquals("⌫", rows.last().last())
+    fun pin_pad_uses_phone_order() {
+        val rows = securePinKeyRows()
+        assertEquals(listOf("1", "2", "3"), rows[0])
+        assertEquals(listOf("4", "5", "6"), rows[1])
+        assertEquals(listOf("7", "8", "9"), rows[2])
+        assertEquals(listOf("", "0", "⌫"), rows[3])
     }
 }

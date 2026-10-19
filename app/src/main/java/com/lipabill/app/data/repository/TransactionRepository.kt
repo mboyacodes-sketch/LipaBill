@@ -87,6 +87,10 @@ class TransactionRepository(
     fun observeWallet(fuliza: Boolean): Flow<List<MpesaTransaction>> =
         enrichList(dao.observeWallet(if (fuliza) 1 else 0))
 
+    suspend fun latestMpesaBalance(): Double? = withContext(Dispatchers.IO) {
+        dao.latestMpesaBalance()
+    }
+
     fun observeById(id: Long): Flow<MpesaTransaction?> =
         combine(dao.observeById(id), nameLinks) { entity, wide ->
             val tx = entity?.toDomain() ?: return@combine null
@@ -149,6 +153,8 @@ class TransactionRepository(
     private suspend fun importNewConfirmations(): Int {
         purgeNonConfirmationsIfNeeded()
         repairParsedAmountsIfNeeded()
+        reclassifySavingsIfNeeded()
+        reclassifyUnknownPartiesIfNeeded()
         // Without SMS access, leave prior rows alone and do not mark backfill complete.
         if (!inboxReader.hasSmsPermission()) {
             linkPhonesByName()
@@ -211,6 +217,8 @@ class TransactionRepository(
     suspend fun backfillIfNeeded(): Int {
         purgeNonConfirmationsIfNeeded()
         repairParsedAmountsIfNeeded()
+        reclassifySavingsIfNeeded()
+        reclassifyUnknownPartiesIfNeeded()
         if (securePreferences.smsBackfillDone && dao.count() > 0) {
             linkPhonesByName()
             return 0
@@ -251,6 +259,85 @@ class TransactionRepository(
                 amount = reparsed.amount ?: row.amount,
                 balance = reparsed.balance ?: row.balance,
                 cost = reparsed.cost ?: row.cost
+            )
+            fixed++
+        }
+        fixed
+    }
+
+    /**
+     * Older parses filed M-Shwari, airtime, agent cash-in, and "sent to … for account"
+     * under Sent or Unknown. Re-read stored confirmations once. Balance checks are removed.
+     */
+    suspend fun reclassifySavingsIfNeeded(): Int = withContext(Dispatchers.IO) {
+        if (securePreferences.savingsClassifyRepairDone) return@withContext 0
+        val fixed = reclassifySavings()
+        securePreferences.savingsClassifyRepairDone = true
+        fixed
+    }
+
+    suspend fun reclassifySavings(): Int = withContext(Dispatchers.IO) {
+        val rows = dao.getAllForClassification()
+        var fixed = 0
+        for (row in rows) {
+            if (row.rawBody.isBlank()) continue
+            if (MpesaSmsFilter.isBalanceEnquiry(row.rawBody)) {
+                dao.deleteByIds(listOf(row.id))
+                fixed++
+                continue
+            }
+            if (!MpesaSmsFilter.isTransactionConfirmation(row.rawBody)) continue
+            val reparsed = MpesaSmsParser.parse(row.rawBody, row.timestampMillis)
+            val shouldUpdate = when {
+                reparsed.type == TransactionType.UNKNOWN -> false
+                reparsed.type == row.type -> false
+                row.type == TransactionType.UNKNOWN -> true
+                row.type == TransactionType.SENT &&
+                    reparsed.type != TransactionType.SENT -> true
+                reparsed.type == TransactionType.SAVINGS -> true
+                else -> false
+            }
+            if (!shouldUpdate) continue
+            dao.updateParty(
+                id = row.id,
+                type = reparsed.type,
+                name = reparsed.counterpartyName ?: row.counterpartyName,
+                phone = reparsed.counterpartyPhone
+            )
+            fixed++
+        }
+        fixed
+    }
+
+    /**
+     * Older parses left the party blank when the confirmation verb was unfamiliar.
+     * Re-read those SMS once and fill the name, phone, and direction.
+     */
+    suspend fun reclassifyUnknownPartiesIfNeeded(): Int = withContext(Dispatchers.IO) {
+        if (securePreferences.unknownPartyRepairDone) return@withContext 0
+        val fixed = reclassifyUnknownParties()
+        securePreferences.unknownPartyRepairDone = true
+        fixed
+    }
+
+    suspend fun reclassifyUnknownParties(): Int = withContext(Dispatchers.IO) {
+        val rows = dao.getAllForClassification()
+        var fixed = 0
+        for (row in rows) {
+            if (row.type != TransactionType.UNKNOWN) continue
+            if (row.rawBody.isBlank()) continue
+            if (!MpesaSmsFilter.isTransactionConfirmation(row.rawBody)) continue
+            val reparsed = MpesaSmsParser.parse(row.rawBody, row.timestampMillis)
+            val name = reparsed.counterpartyName?.takeIf { it.isNotBlank() }
+            val phone = reparsed.counterpartyPhone?.takeIf { it.isNotBlank() }
+            val typeChanged = reparsed.type != TransactionType.UNKNOWN
+            val nameChanged = name != null && name != row.counterpartyName
+            if (!typeChanged && !nameChanged && phone == null) continue
+            dao.updateParty(
+                id = row.id,
+                type = if (typeChanged) reparsed.type else row.type,
+                name = name,
+                phone = phone
             )
             fixed++
         }

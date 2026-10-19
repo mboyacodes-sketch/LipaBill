@@ -41,24 +41,40 @@ import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.util.appendAmountKey
 import com.lipabill.app.ui.util.formatKesMoney
 import com.lipabill.app.ui.util.formatMoneyInputDisplay
-import com.lipabill.app.ui.util.formatMoneyInputLabel
 import com.lipabill.app.ui.util.sanitizeAmountInput
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
 
 /**
- * Running-total helper for market-style shopping: add item amounts, then apply
- * the sum to the payment amount field.
+ * Running total for a payment: add, subtract, multiply, or divide, then use the result.
  */
+enum class AmountOp(val symbol: String) {
+    ADD("+"),
+    SUB("−"),
+    MUL("×"),
+    DIV("÷")
+}
+
 data class AmountAddUpState(
     val entry: String = "",
-    val lines: List<Double> = emptyList()
+    val acc: Double? = null,
+    val pending: AmountOp? = null,
+    val tape: List<String> = emptyList()
 ) {
     val entryValue: Double?
         get() = RepeatTransactionViewModel.parseAmount(entry)
 
-    /** Lines plus the in-progress entry (if it’s a valid amount). */
+    /** Committed total, with the number being typed applied by [pending] (or added). */
     val total: Double
-        get() = lines.sum() + (entryValue ?: 0.0)
+        get() {
+            val right = entryValue
+            val left = acc
+            return when {
+                left == null -> right ?: 0.0
+                right == null -> left
+                pending == null || pending == AmountOp.ADD -> roundMoney(left + right)
+                else -> apply(left, pending, right) ?: left
+            }
+        }
 
     val canAddEntry: Boolean
         get() = entryValue != null
@@ -70,60 +86,104 @@ data class AmountAddUpState(
         copy(entry = appendAmountKey(entry, key))
 
     fun withBackspace(): AmountAddUpState =
-        copy(entry = entry.dropLast(1))
+        if (entry.isNotEmpty()) copy(entry = entry.dropLast(1))
+        else copy(pending = null)
 
-    fun withEntryAdded(): AmountAddUpState {
-        val value = entryValue ?: return this
-        return copy(entry = "", lines = lines + value)
+    /** Commit the typed number with + and clear the entry. */
+    fun withEntryAdded(): AmountAddUpState = commit(pending ?: AmountOp.ADD)
+
+    /**
+     * Apply the typed number with the operator already chosen, then arm [op]
+     * for the next number. The first number is stored on its own.
+     */
+    fun withOperator(op: AmountOp): AmountAddUpState {
+        val committed = if (entryValue != null) commit(pending ?: AmountOp.ADD) else this
+        if (committed.acc == null) return committed
+        return committed.copy(pending = op)
     }
 
     fun cleared(): AmountAddUpState = AmountAddUpState()
 
     /** Digits string suitable for [sanitizeAmountInput] / payment amount fields. */
-    fun totalAsAmountInput(): String {
-        if (total <= 0.0) return ""
-        return if (total % 1.0 == 0.0) {
-            total.toLong().toString()
+    fun totalAsAmountInput(): String = amountInputString(total)
+
+    private fun commit(op: AmountOp): AmountAddUpState {
+        val right = entryValue ?: return this
+        val left = acc
+        val next = if (left == null) right else apply(left, op, right) ?: return this
+        val line = if (left == null) {
+            moneyText(right)
         } else {
-            "%.2f".format(total).trimEnd('0').trimEnd('.')
-                .let { sanitizeAmountInput(it) }
+            "${op.symbol} ${moneyText(right)}"
         }
+        return copy(acc = next, entry = "", pending = null, tape = tape + line)
     }
 
     companion object {
         /**
          * Seed from the amount already typed on the payment pad.
-         * A valid amount becomes the first line (user already tapped +), ready for the next item.
+         * [operator] is armed so the next number is subtracted, multiplied, or divided.
          */
-        fun seededFrom(rawAmountInput: String): AmountAddUpState {
+        fun seededFrom(rawAmountInput: String, operator: AmountOp? = null): AmountAddUpState {
             val sanitized = sanitizeAmountInput(rawAmountInput)
-            if (sanitized.isBlank()) return AmountAddUpState()
-            // Keep incomplete typing in the entry field (e.g. "12.").
+            if (sanitized.isBlank()) return AmountAddUpState(pending = operator)
             if (sanitized.endsWith('.')) {
-                return AmountAddUpState(entry = sanitized)
+                return AmountAddUpState(entry = sanitized, pending = operator)
             }
             val value = RepeatTransactionViewModel.parseAmount(sanitized)
             return if (value != null) {
-                AmountAddUpState(entry = "", lines = listOf(value))
+                AmountAddUpState(
+                    acc = value,
+                    pending = operator,
+                    tape = listOf(moneyText(value))
+                )
             } else {
-                AmountAddUpState(entry = sanitized)
+                AmountAddUpState(entry = sanitized, pending = operator)
             }
         }
     }
 }
 
+private fun apply(left: Double, op: AmountOp, right: Double): Double? {
+    val raw = when (op) {
+        AmountOp.ADD -> left + right
+        AmountOp.SUB -> left - right
+        AmountOp.MUL -> left * right
+        AmountOp.DIV -> if (right == 0.0) null else left / right
+    } ?: return null
+    return roundMoney(raw)
+}
+
+private fun roundMoney(value: Double): Double =
+    kotlin.math.round(value * 100.0) / 100.0
+
+private fun moneyText(value: Double): String {
+    val rounded = roundMoney(value)
+    return if (kotlin.math.abs(rounded % 1.0) < 0.001) {
+        rounded.toLong().toString()
+    } else {
+        "%.2f".format(java.util.Locale.US, rounded).trimEnd('0').trimEnd('.')
+    }
+}
+
+private fun amountInputString(total: Double): String {
+    if (total <= 0.0) return ""
+    return sanitizeAmountInput(moneyText(total))
+}
+
 @Composable
 fun AmountAddUpDialog(
     initialAmountInput: String = "",
+    initialOperator: AmountOp? = null,
     onDismiss: () -> Unit,
     onUseTotal: (amountInput: String) -> Unit
 ) {
-    var state by remember(initialAmountInput) {
-        mutableStateOf(AmountAddUpState.seededFrom(initialAmountInput))
+    var state by remember(initialAmountInput, initialOperator) {
+        mutableStateOf(AmountAddUpState.seededFrom(initialAmountInput, initialOperator))
     }
     val linesScroll = rememberScrollState()
-    LaunchedEffect(state.lines.size, linesScroll.maxValue) {
-        if (state.lines.isNotEmpty()) {
+    LaunchedEffect(state.tape.size, linesScroll.maxValue) {
+        if (state.tape.isNotEmpty()) {
             linesScroll.animateScrollTo(linesScroll.maxValue)
         }
     }
@@ -142,13 +202,13 @@ fun AmountAddUpDialog(
                 .padding(horizontal = 20.dp, vertical = 18.dp)
         ) {
             Text(
-                text = "Add up",
+                text = "Calculate",
                 style = HomeType.section,
                 color = Ink
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Enter each item, tap +, then use the total to pay.",
+                text = "Use +, −, ×, or ÷, then pay the result.",
                 style = HomeType.caption,
                 color = Mute
             )
@@ -164,11 +224,17 @@ fun AmountAddUpDialog(
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(4.dp))
+            val acc = state.acc
+            val pending = state.pending
             Text(
                 text = when {
-                    state.lines.isEmpty() && state.entry.isBlank() -> "No items yet"
-                    state.lines.isEmpty() -> "Typing…"
-                    else -> "${state.lines.size} item${if (state.lines.size == 1) "" else "s"} · entry ${formatMoneyInputLabel(state.entry)}"
+                    acc == null && state.entry.isBlank() -> "No amount yet"
+                    pending != null && acc != null && state.entry.isNotBlank() ->
+                        "${moneyText(acc)} ${pending.symbol} ${formatMoneyInputDisplay(state.entry)}"
+                    pending != null && acc != null ->
+                        "${moneyText(acc)} ${pending.symbol}"
+                    state.entry.isNotBlank() && acc == null -> "Typing…"
+                    else -> "Running total"
                 },
                 style = HomeType.caption,
                 color = Mute,
@@ -176,7 +242,7 @@ fun AmountAddUpDialog(
                 textAlign = TextAlign.Center
             )
 
-            if (state.lines.isNotEmpty()) {
+            if (state.tape.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Column(
                     modifier = Modifier
@@ -188,9 +254,9 @@ fun AmountAddUpDialog(
                         .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    state.lines.forEachIndexed { index, line ->
+                    state.tape.forEach { line ->
                         Text(
-                            text = "${index + 1}. ${formatKesMoney(line)}",
+                            text = line,
                             style = HomeType.caption,
                             color = Ink
                         )
@@ -214,9 +280,8 @@ fun AmountAddUpDialog(
                 onKey = { key -> state = state.withKey(key) },
                 onBackspace = { state = state.withBackspace() },
                 onClear = { state = state.cleared() },
-                onAction = { state = state.withEntryAdded() },
-                actionLabel = "+",
-                actionEnabled = state.canAddEntry
+                onOperator = { op -> state = state.withOperator(op) },
+                activeOperator = state.pending
             )
 
             Spacer(modifier = Modifier.height(14.dp))

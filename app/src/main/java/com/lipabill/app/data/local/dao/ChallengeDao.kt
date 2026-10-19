@@ -13,9 +13,6 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ChallengeDao {
 
-    @Query("SELECT * FROM challenges WHERE status = 'ACTIVE' LIMIT 1")
-    fun observeActive(): Flow<ChallengeEntity?>
-
     @Query("SELECT * FROM challenges ORDER BY id DESC LIMIT 1")
     fun observeLatest(): Flow<ChallengeEntity?>
 
@@ -51,9 +48,6 @@ interface ChallengeDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAchievement(entity: ChallengeAchievementEntity): Long
-
-    @Query("SELECT * FROM weekly_checkins WHERE weekId = :weekId LIMIT 1")
-    fun observeCheckIn(weekId: String): Flow<WeeklyCheckInEntity?>
 
     @Query("SELECT * FROM weekly_checkins WHERE weekId = :weekId LIMIT 1")
     suspend fun checkIn(weekId: String): WeeklyCheckInEntity?

@@ -1,7 +1,5 @@
 package com.lipabill.app.ui.repeat
 
-import android.content.ContextWrapper
-import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.layout.Box
@@ -16,6 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel as activityViewModel
 import com.lipabill.app.LipaBillApp
+import com.lipabill.app.data.parser.extractAccount
 import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.metrics.SetupBlocker
 import com.lipabill.app.ui.sheet.MoneyConfirmDialog
@@ -23,21 +22,14 @@ import com.lipabill.app.ui.sheet.MoneySheetScaffold
 import com.lipabill.app.ui.sheet.SheetFeedbackTone
 import com.lipabill.app.ui.sheet.amountExceedsBalance
 import com.lipabill.app.ui.sheet.amountStepGuidance
-import com.lipabill.app.ui.sheet.formatSheetAmount
+import com.lipabill.app.ui.util.formatMoneyInputLabel
 import com.lipabill.app.ui.sheet.moneySheetFeedback
 import com.lipabill.app.ui.theme.Canvas
+import com.lipabill.app.ui.util.findComponentActivity
 import com.lipabill.app.ui.util.formatKesMoney
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
+import com.lipabill.app.viewmodel.WalletAccount
 import com.lipabill.app.viewmodel.TransactionListViewModel
-
-private fun android.content.Context.findComponentActivity(): ComponentActivity {
-    var current = this
-    while (current is ContextWrapper) {
-        if (current is ComponentActivity) return current
-        current = current.baseContext
-    }
-    error("Repeat amount screen is not hosted by an activity")
-}
 
 @Composable
 fun RepeatConfirmScreen(
@@ -51,6 +43,7 @@ fun RepeatConfirmScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val activity = LocalContext.current.findComponentActivity()
+        ?: error("Repeat amount screen is not hosted by an activity")
     val listVm: TransactionListViewModel = activityViewModel(viewModelStoreOwner = activity)
     val listState by listVm.uiState.collectAsStateWithLifecycle()
     val app = activity.application as LipaBillApp
@@ -65,7 +58,7 @@ fun RepeatConfirmScreen(
     val pendingAmount = remember(state.amountInput) {
         RepeatTransactionViewModel.parseAmount(state.amountInput)
     }
-    val shownBalance = listState.shownBalance()
+    val shownBalance = listState.latestBalance
     val exceedsBalance = amountExceedsBalance(shownBalance, pendingAmount)
     val setupAction = when {
         state.needsPhoneStatePermission -> "Allow"
@@ -88,13 +81,15 @@ fun RepeatConfirmScreen(
         !state.featureEnabled ->
             "Payment automation is off. Copy the details instead."
         !state.accessibilityEnabled ->
-            "Enable Accessibility for LipaBill to fill the M-Pesa screens."
+            "Enable LipaBill’s Accessibility Service to fill the M-Pesa USSD screens " +
+                "for this Repeat payment."
         else -> amountStepGuidance(
             onAmountStep = true,
             exceedsBalance = exceedsBalance,
             amountInput = state.amountInput,
             amountValid = state.amountValid,
-            detailsGuidance = null
+            detailsGuidance = null,
+            fulizaCoversShortfall = true
         )
     }
     val feedback = moneySheetFeedback(
@@ -115,13 +110,13 @@ fun RepeatConfirmScreen(
     ) {
         MoneySheetScaffold(
             balance = shownBalance,
-            balanceCaption = listState.account.balanceCaption,
-            balancePrefix = listState.account.balancePrefix,
+            balanceCaption = WalletAccount.MPESA.balanceCaption,
+            balancePrefix = WalletAccount.MPESA.balancePrefix,
             alwaysShowBalance = alwaysShowBalance,
             pendingDeduction = pendingAmount,
             selectedName = recipient,
             selectedSubtitle = subtitle,
-            amountDisplay = formatSheetAmount(state.amountInput),
+            amountDisplay = formatMoneyInputLabel(state.amountInput),
             amountInput = state.amountInput,
             selectedSelected = tx != null,
             recipientsHeader = "Back",
@@ -156,14 +151,18 @@ fun RepeatConfirmScreen(
             onApplyAddUpAmount = viewModel::setAmountInput,
             onClearAmount = { viewModel.setAmountInput("") },
             feedbackMessage = feedback?.first,
-            feedbackTone = feedback?.second ?: SheetFeedbackTone.Hint
+            feedbackTone = feedback?.second ?: SheetFeedbackTone.Hint,
+            fulizaCoversShortfall = true
         )
     }
 
     if (showConfirm && tx != null && pendingAmount != null) {
-        val detail = listOfNotNull(tx.counterpartyName, tx.counterpartyPhone)
-            .joinToString(" · ")
-            .ifBlank { "Recipient" }
+        val account = extractAccount(tx.rawBody)
+        val detail = listOfNotNull(
+            tx.counterpartyName?.takeIf { it.isNotBlank() },
+            tx.counterpartyPhone?.takeIf { it.isNotBlank() },
+            account?.let { "Acc $it" }
+        ).joinToString(" · ").ifBlank { "Recipient" }
         MoneyConfirmDialog(
             amountLabel = formatKesMoney(pendingAmount),
             detail = detail,

@@ -2,6 +2,8 @@ package com.lipabill.app.data.repository
 
 import android.content.Context
 import android.util.Log
+import androidx.security.crypto.EncryptedFile
+import androidx.security.crypto.MasterKey
 import com.lipabill.app.data.local.entity.MerchantEntity
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.security.AppAtRestCrypto
@@ -10,12 +12,9 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Encrypted mirror of learned paybill / till / Pochi ↔ name mappings.
- *
- * Room merchants live in SQLCipher (device Keystore). After uninstall that key is gone,
- * so Auto Backup of the encrypted DB alone cannot restore learning. This sealed file is
- * included in backup and can be re-imported into a fresh DB (key derived from app signing
- * cert — readable only with this APK + the blob, not as plain JSON).
+ * Keystore-sealed mirror of learned paybill / till / Pochi names.
+ * The file is not backed up. An older blob sealed with the APK signing
+ * certificate is read once, rewritten under the keystore, then deleted.
  */
 class MerchantSnapshotStore(context: Context) {
 
@@ -42,24 +41,45 @@ class MerchantSnapshotStore(context: Context) {
             .put("m", array)
             .toString()
             .toByteArray(Charsets.UTF_8)
-        val sealed = AppAtRestCrypto.seal(appContext, payload)
-        file.writeBytes(sealed)
-        // Drop legacy plaintext if present
+        if (file.exists()) file.delete()
+        encryptedFile().openFileOutput().use { it.write(payload) }
         if (legacyPlain.exists()) legacyPlain.delete()
     }
 
     fun read(): List<MerchantEntity> {
         migrateLegacyPlainIfNeeded()
         if (!file.exists()) return emptyList()
-        return try {
-            val sealed = file.readBytes()
-            val plain = AppAtRestCrypto.open(appContext, sealed)
-                ?: return emptyList()
-            parseJson(String(plain, Charsets.UTF_8))
-        } catch (t: Throwable) {
-            Log.w(TAG, "read_failed", t)
-            emptyList()
-        }
+        readKeystore()?.let { return it }
+        val legacy = readCertSealed() ?: return emptyList()
+        write(legacy)
+        return legacy
+    }
+
+    private fun readKeystore(): List<MerchantEntity>? = try {
+        val plain = encryptedFile().openFileInput().use { it.readBytes() }
+        parseJson(String(plain, Charsets.UTF_8))
+    } catch (_: Throwable) {
+        null
+    }
+
+    private fun readCertSealed(): List<MerchantEntity>? = try {
+        val plain = AppAtRestCrypto.open(appContext, file.readBytes()) ?: return null
+        parseJson(String(plain, Charsets.UTF_8))
+    } catch (t: Throwable) {
+        Log.w(TAG, "read_failed", t)
+        null
+    }
+
+    private fun encryptedFile(): EncryptedFile {
+        val masterKey = MasterKey.Builder(appContext)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return EncryptedFile.Builder(
+            appContext,
+            file,
+            masterKey,
+            EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
+        ).build()
     }
 
     private fun migrateLegacyPlainIfNeeded() {

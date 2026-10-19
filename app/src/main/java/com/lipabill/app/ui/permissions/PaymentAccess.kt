@@ -40,8 +40,9 @@ enum class PaymentAccessNeed(val line: String, val actionLabel: String) {
         actionLabel = "Allow SIM access"
     ),
     Accessibility(
-        line = "Accessibility — fill the M-Pesa screens for that payment",
-        actionLabel = "Turn on Accessibility"
+        line = "Accessibility Service — fill Safaricom USSD screens for Send, Pay, and Repeat " +
+            "after you confirm the payment",
+        actionLabel = AccessibilityServiceDisclosure.AGREE
     )
 }
 
@@ -126,6 +127,15 @@ fun PaymentAccessDialog(
     footnote: String? = null
 ) {
     val next = missing.firstOrNull() ?: return
+    // AccessibilityService must use its own disclosure — never bundle with phone/SIM/SMS.
+    if (next == PaymentAccessNeed.Accessibility) {
+        AccessibilityServiceDisclosureDialog(
+            onContinueToSettings = onAllow,
+            onNotNow = onNotNow
+        )
+        return
+    }
+    val phoneOrSimOnly = missing.filter { it != PaymentAccessNeed.Accessibility }
     AlertDialog(
         onDismissRequest = onNotNow,
         title = { Text("Send and Pay need access") },
@@ -136,8 +146,15 @@ fun PaymentAccessDialog(
                         "Each one is used only for a payment you confirm."
                 )
                 Spacer(modifier = Modifier.height(Space.gap))
-                missing.forEach { need ->
+                phoneOrSimOnly.forEach { need ->
                     Text("• ${need.line}")
+                }
+                if (missing.any { it == PaymentAccessNeed.Accessibility }) {
+                    Spacer(modifier = Modifier.height(Space.gap))
+                    Text(
+                        "You’ll get a separate Accessibility Service explanation before " +
+                            "Android Settings."
+                    )
                 }
                 if (!footnote.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(Space.gap))

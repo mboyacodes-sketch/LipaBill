@@ -35,7 +35,9 @@ import com.lipabill.app.data.model.TicketSource
 import com.lipabill.app.data.model.firstNotesValue
 import com.lipabill.app.data.model.labeledPiece
 import com.lipabill.app.data.model.notesValue
-import com.lipabill.app.data.tickets.KNOWN_IATA
+import com.lipabill.app.data.tickets.extractKnownIata
+import com.lipabill.app.data.tickets.parseIataRoute
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.PaperTicket
 import com.lipabill.app.ui.theme.HomeType
@@ -47,7 +49,6 @@ import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.util.formatEventWhen
 import com.lipabill.app.ui.util.formatTravelClock
 import com.lipabill.app.ui.util.formatTravelDate
-import java.util.Locale
 
 /**
  * Flight booking card matching the confirmed-booking mock:
@@ -166,18 +167,19 @@ private fun FlightBookingConfirmedCard(
                 if (model.isItinerary) {
                     // Itinerary: schedule-first — flight / date / time, then cabin / seat / bag
                     Row(modifier = Modifier.fillMaxWidth()) {
-                        TravelDetailCell("FLIGHT", model.flightNo ?: "—", Modifier.weight(1f))
+                        TravelDetailCell("FLIGHT", model.flightNo ?: "—", Modifier.weight(1f), cover = true)
                         TravelDetailCell("DATE", model.dateLabel ?: "—", Modifier.weight(1f))
                         TravelDetailCell("DEPART", model.timeLabel ?: "—", Modifier.weight(1f))
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(modifier = Modifier.fillMaxWidth()) {
                         TravelDetailCell("CABIN", model.classLabel ?: "—", Modifier.weight(1f))
-                        TravelDetailCell("SEAT", model.seat ?: "—", Modifier.weight(1f))
+                        TravelDetailCell("SEAT", model.seat ?: "—", Modifier.weight(1f), cover = true)
                         TravelDetailCell(
                             if (model.isReturn) "RETURN FLT" else "STATUS",
                             model.returnFlightNo ?: model.statusLabel ?: "—",
-                            Modifier.weight(1f)
+                            Modifier.weight(1f),
+                            cover = model.isReturn
                         )
                     }
                     if (model.isReturn && model.returnDateLabel != null) {
@@ -185,21 +187,21 @@ private fun FlightBookingConfirmedCard(
                         Row(modifier = Modifier.fillMaxWidth()) {
                             TravelDetailCell("RETURN DATE", model.returnDateLabel, Modifier.weight(1f))
                             TravelDetailCell("RETURN TIME", model.returnTimeLabel ?: "—", Modifier.weight(1f))
-                            TravelDetailCell("REF", model.refNo ?: "—", Modifier.weight(1f))
+                            TravelDetailCell("REF", model.refNo ?: "—", Modifier.weight(1f), cover = true)
                         }
                     }
                 } else {
                     // Receipt: ticket / class / terminal, then date / time / seat
                     Row(modifier = Modifier.fillMaxWidth()) {
-                        TravelDetailCell("FLIGHT NO.", model.flightNo ?: "—", Modifier.weight(1f))
+                        TravelDetailCell("FLIGHT NO.", model.flightNo ?: "—", Modifier.weight(1f), cover = true)
                         TravelDetailCell("CLASS", model.classLabel ?: "—", Modifier.weight(1f))
-                        TravelDetailCell("TERMINAL", model.terminal ?: "—", Modifier.weight(1f))
+                        TravelDetailCell("TERMINAL", model.terminal ?: "—", Modifier.weight(1f), cover = true)
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(modifier = Modifier.fillMaxWidth()) {
                         TravelDetailCell("DATE", model.dateLabel ?: "—", Modifier.weight(1f))
                         TravelDetailCell("TIME", model.timeLabel ?: "—", Modifier.weight(1f))
-                        TravelDetailCell("SEAT", model.seat ?: "—", Modifier.weight(1f))
+                        TravelDetailCell("SEAT", model.seat ?: "—", Modifier.weight(1f), cover = true)
                     }
                     if (model.ticketNo != null || model.totalLabel != null) {
                         Spacer(modifier = Modifier.height(16.dp))
@@ -207,17 +209,20 @@ private fun FlightBookingConfirmedCard(
                             TravelDetailCell(
                                 "TICKET NO.",
                                 model.ticketNo ?: "—",
-                                Modifier.weight(1.2f)
+                                Modifier.weight(1.2f),
+                                cover = true
                             )
                             TravelDetailCell(
                                 "TOTAL",
                                 model.totalLabel ?: "—",
-                                Modifier.weight(1f)
+                                Modifier.weight(1f),
+                                cover = true
                             )
                             TravelDetailCell(
                                 if (model.isReturn) "TRIP" else "REF",
                                 if (model.isReturn) "Return" else (model.refNo ?: "—"),
-                                Modifier.weight(0.8f)
+                                Modifier.weight(0.8f),
+                                cover = !model.isReturn
                             )
                         }
                     }
@@ -268,6 +273,7 @@ private fun FlightBookingConfirmedCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(72.dp)
+                            .recordingPrivacyCover()
                     )
                 }
                 val codeLine = model.refNo?.takeIf { it.length in 4..10 }
@@ -286,7 +292,9 @@ private fun FlightBookingConfirmedCard(
                         textAlign = TextAlign.Center,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .recordingPrivacyCover()
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -297,53 +305,6 @@ private fun FlightBookingConfirmedCard(
                     textAlign = TextAlign.Center
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun FlightRouteRow(
-    from: String?,
-    to: String?,
-    label: String? = null,
-    compact: Boolean = false
-) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-        if (label != null) {
-            Text(
-                text = label,
-                color = LabelBlue,
-                fontSize = if (compact) 9.sp else 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.8.sp,
-                modifier = Modifier.padding(bottom = 4.dp)
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = from ?: "—",
-                color = RouteBlue,
-                fontSize = if (compact) 16.sp else 32.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            AnimatedFlightToDestination(
-                modifier = Modifier.weight(1f),
-                tint = RouteBlue.copy(alpha = if (compact) 0.4f else 0.65f)
-            )
-            Text(
-                text = to ?: "—",
-                color = RouteBlue,
-                fontSize = if (compact) 16.sp else 32.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
         }
     }
 }
@@ -413,7 +374,7 @@ private fun RailBookingCard(
                     Spacer(modifier = Modifier.height(14.dp))
                 }
                 model.refNo?.let {
-                    TravelDetailCell("REF NO.", it, Modifier.fillMaxWidth())
+                    TravelDetailCell("REF NO.", it, Modifier.fillMaxWidth(), cover = true)
                     Spacer(modifier = Modifier.height(12.dp))
                 }
                 Text(
@@ -446,7 +407,9 @@ private fun RailBookingCard(
                             bitmap = qrBitmap,
                             contentDescription = "Booking QR code",
                             contentScale = ContentScale.Fit,
-                            modifier = Modifier.size(168.dp)
+                            modifier = Modifier
+                                .size(168.dp)
+                                .recordingPrivacyCover()
                         )
                     }
                     pdf417 != null -> {
@@ -454,7 +417,10 @@ private fun RailBookingCard(
                             bitmap = pdf417,
                             contentDescription = "Booking barcode",
                             contentScale = ContentScale.FillWidth,
-                            modifier = Modifier.fillMaxWidth().height(72.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(72.dp)
+                                .recordingPrivacyCover()
                         )
                     }
                     else -> {
@@ -462,7 +428,8 @@ private fun RailBookingCard(
                             text = model.refNo ?: "Booking",
                             color = Ink,
                             fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.recordingPrivacyCover(!model.refNo.isNullOrBlank())
                         )
                     }
                 }
@@ -516,24 +483,24 @@ private fun Ticket.toBookingTicketUiModel(): BookingTicketUiModel {
 
     // Prefer clean IATA pair from venue/title — never show city fragments / OCR junk
     val routePair = parseIataRoute(venue) ?: parseIataRoute(title)
-    val fromCode = extractIataCode(notes.notesValue("Origin"))
+    val fromCode = extractKnownIata(notes.notesValue("Origin"))
         ?: routePair?.first
-        ?: extractIataCode(venue?.substringBefore("→"))
-        ?: extractIataCode(title.substringAfter("·", missingDelimiterValue = "").substringBefore("→"))
-    val toCode = extractIataCode(notes.notesValue("Destination"))
+        ?: extractKnownIata(venue?.substringBefore("→"))
+        ?: extractKnownIata(title.substringAfter("·", missingDelimiterValue = "").substringBefore("→"))
+    val toCode = extractKnownIata(notes.notesValue("Destination"))
         ?: routePair?.second
-        ?: extractIataCode(venue?.substringAfter("→"))
-        ?: extractIataCode(title.substringAfter("→"))
+        ?: extractKnownIata(venue?.substringAfter("→"))
+        ?: extractKnownIata(title.substringAfter("→"))
 
     val returnRaw = notes.notesValue("Return")
     val returnParts = returnRaw?.split("/")?.map { it.trim() }.orEmpty()
     val returnRoutePart = returnParts.firstOrNull { it.contains("→") }
     val returnPair = parseIataRoute(returnRoutePart) ?: parseIataRoute(returnRaw)
     val returnFrom = returnPair?.first
-        ?: extractIataCode(returnRoutePart?.substringBefore("→"))
+        ?: extractKnownIata(returnRoutePart?.substringBefore("→"))
         ?: if (isReturn) toCode else null
     val returnTo = returnPair?.second
-        ?: extractIataCode(returnRoutePart?.substringAfter("→"))
+        ?: extractKnownIata(returnRoutePart?.substringAfter("→"))
         ?: if (isReturn) fromCode else null
     val returnFlightNo = returnParts
         .firstOrNull { Regex("""(?i)^[A-Z0-9]{2}\s?\d{2,4}$""").matches(it) }
@@ -629,35 +596,5 @@ private fun Ticket.toBookingTicketUiModel(): BookingTicketUiModel {
         isReturn = isReturn,
         footerHint = footerHint
     )
-}
-
-/** Only real 3-letter airport codes — never city fragments like "Nairob". */
-private fun extractIataCode(raw: String?): String? {
-    if (raw.isNullOrBlank()) return null
-    Regex("""\(([A-Z]{3})\)""").find(raw.uppercase(Locale.US))?.groupValues?.getOrNull(1)
-        ?.let { code -> if (code in KNOWN_IATA) return code }
-    val t = raw.trim().uppercase(Locale.US)
-    if (t in KNOWN_IATA) return t
-    // City / airport name → IATA
-    when {
-        t.contains("NAIROBI") || t.contains("JKIA") || t.contains("JOMO") -> return "NBO"
-        t.contains("MOMBASA") || t.contains("MOI") -> return "MBA"
-        t.contains("KISUMU") -> return "KIS"
-        t.contains("ELDORET") -> return "EDL"
-        t.contains("MALINDI") -> return "MYD"
-    }
-    return Regex("""\b([A-Z]{3})\b""").findAll(t)
-        .map { it.groupValues[1] }
-        .firstOrNull { it in KNOWN_IATA }
-}
-
-private fun parseIataRoute(raw: String?): Pair<String, String>? {
-    if (raw.isNullOrBlank()) return null
-    val m = Regex("""\b([A-Z]{3})\s*→\s*([A-Z]{3})\b""").find(raw.uppercase(Locale.US))
-        ?: return null
-    val a = m.groupValues[1]
-    val b = m.groupValues[2]
-    if (a !in KNOWN_IATA || b !in KNOWN_IATA) return null
-    return a to b
 }
 

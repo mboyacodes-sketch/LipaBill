@@ -1,13 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">LipaBill</string>
+    <!-- Keep in sync with AccessibilityServiceDisclosure (system Settings screen only). -->
     <string name="accessibility_service_description">
-        LipaBill uses Accessibility only to help fill M-Pesa payment screens for a payment you already
-        confirmed in the app. It acts only while a payment session is active, reads the screens
-        needed for that session, and does not read SMS or control unrelated apps.
-        Your M-Pesa PIN is entered on LipaBill’s secure keypad, sent once into the PIN prompt,
-        and is never stored.
+        LipaBill uses Android’s AccessibilityService API to help complete M-Pesa USSD payments
+        you start and confirm in the app (Send money, Pay bill/till/Pochi, and Repeat).
+        After you confirm and enter your PIN on LipaBill’s secure keypad, the service may read
+        on-screen USSD prompts and fill the next step for that payment session only.
+        That on-screen text is not stored as a transcript, not sent off this phone, and not shared.
+        It does not read SMS, does not change system settings, and is not used to control
+        unrelated apps when you are not paying. Your M-Pesa PIN is never stored.
+        You can turn this service off anytime in Android Accessibility settings.
     </string>
+    <!-- Keep in sync with AccessibilityServiceDisclosure.SERVICE_LABEL. -->
     <string name="accessibility_service_label">LipaBill Repeat Payment</string>
     <string name="settings_habits">Habits</string>
     <string name="settings_check_update">Check for updates</string>
@@ -36,7 +41,6 @@
     <string name="checkin_offer_body">Three short questions from this week. About 30 seconds.</string>
     <string name="checkin_open">Start</string>
     <string name="checkin_skip">Not now</string>
-    <string name="checkin_close">Close</string>
     <string name="checkin_next">Next</string>
     <string name="checkin_finish">Done</string>
     <string name="checkin_empty_title">Nothing to review yet</string>

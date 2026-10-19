@@ -3,7 +3,6 @@ package com.lipabill.app.data.sms
 import android.content.Context
 import android.database.Cursor
 import android.provider.Telephony
-import com.lipabill.app.data.model.MpesaTransaction
 
 /**
  * Reads M-Pesa confirmations from the device inbox.
@@ -31,11 +30,6 @@ class SmsInboxReader(private val context: Context) {
         acceptBody = MpesaSmsFilter::isTransactionConfirmation,
         newerThanMillis = newerThanMillis
     )
-
-    fun parseAll(newerThanMillis: Long? = null): List<MpesaTransaction> =
-        readMessages(newerThanMillis).mapNotNull { raw ->
-            MpesaSmsIngestion.acceptAndParse(raw.address, raw.body, raw.dateMillis)
-        }
 
     private fun readInbox(
         extraSelection: String,

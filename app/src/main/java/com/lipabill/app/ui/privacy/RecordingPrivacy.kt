@@ -2,6 +2,7 @@ package com.lipabill.app.ui.privacy
 
 import android.os.Build
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.lipabill.app.BuildConfig
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
@@ -15,8 +16,8 @@ import androidx.compose.ui.unit.dp
 
 /**
  * Debug builds only. When on, sensitive glyphs are blurred in the framebuffer
- * so a screen recording can show the layout without names, numbers, references,
- * or a readable PIN pad. Release builds leave this off.
+ * so a screen recording can show the layout without names, numbers, or
+ * references. Keyboards stay sharp. Release builds leave this off.
  */
 val LocalRecordingPrivacy = staticCompositionLocalOf { false }
 
@@ -25,7 +26,7 @@ fun Modifier.recordingPrivacyCover(
     active: Boolean = true,
     radius: Dp = 14.dp
 ): Modifier {
-    if (!active || !LocalRecordingPrivacy.current) return this
+    if (!BuildConfig.DEBUG || !active || !LocalRecordingPrivacy.current) return this
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         this
             .clip(RoundedCornerShape(6.dp))

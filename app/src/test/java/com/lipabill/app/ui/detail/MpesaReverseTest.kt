@@ -4,7 +4,6 @@ import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -63,37 +62,18 @@ class MpesaReverseTest {
     }
 
     @Test
-    fun truncate_keeps_through_timestamp_drops_balance() {
-        val raw =
-            "THX123 Confirmed. Ksh200.00 paid to SHOP on 15/3/24 at 9:05 AM. " +
-                "New M-PESA balance is Ksh1,000.00. Transaction cost, Ksh0.00."
-        val truncated = truncateAtTimestamp(raw)
-        assertEquals(
-            "THX123 Confirmed. Ksh200.00 paid to SHOP on 15/3/24 at 9:05 AM.",
-            truncated
-        )
-    }
-
-    @Test
-    fun truncate_null_without_timestamp() {
-        assertNull(truncateAtTimestamp("No date here"))
-        assertNull(truncateAtTimestamp(""))
-    }
-
-    @Test
-    fun share_prefers_truncated_sms() {
+    fun share_is_the_receipt_code_only() {
         val raw =
             "REF99 Confirmed. Ksh50.00 sent to ANN on 2/2/24 at 8:00 PM. New M-PESA balance is Ksh9.00."
         val share = shareTextFor(tx(rawBody = raw))
-        assertEquals("REF99 Confirmed. Ksh50.00 sent to ANN on 2/2/24 at 8:00 PM.", share)
+        assertEquals("ABC123", share)
         assertFalse(share.contains("balance", ignoreCase = true))
+        assertFalse(share.contains("Ksh", ignoreCase = true))
     }
 
     @Test
-    fun share_falls_back_to_structured_when_body_empty() {
-        val share = shareTextFor(tx(rawBody = ""))
-        assertTrue(share.contains("Ref: ABC123"))
-        assertTrue(share.contains("To: JOHN"))
-        assertTrue(share.contains("Date:"))
+    fun share_stays_the_code_when_the_body_is_empty() {
+        assertEquals("ABC123", shareTextFor(tx(rawBody = "")))
+        assertEquals("ABC123", shareTextFor(tx(rawBody = "No date here and balance Ksh1")))
     }
 }

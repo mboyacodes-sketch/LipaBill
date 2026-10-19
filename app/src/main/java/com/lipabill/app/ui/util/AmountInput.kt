@@ -1,9 +1,5 @@
 package com.lipabill.app.ui.util
 
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.input.OffsetMapping
-import androidx.compose.ui.text.input.TransformedText
-import androidx.compose.ui.text.input.VisualTransformation
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -67,64 +63,4 @@ fun formatKesMoney(amount: Double): String = "KES ${formatKes(amount)}"
 private fun formatIntegerGrouping(digits: String): String {
     val n = digits.toLongOrNull() ?: return digits
     return NumberFormat.getIntegerInstance(Locale.US).format(n)
-}
-
-/**
- * Shows grouped thousands in a text field while the underlying value stays
- * unformatted digits (plus optional `.` and cents).
- *
- * Caret mapping counts significant chars (digits + `.`) so commas are skipped.
- */
-object MoneyAmountVisualTransformation : VisualTransformation {
-    override fun filter(text: AnnotatedString): TransformedText {
-        val original = text.text
-        if (original.isEmpty()) {
-            return TransformedText(AnnotatedString(""), OffsetMapping.Identity)
-        }
-        val formatted = formatMoneyInputDisplay(original)
-        val mapping = SignificantCharOffsetMapping(original, formatted)
-        return TransformedText(AnnotatedString(formatted), mapping)
-    }
-}
-
-/**
- * Maps offsets by counting digits and `.` only — grouping commas are ignored.
- * Assumes [original] has no commas (already sanitized) and [formatted] is the
- * grouped display of the same digits / dot.
- */
-private class SignificantCharOffsetMapping(
-    private val original: String,
-    private val formatted: String
-) : OffsetMapping {
-    override fun originalToTransformed(offset: Int): Int {
-        val o = offset.coerceIn(0, original.length)
-        val significant = countSignificant(original, o)
-        return indexAfterSignificant(formatted, significant)
-    }
-
-    override fun transformedToOriginal(offset: Int): Int {
-        val t = offset.coerceIn(0, formatted.length)
-        val significant = countSignificant(formatted, t)
-        return indexAfterSignificant(original, significant)
-    }
-
-    private fun countSignificant(s: String, endExclusive: Int): Int {
-        var n = 0
-        for (i in 0 until endExclusive.coerceAtMost(s.length)) {
-            if (s[i].isDigit() || s[i] == '.') n++
-        }
-        return n
-    }
-
-    private fun indexAfterSignificant(s: String, significantCount: Int): Int {
-        if (significantCount <= 0) return 0
-        var n = 0
-        for (i in s.indices) {
-            if (s[i].isDigit() || s[i] == '.') {
-                n++
-                if (n == significantCount) return i + 1
-            }
-        }
-        return s.length
-    }
 }

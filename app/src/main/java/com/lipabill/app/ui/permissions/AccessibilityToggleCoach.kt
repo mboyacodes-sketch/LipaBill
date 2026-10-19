@@ -11,33 +11,30 @@ import androidx.compose.runtime.setValue
 import com.lipabill.app.ussd.AccessibilityHelper
 
 /**
- * Brief coach before leaving LipaBill for the system Accessibility toggle.
- * Copy follows [AccessibilityHelper.settingsStyle] for this device.
+ * Coach before leaving LipaBill for the system Accessibility toggle.
+ * Turning on uses the full AccessibilityService prominent disclosure (alone).
  */
 @Composable
 fun AccessibilityToggleCoachDialog(
     currentlyEnabled: Boolean,
     onConfirmOpen: () -> Unit,
     onDismiss: () -> Unit,
-    titleOverride: String? = null,
-    bodyOverride: String? = null,
     dismissLabel: String = "Cancel"
 ) {
-    val turningOn = !currentlyEnabled
+    if (!currentlyEnabled) {
+        AccessibilityServiceDisclosureDialog(
+            onContinueToSettings = {
+                onDismiss()
+                onConfirmOpen()
+            },
+            onNotNow = onDismiss
+        )
+        return
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                titleOverride
-                    ?: if (turningOn) "Turn on LipaBill" else "Turn off LipaBill"
-            )
-        },
-        text = {
-            Text(
-                bodyOverride
-                    ?: AccessibilityHelper.coachMessage(turningOn = turningOn)
-            )
-        },
+        title = { Text("Turn off LipaBill") },
+        text = { Text(AccessibilityHelper.coachMessage(turningOn = false)) },
         confirmButton = {
             TextButton(
                 onClick = {

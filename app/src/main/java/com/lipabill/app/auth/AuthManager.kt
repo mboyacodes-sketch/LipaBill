@@ -14,9 +14,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 enum class AuthCapability {
-    /** Biometrics and/or device PIN / pattern / password available */
+    /** Class 3 biometrics and/or a device PIN, pattern, or password. */
     AVAILABLE,
-    /** No lock screen at all — warn but don't hard-block */
+    /** No strong biometric and no device credential. The ledger stays locked. */
     NONE
 }
 
@@ -52,9 +52,9 @@ class AuthManager(
             AuthCapability.NONE
         }
 
-    /** Fingerprint / face / iris enrolled and usable. */
+    /** Class 3 fingerprint / face enrolled and usable. Class 2 biometrics do not unlock the ledger. */
     fun hasBiometricEnrolled(): Boolean =
-        biometricManager.canAuthenticate(Authenticators.BIOMETRIC_WEAK) ==
+        biometricManager.canAuthenticate(Authenticators.BIOMETRIC_STRONG) ==
             BiometricManager.BIOMETRIC_SUCCESS
 
     /** Phone PIN, pattern, or password is set. */
@@ -68,15 +68,21 @@ class AuthManager(
     }
 
     /**
-     * Biometrics when available (with PIN fallback in the system sheet);
-     * otherwise device credential only.
+     * Class 3 biometrics, with the device PIN as fallback on Android 11+.
+     * Older releases cannot combine the two in one prompt.
      */
-    fun allowedAuthenticators(): Int =
-        if (hasBiometricEnrolled()) {
-            Authenticators.BIOMETRIC_WEAK or Authenticators.DEVICE_CREDENTIAL
-        } else {
-            Authenticators.DEVICE_CREDENTIAL
+    fun allowedAuthenticators(): Int {
+        val strong = hasBiometricEnrolled()
+        val credential = hasDeviceCredential()
+        val canCombine = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+        return when {
+            strong && credential && canCombine ->
+                Authenticators.BIOMETRIC_STRONG or Authenticators.DEVICE_CREDENTIAL
+            credential && !strong -> Authenticators.DEVICE_CREDENTIAL
+            strong -> Authenticators.BIOMETRIC_STRONG
+            else -> Authenticators.DEVICE_CREDENTIAL
         }
+    }
 
     fun onColdStart() {
         if (!securePreferences.authRequired) {
@@ -120,10 +126,6 @@ class AuthManager(
         } else {
             _state.value = AuthUiState.Locked
         }
-    }
-
-    fun continueWithoutLockScreen() {
-        _state.value = AuthUiState.Unlocked
     }
 
     fun authenticate(

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.lipabill.app.BuildConfig
 
 /**
  * App settings and auth flags stored in EncryptedSharedPreferences.
@@ -85,13 +86,17 @@ class SecurePreferences(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_FAVOURITES_SECTION, value).apply()
 
     /**
-     * Debug builds only. When true, names, phone numbers, references, and the
-     * PIN pad are blurred so a screen recording can show the app without them.
+     * Debug builds only. When true, names, phone numbers, references, and ticket
+     * codes are blurred so a screen recording can show the app without them.
+     * Keyboards stay sharp. The M-Pesa PIN pad stays in phone order.
      * Release builds ignore this flag.
      */
     var recordingPrivacy: Boolean
-        get() = prefs.getBoolean(KEY_RECORDING_PRIVACY, false)
-        set(value) = prefs.edit().putBoolean(KEY_RECORDING_PRIVACY, value).apply()
+        get() = BuildConfig.DEBUG && prefs.getBoolean(KEY_RECORDING_PRIVACY, false)
+        set(value) {
+            if (!BuildConfig.DEBUG) return
+            prefs.edit().putBoolean(KEY_RECORDING_PRIVACY, value).apply()
+        }
 
     /**
      * True after the one-time explanation of Android's unused-app hibernation.
@@ -116,6 +121,16 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_AMOUNT_PARSE_REPAIR_DONE, false)
         set(value) = prefs.edit().putBoolean(KEY_AMOUNT_PARSE_REPAIR_DONE, value).apply()
 
+    /** When true, M-Shwari transfers already in the ledger have been marked as savings. */
+    var savingsClassifyRepairDone: Boolean
+        get() = prefs.getBoolean(KEY_SAVINGS_CLASSIFY_REPAIR_DONE, false)
+        set(value) = prefs.edit().putBoolean(KEY_SAVINGS_CLASSIFY_REPAIR_DONE, value).apply()
+
+    /** When true, unknown confirmations have been re-read for a name, phone, and direction. */
+    var unknownPartyRepairDone: Boolean
+        get() = prefs.getBoolean(KEY_UNKNOWN_PARTY_REPAIR_DONE, false)
+        set(value) = prefs.edit().putBoolean(KEY_UNKNOWN_PARTY_REPAIR_DONE, value).apply()
+
     /** When true, screens use the navy night palette. Passes stay paper white. */
     var darkMode: Boolean
         get() = prefs.getBoolean(KEY_DARK_MODE, false)
@@ -125,6 +140,39 @@ class SecurePreferences(context: Context) {
     var challengesEnabled: Boolean
         get() = prefs.getBoolean(KEY_CHALLENGES, false)
         set(value) = prefs.edit().putBoolean(KEY_CHALLENGES, value).apply()
+
+    /**
+     * How this phone's Request QR collects money: `phone`, `till`, or `paybill`.
+     * Only one is active.
+     */
+    var payCollectKind: String
+        get() = prefs.getString(KEY_PAY_COLLECT_KIND, "phone") ?: "phone"
+        set(value) = prefs.edit().putString(KEY_PAY_COLLECT_KIND, value).apply()
+
+    /** M-Pesa number this phone's pay code collects. Empty until the user sets it. */
+    var payPhone: String?
+        get() = prefs.getString(KEY_PAY_PHONE, null)?.takeIf { it.isNotBlank() }
+        set(value) = prefs.edit().putString(KEY_PAY_PHONE, value).apply()
+
+    var payTill: String?
+        get() = prefs.getString(KEY_PAY_TILL, null)?.takeIf { it.isNotBlank() }
+        set(value) = prefs.edit().putString(KEY_PAY_TILL, value).apply()
+
+    var payBillBusiness: String?
+        get() = prefs.getString(KEY_PAY_BILL_BUSINESS, null)?.takeIf { it.isNotBlank() }
+        set(value) = prefs.edit().putString(KEY_PAY_BILL_BUSINESS, value).apply()
+
+    var payBillAccount: String?
+        get() = prefs.getString(KEY_PAY_BILL_ACCOUNT, null)?.takeIf { it.isNotBlank() }
+        set(value) = prefs.edit().putString(KEY_PAY_BILL_ACCOUNT, value).apply()
+
+    /**
+     * When false (default), the Request QR changes every UTC day.
+     * When true, the same code is shown until the destination or amount changes.
+     */
+    var payQrFixed: Boolean
+        get() = prefs.getBoolean(KEY_PAY_QR_FIXED, false)
+        set(value) = prefs.edit().putBoolean(KEY_PAY_QR_FIXED, value).apply()
 
     /** When true, the weekly spending check-in is offered. Default off. */
     var weeklyCheckInEnabled: Boolean
@@ -155,6 +203,8 @@ class SecurePreferences(context: Context) {
         private const val KEY_BACKFILL_DONE = "sms_backfill_done"
         private const val KEY_CONFIRMATION_PURGE_DONE = "confirmation_filter_purge_v1"
         private const val KEY_AMOUNT_PARSE_REPAIR_DONE = "amount_parse_repair_v2"
+        private const val KEY_SAVINGS_CLASSIFY_REPAIR_DONE = "savings_classify_repair_v2"
+        private const val KEY_UNKNOWN_PARTY_REPAIR_DONE = "unknown_party_repair_v1"
         private const val KEY_DARK_MODE = "dark_mode"
         private const val KEY_CHALLENGES = "challenges_enabled"
         private const val KEY_WEEKLY_CHECKIN = "weekly_checkin_enabled"
@@ -170,6 +220,12 @@ class SecurePreferences(context: Context) {
         private const val KEY_RECORDING_PRIVACY = "recording_privacy"
         private const val KEY_HIBERNATION_PROMPT_SHOWN = "hibernation_prompt_shown"
         private const val KEY_FIRST_RUN_SETUP_DONE = "first_run_setup_done"
+        private const val KEY_PAY_COLLECT_KIND = "pay_collect_kind"
+        private const val KEY_PAY_PHONE = "pay_phone"
+        private const val KEY_PAY_TILL = "pay_till"
+        private const val KEY_PAY_BILL_BUSINESS = "pay_bill_business"
+        private const val KEY_PAY_BILL_ACCOUNT = "pay_bill_account"
+        private const val KEY_PAY_QR_FIXED = "pay_qr_fixed"
         const val DEFAULT_TIMEOUT_MS = 2 * 60 * 1000L
         const val DEFAULT_FONT_SIZE_SP = 12
     }

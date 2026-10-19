@@ -10,6 +10,15 @@ plugins {
 // Firebase Analytics + Crashlytics — apply when Console config is present
 // (see docs/firebase-analytics.md).
 val hasGoogleServices = file("google-services.json").exists()
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) {
+        keystorePropsFile.inputStream().use { load(it) }
+    }
+}
+val releaseStorePath = keystoreProps.getProperty("storeFile")
+val hasReleaseKeystore = !releaseStorePath.isNullOrBlank() &&
+    rootProject.file(releaseStorePath).exists()
 if (hasGoogleServices) {
     apply(plugin = "com.google.gms.google-services")
     apply(plugin = "com.google.firebase.crashlytics")
@@ -23,8 +32,8 @@ android {
         applicationId = "com.lipabill.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 24
-        versionName = "2.0.3"
+        versionCode = 28
+        versionName = "2.0.7"
         // Real devices are arm64; drop x86/x86_64 emulator ABIs from shipped APKs.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -52,16 +61,6 @@ android {
         }
     }
 
-    val keystorePropsFile = rootProject.file("keystore.properties")
-    val keystoreProps = Properties().apply {
-        if (keystorePropsFile.exists()) {
-            keystorePropsFile.inputStream().use { load(it) }
-        }
-    }
-    val releaseStorePath = keystoreProps.getProperty("storeFile")
-    val hasReleaseKeystore = !releaseStorePath.isNullOrBlank() &&
-        rootProject.file(releaseStorePath).exists()
-
     signingConfigs {
         getByName("debug")
         create("release") {
@@ -88,11 +87,8 @@ android {
             ndk {
                 debugSymbolLevel = "SYMBOL_TABLE"
             }
-            signingConfig = if (hasReleaseKeystore) {
-                signingConfigs.getByName("release")
-            } else {
-                // Fallback only if keystore.properties is missing (CI / fresh clone).
-                signingConfigs.getByName("debug")
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
             }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -148,6 +144,20 @@ tasks.configureEach {
     }
 }
 
+if (!hasReleaseKeystore) {
+    tasks.configureEach {
+        val packagesRelease = (name.startsWith("assemble") || name.startsWith("bundle") || name.startsWith("package")) &&
+            name.endsWith("Release")
+        if (packagesRelease) {
+            doFirst {
+                throw GradleException(
+                    "Release builds require keystore.properties with a release signing key."
+                )
+            }
+        }
+    }
+}
+
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
@@ -173,7 +183,7 @@ dependencies {
     implementation("androidx.fragment:fragment-ktx:1.8.6")
 
     implementation("androidx.biometric:biometric:1.1.0")
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.security:security-crypto:1.1.0")
 
     val room = "2.6.1"
     implementation("androidx.room:room-runtime:$room")

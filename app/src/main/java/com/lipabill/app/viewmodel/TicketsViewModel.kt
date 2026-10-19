@@ -143,9 +143,9 @@ class TicketDetailViewModel(
         }
 
     fun delete(onDone: () -> Unit) {
-        val id = ticket.value?.id ?: return
+        val current = ticket.value ?: return
         viewModelScope.launch {
-            app.ticketRepository.delete(id)
+            app.ticketRepository.delete(current.id)
             onDone()
         }
     }

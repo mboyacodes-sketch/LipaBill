@@ -10,7 +10,7 @@ import com.lipabill.app.ui.privacy.LocalRecordingPrivacy
 
 /**
  * While a LipaBill keyboard is on screen, that window is left out of screenshots,
- * recents, and screen capture. Debug recording mode skips this so a blurred pad
+ * recents, and screen capture. Debug recording mode skips this so the keypad
  * can still be filmed.
  */
 @Composable
@@ -36,11 +36,6 @@ fun SecureKeyboardWindow() {
         if (view.isAttachedToWindow) apply()
         onDispose {
             view.removeOnAttachStateChangeListener(listener)
-            if (!applied) return@onDispose
-            val root = view.rootView
-            val current = root.layoutParams as? WindowManager.LayoutParams ?: return@onDispose
-            current.flags = current.flags and WindowManager.LayoutParams.FLAG_SECURE.inv()
-            updateWindow(view, root, current)
         }
     }
 }

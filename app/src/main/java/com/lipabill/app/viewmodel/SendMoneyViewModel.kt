@@ -170,10 +170,12 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
         _gates.update { it.copy(dialStarted = false, statusMessage = null) }
     }
 
+    private val amountResume = AmountStepResume()
+
     /** Full reset when the sheet is dismissed. */
     fun resetSession() {
         clearSelection()
-        resumeOnAmountStep = false
+        amountResume.clear()
     }
 
     /**
@@ -190,18 +192,10 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
         )
         setAmountInput(amountInput)
         _gates.update { it.copy(dialStarted = false, statusMessage = null) }
-        resumeOnAmountStep = true
+        amountResume.mark()
     }
 
-    /** True once after [restoreAmountEntry]; sheet should land on Amount. */
-    var resumeOnAmountStep: Boolean = false
-        private set
-
-    fun consumeResumeOnAmountStep(): Boolean {
-        val value = resumeOnAmountStep
-        resumeOnAmountStep = false
-        return value
-    }
+    fun consumeResumeOnAmountStep(): Boolean = amountResume.consume()
 
     fun setAmountInput(value: String) {
         amountInput.value = sanitizeAmountInput(value)
@@ -246,15 +240,16 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
         return coordinator.prepareSession(tx, amount)
     }
 
-    fun startDial(prepared: RepeatTransactionCoordinator.PreparedRepeat) {
+    fun startDial(prepared: RepeatTransactionCoordinator.PreparedRepeat): Boolean {
         val state = uiState.value
-        val status = dialStartedStatus(
+        val status = coordinator.startDialWithStatus(
+            prepared,
             app.securePreferences,
             state.selectedSubscriptionId,
             state.simLines
-        )
-        coordinator.startDialing(prepared, state.selectedSubscriptionId)
+        ) ?: return false
         _gates.update { it.copy(dialStarted = true, statusMessage = status) }
+        return true
     }
 
     fun confirmSummary(): Triple<String, String, String>? {

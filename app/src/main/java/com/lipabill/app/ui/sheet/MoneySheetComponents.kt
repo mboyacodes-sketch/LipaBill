@@ -52,6 +52,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.lipabill.app.ui.components.BalanceAmountRow
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.util.SecureKeyboardWindow
+import com.lipabill.app.ui.util.rememberKeyPressHaptic
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.OnPastel
@@ -69,7 +70,6 @@ import com.lipabill.app.ui.theme.LocalAppType
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
-import com.lipabill.app.ui.util.formatMoneyInputLabel
 import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
 import com.lipabill.app.ui.util.systemBarsAndCutoutPadding
 
@@ -131,16 +131,20 @@ fun MoneySheetScaffold(
     /** Inline coaching / status above the CTA — never leave empty searches silent. */
     feedbackMessage: String? = null,
     feedbackTone: SheetFeedbackTone = SheetFeedbackTone.Hint,
+    /** An amount above the M-PESA balance can still be paid. Fuliza covers the rest. */
+    fulizaCoversShortfall: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val amountValue = pendingDeduction
     val exceedsBalance = amountExceedsBalance(balance, amountValue)
-    val canFund = balance != null && balance > 0.0
-    val amountColor = if (exceedsBalance) Expense else Ink
-    val ctaReallyEnabled = ctaEnabled && canFund && !exceedsBalance
+    val balanceBlocksPay = exceedsBalance && !fulizaCoversShortfall
+    val canFund = fulizaCoversShortfall || (balance != null && balance > 0.0)
+    val amountColor = if (balanceBlocksPay) Expense else Ink
+    val ctaReallyEnabled = ctaEnabled && canFund && !balanceBlocksPay
     var showAddUp by remember { mutableStateOf(false) }
-    /** Amount on the payment pad when Add up opened — restored if the user cancels. */
+    /** Amount on the payment pad when Calculate opened — restored if the user cancels. */
     var addUpSeed by remember { mutableStateOf("") }
+    var addUpOp by remember { mutableStateOf<AmountOp?>(null) }
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -179,6 +183,7 @@ fun MoneySheetScaffold(
                 amountDisplay = amountDisplay,
                 amountColor = amountColor,
                 exceedsBalance = exceedsBalance,
+                fulizaCoversShortfall = fulizaCoversShortfall,
                 onChangeRecipient = onRecipientsHeaderClick,
                 changeLabel = recipientsHeader,
                 onOpenAddUp = onApplyAddUpAmount?.let {
@@ -195,13 +200,13 @@ fun MoneySheetScaffold(
                 onKey = onKey,
                 onBackspace = onBackspace,
                 onClear = onClearAmount,
-                onAction = onApplyAddUpAmount?.let {
-                    {
+                onOperator = onApplyAddUpAmount?.let {
+                    { op ->
                         addUpSeed = amountInput
+                        addUpOp = op
                         showAddUp = true
                     }
-                },
-                actionLabel = "+"
+                }
             )
             Spacer(modifier = Modifier.height(Space.block))
         } else {
@@ -226,14 +231,6 @@ fun MoneySheetScaffold(
                     alwaysShowBalance = alwaysShowBalance,
                     pendingDeduction = null,
                     caption = balanceCaption
-                )
-                Spacer(modifier = Modifier.height(Space.block))
-                SelectedAmountRow(
-                    name = selectedName,
-                    subtitle = selectedSubtitle,
-                    amountDisplay = "",
-                    selected = selectedSelected,
-                    showAmount = false
                 )
                 if (showRecipients) {
                     Spacer(modifier = Modifier.height(Space.block))
@@ -310,6 +307,7 @@ fun MoneySheetScaffold(
     if (showAddUp && onApplyAddUpAmount != null) {
         AmountAddUpDialog(
             initialAmountInput = addUpSeed,
+            initialOperator = addUpOp,
             onDismiss = {
                 // Cancel / back — put back whatever was on the pad when Add up opened.
                 onApplyAddUpAmount(addUpSeed)
@@ -334,6 +332,7 @@ private fun AmountStage(
     amountDisplay: String,
     amountColor: Color,
     exceedsBalance: Boolean,
+    fulizaCoversShortfall: Boolean = false,
     onChangeRecipient: (() -> Unit)?,
     changeLabel: String,
     onOpenAddUp: (() -> Unit)? = null,
@@ -363,9 +362,13 @@ private fun AmountStage(
         when {
             exceedsBalance -> {
                 Text(
-                    text = "More than available balance",
+                    text = if (fulizaCoversShortfall) {
+                        "Fuliza covers the rest of this payment"
+                    } else {
+                        "More than available balance"
+                    },
                     style = HomeType.caption,
-                    color = Expense
+                    color = if (fulizaCoversShortfall) Mute else Expense
                 )
             }
             balance != null -> {
@@ -500,62 +503,6 @@ private fun BalanceCard(
 }
 
 @Composable
-private fun SelectedAmountRow(
-    name: String?,
-    subtitle: String?,
-    amountDisplay: String,
-    selected: Boolean,
-    showAmount: Boolean = true
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (name != null) {
-            AvatarBadge(
-                label = name,
-                selected = selected,
-                modifier = Modifier.size(48.dp)
-            )
-            Spacer(modifier = Modifier.width(Space.block))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = name,
-                    style = HomeType.rowTitle,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.recordingPrivacyCover()
-                )
-                if (!subtitle.isNullOrBlank()) {
-                    Text(
-                        text = subtitle,
-                        style = HomeType.caption,
-                        color = Mute,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.recordingPrivacyCover()
-                    )
-                }
-            }
-        } else {
-            Text(
-                text = "Select a recipient",
-                style = HomeType.body,
-                color = Mute,
-                modifier = Modifier.weight(1f)
-            )
-        }
-        if (showAmount) {
-            Text(
-                text = amountDisplay,
-                style = SheetAmountStyle,
-                color = Ink
-            )
-        }
-    }
-}
-
-@Composable
 private fun AvatarBadge(
     label: String,
     selected: Boolean,
@@ -647,28 +594,45 @@ fun HorizontalRecipientRow(
     }
 }
 
-private enum class KeypadCellKind { DIGIT, BACKSPACE, CLEAR, ACTION, EMPTY }
+private enum class KeypadCellKind { DIGIT, BACKSPACE, CLEAR, ACTION, EMPTY, OPERATOR }
 
 private data class KeypadCell(
     val label: String,
     val kind: KeypadCellKind,
-    val weight: Float = 1f
+    val weight: Float = 1f,
+    val op: AmountOp? = null
 )
 
-@Composable
-fun AmountKeypad(
-    onKey: (String) -> Unit,
-    onBackspace: () -> Unit,
-    onClear: (() -> Unit)? = null,
-    /** Optional right-column action (e.g. “+” to add an item or open Add up). */
-    onAction: (() -> Unit)? = null,
-    actionLabel: String = "+",
-    actionEnabled: Boolean = true,
-    modifier: Modifier = Modifier
-) {
-    SecureKeyboardWindow()
-    // Calculator-style grid: digits left, ops on the right.
-    val rows = listOf(
+private fun classicRows(actionLabel: String): List<List<KeypadCell>> = listOf(
+    listOf(
+        KeypadCell("7", KeypadCellKind.DIGIT),
+        KeypadCell("8", KeypadCellKind.DIGIT),
+        KeypadCell("9", KeypadCellKind.DIGIT),
+        KeypadCell("C", KeypadCellKind.CLEAR)
+    ),
+    listOf(
+        KeypadCell("4", KeypadCellKind.DIGIT),
+        KeypadCell("5", KeypadCellKind.DIGIT),
+        KeypadCell("6", KeypadCellKind.DIGIT),
+        KeypadCell("⌫", KeypadCellKind.BACKSPACE)
+    ),
+    listOf(
+        KeypadCell("1", KeypadCellKind.DIGIT),
+        KeypadCell("2", KeypadCellKind.DIGIT),
+        KeypadCell("3", KeypadCellKind.DIGIT),
+        KeypadCell(actionLabel, KeypadCellKind.ACTION)
+    ),
+    listOf(
+        KeypadCell(".", KeypadCellKind.DIGIT),
+        KeypadCell("0", KeypadCellKind.DIGIT, weight = 2f),
+        KeypadCell("", KeypadCellKind.EMPTY)
+    )
+)
+
+private fun operatorRows(): List<List<KeypadCell>> {
+    fun op(value: AmountOp) = KeypadCell(value.symbol, KeypadCellKind.OPERATOR, op = value)
+    return listOf(
+        listOf(AmountOp.DIV, AmountOp.MUL, AmountOp.SUB, AmountOp.ADD).map { op(it) },
         listOf(
             KeypadCell("7", KeypadCellKind.DIGIT),
             KeypadCell("8", KeypadCellKind.DIGIT),
@@ -685,19 +649,35 @@ fun AmountKeypad(
             KeypadCell("1", KeypadCellKind.DIGIT),
             KeypadCell("2", KeypadCellKind.DIGIT),
             KeypadCell("3", KeypadCellKind.DIGIT),
-            KeypadCell(actionLabel, KeypadCellKind.ACTION)
+            KeypadCell(".", KeypadCellKind.DIGIT)
         ),
         listOf(
-            KeypadCell(".", KeypadCellKind.DIGIT),
-            KeypadCell("0", KeypadCellKind.DIGIT, weight = 2f),
+            KeypadCell("0", KeypadCellKind.DIGIT, weight = 3f),
             KeypadCell("", KeypadCellKind.EMPTY)
         )
     )
+}
+
+@Composable
+fun AmountKeypad(
+    onKey: (String) -> Unit,
+    onBackspace: () -> Unit,
+    onClear: (() -> Unit)? = null,
+    /** Optional right-column action (e.g. “+” to add an item or open Add up). */
+    onAction: (() -> Unit)? = null,
+    actionLabel: String = "+",
+    actionEnabled: Boolean = true,
+    /** When set, a ÷ × − + row is shown and [onAction] is not used. */
+    onOperator: ((AmountOp) -> Unit)? = null,
+    activeOperator: AmountOp? = null,
+    modifier: Modifier = Modifier
+) {
+    SecureKeyboardWindow()
+    val rows = if (onOperator != null) operatorRows() else classicRows(actionLabel)
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .recordingPrivacyCover()
             .clip(RoundedCornerShape(20.dp))
             .background(SheetCanvas)
             .padding(Space.block),
@@ -745,6 +725,19 @@ fun AmountKeypad(
                                 Spacer(modifier = Modifier.weight(cell.weight))
                             }
                         }
+                        KeypadCellKind.OPERATOR -> {
+                            val op = cell.op
+                            if (onOperator != null && op != null) {
+                                KeypadKey(
+                                    label = cell.label,
+                                    accent = op == activeOperator,
+                                    modifier = Modifier.weight(cell.weight),
+                                    onClick = { onOperator(op) }
+                                )
+                            } else {
+                                Spacer(modifier = Modifier.weight(cell.weight))
+                            }
+                        }
                         KeypadCellKind.DIGIT -> KeypadKey(
                             label = cell.label,
                             modifier = Modifier.weight(cell.weight),
@@ -765,6 +758,7 @@ private fun KeypadKey(
     accent: Boolean = false,
     enabled: Boolean = true
 ) {
+    val haptic = rememberKeyPressHaptic()
     val bg = when {
         !enabled -> SoftFill
         accent -> SoftBlue
@@ -781,7 +775,16 @@ private fun KeypadKey(
             .shadow(1.dp, RoundedCornerShape(14.dp), spotColor = Color.Black.copy(alpha = 0.05f))
             .clip(RoundedCornerShape(14.dp))
             .background(bg)
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
+            .then(
+                if (enabled) {
+                    Modifier.clickable {
+                        haptic()
+                        onClick()
+                    }
+                } else {
+                    Modifier
+                }
+            ),
         contentAlignment = Alignment.Center
     ) {
         if (label == "⌫") {
@@ -796,8 +799,6 @@ private fun KeypadKey(
         }
     }
 }
-
-fun formatSheetAmount(raw: String): String = formatMoneyInputLabel(raw)
 
 @Composable
 fun MoneyConfirmDialog(

@@ -560,20 +560,17 @@ object ETicketTextParser {
         for (m in candidates) {
             val hour = m.groupValues[1].toIntOrNull() ?: continue
             val minute = m.groupValues[2].toIntOrNull() ?: continue
-            // Skip years mistaken as times — not needed for HH:mm
-            runCatching { return LocalTime.of(hour, minute) }
+            clockFromParts(hour, minute)?.let { return it }
         }
         val m = Regex(
             """(?i)\b(?:dep(?:arture)?|depart|time|at)?\s*[:\-]?\s*(\d{1,2}[:.]\d{2})\s*(am|pm)?\b"""
         ).find(text) ?: Regex("""\b(\d{1,2}[:.]\d{2})\s*(am|pm)\b""", RegexOption.IGNORE_CASE)
             .find(text)
         val raw = m?.groupValues?.getOrNull(1)?.replace('.', ':') ?: return null
-        val ampm = m.groupValues.getOrNull(2)?.lowercase(Locale.US)
+        val ampm = m.groupValues.getOrNull(2)
         val parts = raw.split(':')
-        var hour = parts[0].toIntOrNull() ?: return null
+        val hour = parts[0].toIntOrNull() ?: return null
         val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
-        if (ampm == "pm" && hour < 12) hour += 12
-        if (ampm == "am" && hour == 12) hour = 0
-        return runCatching { LocalTime.of(hour, minute) }.getOrNull()
+        return clockFromParts(hour, minute, ampm)
     }
 }

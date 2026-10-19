@@ -18,7 +18,6 @@ import com.lipabill.app.engage.ChallengeTemplates
 import com.lipabill.app.engage.ChallengeTransaction
 import com.lipabill.app.engage.CheckInStreak
 import com.lipabill.app.engage.CheckInStreaks
-import com.lipabill.app.engage.QuizQuestion
 import com.lipabill.app.engage.WeeklySummary
 import com.lipabill.app.engage.WeeklySummaryBuilder
 import com.lipabill.app.engage.kesToCents
@@ -30,13 +29,9 @@ class EngagementRepository(
     private val challenges: ChallengeDao,
     private val transactions: TransactionDao
 ) {
-    fun observeActive() = challenges.observeActive()
-
     fun observeLatest() = challenges.observeLatest()
 
     fun observeStreak() = challenges.observeStreak()
-
-    fun observeCheckIn(weekId: String) = challenges.observeCheckIn(weekId)
 
     suspend fun hasCheckIn(weekId: String): Boolean = withContext(Dispatchers.IO) {
         challenges.checkIn(weekId) != null
@@ -208,8 +203,3 @@ private fun WindowTransactionRow.toChallengeTransaction() = ChallengeTransaction
     type = type,
     amountCents = kesToCents(amount) ?: 0L
 )
-
-fun quizAnswers(questions: List<QuizQuestion>, selected: Map<String, String>): String =
-    questions.joinToString("\n") { question ->
-        "${question.id}=${selected[question.id].orEmpty()}"
-    }

@@ -1,7 +1,5 @@
 package com.lipabill.app.ui.detail
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
@@ -68,6 +66,7 @@ import com.lipabill.app.ui.theme.Income
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
+import com.lipabill.app.ui.util.copyPlainText
 import com.lipabill.app.ui.util.displayLabel
 import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.ui.util.formatTimestamp
@@ -424,8 +423,7 @@ private fun TicketPerforation() {
 }
 
 private fun copyText(context: Context, text: String, toast: String) {
-    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    cm.setPrimaryClip(ClipData.newPlainText("LipaBill", text))
+    context.copyPlainText("LipaBill", text)
     Toast.makeText(context, toast, Toast.LENGTH_SHORT).show()
 }
 

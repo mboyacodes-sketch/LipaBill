@@ -2,7 +2,6 @@ package com.lipabill.app.ui.tickets
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,9 +26,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.data.model.BoardingPassSnapshot
+import com.lipabill.app.data.tickets.extractIata
 import com.lipabill.app.data.model.firstNotesValue
 import com.lipabill.app.data.model.labeledPiece
 import com.lipabill.app.data.model.notesValue
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.PaperTicket
 import com.lipabill.app.ui.theme.HomeType
@@ -40,7 +41,6 @@ import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.util.formatEventWhen
 import com.lipabill.app.ui.util.formatTravelClock
 import com.lipabill.app.ui.util.formatTravelDate
-import java.util.Locale
 
 /**
  * Boarding pass matching the confirmed-booking layout:
@@ -95,34 +95,11 @@ private fun BoardingPassStyleCardPaper(
         )
         Spacer(modifier = Modifier.height(20.dp))
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = model.fromCode ?: "—",
-                color = RouteBlue,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            AnimatedFlightToDestination(
-                modifier = Modifier.weight(1f),
-                tint = RouteBlue.copy(alpha = 0.65f)
-            )
-            Text(
-                text = model.toCode ?: "—",
-                color = RouteBlue,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+        FlightRouteRow(
+            from = model.fromCode,
+            to = model.toCode,
+            codeSizeSp = 26
+        )
 
         Spacer(modifier = Modifier.height(18.dp))
 
@@ -135,15 +112,15 @@ private fun BoardingPassStyleCardPaper(
         ) {
             Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp)) {
                 Row(modifier = Modifier.fillMaxWidth()) {
-                    TravelDetailCell("FLIGHT NO.", model.flightNo ?: "—", Modifier.weight(1f))
+                    TravelDetailCell("FLIGHT NO.", model.flightNo ?: "—", Modifier.weight(1f), cover = true)
                     TravelDetailCell("CLASS", model.classLabel ?: "—", Modifier.weight(1f))
-                    TravelDetailCell("GATE", model.gate ?: "—", Modifier.weight(1f))
+                    TravelDetailCell("GATE", model.gate ?: "—", Modifier.weight(1f), cover = true)
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 Row(modifier = Modifier.fillMaxWidth()) {
                     TravelDetailCell("DATE", model.dateLabel ?: "—", Modifier.weight(1f))
                     TravelDetailCell("TIME", model.timeLabel ?: "—", Modifier.weight(1f))
-                    TravelDetailCell("SEAT", model.seat ?: "—", Modifier.weight(1f))
+                    TravelDetailCell("SEAT", model.seat ?: "—", Modifier.weight(1f), cover = true)
                 }
 
                 Spacer(modifier = Modifier.height(20.dp))
@@ -191,7 +168,9 @@ private fun BoardingPassStyleCardPaper(
                         bitmap = pdf417,
                         contentDescription = "Boarding pass QR code",
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier.size(168.dp)
+                        modifier = Modifier
+                            .size(168.dp)
+                            .recordingPrivacyCover()
                     )
                 } else {
                     Image(
@@ -201,6 +180,7 @@ private fun BoardingPassStyleCardPaper(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(72.dp)
+                            .recordingPrivacyCover()
                     )
                 }
                 if (!model.ticketNo.isNullOrBlank()) {
@@ -213,7 +193,9 @@ private fun BoardingPassStyleCardPaper(
                         textAlign = TextAlign.Center,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .recordingPrivacyCover()
                     )
                 }
             }
@@ -280,14 +262,5 @@ private fun BoardingPassSnapshot.toBoardingPassUiModel(orderId: String?): Boardi
         zone = notes.notesValue("Zone"),
         ticketNo = ticketNo
     )
-}
-
-private fun extractIata(raw: String?): String? {
-    if (raw.isNullOrBlank()) return null
-    Regex("""\(([A-Z]{3})\)""").find(raw.uppercase(Locale.US))?.groupValues?.getOrNull(1)
-        ?.let { return it }
-    val t = raw.trim().uppercase(Locale.US)
-    if (Regex("""^[A-Z]{3}$""").matches(t)) return t
-    return Regex("""\b([A-Z]{3})\b""").find(t)?.groupValues?.getOrNull(1)
 }
 

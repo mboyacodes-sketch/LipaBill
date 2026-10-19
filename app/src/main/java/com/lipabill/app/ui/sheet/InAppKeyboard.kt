@@ -35,7 +35,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
@@ -46,6 +45,7 @@ import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.util.SecureKeyboardWindow
+import com.lipabill.app.ui.util.rememberKeyPressHaptic
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -125,7 +125,6 @@ fun InAppKeyboard(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .recordingPrivacyCover()
             .clip(RoundedCornerShape(20.dp))
             .background(KeyboardCanvas)
             .padding(Space.gap),
@@ -226,15 +225,20 @@ private fun RowScope.InAppKey(
     content: @Composable () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val haptic = rememberKeyPressHaptic()
+    val press: () -> Unit = {
+        haptic()
+        onClick()
+    }
     val pressModifier = if (repeatOnHold) {
         Modifier.pointerInput(onClick) {
             detectTapGestures(
                 onPress = {
-                    onClick()
+                    press()
                     val repeater = scope.launch {
                         delay(BackspaceHoldDelayMs)
                         while (isActive) {
-                            onClick()
+                            press()
                             delay(BackspaceRepeatMs)
                         }
                     }
@@ -247,7 +251,7 @@ private fun RowScope.InAppKey(
             )
         }
     } else {
-        Modifier.clickable(onClick = onClick)
+        Modifier.clickable(onClick = press)
     }
 
     Box(

@@ -29,7 +29,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -71,7 +70,7 @@ fun AuthGateScreen(
     state: AuthUiState,
     errorMessage: String?,
     onUnlockClick: () -> Unit,
-    onContinueWithoutLock: () -> Unit,
+    onOpenLockSettings: () -> Unit,
     onAutoPrompt: () -> Unit
 ) {
     when (state) {
@@ -83,7 +82,7 @@ fun AuthGateScreen(
             )
         }
         AuthUiState.LockScreenMissing -> {
-            NoLockScreenContent(onContinue = onContinueWithoutLock)
+            NoLockScreenContent(onOpenSettings = onOpenLockSettings)
         }
         AuthUiState.Unlocked -> Unit
     }
@@ -319,7 +318,7 @@ private fun AuthBackdropBlobs() {
 }
 
 @Composable
-private fun NoLockScreenContent(onContinue: () -> Unit) {
+private fun NoLockScreenContent(onOpenSettings: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -350,23 +349,19 @@ private fun NoLockScreenContent(onContinue: () -> Unit) {
             )
             Spacer(modifier = Modifier.height(Space.block))
             Text(
-                text = "This device has no biometric hardware enrolled and no PIN, " +
-                    "pattern, or password. For financial history, set a lock screen " +
-                    "in system Settings. You can continue for testing without one.",
+                text = "Set a screen lock or a Class 3 fingerprint or face unlock " +
+                    "before LipaBill can show payment history.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = Mute,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(Space.section))
             OutlinedButton(
-                onClick = onContinue,
+                onClick = onOpenSettings,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(28.dp)
             ) {
-                Text("Continue without lock")
-            }
-            TextButton(onClick = onContinue) {
-                Text("I understand the risk")
+                Text("Set screen lock")
             }
         }
     }

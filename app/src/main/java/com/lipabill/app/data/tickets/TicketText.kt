@@ -1,5 +1,6 @@
 package com.lipabill.app.data.tickets
 
+import java.time.LocalTime
 import java.time.Month
 import java.util.Locale
 
@@ -22,6 +23,16 @@ internal fun sgrStationName(name: String): String {
 
 internal fun firstMatch(text: String, regex: Regex): String? =
     regex.find(text)?.groupValues?.getOrNull(1)?.trim()
+
+/** Hour and minute, with an optional `am` / `pm` marker. */
+internal fun clockFromParts(hour: Int, minute: Int, ampm: String? = null): LocalTime? {
+    var h = hour
+    when (ampm?.lowercase(Locale.US)) {
+        "pm" -> if (h < 12) h += 12
+        "am" -> if (h == 12) h = 0
+    }
+    return runCatching { LocalTime.of(h, minute) }.getOrNull()
+}
 
 internal fun parseMonth(raw: String): Month? {
     val key = raw.trim().lowercase(Locale.ENGLISH).take(3)

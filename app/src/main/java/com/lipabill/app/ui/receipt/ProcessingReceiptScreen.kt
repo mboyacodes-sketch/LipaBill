@@ -3,8 +3,6 @@ package com.lipabill.app.ui.receipt
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -25,7 +23,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.ContentCut
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,15 +44,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -72,6 +65,9 @@ import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.parser.extractAccount
 import com.lipabill.app.data.parser.isPhoneLikeName
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
+import com.lipabill.app.ui.tickets.PunchedTicketPerforation
+import com.lipabill.app.ui.tickets.TicketDetailsFrame
+import com.lipabill.app.ui.tickets.TicketMetaField
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.permissions.PermissionGuideDialog
 import com.lipabill.app.ui.permissions.PermissionLesson
@@ -335,7 +331,7 @@ fun ProcessingReceiptScreen(
                         startedLabel = formatTimestamp(startedAt)
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-                    PaymentTicketPerforation()
+                    PunchedTicketPerforation(ink = LabelGrey)
                     PaymentStub(
                         tag = tag,
                         confirmCode = confirmCode,
@@ -505,18 +501,7 @@ private fun PaymentDetailsBox(
     account: String?,
     startedLabel: String
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 18.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp)
-                .border(BorderStroke(1.dp, DetailBorder), RoundedCornerShape(12.dp))
-                .padding(horizontal = 16.dp, vertical = 18.dp)
-        ) {
+    TicketDetailsFrame(title = "PAYMENT DETAILS", borderColor = DetailBorder) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -562,19 +547,6 @@ private fun PaymentDetailsBox(
 
             Spacer(modifier = Modifier.height(16.dp))
             PaymentField(label = "Date & Time", value = startedLabel)
-        }
-
-        Text(
-            text = "PAYMENT DETAILS",
-            color = Color(0xFF6B7280),
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.8.sp,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .background(CardWhite)
-                .padding(horizontal = 10.dp)
-        )
     }
 }
 
@@ -661,81 +633,12 @@ private fun PaymentField(
     alignEnd: Boolean = false,
     cover: Boolean = false
 ) {
-    Column(
+    TicketMetaField(
+        label = label,
+        value = value,
+        labelColor = LabelGrey,
         modifier = modifier,
-        horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start
-    ) {
-        Text(
-            text = label,
-            color = LabelGrey,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Normal,
-            maxLines = 1
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = value,
-            color = Ink,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.recordingPrivacyCover(cover)
-        )
-    }
-}
-
-@Composable
-private fun PaymentTicketPerforation() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(28.dp)
-            .background(CardWhite),
-        contentAlignment = Alignment.Center
-    ) {
-        val dash = LabelGrey.copy(alpha = 0.55f)
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .matchParentSize()
-        ) {
-            val r = 10.dp.toPx()
-            val cy = size.height / 2f
-            drawCircle(
-                color = Color.Black,
-                radius = r,
-                center = Offset(0f, cy),
-                blendMode = BlendMode.Clear
-            )
-            drawCircle(
-                color = Color.Black,
-                radius = r,
-                center = Offset(size.width, cy),
-                blendMode = BlendMode.Clear
-            )
-            drawLine(
-                color = dash,
-                start = Offset(r + 4.dp.toPx(), cy),
-                end = Offset(size.width - r - 4.dp.toPx(), cy),
-                strokeWidth = 2.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
-            )
-        }
-        Box(
-            modifier = Modifier
-                .size(24.dp)
-                .background(CardWhite, CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.ContentCut,
-                contentDescription = null,
-                tint = LabelGrey,
-                modifier = Modifier
-                    .size(16.dp)
-                    .rotate(-45f)
-            )
-        }
-    }
+        alignEnd = alignEnd,
+        cover = cover
+    )
 }

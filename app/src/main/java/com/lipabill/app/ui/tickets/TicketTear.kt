@@ -5,13 +5,22 @@ import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.lipabill.app.ui.theme.CardWhite
 
 /** Shared fade for a pass that has been marked used. */
 internal const val UsedPassAlpha = 0.45f
@@ -61,6 +70,33 @@ internal fun rememberTicketTear(
     }
     return TicketTear(gap, stubDrop, stubTilt, topLift, stubShadow)
 }
+
+@Composable
+internal fun Modifier.tornTopPiece(
+    tear: TicketTear,
+    shape: Shape,
+    isUsed: Boolean,
+    usedShadow: Dp,
+    restShadow: Dp
+): Modifier = this
+    .fillMaxWidth()
+    .offset(y = tear.topLift)
+    .shadow(if (isUsed) usedShadow else restShadow, shape, clip = false)
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .clip(shape)
+    .background(CardWhite)
+
+@Composable
+internal fun Modifier.tornStubPiece(tear: TicketTear, shape: Shape): Modifier = this
+    .fillMaxWidth()
+    .offset(y = tear.stubDrop)
+    .shadow(tear.stubShadow, shape, clip = false)
+    .graphicsLayer {
+        rotationZ = tear.stubTilt
+        compositingStrategy = CompositingStrategy.Offscreen
+    }
+    .clip(shape)
+    .background(CardWhite)
 
 internal fun tornTicketShapes(
     used: Boolean,

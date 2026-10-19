@@ -2,6 +2,7 @@ package com.lipabill.app.ui.main
 
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -10,7 +11,6 @@ import androidx.compose.ui.Modifier
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.data.sms.ReceiptOpenRequest
 import com.lipabill.app.ui.list.TransactionListScreen
-import com.lipabill.app.ui.util.imeAndNavBarsPadding
 import com.lipabill.app.viewmodel.TransactionListViewModel
 
 @Composable
@@ -26,6 +26,7 @@ fun MainShellScreen(
     onOpenTickets: () -> Unit = {},
     onRequestSms: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenProfile: () -> Unit = {},
     onOpenHabits: () -> Unit = {}
 ) {
     Scaffold(
@@ -40,7 +41,7 @@ fun MainShellScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .imeAndNavBarsPadding(),
+                .navigationBarsPadding(),
             onSend = onOpenSend,
             onSendTo = onOpenSendTo,
             onReceive = onOpenPay,
@@ -49,6 +50,7 @@ fun MainShellScreen(
             onRequestSms = onRequestSms,
             onRescan = { listVm.rescanInbox() },
             onOpenSettings = onOpenSettings,
+            onOpenProfile = onOpenProfile,
             onOpenHabits = onOpenHabits
         )
     }

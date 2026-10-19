@@ -1,5 +1,6 @@
 package com.lipabill.app.ui.list
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ConfirmationNumber
 import androidx.compose.material.icons.outlined.NorthEast
 import androidx.compose.material.icons.outlined.Payments
+import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
@@ -45,7 +47,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -55,17 +56,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -90,8 +92,10 @@ import com.lipabill.app.ui.components.BalanceAmountRow
 import com.lipabill.app.ui.components.WalletAccountSwitch
 import com.lipabill.app.ui.detail.TransactionReceiptPopup
 import com.lipabill.app.ui.engage.EngageHomeSection
+import com.lipabill.app.ui.sheet.EditableSheetField
 import com.lipabill.app.ui.sheet.InAppKeyboard
-import com.lipabill.app.ui.sheet.SheetInputStyle
+import com.lipabill.app.ui.sheet.SheetTextEditor
+import com.lipabill.app.ui.sheet.rememberSheetEditor
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.ActionMetrics
@@ -111,7 +115,10 @@ import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.theme.avatarPastel
 import com.lipabill.app.ui.util.InterceptSystemIme
-import com.lipabill.app.ui.util.bringIntoViewOnFocus
+import com.lipabill.app.ui.util.categoryDisc
+import com.lipabill.app.ui.util.categoryInk
+import com.lipabill.app.ui.util.categoryWash
+import com.lipabill.app.ui.util.chipLabel
 import com.lipabill.app.ui.util.displayLabel
 import com.lipabill.app.ui.util.opensOnDigitKeys
 import com.lipabill.app.ui.util.formatActivityTime
@@ -182,6 +189,7 @@ fun TransactionListScreen(
     onRequestSms: () -> Unit = {},
     onRescan: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenProfile: () -> Unit = {},
     onOpenHabits: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -227,11 +235,70 @@ fun TransactionListScreen(
     val showingReceipt = receiptTxId != null
     val hideKeyboard = rememberHideKeyboard()
     val focusManager = LocalFocusManager.current
+    var searchOpen by remember { mutableStateOf(false) }
     var searchFocused by remember { mutableStateOf(false) }
+    var searchFieldFocused by remember { mutableStateOf(false) }
+    val searchEditor = rememberSheetEditor(state.searchQuery)
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    // Header search icon scrolls to the transactions search field (index after hero+actions[+frequent]).
+    val suppressSearchDismiss = remember { intArrayOf(0) }
+    var homeEpoch by remember { mutableIntStateOf(0) }
+    // Header search icon reveals the transactions search field (index after hero+actions[+frequent]).
     val txHeaderIndex = if (showFrequent) 3 else 2
+
+    fun closeSearch() {
+        searchOpen = false
+        searchFocused = false
+        searchFieldFocused = false
+        focusManager.clearFocus(force = true)
+        if (searchEditor.text.isNotEmpty() || state.searchQuery.isNotEmpty()) {
+            searchEditor.overwrite("")
+            viewModel.setSearchQuery("")
+        }
+    }
+
+    /** Same landing as See all: the transaction list fills the screen, header at the top. */
+    fun showAllTransactions() {
+        scope.launch { listState.animateScrollToItem(txHeaderIndex) }
+    }
+
+    fun openSearch(index: Int) {
+        val epoch = homeEpoch
+        scope.launch {
+            suppressSearchDismiss[0]++
+            try {
+                listState.animateScrollToItem(index)
+                if (epoch != homeEpoch) return@launch
+                searchOpen = true
+                searchFocused = true
+                withFrameNanos { }
+                if (epoch != homeEpoch) return@launch
+                listState.scrollToItem(index)
+            } finally {
+                suppressSearchDismiss[0]--
+            }
+        }
+    }
+
+    fun resetHome() {
+        homeEpoch++
+        closeSearch()
+        scope.launch { listState.scrollToItem(0) }
+    }
+
+    fun onSearchFieldFocus(focused: Boolean) {
+        val wasFocused = searchFieldFocused
+        searchFieldFocused = focused
+        if (focused) {
+            searchOpen = true
+            searchFocused = true
+        } else if (wasFocused && state.searchQuery.isBlank() && searchEditor.text.isEmpty()) {
+            searchOpen = false
+            searchFocused = false
+        } else if (wasFocused) {
+            searchFocused = false
+        }
+    }
     val listCoversSwoosh by remember {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0 ||
@@ -240,18 +307,32 @@ fun TransactionListScreen(
     }
     val window = LocalWindowForm.current.width
     val pageMargin = if (window == WindowWidth.Compact) HomeMock.Margin else 28.dp
+    val homeMoved by remember(window, txHeaderIndex) {
+        derivedStateOf {
+            val listFull = if (window == WindowWidth.Expanded) {
+                listState.firstVisibleItemIndex > 0 ||
+                    listState.firstVisibleItemScrollOffset > 0
+            } else {
+                listState.firstVisibleItemIndex >= txHeaderIndex
+            }
+            listFull || searchOpen || searchFocused || state.searchQuery.isNotBlank()
+        }
+    }
+    BackHandler(enabled = homeMoved && !showingReceipt, onBack = ::resetHome)
 
     LaunchedEffect(showingReceipt) {
-        if (showingReceipt && searchFocused) {
-            searchFocused = false
-            focusManager.clearFocus(force = true)
-        }
+        if (showingReceipt && (searchOpen || searchFocused)) closeSearch()
     }
 
     LaunchedEffect(listState.isScrollInProgress) {
+        if (suppressSearchDismiss[0] > 0) return@LaunchedEffect
         if (listState.isScrollInProgress && searchFocused) {
+            searchFieldFocused = false
             searchFocused = false
             focusManager.clearFocus(force = true)
+            if (state.searchQuery.isBlank() && searchEditor.text.isEmpty()) {
+                searchOpen = false
+            }
         }
     }
 
@@ -259,7 +340,7 @@ fun TransactionListScreen(
         modifier = modifier
             .fillMaxSize()
             .background(CreamCanvas)
-            .hideKeyboardOnOutsideTap()
+            .hideKeyboardOnOutsideTap(onOutsideTap = { if (searchOpen) closeSearch() })
     ) {
         // Left page swoosh — mirror of the design’s top-right leaf (stays clear of status icons).
         val swoosh = Accent
@@ -306,16 +387,17 @@ fun TransactionListScreen(
                 grouped = state.grouped,
                 hasSmsPermission = state.hasSmsPermission,
                 searchQuery = state.searchQuery,
+                typeFilter = state.typeFilter,
+                availableTypes = state.availableTypes,
+                onTypeFilter = viewModel::setTypeFilter,
+                searchEditor = searchEditor,
                 onQueryChange = viewModel::setSearchQuery,
+                searchOpen = searchOpen,
                 searchFocused = searchFocused,
-                onSearchFocus = { searchFocused = it },
-                onSearch = {
-                    scope.launch {
-                        listState.animateScrollToItem(0)
-                        searchFocused = true
-                    }
-                },
+                onSearchFocus = ::onSearchFieldFocus,
+                onSearch = { openSearch(0) },
                 onOpenSettings = onOpenSettings,
+                onOpenProfile = onOpenProfile,
                 onSend = onSend,
                 onPay = onReceive,
                 onMetrics = onExchange,
@@ -326,15 +408,12 @@ fun TransactionListScreen(
                 onSelectFrequent = onSendTo,
                 onOpenTransaction = { id ->
                     hideKeyboard()
-                    searchFocused = false
+                    closeSearch()
                     receiptTxId = id
                 },
-                onKey = { ch -> viewModel.setSearchQuery(state.searchQuery + ch) },
-                onBackspace = { viewModel.setSearchQuery(state.searchQuery.dropLast(1)) },
-                onKeyboardDone = {
-                    searchFocused = false
-                    focusManager.clearFocus(force = true)
-                },
+                onKey = { ch -> viewModel.setSearchQuery(searchEditor.insert(ch)) },
+                onBackspace = { viewModel.setSearchQuery(searchEditor.backspace()) },
+                onKeyboardDone = { closeSearch() },
                 engageSection = {
                     EngageHomeSection(
                         state = engage,
@@ -366,12 +445,7 @@ fun TransactionListScreen(
                 item(key = "hero") {
                     HomeBrandHeader(
                         horizontalPadding = pageMargin,
-                        onSearch = {
-                            scope.launch {
-                                listState.animateScrollToItem(txHeaderIndex)
-                                searchFocused = true
-                            }
-                        },
+                        onSearch = { openSearch(txHeaderIndex) },
                         onOpenSettings = onOpenSettings
                     )
                 }
@@ -387,6 +461,7 @@ fun TransactionListScreen(
                                 alwaysShowBalance = alwaysShowBalance,
                                 account = state.account,
                                 onAccountSelected = viewModel::setWalletAccount,
+                                onOpenProfile = onOpenProfile,
                                 modifier = Modifier.weight(1f)
                             )
                             QuickActionsRow(
@@ -404,6 +479,7 @@ fun TransactionListScreen(
                             alwaysShowBalance = alwaysShowBalance,
                             account = state.account,
                             onAccountSelected = viewModel::setWalletAccount,
+                            onOpenProfile = onOpenProfile,
                             modifier = Modifier.padding(horizontal = pageMargin)
                         )
                         Spacer(modifier = Modifier.height(HomeMock.SectionGap))
@@ -449,20 +525,23 @@ fun TransactionListScreen(
                     grouped = state.grouped,
                     hasSmsPermission = state.hasSmsPermission,
                     searchQuery = state.searchQuery,
+                    typeFilter = state.typeFilter,
+                    availableTypes = state.availableTypes,
+                    onTypeFilter = viewModel::setTypeFilter,
+                    searchEditor = searchEditor,
                     onQueryChange = viewModel::setSearchQuery,
-                    onSearchFocus = { searchFocused = it },
+                    searchOpen = searchOpen,
+                    onSearchFocus = ::onSearchFieldFocus,
                     onRequestSms = onRequestSms,
                     onOpenTransaction = { id ->
                         hideKeyboard()
-                        searchFocused = false
+                        closeSearch()
                         receiptTxId = id
                     },
                     pageMargin = pageMargin,
                     sheetColor = homeSheet,
                     headerShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-                    onSeeAll = {
-                        scope.launch { listState.animateScrollToItem(txHeaderIndex) }
-                    }
+                    onSeeAll = { showAllTransactions() }
                 )
                 item(key = "tx-sheet-tail") {
                     Spacer(
@@ -479,15 +558,12 @@ fun TransactionListScreen(
                 InAppKeyboard(
                     startOnDigits = state.searchQuery.opensOnDigitKeys(),
                     onChar = { ch ->
-                        viewModel.setSearchQuery(state.searchQuery + ch)
+                        viewModel.setSearchQuery(searchEditor.insert(ch))
                     },
                     onBackspace = {
-                        viewModel.setSearchQuery(state.searchQuery.dropLast(1))
+                        viewModel.setSearchQuery(searchEditor.backspace())
                     },
-                    onDone = {
-                        searchFocused = false
-                        focusManager.clearFocus(force = true)
-                    },
+                    onDone = { closeSearch() },
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(CreamCanvas)
@@ -530,11 +606,17 @@ private fun HomeExpandedPane(
     grouped: List<DayGroup>,
     hasSmsPermission: Boolean,
     searchQuery: String,
+    typeFilter: TransactionType?,
+    availableTypes: List<TransactionType>,
+    onTypeFilter: (TransactionType?) -> Unit,
+    searchEditor: SheetTextEditor,
     onQueryChange: (String) -> Unit,
+    searchOpen: Boolean,
     searchFocused: Boolean,
     onSearchFocus: (Boolean) -> Unit,
     onSearch: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenProfile: () -> Unit,
     onSend: () -> Unit,
     onPay: () -> Unit,
     onMetrics: () -> Unit,
@@ -569,6 +651,7 @@ private fun HomeExpandedPane(
                 alwaysShowBalance = alwaysShowBalance,
                 account = account,
                 onAccountSelected = onAccountSelected,
+                onOpenProfile = onOpenProfile,
                 modifier = Modifier.padding(horizontal = pageMargin)
             )
             Spacer(modifier = Modifier.height(HomeMock.SectionGap))
@@ -618,7 +701,12 @@ private fun HomeExpandedPane(
                         grouped = grouped,
                         hasSmsPermission = hasSmsPermission,
                         searchQuery = searchQuery,
+                        typeFilter = typeFilter,
+                        availableTypes = availableTypes,
+                        onTypeFilter = onTypeFilter,
+                        searchEditor = searchEditor,
                         onQueryChange = onQueryChange,
+                        searchOpen = searchOpen,
                         onSearchFocus = onSearchFocus,
                         onRequestSms = onRequestSms,
                         onOpenTransaction = onOpenTransaction,
@@ -705,6 +793,7 @@ private fun BalanceSection(
     alwaysShowBalance: Boolean,
     account: WalletAccount,
     onAccountSelected: (WalletAccount) -> Unit,
+    onOpenProfile: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -768,8 +857,8 @@ private fun BalanceSection(
                 .fillMaxWidth()
                 .padding(
                     start = HomeMock.PillPadH,
-                    // Extra end padding so amount/eye sit clear of the right swoosh.
-                    end = HomeMock.PillPadH + 8.dp,
+                    // Clear of the request disc, which is centered on the pill.
+                    end = 84.dp,
                     top = HomeMock.PillPadV,
                     bottom = HomeMock.PillPadV
                 ),
@@ -787,9 +876,24 @@ private fun BalanceSection(
                 alwaysShow = alwaysShowBalance,
                 amountStyle = HomeType.balance,
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start,
-                showEyeToggle = true,
-                eyeInCircle = true
+                horizontalArrangement = Arrangement.Start
+            )
+        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 16.dp)
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(SoftBlue)
+                .clickable(onClick = onOpenProfile),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.QrCode2,
+                contentDescription = "Request",
+                tint = BrandNavy,
+                modifier = Modifier.size(26.dp)
             )
         }
     }
@@ -934,28 +1038,28 @@ private fun SectionHeader(
 
 @Composable
 private fun TransactionSearchField(
-    query: String,
+    editor: SheetTextEditor,
     onQueryChange: (String) -> Unit,
     onFocusChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     InterceptSystemIme {
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            modifier = modifier
-                .fillMaxWidth()
-                .heightIn(min = HomeMock.SearchMinHeight)
-                .bringIntoViewOnFocus(delayMs = 80L)
-                .onFocusChanged { onFocusChange(it.isFocused) }
-                .recordingPrivacyCover(query.isNotBlank()),
-            singleLine = true,
-            readOnly = true,
-            textStyle = SheetInputStyle,
+        EditableSheetField(
+            editor = editor,
+            onText = onQueryChange,
+            placeholder = "Name or number",
+            modifier = modifier.heightIn(min = HomeMock.SearchMinHeight),
+            onFocused = onFocusChange,
             shape = RoundedCornerShape(HomeMock.SearchRadius),
-            placeholder = {
-                Text("Name or number", style = HomeType.body, color = Mute)
-            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Color.Transparent,
+                unfocusedBorderColor = Color.Transparent,
+                focusedContainerColor = CardWhite,
+                unfocusedContainerColor = CardWhite,
+                cursorColor = Ink,
+                focusedTextColor = Ink,
+                unfocusedTextColor = Ink
+            ),
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Outlined.Search,
@@ -964,9 +1068,14 @@ private fun TransactionSearchField(
                     modifier = Modifier.size(20.dp)
                 )
             },
-            trailingIcon = {
-                if (query.isNotEmpty()) {
-                    IconButton(onClick = { onQueryChange("") }) {
+            trailingIcon = if (editor.text.isEmpty()) {
+                null
+            } else {
+                {
+                    IconButton(onClick = {
+                        editor.overwrite("")
+                        onQueryChange("")
+                    }) {
                         Icon(
                             imageVector = Icons.Outlined.Close,
                             contentDescription = "Clear search",
@@ -975,14 +1084,7 @@ private fun TransactionSearchField(
                         )
                     }
                 }
-            },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color.Transparent,
-                unfocusedBorderColor = Color.Transparent,
-                focusedContainerColor = CardWhite,
-                unfocusedContainerColor = CardWhite,
-                cursorColor = Ink
-            )
+            }
         )
     }
 }
@@ -1076,7 +1178,7 @@ private fun TransactionRow(
     }
     val named = !tx.counterpartyName.isNullOrBlank()
     val title = tx.counterpartyName ?: tx.type.displayLabel()
-    val seed = title.hashCode()
+    val categoryInk = tx.type.categoryInk()
 
     Row(
         modifier = modifier
@@ -1089,7 +1191,7 @@ private fun TransactionRow(
             modifier = Modifier
                 .size(HomeMock.TxAvatar)
                 .clip(CircleShape)
-                .background(avatarPastel(seed)),
+                .background(tx.type.categoryDisc()),
             contentAlignment = Alignment.Center
         ) {
             val initial = title
@@ -1118,7 +1220,7 @@ private fun TransactionRow(
                 Text(
                     text = tx.type.displayLabel(),
                     style = HomeType.caption,
-                    color = Ink.copy(alpha = 0.62f),
+                    color = categoryInk,
                     maxLines = 1
                 )
                 if (fuliza && tx.cost != null) {
@@ -1166,7 +1268,12 @@ private fun LazyListScope.transactionFeed(
     grouped: List<DayGroup>,
     hasSmsPermission: Boolean,
     searchQuery: String,
+    typeFilter: TransactionType?,
+    availableTypes: List<TransactionType>,
+    onTypeFilter: (TransactionType?) -> Unit,
+    searchEditor: SheetTextEditor,
     onQueryChange: (String) -> Unit,
+    searchOpen: Boolean,
     onSearchFocus: (Boolean) -> Unit,
     onRequestSms: () -> Unit,
     onOpenTransaction: (Long) -> Unit,
@@ -1196,13 +1303,25 @@ private fun LazyListScope.transactionFeed(
                 trailing = if (onSeeAll != null) "See all" else null,
                 onOpen = onSeeAll
             )
-            Spacer(modifier = Modifier.height(8.dp))
-            TransactionSearchField(
-                query = searchQuery,
-                onQueryChange = onQueryChange,
-                onFocusChange = onSearchFocus
-            )
-            Spacer(modifier = Modifier.height(6.dp))
+            if (availableTypes.size > 1) {
+                Spacer(modifier = Modifier.height(8.dp))
+                CategoryFilterRow(
+                    types = availableTypes,
+                    selected = typeFilter,
+                    onSelect = onTypeFilter
+                )
+            }
+            if (searchOpen) {
+                Spacer(modifier = Modifier.height(8.dp))
+                TransactionSearchField(
+                    editor = searchEditor,
+                    onQueryChange = onQueryChange,
+                    onFocusChange = onSearchFocus
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+            } else {
+                Spacer(modifier = Modifier.height(4.dp))
+            }
         }
     }
     if (!hasSmsPermission && searchQuery.isBlank() && grouped.isNotEmpty()) {
@@ -1218,7 +1337,8 @@ private fun LazyListScope.transactionFeed(
         item(key = "empty") {
             EmptyState(
                 hasPermission = hasSmsPermission,
-                searching = searchQuery.isNotBlank(),
+                searching = searchQuery.isNotBlank() || typeFilter != null,
+                categoryLabel = typeFilter?.chipLabel(),
                 account = account,
                 onAllowSms = onRequestSms,
                 modifier = Modifier.fillMaxWidth().sheet()
@@ -1249,9 +1369,46 @@ private fun LazyListScope.transactionFeed(
 }
 
 @Composable
+private fun CategoryFilterRow(
+    types: List<TransactionType>,
+    selected: TransactionType?,
+    onSelect: (TransactionType?) -> Unit
+) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        items(items = types, key = { it.name }) { type ->
+            val selectedType = type == selected
+            val ink = type.categoryInk()
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (selectedType) type.categoryWash() else Color.Transparent)
+                    .clickable { onSelect(if (selectedType) null else type) }
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(ink.copy(alpha = if (selectedType) 1f else 0.55f))
+                )
+                Text(
+                    text = type.chipLabel(),
+                    style = HomeType.caption,
+                    color = if (selectedType) ink else Mute,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun EmptyState(
     hasPermission: Boolean,
     searching: Boolean,
+    categoryLabel: String?,
     account: WalletAccount,
     onAllowSms: () -> Unit,
     modifier: Modifier = Modifier
@@ -1264,6 +1421,7 @@ private fun EmptyState(
     ) {
         Text(
             text = when {
+                categoryLabel != null && searching -> "Nothing in $categoryLabel"
                 searching -> "No matches"
                 hasPermission -> account.emptyHistoryTitle
                 else -> "History needs SMS"
@@ -1273,6 +1431,7 @@ private fun EmptyState(
         Spacer(modifier = Modifier.height(Space.gap))
         Text(
             text = when {
+                categoryLabel != null -> "Tap $categoryLabel again to show every category."
                 searching -> "Try a different name or number."
                 hasPermission -> account.emptyHistoryDetail
                 else ->
