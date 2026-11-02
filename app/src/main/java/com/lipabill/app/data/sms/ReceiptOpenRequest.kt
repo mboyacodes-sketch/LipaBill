@@ -5,7 +5,7 @@ import java.net.URLEncoder
 
 /**
  * Which payment a notification should open.
- * The row id is the fast path. The M-Pesa code still finds the row if that id is missing.
+ * The row id is the fast path. The confirmation code still finds the row if that id is missing.
  */
 data class ReceiptOpenRequest(
     val id: Long?,
@@ -16,7 +16,7 @@ data class ReceiptOpenRequest(
 
 private const val RECEIPT_PREFIX = "lipabill://receipt/"
 
-/** M-Pesa confirmation codes are short alphanumeric tokens. */
+/** Confirmation codes are short alphanumeric tokens. */
 private val RECEIPT_CODE = Regex("^[A-Za-z0-9]{6,16}$")
 
 internal fun normalizeReceiptCode(raw: String?): String? =
