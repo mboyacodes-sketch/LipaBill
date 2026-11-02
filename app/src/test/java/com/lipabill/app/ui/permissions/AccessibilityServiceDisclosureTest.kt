@@ -1,9 +1,10 @@
 package com.lipabill.app.ui.permissions
 
+import com.lipabill.app.resolveRepoFile
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 
 class AccessibilityServiceDisclosureTest {
 
@@ -13,6 +14,10 @@ class AccessibilityServiceDisclosureTest {
         AccessibilityServiceDisclosure.REQUIRED_PHRASES.forEach { phrase ->
             assertTrue("Missing phrase: $phrase", body.contains(phrase, ignoreCase = true))
         }
+        assertEquals(
+            AccessibilityServiceDisclosure.STANDARD_POINTS.joinToString(" "),
+            body
+        )
     }
 
     @Test
@@ -53,17 +58,9 @@ class AccessibilityServiceDisclosureTest {
             "docs/play-store-listing.md must contain PLAY_STORE_LISTING_PARAGRAPH verbatim",
             doc.contains(AccessibilityServiceDisclosure.PLAY_STORE_LISTING_PARAGRAPH)
         )
-        assertTrue(doc.contains("coming soon", ignoreCase = true))
-    }
-
-    private fun resolveRepoFile(relative: String): File? {
-        var dir: File? = File(System.getProperty("user.dir") ?: ".").canonicalFile
-        repeat(6) {
-            val candidate = File(dir, relative)
-            if (candidate.isFile) return candidate
-            dir = dir?.parentFile
-        }
-        return null
+        assertTrue(doc.contains("Event tickets", ignoreCase = true))
+        assertTrue(doc.contains("SGR", ignoreCase = true))
+        assertTrue(!doc.contains("Flight boarding", ignoreCase = true))
     }
 
     @Test
@@ -75,5 +72,11 @@ class AccessibilityServiceDisclosureTest {
         assertTrue(title.contains("Repeat", ignoreCase = true))
         assertTrue(AccessibilityServiceDisclosure.AGREE.equals("Agree", ignoreCase = false))
         assertTrue(AccessibilityServiceDisclosure.NOT_NOW.equals("Not now", ignoreCase = false))
+        assertTrue(
+            AccessibilityServiceDisclosure.STANDARD_BODY.contains(
+                "Send, Pay, and Repeat stay off",
+                ignoreCase = true
+            )
+        )
     }
 }
