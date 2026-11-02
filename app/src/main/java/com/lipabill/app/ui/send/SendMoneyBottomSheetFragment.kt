@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -12,22 +13,25 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.lipabill.app.R
-import com.lipabill.app.ui.permissions.rememberContactsAccessOffer
 import com.lipabill.app.ui.permissions.paymentAccessDirective
 import com.lipabill.app.ui.sheet.EditableSheetField
 import com.lipabill.app.ui.sheet.HorizontalRecipient
 import com.lipabill.app.ui.sheet.HorizontalRecipientRow
+import com.lipabill.app.ui.sheet.rememberPhoneContactPicker
 import com.lipabill.app.ui.sheet.InAppKeyboard
 import com.lipabill.app.ui.sheet.rememberSheetEditor
 import com.lipabill.app.ui.sheet.MoneyConfirmDialog
 import com.lipabill.app.ui.sheet.MoneySheetScaffold
+import com.lipabill.app.ui.sheet.moneySheetPrimaryCta
 import com.lipabill.app.ui.sheet.rememberMoneySheetAccess
+import com.lipabill.app.ui.sheet.runMoneySheetPrimaryCta
 import com.lipabill.app.ui.sheet.sameParty
 import com.lipabill.app.ui.sheet.sheetName
 import com.lipabill.app.ui.sheet.sheetSubtitle
@@ -121,9 +125,18 @@ fun SendMoneySheetContent(
     }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    val offerContacts = rememberContactsAccessOffer {
-        sendVm.refreshContactsAccess()
-    }
+    val context = LocalContext.current
+    val pickPhoneContact = rememberPhoneContactPicker(
+        onPicked = { contact ->
+            sendVm.select(contact)
+            queryFocused = false
+            hideKeyboard(focusManager, keyboard)
+            step = SendSheetStep.Amount
+        },
+        onRejected = { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    )
     val recipientEditor = rememberSheetEditor(state.query)
 
     LaunchedEffect(Unit) {
@@ -175,6 +188,14 @@ fun SendMoneySheetContent(
             fulizaCoversShortfall = true
         )
     )
+    val primaryCta = moneySheetPrimaryCta(
+        onAmountStep = onAmountStep,
+        canConfirm = state.canSend,
+        dialStarted = state.dialStarted,
+        detailsValid = state.detailsValid,
+        paymentBlock = paymentBlock,
+        confirmLabel = "Send Now"
+    )
 
     MoneySheetScaffold(
         balance = shownBalance,
@@ -196,21 +217,29 @@ fun SendMoneySheetContent(
         showKeypad = onAmountStep,
         showRecipients = !onAmountStep,
         recipientsContent = {
-            if (state.contacts.isNotEmpty()) {
-                HorizontalRecipientRow {
-                    state.contacts.take(12).forEach { contact ->
-                        HorizontalRecipient(
-                            name = contact.sheetName(),
-                            subtitle = contact.sheetSubtitle(),
-                            selected = contact.sameParty(state.selected),
-                            onClick = {
-                                sendVm.select(contact)
-                                queryFocused = false
-                                hideKeyboard(focusManager, keyboard)
-                                step = SendSheetStep.Amount
-                            }
-                        )
+            HorizontalRecipientRow {
+                HorizontalRecipient(
+                    name = "Contacts",
+                    subtitle = "Phone",
+                    selected = state.selected?.fromPhoneBook == true,
+                    onClick = {
+                        queryFocused = false
+                        hideKeyboard(focusManager, keyboard)
+                        pickPhoneContact()
                     }
+                )
+                state.contacts.take(12).forEach { contact ->
+                    HorizontalRecipient(
+                        name = contact.sheetName(),
+                        subtitle = contact.sheetSubtitle(),
+                        selected = contact.sameParty(state.selected),
+                        onClick = {
+                            sendVm.select(contact)
+                            queryFocused = false
+                            hideKeyboard(focusManager, keyboard)
+                            step = SendSheetStep.Amount
+                        }
+                    )
                 }
             }
         },
@@ -226,7 +255,6 @@ fun SendMoneySheetContent(
                         sanitize = ::sanitizeSheetLine,
                         onFocused = { focused ->
                             queryFocused = focused
-                            offerContacts(focused)
                         }
                     )
                 }
@@ -251,27 +279,17 @@ fun SendMoneySheetContent(
         } else {
             null
         },
-        ctaLabel = when {
-            paymentBlock != null -> paymentBlock.actionLabel
-            onAmountStep -> "Send Now"
-            else -> "Continue"
-        },
-        ctaEnabled = if (paymentBlock != null) {
-            true
-        } else if (onAmountStep) {
-            state.canSend && !state.dialStarted
-        } else {
-            state.detailsValid
-        },
+        ctaLabel = primaryCta.label,
+        ctaEnabled = primaryCta.enabled,
         onCta = {
-            val block = paymentBlock
-            if (block != null) {
-                sheetAccess.allow(block)
-            } else if (onAmountStep) {
-                showConfirm = true
-            } else {
-                goToAmount()
-            }
+            runMoneySheetPrimaryCta(
+                onAmountStep = onAmountStep,
+                canConfirm = state.canSend,
+                paymentBlock = paymentBlock,
+                onConfirm = { showConfirm = true },
+                onAllow = sheetAccess.allow,
+                onContinue = { goToAmount() }
+            )
         },
         onKey = sendVm::appendAmountKey,
         onBackspace = sendVm::deleteAmountKey,
