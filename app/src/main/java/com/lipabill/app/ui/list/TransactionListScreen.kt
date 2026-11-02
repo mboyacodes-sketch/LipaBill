@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -81,12 +80,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lipabill.app.LipaBillApp
+import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.data.sms.ReceiptOpenRequest
+import com.lipabill.app.ui.SourceFilterRow
 import com.lipabill.app.ui.adapt.LocalWindowForm
-import com.lipabill.app.ui.permissions.rememberPaymentAccessNeeds
 import com.lipabill.app.ui.adapt.WindowWidth
 import com.lipabill.app.ui.components.BalanceAmountRow
 import com.lipabill.app.ui.components.WalletAccountSwitch
@@ -125,6 +125,8 @@ import com.lipabill.app.ui.util.formatActivityTime
 import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
 import com.lipabill.app.ui.util.rememberHideKeyboard
+import com.lipabill.app.ui.util.safeDrawingBottomPadding
+import com.lipabill.app.ui.util.safeDrawingTopPadding
 import com.lipabill.app.viewmodel.DayGroup
 import com.lipabill.app.viewmodel.EngagementViewModel
 import com.lipabill.app.viewmodel.TransactionListViewModel
@@ -214,8 +216,6 @@ fun TransactionListScreen(
         viewModel.observeTransaction(resolved).filterNotNull().first()
         onReceiptOpened()
     }
-    val paymentsReady = rememberPaymentAccessNeeds().isEmpty()
-
     LaunchedEffect(state.scanMessage) {
         val msg = state.scanMessage ?: return@LaunchedEffect
         snackbar.showSnackbar(msg)
@@ -224,9 +224,10 @@ fun TransactionListScreen(
 
     val frequent = state.frequentContacts
     val showFrequent = favouritesSectionEnabled && frequent.isNotEmpty() &&
-        state.account == WalletAccount.MPESA
+        state.account == WalletAccount.MPESA &&
+        state.showSendPay
     val shownBalance = state.shownBalance()
-    val canSendPay = paymentsReady && state.canFundPayment()
+    val canSendPay = state.canFundPayment()
     // Full row (incl. rawBody) so share can send truncated original SMS.
     val receiptTx by remember(receiptTxId) {
         receiptTxId?.let { viewModel.observeTransaction(it) } ?: flowOf(null)
@@ -342,14 +343,13 @@ fun TransactionListScreen(
             .background(CreamCanvas)
             .hideKeyboardOnOutsideTap(onOutsideTap = { if (searchOpen) closeSearch() })
     ) {
-        // Left page swoosh — mirror of the design’s top-right leaf (stays clear of status icons).
+        // Left page swoosh — draws under the status bar; header content is inset separately.
         val swoosh = Accent
         Canvas(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .fillMaxWidth(if (window == WindowWidth.Expanded) 0.38f else 0.62f)
                 .height(260.dp)
-                .statusBarsPadding()
                 .then(if (listCoversSwoosh) Modifier.blur(20.dp) else Modifier)
         ) {
             val w = size.width
@@ -384,12 +384,17 @@ fun TransactionListScreen(
                 showFrequent = showFrequent,
                 account = state.account,
                 onAccountSelected = viewModel::setWalletAccount,
+                showFuliza = state.showFuliza,
+                showSendPay = state.showSendPay,
                 grouped = state.grouped,
                 hasSmsPermission = state.hasSmsPermission,
                 searchQuery = state.searchQuery,
                 typeFilter = state.typeFilter,
                 availableTypes = state.availableTypes,
                 onTypeFilter = viewModel::setTypeFilter,
+                sourceFilter = state.sourceFilter,
+                availableSources = state.availableSources,
+                onSourceFilter = viewModel::setSourceFilter,
                 searchEditor = searchEditor,
                 onQueryChange = viewModel::setSearchQuery,
                 searchOpen = searchOpen,
@@ -431,16 +436,19 @@ fun TransactionListScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .statusBarsPadding()
+                    .safeDrawingTopPadding()
                     .then(if (showingReceipt) Modifier.blur(14.dp) else Modifier)
             ) {
                 val homeSheet = CreamCanvas
+                val listBottom = if (searchFocused) {
+                    Space.gap
+                } else {
+                    Space.section + safeDrawingBottomPadding()
+                }
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(
-                        bottom = if (searchFocused) Space.gap else Space.section
-                    )
+                    contentPadding = PaddingValues(bottom = listBottom)
                 ) {
                 item(key = "hero") {
                     HomeBrandHeader(
@@ -462,6 +470,7 @@ fun TransactionListScreen(
                                 account = state.account,
                                 onAccountSelected = viewModel::setWalletAccount,
                                 onOpenProfile = onOpenProfile,
+                                showFuliza = state.showFuliza,
                                 modifier = Modifier.weight(1f)
                             )
                             QuickActionsRow(
@@ -470,25 +479,49 @@ fun TransactionListScreen(
                                 onDetails = onExchange,
                                 onTickets = onTickets,
                                 sendPayEnabled = canSendPay,
+                                showSendPay = state.showSendPay,
                                 spread = false
                             )
                         }
                     } else {
-                        BalanceSection(
-                            balance = shownBalance,
-                            alwaysShowBalance = alwaysShowBalance,
-                            account = state.account,
-                            onAccountSelected = viewModel::setWalletAccount,
-                            onOpenProfile = onOpenProfile,
-                            modifier = Modifier.padding(horizontal = pageMargin)
-                        )
-                        Spacer(modifier = Modifier.height(HomeMock.SectionGap))
-                        QuickActionsRow(
+            BalanceSection(
+                balance = shownBalance,
+                alwaysShowBalance = alwaysShowBalance,
+                account = state.account,
+                onAccountSelected = viewModel::setWalletAccount,
+                onOpenProfile = onOpenProfile,
+                showFuliza = state.showFuliza,
+                modifier = Modifier.padding(horizontal = pageMargin)
+            )
+            if (state.account != WalletAccount.FULIZA && state.availableSources.size > 1) {
+                Spacer(modifier = Modifier.height(10.dp))
+                SourceFilterRow(
+                    sources = state.availableSources,
+                    selected = state.sourceFilter,
+                    onSelect = viewModel::setSourceFilter,
+                    modifier = Modifier.padding(horizontal = pageMargin)
+                )
+            }
+            Spacer(modifier = Modifier.height(HomeMock.SectionGap))
+            QuickActionsRow(
                             onSend = onSend,
                             onDeposit = onReceive,
                             onDetails = onExchange,
                             onTickets = onTickets,
                             sendPayEnabled = canSendPay,
+                            showSendPay = state.showSendPay,
+                            modifier = Modifier.padding(horizontal = pageMargin)
+                        )
+                    }
+                    if (window == WindowWidth.Medium &&
+                        state.account != WalletAccount.FULIZA &&
+                        state.availableSources.size > 1
+                    ) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        SourceFilterRow(
+                            sources = state.availableSources,
+                            selected = state.sourceFilter,
+                            onSelect = viewModel::setSourceFilter,
                             modifier = Modifier.padding(horizontal = pageMargin)
                         )
                     }
@@ -528,6 +561,9 @@ fun TransactionListScreen(
                     typeFilter = state.typeFilter,
                     availableTypes = state.availableTypes,
                     onTypeFilter = viewModel::setTypeFilter,
+                    sourceFilter = state.sourceFilter,
+                    availableSources = state.availableSources,
+                    onSourceFilter = viewModel::setSourceFilter,
                     searchEditor = searchEditor,
                     onQueryChange = viewModel::setSearchQuery,
                     searchOpen = searchOpen,
@@ -574,7 +610,9 @@ fun TransactionListScreen(
         }
         SnackbarHost(
             hostState = snackbar,
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
         )
         receiptTx?.let { tx ->
             TransactionReceiptPopup(
@@ -603,12 +641,17 @@ private fun HomeExpandedPane(
     showFrequent: Boolean,
     account: WalletAccount,
     onAccountSelected: (WalletAccount) -> Unit,
+    showFuliza: Boolean,
+    showSendPay: Boolean,
     grouped: List<DayGroup>,
     hasSmsPermission: Boolean,
     searchQuery: String,
     typeFilter: TransactionType?,
     availableTypes: List<TransactionType>,
     onTypeFilter: (TransactionType?) -> Unit,
+    sourceFilter: MoneySource?,
+    availableSources: List<MoneySource>,
+    onSourceFilter: (MoneySource?) -> Unit,
     searchEditor: SheetTextEditor,
     onQueryChange: (String) -> Unit,
     searchOpen: Boolean,
@@ -637,7 +680,8 @@ private fun HomeExpandedPane(
                 .width(400.dp)
                 .fillMaxHeight()
                 .verticalScroll(rememberScrollState())
-                .statusBarsPadding()
+                .safeDrawingTopPadding()
+                .navigationBarsPadding()
                 .padding(bottom = Space.section)
         ) {
             HomeBrandHeader(
@@ -652,8 +696,18 @@ private fun HomeExpandedPane(
                 account = account,
                 onAccountSelected = onAccountSelected,
                 onOpenProfile = onOpenProfile,
+                showFuliza = showFuliza,
                 modifier = Modifier.padding(horizontal = pageMargin)
             )
+            if (account != WalletAccount.FULIZA && availableSources.size > 1) {
+                Spacer(modifier = Modifier.height(10.dp))
+                SourceFilterRow(
+                    sources = availableSources,
+                    selected = sourceFilter,
+                    onSelect = onSourceFilter,
+                    modifier = Modifier.padding(horizontal = pageMargin)
+                )
+            }
             Spacer(modifier = Modifier.height(HomeMock.SectionGap))
             QuickActionsRow(
                 onSend = onSend,
@@ -661,6 +715,7 @@ private fun HomeExpandedPane(
                 onDetails = onMetrics,
                 onTickets = onTickets,
                 sendPayEnabled = sendPayEnabled,
+                showSendPay = showSendPay,
                 modifier = Modifier.padding(horizontal = pageMargin)
             )
             engageSection()
@@ -688,13 +743,18 @@ private fun HomeExpandedPane(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .statusBarsPadding()
+                    .safeDrawingTopPadding()
                     .then(if (showingReceipt) Modifier.blur(14.dp) else Modifier)
             ) {
+                val listBottom = if (searchFocused) {
+                    Space.gap
+                } else {
+                    Space.section + safeDrawingBottomPadding()
+                }
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = Space.section)
+                    contentPadding = PaddingValues(bottom = listBottom)
                 ) {
                     transactionFeed(
                         account = account,
@@ -704,6 +764,9 @@ private fun HomeExpandedPane(
                         typeFilter = typeFilter,
                         availableTypes = availableTypes,
                         onTypeFilter = onTypeFilter,
+                        sourceFilter = sourceFilter,
+                        availableSources = availableSources,
+                        onSourceFilter = onSourceFilter,
                         searchEditor = searchEditor,
                         onQueryChange = onQueryChange,
                         searchOpen = searchOpen,
@@ -794,7 +857,8 @@ private fun BalanceSection(
     account: WalletAccount,
     onAccountSelected: (WalletAccount) -> Unit,
     onOpenProfile: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showFuliza: Boolean = true
 ) {
     Box(
         modifier = modifier
@@ -865,7 +929,15 @@ private fun BalanceSection(
             horizontalAlignment = Alignment.Start,
             verticalArrangement = Arrangement.spacedBy(HomeMock.PillLabelGap)
         ) {
-            WalletAccountSwitch(account = account, onSelect = onAccountSelected)
+            WalletAccountSwitch(
+                account = account,
+                onSelect = onAccountSelected,
+                accounts = if (showFuliza) {
+                    WalletAccount.entries
+                } else {
+                    listOf(WalletAccount.MPESA)
+                }
+            )
             Text(
                 text = account.balanceCaption,
                 style = HomeType.caption,
@@ -907,7 +979,8 @@ private fun QuickActionsRow(
     onTickets: () -> Unit,
     sendPayEnabled: Boolean,
     spread: Boolean = true,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showSendPay: Boolean = true
 ) {
     Row(
         modifier = if (spread) modifier.fillMaxWidth() else modifier,
@@ -917,25 +990,27 @@ private fun QuickActionsRow(
             Arrangement.spacedBy(12.dp)
         }
     ) {
-        QuickAction(
-            icon = Icons.Outlined.NorthEast,
-            label = "Send",
-            onClick = onSend,
-            enabled = sendPayEnabled,
-            face = Accent,
-            iconTint = OnAccent
-        )
-        QuickAction(
-            icon = Icons.Outlined.Payments,
-            label = "Pay",
-            onClick = onDeposit,
-            enabled = sendPayEnabled,
-            face = ActionPay,
-            iconTint = BrandNavy
-        )
+        if (showSendPay) {
+            QuickAction(
+                icon = Icons.Outlined.NorthEast,
+                label = "Send",
+                onClick = onSend,
+                enabled = sendPayEnabled,
+                face = Accent,
+                iconTint = OnAccent
+            )
+            QuickAction(
+                icon = Icons.Outlined.Payments,
+                label = "Pay",
+                onClick = onDeposit,
+                enabled = sendPayEnabled,
+                face = ActionPay,
+                iconTint = BrandNavy
+            )
+        }
         QuickAction(
             icon = Icons.Outlined.BarChart,
-            label = "Metrics",
+            label = "Insights",
             onClick = onDetails,
             face = ActionMetrics,
             iconTint = BrandNavy
@@ -1218,7 +1293,13 @@ private fun TransactionRow(
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = tx.type.displayLabel(),
+                    text = tx.source.label,
+                    style = HomeType.caption,
+                    color = Mute,
+                    maxLines = 1
+                )
+                Text(
+                    text = " · ${tx.type.displayLabel()}",
                     style = HomeType.caption,
                     color = categoryInk,
                     maxLines = 1
@@ -1271,6 +1352,9 @@ private fun LazyListScope.transactionFeed(
     typeFilter: TransactionType?,
     availableTypes: List<TransactionType>,
     onTypeFilter: (TransactionType?) -> Unit,
+    sourceFilter: MoneySource?,
+    availableSources: List<MoneySource>,
+    onSourceFilter: (MoneySource?) -> Unit,
     searchEditor: SheetTextEditor,
     onQueryChange: (String) -> Unit,
     searchOpen: Boolean,
@@ -1337,8 +1421,23 @@ private fun LazyListScope.transactionFeed(
         item(key = "empty") {
             EmptyState(
                 hasPermission = hasSmsPermission,
-                searching = searchQuery.isNotBlank() || typeFilter != null,
-                categoryLabel = typeFilter?.chipLabel(),
+                searching = searchQuery.isNotBlank() ||
+                    typeFilter != null ||
+                    sourceFilter != null,
+                filterLabel = when {
+                    typeFilter != null && sourceFilter != null ->
+                        "${sourceFilter.label} · ${typeFilter.chipLabel()}"
+                    typeFilter != null -> typeFilter.chipLabel()
+                    sourceFilter != null -> sourceFilter.label
+                    else -> null
+                },
+                filterHint = when {
+                    typeFilter != null ->
+                        "Tap ${typeFilter.chipLabel()} again to show everything."
+                    sourceFilter != null ->
+                        "Tap ${sourceFilter.label} again to show everything."
+                    else -> null
+                },
                 account = account,
                 onAllowSms = onRequestSms,
                 modifier = Modifier.fillMaxWidth().sheet()
@@ -1408,7 +1507,8 @@ private fun CategoryFilterRow(
 private fun EmptyState(
     hasPermission: Boolean,
     searching: Boolean,
-    categoryLabel: String?,
+    filterLabel: String?,
+    filterHint: String?,
     account: WalletAccount,
     onAllowSms: () -> Unit,
     modifier: Modifier = Modifier
@@ -1421,22 +1521,23 @@ private fun EmptyState(
     ) {
         Text(
             text = when {
-                categoryLabel != null && searching -> "Nothing in $categoryLabel"
+                filterLabel != null && searching -> "Nothing in $filterLabel"
                 searching -> "No matches"
                 hasPermission -> account.emptyHistoryTitle
-                else -> "History needs SMS"
+                else -> "Where it went shows up here"
             },
             style = HomeType.rowTitle
         )
         Spacer(modifier = Modifier.height(Space.gap))
         Text(
             text = when {
-                categoryLabel != null -> "Tap $categoryLabel again to show every category."
+                filterHint != null -> filterHint
                 searching -> "Try a different name or number."
                 hasPermission -> account.emptyHistoryDetail
                 else ->
-                    "LipaBill reads Safaricom M-Pesa confirmations on this phone " +
-                        "and stores them encrypted. It does not send SMS."
+                    "Allow SMS so LipaBill can read confirmation texts and show " +
+                        "where your money went. Encrypted on this phone. " +
+                        "It does not send SMS or read OTPs."
             },
             style = HomeType.body,
             color = Mute,
@@ -1445,7 +1546,7 @@ private fun EmptyState(
         if (!hasPermission && !searching) {
             Spacer(modifier = Modifier.height(Space.block))
             Button(onClick = onAllowSms) {
-                Text("Why SMS access")
+                Text("Allow SMS to see where it went")
             }
         }
     }
@@ -1461,14 +1562,14 @@ private fun SmsAccessPrompt(
         modifier = modifier.padding(vertical = if (compact) Space.gap else Space.block),
         horizontalAlignment = Alignment.Start
     ) {
-        Text(
-            text = "New M-Pesa confirmations stay out of this list until SMS is allowed. " +
-                "They are read on this phone only, encrypted, and never sent.",
-            style = HomeType.body,
-            color = Mute
-        )
+            Text(
+                text = "Confirmation SMS stay out of the picture until SMS is allowed. " +
+                    "They are read on this phone only, encrypted, and never sent. OTPs are not read.",
+                style = HomeType.body,
+                color = Mute
+            )
         TextButton(onClick = onAllow) {
-            Text("Why SMS access")
+            Text("Allow SMS to see where it went")
         }
     }
 }
