@@ -78,9 +78,9 @@ tests:
           font size, balance privacy, favourites, repeat payment, SIM, or
           Accessibility.
       - goal: Scroll the Settings screen to find Accessibility
-        hint: Scroll down if needed until Accessibility or LipaBill Repeat Payment text is visible.
+        hint: Scroll down if needed until Accessibility or LipaBill M-Pesa payments text is visible.
         finalScreenAssertion: >-
-          Text about Accessibility or LipaBill Repeat Payment is visible on
+          Text about Accessibility or LipaBill M-Pesa payments is visible on
           the Settings screen.
       - goal: Return to home without changing critical toggles
         hint: Use Back. Do not disable payment automation unless already off.
@@ -92,12 +92,12 @@ tests:
     steps:
       - goal: Open the Send money sheet from home
         hint: >-
-          Tap Send. If Send is greyed out, still tap it once; a toast may appear.
-          If the Send sheet opens, stay on the recipient search step.
+          Tap Send. If Accessibility is off, Agree / Not now appears — tap Not now
+          and stay on home. If the Send sheet opens, stay on the recipient search step.
         finalScreenAssertion: >-
           Either the Send sheet is open showing recipient search (Name or phone
-          number), or a toast/message about Accessibility, automation, Phone
-          permission, or Safaricom SIM is shown while still on home.
+          number), or the Accessibility agreement / a Phone or SIM prompt is shown
+          while still on home.
       - goal: Close the Send sheet if it is open
         hint: Swipe the sheet down or tap outside / Back to dismiss it.
         finalScreenAssertion: The LipaBill home screen is visible.
@@ -108,12 +108,13 @@ tests:
     steps:
       - goal: Open the Pay money sheet from home
         hint: >-
-          Tap Pay. If greyed out, tap once and note any toast. If the sheet
-          opens, confirm Paybill, Till, or Pochi options are shown.
+          Tap Pay. If Accessibility is off, Agree / Not now appears — tap Not now
+          and stay on home. If the sheet opens, confirm Paybill, Till, or Pochi
+          options are shown.
         finalScreenAssertion: >-
-          Either the Pay sheet shows Paybill, Till, or Pochi La Biashara, or a
-          gate toast about Accessibility, automation, permissions, or SIM is
-          visible on home.
+          Either the Pay sheet shows Paybill, Till, or Pochi La Biashara, or the
+          Accessibility agreement / a Phone or SIM prompt is shown while still
+          on home.
       - goal: Dismiss Pay and return to home
         hint: Close the bottom sheet with Back or swipe down.
         finalScreenAssertion: The LipaBill home screen is visible.
