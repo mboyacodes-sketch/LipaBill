@@ -147,7 +147,7 @@ class AuthManager(
             hasBiometricEnrolled() && hasDeviceCredential() ->
                 "Use fingerprint, face, or your phone PIN"
             hasBiometricEnrolled() ->
-                "Confirm it's you to view M-Pesa transactions"
+                "Confirm it's you to see your money"
             else ->
                 "Enter your phone PIN, pattern, or password"
         }
