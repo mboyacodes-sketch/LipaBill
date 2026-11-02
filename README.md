@@ -1,7 +1,7 @@
 # LipaBill
 
-Personal Android wallet companion for tracking mobile-money activity and related
-receipts on-device.
+See where your money went, then send or pay — on this Android, encrypted
+on-device. Tickets are what the money already became.
 
 Built with Kotlin, Jetpack Compose, and local encrypted storage. Access is gated
 behind the device lock (biometric or PIN).
