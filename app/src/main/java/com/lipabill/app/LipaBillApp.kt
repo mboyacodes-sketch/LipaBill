@@ -7,6 +7,10 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.lipabill.app.auth.AuthManager
 import com.lipabill.app.data.local.AppDatabase
+import com.lipabill.app.data.model.ActiveRegion
+import com.lipabill.app.data.model.AppRegion
+import com.lipabill.app.data.model.MoneySource
+import com.lipabill.app.data.model.resolvedLedgerSources
 import com.lipabill.app.data.prefs.SecurePreferences
 import com.lipabill.app.data.repository.EngagementRepository
 import com.lipabill.app.data.repository.MerchantDirectory
@@ -24,6 +28,7 @@ import com.lipabill.app.metrics.AppCrashReporting
 import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.metrics.TicketImportResult
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
+import com.lipabill.app.ui.privacy.RecordingCapture
 import com.lipabill.app.tickets.PassReminderScheduler
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import kotlinx.coroutines.CoroutineScope
@@ -78,6 +83,11 @@ class LipaBillApp : Application() {
     private val _weeklyCheckInEnabled = MutableStateFlow(false)
     val weeklyCheckInEnabled: StateFlow<Boolean> = _weeklyCheckInEnabled.asStateFlow()
 
+    private val _appRegion = MutableStateFlow(AppRegion.DEFAULT)
+    val appRegion: StateFlow<AppRegion> = _appRegion.asStateFlow()
+    private val _enabledSources = MutableStateFlow(AppRegion.DEFAULT.sources)
+    val enabledSources: StateFlow<Set<MoneySource>> = _enabledSources.asStateFlow()
+
     private val _openedPass = MutableStateFlow<OpenedPass>(OpenedPass.Idle)
     val openedPass: StateFlow<OpenedPass> = _openedPass.asStateFlow()
 
@@ -130,10 +140,14 @@ class LipaBillApp : Application() {
         _fontSizeSp.value = securePreferences.uiFontSizeSp
         _alwaysShowBalance.value = securePreferences.alwaysShowBalance
         _favouritesSectionEnabled.value = securePreferences.favouritesSectionEnabled
-        _recordingPrivacy.value = debugRecordingPrivacy()
+        _recordingPrivacy.value = recordingCaptureEnabled()
         _darkMode.value = securePreferences.darkMode
         _challengesEnabled.value = securePreferences.challengesEnabled
         _weeklyCheckInEnabled.value = securePreferences.weeklyCheckInEnabled
+        _appRegion.value = securePreferences.appRegion
+        _enabledSources.value = securePreferences.enabledLedgerSources(_appRegion.value)
+        ActiveRegion.current = _appRegion.value
+        ActiveRegion.enabledSources = _enabledSources.value
         // Existing installs already past first launch — don't force the new setup wizard.
         if (!securePreferences.firstRunSetupDone &&
             (securePreferences.smsBackfillDone ||
@@ -258,14 +272,46 @@ class LipaBillApp : Application() {
         if (enabled) engagementScheduler.ensureScheduled()
     }
 
+    fun setAppRegion(region: AppRegion, rescan: Boolean = true) {
+        if (region == _appRegion.value) return
+        securePreferences.appRegion = region
+        _appRegion.value = region
+        ActiveRegion.current = region
+        val nextSources = resolvedLedgerSources(region, _enabledSources.value) +
+            region.primaryWallet
+        publishEnabledSources(nextSources)
+        if (!rescan || !securePreferences.firstRunSetupDone) return
+        refreshLedger()
+    }
+
+    fun setEnabledSources(sources: Set<MoneySource>, rescan: Boolean = true) {
+        val next = resolvedLedgerSources(_appRegion.value, sources)
+        if (next == _enabledSources.value) return
+        publishEnabledSources(next)
+        if (!rescan || !securePreferences.firstRunSetupDone) return
+        refreshLedger()
+    }
+
+    private fun publishEnabledSources(sources: Set<MoneySource>) {
+        securePreferences.setEnabledLedgerSources(sources, _appRegion.value)
+        _enabledSources.value = sources
+        ActiveRegion.enabledSources = sources
+    }
+
+    private fun refreshLedger() {
+        if (!::repository.isInitialized) return
+        securePreferences.resetInboxScanForRegionChange()
+        appScope.launch { repository.rescanInbox() }
+    }
+
     fun setRecordingPrivacy(enabled: Boolean) {
-        if (!BuildConfig.DEBUG) return
+        if (!RecordingCapture.available) return
         securePreferences.recordingPrivacy = enabled
         _recordingPrivacy.value = enabled
     }
 
-    private fun debugRecordingPrivacy(): Boolean =
-        BuildConfig.DEBUG && securePreferences.recordingPrivacy
+    private fun recordingCaptureEnabled(): Boolean =
+        RecordingCapture.available && securePreferences.recordingPrivacy
 }
 
 /** A .pkpass opened from another app, saved off the Passes screen so navigation cannot cancel it. */
