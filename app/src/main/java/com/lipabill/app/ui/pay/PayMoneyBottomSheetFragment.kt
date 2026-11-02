@@ -5,48 +5,41 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.lipabill.app.R
+import com.lipabill.app.ui.LipaChoiceChip
 import com.lipabill.app.ui.permissions.paymentAccessDirective
-import com.lipabill.app.ui.permissions.rememberContactsAccessOffer
 import com.lipabill.app.ui.sheet.EditableSheetField
 import com.lipabill.app.ui.sheet.HorizontalRecipient
 import com.lipabill.app.ui.sheet.HorizontalRecipientRow
+import com.lipabill.app.ui.sheet.rememberPhoneContactPicker
 import com.lipabill.app.ui.sheet.InAppKeyboard
 import com.lipabill.app.ui.sheet.SheetTextEditor
 import com.lipabill.app.ui.sheet.rememberSheetEditor
 import com.lipabill.app.ui.sheet.MoneyConfirmDialog
 import com.lipabill.app.ui.sheet.MoneySheetScaffold
+import com.lipabill.app.ui.sheet.moneySheetPrimaryCta
 import com.lipabill.app.ui.sheet.rememberMoneySheetAccess
+import com.lipabill.app.ui.sheet.runMoneySheetPrimaryCta
 import com.lipabill.app.ui.sheet.sameParty
 import com.lipabill.app.ui.sheet.sheetName
 import com.lipabill.app.ui.sheet.sheetSubtitle
@@ -58,11 +51,7 @@ import com.lipabill.app.ui.sheet.moneySheetFeedback
 import com.lipabill.app.ui.sheet.expandedSheetDialog
 import com.lipabill.app.ui.sheet.themedComposeView
 import com.lipabill.app.ui.theme.CardWhite
-import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.Hairline
-import com.lipabill.app.ui.theme.HomeType
-import com.lipabill.app.ui.theme.Ink
-import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.data.parser.sanitizeAccountNumber
 import com.lipabill.app.data.repository.MerchantHit
@@ -152,9 +141,6 @@ fun PayMoneySheetContent(
     }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    val offerContacts = rememberContactsAccessOffer {
-        payVm.refreshContactsAccess()
-    }
     val merchantEditor = rememberSheetEditor(state.merchantQuery)
     val accountEditor = rememberSheetEditor(state.accountNumber)
     val pochiEditor = rememberSheetEditor(state.pochiQuery)
@@ -175,6 +161,17 @@ fun PayMoneySheetContent(
         focusManager.clearFocus(force = true)
         hideKeyboard(focusManager, keyboard)
     }
+
+    val pickPhoneContact = rememberPhoneContactPicker(
+        onPicked = { contact ->
+            payVm.selectPochiContact(contact)
+            dismissTextKeyboard()
+            step = PaySheetStep.Amount
+        },
+        onRejected = { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    )
 
     /**
      * A copied payment message fills Paybill, account, and amount.
@@ -216,7 +213,6 @@ fun PayMoneySheetContent(
         } else {
             focusedField
         }
-        if (focused && field == PayFocusedField.Pochi) offerContacts(true)
     }
 
     fun goToAmount() {
@@ -272,6 +268,14 @@ fun PayMoneySheetContent(
             detailsGuidance = state.guidanceMessage,
             fulizaCoversShortfall = true
         )
+    )
+    val primaryCta = moneySheetPrimaryCta(
+        onAmountStep = onAmountStep,
+        canConfirm = state.canPay,
+        dialStarted = state.dialStarted,
+        detailsValid = state.detailsValid,
+        paymentBlock = paymentBlock,
+        confirmLabel = "Pay Now"
     )
 
     MoneySheetScaffold(
@@ -338,20 +342,27 @@ fun PayMoneySheetContent(
                         }
                     }
                     PayMethod.POCHI -> {
-                        if (state.pochiContacts.isNotEmpty()) {
-                            HorizontalRecipientRow {
-                                state.pochiContacts.take(6).forEach { contact ->
-                                    HorizontalRecipient(
-                                        name = contact.sheetName(),
-                                        subtitle = contact.sheetSubtitle(),
-                                        selected = contact.sameParty(state.selectedPochi),
-                                        onClick = {
-                                            payVm.selectPochiContact(contact)
-                                            dismissTextKeyboard()
-                                            step = PaySheetStep.Amount
-                                        }
-                                    )
+                        HorizontalRecipientRow {
+                            HorizontalRecipient(
+                                name = "Contacts",
+                                subtitle = "Phone",
+                                selected = state.selectedPochi?.fromPhoneBook == true,
+                                onClick = {
+                                    dismissTextKeyboard()
+                                    pickPhoneContact()
                                 }
+                            )
+                            state.pochiContacts.take(6).forEach { contact ->
+                                HorizontalRecipient(
+                                    name = contact.sheetName(),
+                                    subtitle = contact.sheetSubtitle(),
+                                    selected = contact.sameParty(state.selectedPochi),
+                                    onClick = {
+                                        payVm.selectPochiContact(contact)
+                                        dismissTextKeyboard()
+                                        step = PaySheetStep.Amount
+                                    }
+                                )
                             }
                         }
                     }
@@ -428,27 +439,17 @@ fun PayMoneySheetContent(
         } else {
             null
         },
-        ctaLabel = when {
-            paymentBlock != null -> paymentBlock.actionLabel
-            onAmountStep -> "Pay Now"
-            else -> "Continue"
-        },
-        ctaEnabled = if (paymentBlock != null) {
-            true
-        } else if (onAmountStep) {
-            state.canPay && !state.dialStarted
-        } else {
-            state.detailsValid
-        },
+        ctaLabel = primaryCta.label,
+        ctaEnabled = primaryCta.enabled,
         onCta = {
-            val block = paymentBlock
-            if (block != null) {
-                sheetAccess.allow(block)
-            } else if (onAmountStep) {
-                showConfirm = true
-            } else {
-                goToAmount()
-            }
+            runMoneySheetPrimaryCta(
+                onAmountStep = onAmountStep,
+                canConfirm = state.canPay,
+                paymentBlock = paymentBlock,
+                onConfirm = { showConfirm = true },
+                onAllow = sheetAccess.allow,
+                onContinue = { goToAmount() }
+            )
         },
         onKey = payVm::appendAmountKey,
         onBackspace = payVm::deleteAmountKey,
@@ -490,25 +491,14 @@ private fun MethodChipRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         PayMethod.entries.forEach { method ->
-            val isSelected = method == selected
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(if (isSelected) Accent else CardWhite)
-                    .border(1.dp, if (isSelected) Accent else Hairline, RoundedCornerShape(20.dp))
-                    .clickable { onSelect(method) }
-                    .padding(vertical = 10.dp, horizontal = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = method.shortLabel(),
-                    style = HomeType.label,
-                    color = if (isSelected) OnAccent else Ink,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            LipaChoiceChip(
+                label = method.shortLabel(),
+                selected = method == selected,
+                onClick = { onSelect(method) },
+                modifier = Modifier.weight(1f),
+                unselectedContainer = CardWhite,
+                unselectedBorder = Hairline
+            )
         }
     }
 }
