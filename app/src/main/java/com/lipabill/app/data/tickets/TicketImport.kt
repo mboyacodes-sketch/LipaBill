@@ -16,7 +16,7 @@ data class TicketImport(
     val orderId: String? = null,
     val notes: String? = null,
     val source: TicketSource,
-    /** Flight / SGR — show booking + boarding UI. False for one-shot event tickets. */
+    /** SGR — show booking + boarding UI. False for one-shot event tickets. */
     val expectsBoardingPass: Boolean = false,
     val hasBoardingPass: Boolean = true
 )
