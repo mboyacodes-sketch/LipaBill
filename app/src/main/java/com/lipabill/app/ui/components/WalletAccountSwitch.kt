@@ -22,13 +22,15 @@ import com.lipabill.app.viewmodel.WalletAccount
 fun WalletAccountSwitch(
     account: WalletAccount,
     onSelect: (WalletAccount) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    accounts: List<WalletAccount> = WalletAccount.entries
 ) {
+    if (accounts.size <= 1) return
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        WalletAccount.entries.forEach { option ->
+        accounts.forEach { option ->
             val selected = option == account
             Text(
                 text = option.chipLabel,
