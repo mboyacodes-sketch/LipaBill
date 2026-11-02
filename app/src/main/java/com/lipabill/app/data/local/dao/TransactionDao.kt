@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.lipabill.app.data.local.entity.TransactionEntity
+import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.TransactionType
 import kotlinx.coroutines.flow.Flow
 
@@ -15,7 +16,7 @@ interface TransactionDao {
     fun observeRecent(limit: Int): Flow<List<TransactionEntity>>
 
     /**
-     * One ledger at a time. [fuliza] = 1 is Fuliza draws only; 0 is every other M-Pesa type.
+     * One ledger at a time. [fuliza] = 1 is Fuliza draws only; 0 is every other row.
      * No row cap — the inbox import is the bound.
      */
     @Query(
@@ -59,6 +60,7 @@ interface TransactionDao {
         WHERE (counterpartyName LIKE '%' || :query || '%' COLLATE NOCASE
                OR counterpartyPhone LIKE '%' || :query || '%' COLLATE NOCASE
                OR code LIKE '%' || :query || '%' COLLATE NOCASE
+               OR source LIKE '%' || :query || '%' COLLATE NOCASE
                OR CAST(amount AS TEXT) LIKE '%' || :query || '%')
           AND (:type IS NULL OR type = :type)
         ORDER BY timestampMillis DESC
@@ -85,16 +87,16 @@ interface TransactionDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIgnoreAll(entities: List<TransactionEntity>): List<Long>
 
-    @Query("SELECT code FROM transactions")
-    suspend fun allCodes(): List<String>
+    @Query("SELECT source || ':' || code FROM transactions")
+    suspend fun allSourceCodes(): List<String>
 
     @Query("SELECT COUNT(*) FROM transactions")
     suspend fun count(): Int
 
-    @Query("SELECT id, amount, balance, cost, rawBody, timestampMillis FROM transactions")
+    @Query("SELECT id, amount, balance, cost, rawBody, timestampMillis, source FROM transactions")
     suspend fun getAllForAmountRepair(): List<AmountRepairRow>
 
-    @Query("SELECT id, type, counterpartyName, rawBody, timestampMillis FROM transactions")
+    @Query("SELECT id, type, counterpartyName, rawBody, timestampMillis, source FROM transactions")
     suspend fun getAllForClassification(): List<ClassificationRepairRow>
 
     @Query(
@@ -131,10 +133,11 @@ interface TransactionDao {
         """
         UPDATE transactions
         SET amount = :amount, balance = :balance, cost = :cost, rawBody = :rawBody
-        WHERE code = :code
+        WHERE source = :source AND code = :code
         """
     )
     suspend fun updateParsedMoneyByCode(
+        source: MoneySource,
         code: String,
         amount: Double?,
         balance: Double?,
@@ -142,7 +145,7 @@ interface TransactionDao {
         rawBody: String
     ): Int
 
-    @Query("SELECT id, code, rawBody FROM transactions")
+    @Query("SELECT id, code, rawBody, source FROM transactions")
     suspend fun getAllForPurge(): List<TransactionPurgeRow>
 
     @Query("DELETE FROM transactions WHERE id IN (:ids)")
@@ -169,11 +172,11 @@ interface TransactionDao {
     )
     suspend fun updatePhoneIfMissing(id: Long, phone: String): Int
 
-    /** Newest M-PESA wallet balance. Fuliza outstanding is a separate ledger. */
+    /** Newest stored M-Pesa wallet balance for Send/Pay/Repeat Fuliza cover. */
     @Query(
         """
         SELECT balance FROM transactions
-        WHERE type != 'FULIZA' AND balance IS NOT NULL
+        WHERE source = 'MPESA' AND type != 'FULIZA' AND balance IS NOT NULL
         ORDER BY timestampMillis DESC
         LIMIT 1
         """
@@ -185,7 +188,8 @@ interface TransactionDao {
 data class TransactionPurgeRow(
     val id: Long,
     val code: String,
-    val rawBody: String
+    val rawBody: String,
+    val source: MoneySource = MoneySource.MPESA
 )
 
 data class ClassificationRepairRow(
@@ -193,7 +197,8 @@ data class ClassificationRepairRow(
     val type: TransactionType,
     val counterpartyName: String?,
     val rawBody: String,
-    val timestampMillis: Long
+    val timestampMillis: Long,
+    val source: MoneySource = MoneySource.MPESA
 )
 
 data class AmountRepairRow(
@@ -202,7 +207,8 @@ data class AmountRepairRow(
     val balance: Double?,
     val cost: Double?,
     val rawBody: String,
-    val timestampMillis: Long
+    val timestampMillis: Long,
+    val source: MoneySource = MoneySource.MPESA
 )
 
 data class WindowTransactionRow(
