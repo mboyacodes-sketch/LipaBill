@@ -15,10 +15,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fingerprint
@@ -45,6 +44,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.auth.AuthUiState
+import com.lipabill.app.ui.components.LipaBillMark
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Canvas as ThemeCanvas
 import com.lipabill.app.ui.theme.CardWhite
@@ -122,8 +122,7 @@ private fun LockedContent(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
+                .safeDrawingPadding()
                 .padding(horizontal = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -137,11 +136,13 @@ private fun LockedContent(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    LipaBillMark(size = 84.dp)
+                    Spacer(modifier = Modifier.height(18.dp))
                     LipaBillWordmark()
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "ON THIS PHONE",
+                        text = "SEE IT CLEARLY",
                         style = MaterialTheme.typography.labelMedium.copy(
                             letterSpacing = 2.4.sp,
                             fontWeight = FontWeight.Medium,
@@ -151,10 +152,10 @@ private fun LockedContent(
                         textAlign = TextAlign.Center
                     )
 
-                    Spacer(modifier = Modifier.height(28.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
 
                     Text(
-                        text = "Your payments,\nready when you are.",
+                        text = "Your money has a story.",
                         style = MaterialTheme.typography.headlineMedium.copy(
                             fontFamily = GeometricSansFamily,
                             fontWeight = FontWeight.Bold,
@@ -166,7 +167,7 @@ private fun LockedContent(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Unlock with fingerprint, face, or your phone PIN.",
+                        text = "Unlock to see where it went, then send, pay, or show a pass.",
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontFamily = GeometricSansFamily,
                             fontSize = 15.sp,
@@ -229,9 +230,9 @@ private fun LipaBillWordmark() {
         style = MaterialTheme.typography.displayLarge.copy(
             fontFamily = GeometricSansFamily,
             fontWeight = FontWeight.Bold,
-            fontSize = 44.sp,
+            fontSize = 34.sp,
             letterSpacing = (-0.6).sp,
-            lineHeight = 48.sp
+            lineHeight = 40.sp
         ),
         color = Accent,
         textAlign = TextAlign.Center
@@ -328,8 +329,7 @@ private fun NoLockScreenContent(onOpenSettings: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
+                .safeDrawingPadding()
                 .padding(horizontal = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
@@ -350,7 +350,7 @@ private fun NoLockScreenContent(onOpenSettings: () -> Unit) {
             Spacer(modifier = Modifier.height(Space.block))
             Text(
                 text = "Set a screen lock or a Class 3 fingerprint or face unlock " +
-                    "before LipaBill can show payment history.",
+                    "before LipaBill can show where it went.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = Mute,
                 textAlign = TextAlign.Center
