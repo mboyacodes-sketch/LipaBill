@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.metrics.SetupBlocker
+import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.ui.util.inCategoryOrder
@@ -39,24 +40,25 @@ enum class WalletAccount(
     val emptyHistoryTitle: String,
     val emptyHistoryDetail: String
 ) {
+    /** Money history for every enabled wallet and bank. The enum name is historical. */
     MPESA(
-        chipLabel = "M-PESA",
+        chipLabel = "Money",
         balanceCaption = "Available balance",
         balancePrefix = "Available",
         ledgerTitle = "Transactions",
-        metricsTitle = "Metrics & Analytics",
+        metricsTitle = "Insights",
         inflowLabel = "Income",
         outflowLabel = "Expenses",
-        emptyPeriodCopy = "No transactions in this period.",
-        emptyHistoryTitle = "No activity yet",
-        emptyHistoryDetail = "Pull down to refresh and import M-Pesa SMS."
+        emptyPeriodCopy = "Nothing in the picture for this period.",
+        emptyHistoryTitle = "Nothing in the picture yet",
+        emptyHistoryDetail = "Pull down to import confirmation SMS from the wallets and banks you picked."
     ),
     FULIZA(
         chipLabel = "Fuliza",
         balanceCaption = "Fuliza outstanding",
         balancePrefix = "Outstanding",
         ledgerTitle = "Fuliza",
-        metricsTitle = "Fuliza metrics",
+        metricsTitle = "Fuliza insights",
         inflowLabel = "Drawn",
         outflowLabel = "Access fees",
         emptyPeriodCopy = "No Fuliza messages in this period.",
@@ -96,6 +98,7 @@ enum class AnalyticsRange {
 }
 
 data class TypeBreakdown(
+    val type: TransactionType,
     val label: String,
     val count: Int,
     val total: Double
@@ -110,15 +113,28 @@ data class AnalyticsPoint(
 data class AnalyticsSummary(
     val incomeTotal: Double = 0.0,
     val expenseTotal: Double = 0.0,
+    val previousIncomeTotal: Double = 0.0,
+    val previousExpenseTotal: Double = 0.0,
+    val comparable: Boolean = false,
+    val dayCount: Long = 1L,
     val byType: List<TypeBreakdown> = emptyList(),
     val series: List<AnalyticsPoint> = emptyList(),
+    val topCounterparties: List<CounterpartySpend> = emptyList(),
     val txnCount: Int = 0,
     val range: AnalyticsRange = AnalyticsRange.DAYS_30,
     val selectedYear: Int? = null,
     val availableYears: List<Int> = emptyList(),
     val customStart: LocalDate? = null,
     val customEnd: LocalDate? = null,
-    val rangeLabel: String = "Last 30 days"
+    val rangeLabel: String = "Last 30 days",
+    val hasLedger: Boolean = false,
+    val storyHeadline: String = "",
+    val storyDetail: String? = null,
+    val quietDays: Int = 0,
+    val quietStreak: Int = 0,
+    val busiestLabel: String? = null,
+    val busiestTotal: Double = 0.0,
+    val pulse: List<PulseCell> = emptyList()
 )
 
 data class TransactionListUiState(
@@ -133,11 +149,16 @@ data class TransactionListUiState(
     val frequentContacts: List<SendContact> = emptyList(),
     val searchQuery: String = "",
     val typeFilter: TransactionType? = null,
-    val availableTypes: List<TransactionType> = emptyList()
+    val availableTypes: List<TransactionType> = emptyList(),
+    val sourceFilter: MoneySource? = null,
+    val availableSources: List<MoneySource> = emptyList(),
+    val showSendPay: Boolean = true,
+    val showFuliza: Boolean = true
 ) {
     fun shownBalance(): Double? = account.displayedBalance(latestBalance, fulizaOutstanding)
 
-    fun canFundPayment(): Boolean = account.canFundPayment(latestBalance, fulizaOutstanding)
+    fun canFundPayment(): Boolean =
+        showSendPay && account.canFundPayment(latestBalance, fulizaOutstanding)
 
     fun unfundedPaymentMessage(): String =
         account.unfundedPaymentMessage(latestBalance, fulizaOutstanding)
@@ -151,7 +172,8 @@ data class DayGroup(
 
 class TransactionListViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repo = (application as LipaBillApp).repository
+    private val app = application as LipaBillApp
+    private val repo = app.repository
 
     fun observeTransaction(id: Long): kotlinx.coroutines.flow.Flow<MpesaTransaction?> =
         repo.observeById(id)
@@ -164,7 +186,10 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     private val hasSmsPermission = MutableStateFlow(false)
     private val searchQuery = MutableStateFlow("")
     private val typeFilter = MutableStateFlow<TransactionType?>(null)
-    private val queryAndType = combine(searchQuery, typeFilter) { query, type -> query to type }
+    private val sourceFilter = MutableStateFlow<MoneySource?>(null)
+    private val queryTypeSource = combine(searchQuery, typeFilter, sourceFilter) { query, type, source ->
+        Triple(query, type, source)
+    }
     private val walletAccount = MutableStateFlow(WalletAccount.MPESA)
     private val analyticsRange = MutableStateFlow(AnalyticsRange.DAYS_30)
     private val analyticsYear = MutableStateFlow<Int?>(null)
@@ -187,24 +212,60 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     private val frequentContacts = repo.observeFrequentContacts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    private val regionAndSources = combine(app.appRegion, app.enabledSources) { region, enabled ->
+        region to enabled.ifEmpty { region.sources }
+    }
+
     private val listCore: StateFlow<TransactionListUiState> = combine(
         combine(
-            combine(mpesaLedger, fulizaLedger, walletAccount, queryAndType) { mpesa, fuliza, account, queryType ->
-                val (query, requestedType) = queryType
-                val ledger = if (account == WalletAccount.FULIZA) fuliza else mpesa
-                val available = ledger.map { it.type }.inCategoryOrder()
+            combine(
+                mpesaLedger,
+                fulizaLedger,
+                walletAccount,
+                queryTypeSource,
+                regionAndSources
+            ) { mpesa, fuliza, account, queryType, regionSources ->
+                val (query, requestedType, requestedSource) = queryType
+                val (region, sources) = regionSources
+                val regional = mpesa.filter { it.source in sources }
+                val regionalFuliza = if (region.hasFuliza) fuliza else emptyList()
+                val selected =
+                    if (account == WalletAccount.FULIZA && region.hasFuliza) {
+                        WalletAccount.FULIZA
+                    } else {
+                        WalletAccount.MPESA
+                    }
+                val ledger = if (selected == WalletAccount.FULIZA) regionalFuliza else regional
+                val availableSources = availableMoneySources(
+                    txs = ledger,
+                    primary = region.primaryWallet,
+                    catalog = sources
+                )
+                val activeSource = requestedSource?.takeIf { it in availableSources }
+                val sourced = if (activeSource == null) {
+                    ledger
+                } else {
+                    ledger.filter { it.source == activeSource }
+                }
+                val available = sourced.map { it.type }.inCategoryOrder()
                 val activeType = requestedType?.takeIf { it in available }
                 WalletSlice(
-                    visible = ledger.filter { tx ->
+                    visible = sourced.filter { tx ->
                         tx.matchesLedgerQuery(query) &&
                             (activeType == null || tx.type == activeType)
                     },
-                    analytics = ledger,
-                    mpesaBalance = mpesa.firstOrNull { it.balance != null }?.balance,
-                    fulizaOutstanding = fuliza.firstOrNull { it.balance != null }?.balance,
-                    account = account,
+                    analytics = sourced,
+                    mpesaBalance = regional.firstOrNull {
+                        it.source == region.primaryWallet && it.balance != null
+                    }?.balance,
+                    fulizaOutstanding = regionalFuliza.firstOrNull { it.balance != null }?.balance,
+                    account = selected,
                     typeFilter = activeType,
-                    availableTypes = available
+                    availableTypes = available,
+                    sourceFilter = activeSource,
+                    availableSources = availableSources,
+                    showSendPay = region.canSendPay,
+                    showFuliza = region.hasFuliza
                 )
             },
             hasSmsPermission,
@@ -222,7 +283,11 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                 account = wallet.account,
                 analytics = buildAnalytics(wallet.analytics, range, wallet.account),
                 typeFilter = wallet.typeFilter,
-                availableTypes = wallet.availableTypes
+                availableTypes = wallet.availableTypes,
+                sourceFilter = wallet.sourceFilter,
+                availableSources = wallet.availableSources,
+                showSendPay = wallet.showSendPay,
+                showFuliza = wallet.showFuliza
             )
         },
         searchQuery
@@ -255,9 +320,14 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         typeFilter.value = type
     }
 
+    fun setSourceFilter(source: MoneySource?) {
+        sourceFilter.value = source
+    }
+
     fun setWalletAccount(account: WalletAccount) {
         walletAccount.value = account
         typeFilter.value = null
+        sourceFilter.value = null
     }
 
     fun setAnalyticsRange(range: AnalyticsRange) {
@@ -303,7 +373,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                 val inserted = repo.rescanInbox()
                 AppMetrics.ledgerRefresh(inserted, includeUnchanged = true)
                 scanMessage.value = if (inserted == 0) {
-                    "Inbox scanned — no new M-Pesa messages"
+                    "Inbox scanned — no new confirmation messages"
                 } else {
                     "Added $inserted new transaction${if (inserted == 1) "" else "s"}"
                 }
@@ -353,11 +423,27 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         }
 
         val (income, expense) = flowTotals(filtered, account)
+        val prior = previousAnalyticsBounds(rangeState.range, from, to)
+        val previousTxs = if (prior == null) {
+            emptyList()
+        } else {
+            val (prevFrom, prevTo) = prior
+            txs.filter { tx ->
+                val date = Instant.ofEpochMilli(tx.timestampMillis).atZone(zone).toLocalDate()
+                !date.isBefore(prevFrom) && !date.isAfter(prevTo)
+            }
+        }
+        val (prevIncome, prevExpense) = if (prior == null) {
+            0.0 to 0.0
+        } else {
+            flowTotals(previousTxs, account)
+        }
 
         val byType = filtered
             .groupBy { it.type }
             .map { (type, list) ->
                 TypeBreakdown(
+                    type = type,
                     label = type.displayLabel(),
                     count = list.size,
                     total = list.sumOf { it.amount ?: 0.0 }
@@ -366,19 +452,70 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             .sortedByDescending { it.total }
 
         val series = buildSeries(filtered, from, to, rangeState.range, zone, account)
+        val counterparties = if (account == WalletAccount.MPESA) {
+            topOutgoingCounterparties(filtered)
+        } else {
+            emptyList()
+        }
+        val (inflowByDate, outflowByDate) = flowByDate(txs, zone, account)
+        val outflowDates = outflowByDate.filter { it.value > 0.005 }.keys
+        val ledgerStart = txs.minOfOrNull {
+            Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDate()
+        }
+        val dayCount = ChronoUnit.DAYS.between(from, to) + 1
+        val quietDays = quietDaysInRange(from, to, outflowDates)
+        val priorQuietDays = prior?.let { (prevFrom, prevTo) ->
+            quietDaysInRange(prevFrom, prevTo, outflowDates)
+        }
+        val quietStreak = if (txs.isNotEmpty()) {
+            quietStreakEnding(to, outflowDates, ledgerStart)
+        } else {
+            0
+        }
+        val busiest = busiestOutflow(outflowByDate, from, to)
+        val top = counterparties.firstOrNull()
+        val topShare = if (top != null && expense > 0.0) top.total / expense else null
+        val story = moneyStory(
+            fuliza = account == WalletAccount.FULIZA,
+            hasLedger = txs.isNotEmpty(),
+            quietDays = quietDays,
+            quietStreak = quietStreak,
+            priorQuietDays = priorQuietDays,
+            expense = expense,
+            income = income,
+            previousExpense = prevExpense,
+            comparable = prior != null,
+            topName = top?.name,
+            topShare = topShare,
+            busiestLabel = busiest?.let { busiestDayLabel(it.first) },
+            endsToday = to == today
+        )
 
         return AnalyticsSummary(
             incomeTotal = income,
             expenseTotal = expense,
+            previousIncomeTotal = prevIncome,
+            previousExpenseTotal = prevExpense,
+            comparable = prior != null,
+            dayCount = dayCount,
             byType = byType,
             series = series,
+            topCounterparties = counterparties,
             txnCount = filtered.size,
             range = rangeState.range,
             selectedYear = if (rangeState.range == AnalyticsRange.YEAR) selectedYear else rangeState.year,
             availableYears = availableYears,
             customStart = rangeState.customStart,
             customEnd = rangeState.customEnd,
-            rangeLabel = label
+            rangeLabel = label,
+            hasLedger = txs.isNotEmpty(),
+            storyHeadline = story.headline,
+            storyDetail = story.detail,
+            quietDays = quietDays,
+            quietStreak = quietStreak,
+            busiestLabel = busiest?.let { busiestDayLabel(it.first) },
+            busiestTotal = busiest?.second ?: 0.0,
+            pulse = pulseCalendar(from, to, today, inflowByDate, outflowByDate)
         )
     }
 
@@ -481,8 +618,31 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
+    private fun flowByDate(
+        txs: List<MpesaTransaction>,
+        zone: ZoneId,
+        account: WalletAccount
+    ): Pair<Map<LocalDate, Double>, Map<LocalDate, Double>> {
+        val inflow = mutableMapOf<LocalDate, Double>()
+        val outflow = mutableMapOf<LocalDate, Double>()
+        for (tx in txs) {
+            val date = Instant.ofEpochMilli(tx.timestampMillis).atZone(zone).toLocalDate()
+            if (account == WalletAccount.FULIZA) {
+                outflow[date] = (outflow[date] ?: 0.0) + (tx.amount ?: 0.0)
+                continue
+            }
+            val amount = tx.amount ?: continue
+            if (tx.type.isOutgoing()) {
+                outflow[date] = (outflow[date] ?: 0.0) + amount
+            } else {
+                inflow[date] = (inflow[date] ?: 0.0) + amount
+            }
+        }
+        return inflow to outflow
+    }
+
     /**
-     * M-PESA: money in vs money out.
+     * Money: in vs out across the enabled wallets and banks.
      * Fuliza: amount drawn vs access fees. Outstanding stays on the balance, not in these totals.
      */
     private fun flowTotals(
@@ -543,7 +703,11 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         val fulizaOutstanding: Double?,
         val account: WalletAccount,
         val typeFilter: TransactionType? = null,
-        val availableTypes: List<TransactionType> = emptyList()
+        val availableTypes: List<TransactionType> = emptyList(),
+        val sourceFilter: MoneySource? = null,
+        val availableSources: List<MoneySource> = emptyList(),
+        val showSendPay: Boolean = true,
+        val showFuliza: Boolean = true
     )
 
     private data class AnalyticsRangeState(
@@ -551,5 +715,23 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         val year: Int?,
         val customStart: LocalDate?,
         val customEnd: LocalDate?
+    )
+}
+
+/**
+ * Region wallets first (primary, then activity, then label), plus any extra
+ * rails that already landed in the ledger. Empty history still lists the catalog
+ * so wallets and banks can be switched before those SMS are imported.
+ */
+internal fun availableMoneySources(
+    txs: List<MpesaTransaction>,
+    primary: MoneySource,
+    catalog: Collection<MoneySource>
+): List<MoneySource> {
+    val counts = txs.groupingBy { it.source }.eachCount()
+    return (catalog + counts.keys).distinct().sortedWith(
+        compareByDescending<MoneySource> { it == primary }
+            .thenByDescending { counts[it] ?: 0 }
+            .thenBy { it.label }
     )
 }
