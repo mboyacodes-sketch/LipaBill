@@ -49,7 +49,7 @@ data class Ticket(
     val status: TicketStatus = TicketStatus.ACTIVE,
     val createdAtMillis: Long = System.currentTimeMillis(),
     val notes: String? = null,
-    /** True for flight / SGR — UI shows booking + boarding sections. */
+    /** True for SGR — UI shows booking + boarding sections. */
     val expectsBoardingPass: Boolean = false,
     val hasBoardingPass: Boolean = false,
     /** Outbound / single-leg gate barcode. Independent of booking [barcodeValue]. */
@@ -105,7 +105,7 @@ data class Ticket(
 
     /**
      * SGR / Madaraka rail travel — booking + boarding use QR codes.
-     * Flight e-tickets / boarding passes keep PDF417 (or Aztec) as today.
+     * Leftover flight tickets (if any) stay hidden from the pass list.
      */
     val isRailTravel: Boolean
         get() {
