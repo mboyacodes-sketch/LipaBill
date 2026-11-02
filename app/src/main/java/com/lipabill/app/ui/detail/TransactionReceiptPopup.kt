@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
@@ -113,6 +115,7 @@ fun TransactionReceiptPopup(
             .fillMaxSize()
             // Light frost only — readability comes from the blurred host content.
             .background(Color.White.copy(alpha = 0.18f))
+            .safeDrawingPadding()
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -164,7 +167,13 @@ fun TransactionReceiptPopup(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "M",
+                                text = (tx.counterpartyName?.takeIf { it.isNotBlank() }
+                                    ?: tx.source.label)
+                                    .trim()
+                                    .firstOrNull()
+                                    ?.uppercaseChar()
+                                    ?.toString()
+                                    ?: "?",
                                 color = Accent,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Medium
@@ -172,7 +181,7 @@ fun TransactionReceiptPopup(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = tx.counterpartyName?.takeIf { it.isNotBlank() } ?: "M-PESA",
+                            text = tx.counterpartyName?.takeIf { it.isNotBlank() } ?: tx.source.label,
                             style = HomeType.section,
                             color = Ink,
                             maxLines = 2,
@@ -192,7 +201,43 @@ fun TransactionReceiptPopup(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        if (tx.code.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Transaction ID",
+                                style = HomeType.label,
+                                color = Mute
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        copyText(context, tx.code, "Transaction ID copied")
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = tx.code,
+                                    color = Ink,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    letterSpacing = 1.4.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.recordingPrivacyCover(true)
+                                )
+                                Icon(
+                                    Icons.Outlined.ContentCopy,
+                                    contentDescription = "Copy Transaction ID",
+                                    tint = Mute,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -225,24 +270,10 @@ fun TransactionReceiptPopup(
 
                 DetailSection(title = "Transaction details") {
                     DetailRow("Date", formatTimestamp(tx.timestampMillis))
-                    DetailRow(
-                        label = "Transaction ID",
-                        value = tx.code,
-                        coverValue = true,
-                        trailing = {
-                            Icon(
-                                Icons.Outlined.ContentCopy,
-                                contentDescription = "Copy",
-                                tint = Mute,
-                                modifier = Modifier
-                                    .size(15.dp)
-                                    .clickable {
-                                        copyText(context, tx.code, "Transaction ID copied")
-                                    }
-                            )
-                        }
-                    )
                     DetailRow("Type", typeLabel)
+                    if (tx.source != MoneySource.MPESA) {
+                        DetailRow("Source", tx.source.label)
+                    }
                     if (!tx.counterpartyPhone.isNullOrBlank()) {
                         DetailRow("Phone", tx.counterpartyPhone, coverValue = true)
                     }
@@ -350,8 +381,7 @@ private fun DetailRow(
     label: String,
     value: String,
     emphasize: Boolean = false,
-    coverValue: Boolean = false,
-    trailing: (@Composable () -> Unit)? = null
+    coverValue: Boolean = false
 ) {
     Row(
         modifier = Modifier
@@ -366,24 +396,18 @@ private fun DetailRow(
             color = LabelGrey,
             modifier = Modifier.padding(end = 10.dp)
         )
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            modifier = Modifier.weight(1f)
-        ) {
-            Spacer(modifier = Modifier.weight(1f))
-            Text(
-                text = value,
-                color = Ink,
-                fontSize = if (emphasize) 14.sp else 12.sp,
-                fontWeight = if (emphasize) FontWeight.Medium else FontWeight.Normal,
-                textAlign = TextAlign.End,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.recordingPrivacyCover(coverValue)
-            )
-            trailing?.invoke()
-        }
+        Text(
+            text = value,
+            color = Ink,
+            fontSize = if (emphasize) 14.sp else 12.sp,
+            fontWeight = if (emphasize) FontWeight.Medium else FontWeight.Normal,
+            textAlign = TextAlign.End,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .recordingPrivacyCover(coverValue)
+        )
     }
 }
 
