@@ -4,13 +4,13 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lipabill.app.LipaBillApp
-import com.lipabill.app.data.contacts.PhoneBookSearcher
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.parser.PaybillPasteParser
 import com.lipabill.app.data.parser.sanitizeAccountNumber
 import com.lipabill.app.data.repository.MerchantHit
 import com.lipabill.app.data.repository.SendContact
+import com.lipabill.app.ussd.PaymentManualDetails
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.ussd.UssdMenuBuilder
@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 enum class PayMethod {
     PAYBILL,
@@ -68,14 +69,6 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
     private val _ui = MutableStateFlow(PayMoneyUiState())
     private val pochiQuery = MutableStateFlow("")
     private val merchantQuery = MutableStateFlow("")
-    private val contactsAccess = MutableStateFlow(PhoneBookSearcher.hasPermission(application))
-
-    private val phoneBookHits: StateFlow<List<SendContact>> = PhoneBookSearcher.observeSearch(
-        viewModelScope,
-        pochiQuery,
-        contactsAccess,
-        application
-    )
 
     private val merchantHits = combine(_ui, merchantQuery) { state, q ->
         state.method to q
@@ -98,19 +91,15 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val uiState: StateFlow<PayMoneyUiState> = combine(
-        combine(_ui, pochiMerchantHits, pochiQuery, phoneBookHits, merchantHits) {
-                state, pochiMerchants, pochiQ, book, hits ->
-            PochiDraft(state, pochiMerchants, pochiQ, book, hits)
+        combine(_ui, pochiMerchantHits, pochiQuery, merchantHits) {
+                state, pochiMerchants, pochiQ, hits ->
+            PochiDraft(state, pochiMerchants, pochiQ, hits)
         },
         merchantQuery
     ) { draft, merchantQ ->
         val trimmed = draft.pochiQuery.trim()
         val learnedPochi = draft.pochiMerchants.map { it.toPochiContact() }
-        val filteredPochi = SendMoneyViewModel.mergeRecipientSearch(
-            txContacts = learnedPochi,
-            phoneBook = draft.book,
-            query = trimmed
-        )
+        val filteredPochi = SendMoneyViewModel.filterRecipientSearch(learnedPochi, trimmed)
         draft.state.copy(
             pochiContacts = filteredPochi,
             pochiQuery = draft.pochiQuery,
@@ -123,7 +112,6 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
         val state: PayMoneyUiState,
         val pochiMerchants: List<MerchantHit>,
         val pochiQuery: String,
-        val book: List<SendContact>,
         val hits: List<MerchantHit>
     )
 
@@ -133,7 +121,6 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
 
     fun refreshGates() {
         val ctx = getApplication<Application>()
-        contactsAccess.value = PhoneBookSearcher.hasPermission(ctx)
         val lines = ctx.paymentLineSnapshot(coordinator, app.securePreferences)
         _ui.update { state ->
             state.copy(
@@ -145,10 +132,6 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
                 needsPhoneStatePermission = lines.needsPhoneStatePermission
             )
         }
-    }
-
-    fun refreshContactsAccess() {
-        contactsAccess.value = PhoneBookSearcher.hasPermission(getApplication())
     }
 
     fun selectMethod(method: PayMethod) {
@@ -444,6 +427,29 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
         return true
     }
 
+    fun logManualCopy() {
+        viewModelScope.launch {
+            val tx = buildSyntheticTransaction() ?: return@launch
+            coordinator.recordManualCopy(tx)
+        }
+    }
+
+    fun manualDetailsText(): String {
+        val state = uiState.value
+        val amount = RepeatTransactionViewModel.parseAmount(state.amountInput)
+        val summary = confirmSummary()
+        return PaymentManualDetails.format(
+            typeLabel = summary?.first ?: (state.method?.name ?: "Pay"),
+            toLine = summary?.second ?: "",
+            amountLabel = summary?.third ?: amount?.let { formatKesMoney(it) },
+            planDescription = PaymentManualDetails.planDescription(
+                buildSyntheticTransaction(),
+                amount
+            ),
+            simLabel = PaymentManualDetails.simLabel(state.simLines, state.selectedSubscriptionId)
+        )
+    }
+
     fun confirmSummary(): Triple<String, String, String>? {
         val state = uiState.value
         val amount = RepeatTransactionViewModel.parseAmount(state.amountInput) ?: return null
@@ -546,13 +552,13 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
         val q = pochiQuery.trim()
         return when {
             q.isBlank() ->
-                "Search a saved Pochi recipient, or type their phone number."
+                "Search a saved Pochi, choose a contact, or type their phone number."
             pochiContacts.isEmpty() &&
                 UssdMenuBuilder.normalizePhoneNumber(q) == null &&
                 q.any { it.isLetter() } ->
-                "No saved match for \"$q\". Enter a full phone number to continue."
+                "No saved match for \"$q\". Choose a contact, or enter a full phone number."
             UssdMenuBuilder.normalizePhoneNumber(q) == null ->
-                "Enter a valid M-Pesa phone number to continue."
+                "Enter a valid phone number to continue."
             else ->
                 "Choose a recipient or enter a phone number."
         }
