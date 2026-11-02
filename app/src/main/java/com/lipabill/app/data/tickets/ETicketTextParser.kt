@@ -10,7 +10,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * Pure text/barcode heuristics for e-tickets (SGR Kenya, flights, generic).
+ * Pure text/barcode heuristics for e-tickets (SGR Kenya, generic events).
  * Layout can be messy — we tolerate OCR noise and missing labels.
  *
  * Physical Madaraka Express tickets typically look like:
@@ -48,16 +48,9 @@ object ETicketTextParser {
                         "No scannable code found. Use a clearer PDF/photo, or paste the ticket code."
                     )
                 val draft = parseSgr(text, barcode, stationHints)
-                    ?: parseFlight(text, barcode)
                     ?: parseGeneric(text, barcode)
                 return draft.copy(expectsBoardingPass = false, hasBoardingPass = true)
             }
-            TicketDocumentKind.BOARDING_PASS -> {
-                val bc = FlightBoardingPassParser.pickBoardingBarcode(barcodes)
-                return FlightBoardingPassParser.parse(text, bc)
-            }
-            TicketDocumentKind.FLIGHT_E_TICKET ->
-                return FlightElectronicTicketParser.parse(text)
             TicketDocumentKind.SGR_TICKET -> {
                 val barcode = pickBarcode(barcodes, text)
                     ?: throw IllegalArgumentException(
@@ -75,16 +68,6 @@ object ETicketTextParser {
             TicketDocumentKind.AUTO -> Unit
         }
 
-        // AUTO: boarding pass first when the header is visible (avoids e-ticket mis-route)
-        val boardingBarcode = FlightBoardingPassParser.pickBoardingBarcode(barcodes)
-        if (FlightBoardingPassParser.looksLikeBoardingPass(text, boardingBarcode)) {
-            return FlightBoardingPassParser.parse(text, boardingBarcode)
-        }
-
-        if (FlightElectronicTicketParser.looksLikeElectronicTicketReceipt(text)) {
-            runCatching { return FlightElectronicTicketParser.parse(text) }
-        }
-
         val barcode = pickBarcode(barcodes, text)
             ?: throw IllegalArgumentException(
                 "No scannable code found. Use a clearer PDF/photo, or paste the ticket code."
@@ -92,9 +75,6 @@ object ETicketTextParser {
 
         val sgr = parseSgr(text, barcode, stationHints)
         if (sgr != null) return sgr
-
-        val flight = parseFlight(text, barcode)
-        if (flight != null) return flight
 
         return parseGeneric(text, barcode)
     }
@@ -140,13 +120,6 @@ object ETicketTextParser {
             .map { it.copy(value = it.value.trim()) }
             .filter { it.value.isNotEmpty() }
         if (cleaned.isNotEmpty()) {
-            FlightBoardingPassParser.pickBoardingBarcode(cleaned)?.let { pick ->
-                if (BcbpParser.parse(pick.value) != null ||
-                    pick.format == TicketBarcodeFormat.PDF_417
-                ) {
-                    return pick
-                }
-            }
             val preferred = listOf(
                 TicketBarcodeFormat.QR_CODE,
                 TicketBarcodeFormat.PDF_417,
@@ -270,7 +243,7 @@ object ETicketTextParser {
             startsAtMillis = startsAt,
             seatOrTier = seatOrTier,
             barcodeValue = barcode.value,
-            // SGR gate / stub codes are QR — never promote PDF417 flight barcodes
+            // SGR gate / stub codes are QR
             barcodeFormat = TicketBarcodeFormat.QR_CODE,
             orderId = booking,
             notes = notes,
@@ -291,65 +264,6 @@ object ETicketTextParser {
             raw.replace(Regex("""(?i)\s+"""), " ")
                 .replaceFirstChar { it.titlecase(Locale.US) }
         }
-    }
-
-    private fun parseFlight(text: String, barcode: FoundBarcode): TicketImport? {
-        val bcbp = BcbpParser.parse(barcode.value)
-        val lower = text.lowercase(Locale.US)
-        val looksFlight = bcbp != null || listOf(
-            "boarding pass", "flight", "gate", "terminal",
-            "e-ticket", "eticket", "airline", "passenger name", "seq"
-        ).any { lower.contains(it) } ||
-            Regex("""\b[A-Z]{2}\s?\d{1,4}\b""").containsMatchIn(text)
-
-        if (!looksFlight) return null
-
-        val flightNo = bcbp?.flightNumber
-            ?: firstMatch(text, Regex("""(?i)\b([A-Z]{2}\s?\d{1,4})\b"""))
-                ?.replace(" ", "")
-        val from = bcbp?.from
-            ?: labeled(text, "from", "origin", "departure")
-            ?: iataNear(text, "from")
-        val to = bcbp?.to
-            ?: labeled(text, "to", "destination", "arrival")
-            ?: iataNear(text, "to")
-        val passenger = bcbp?.passengerName
-            ?: labeledAfter(text, "Passenger Name", "Passenger", "Name")
-        val seat = bcbp?.seat
-            ?: firstMatch(text, Regex("""(?i)\bSeat\s*([A-Z0-9]+)\b"""))
-            ?: labeled(text, "seat", "seat no")
-        val gate = labeled(text, "gate")
-        val startsAt = bcbp?.departDateMillis
-            ?: parseTravelDateTime(text)
-
-        val route = when {
-            from != null && to != null -> "$from → $to"
-            else -> null
-        }
-        val title = when {
-            flightNo != null && route != null -> "$flightNo · $route"
-            flightNo != null -> "Flight $flightNo"
-            route != null -> "Flight · $route"
-            else -> "Flight e-ticket"
-        }
-        val seatOrTier = listOfNotNull(
-            seat?.let { "Seat $it" },
-            gate?.let { "Gate $it" }
-        ).joinToString(" · ").ifBlank { null }
-
-        return TicketImport(
-            title = title,
-            venue = route ?: passenger,
-            startsAtMillis = startsAt,
-            seatOrTier = seatOrTier,
-            barcodeValue = barcode.value,
-            barcodeFormat = barcode.format,
-            orderId = bcbp?.pnr ?: labeled(text, "pnr", "booking ref", "confirmation"),
-            notes = listOfNotNull("Imported flight e-ticket", passenger).joinToString(" · "),
-            source = TicketSource.E_TICKET,
-            expectsBoardingPass = false,
-            hasBoardingPass = true
-        )
     }
 
     private fun parseGeneric(text: String, barcode: FoundBarcode): TicketImport {
@@ -467,13 +381,6 @@ object ETicketTextParser {
             }
         }
         return hits.sortedBy { it.first }
-    }
-
-    private fun iataNear(text: String, label: String): String? {
-        val m = Regex(
-            """(?i)\b${Regex.escape(label)}\b\s*[:\-]?\s*([A-Z]{3})\b"""
-        ).find(text)
-        return m?.groupValues?.getOrNull(1)
     }
 
     private fun labeled(text: String, vararg labels: String): String? {
