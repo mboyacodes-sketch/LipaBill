@@ -32,8 +32,8 @@ android {
         applicationId = "com.lipabill.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 28
-        versionName = "2.0.7"
+        versionCode = 31
+        versionName = "2.0.10"
         // Real devices are arm64; drop x86/x86_64 emulator ABIs from shipped APKs.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -122,7 +122,9 @@ android {
             excludes += "META-INF/LICENSE"
             excludes += "META-INF/LICENSE.txt"
             excludes += "META-INF/NOTICE.txt"
-            // Unused PDFBox CJK cmap tables (~4MB)
+            // PDFBox pulls BouncyCastle PQC tables that text extraction never uses.
+            excludes += "org/bouncycastle/pqc/**"
+            // CJK cmaps also exist as AAR assets; those are stripped after merge*Assets.
             excludes += "**/fontbox/resources/cmap/**"
         }
     }
@@ -131,15 +133,21 @@ android {
         lintConfig = file("lint.xml")
         abortOnError = true
     }
+
+    androidResources {
+        // English UI. Library translations (Play Services, AppCompat) stay out of the AAB.
+        localeFilters += listOf("en")
+    }
 }
 
-// Strip PDFBox CJK cmaps from merged assets (AAR assets bypass packaging.resources).
+// Strip PDFBox extras from merged assets (AAR assets bypass packaging.resources).
+// Flavor tasks are mergePlayReleaseAssets / mergeInternalDebugAssets, not mergeReleaseAssets.
 tasks.configureEach {
-    if (name != "mergeReleaseAssets" && name != "mergeDebugAssets") return@configureEach
+    if (!name.startsWith("merge") || !name.endsWith("Assets")) return@configureEach
     doLast {
         outputs.files.files.forEach { out ->
-            val cmap = file("${out.path}/com/tom_roush/fontbox/resources/cmap")
-            if (cmap.isDirectory) cmap.deleteRecursively()
+            file("${out.path}/com/tom_roush/fontbox/resources/cmap").deleteRecursively()
+            file("${out.path}/com/tom_roush/pdfbox/resources/ttf").deleteRecursively()
         }
     }
 }
@@ -192,16 +200,17 @@ dependencies {
 
     // SQLCipher for Room encryption at rest
     implementation("net.zetetic:sqlcipher-android:4.6.1")
-    implementation("androidx.sqlite:sqlite-ktx:2.4.0")
 
-    // Offline QR encode (display) + CameraX/ML Kit scan + e-ticket OCR
+    // Offline QR encode (display) + CameraX/ML Kit scan + e-ticket OCR.
+    // Unbundled ML Kit: Play Services delivers barcode + Latin OCR models after install
+    // instead of shipping ~17MB of native libs in the AAB.
     implementation("com.google.zxing:core:3.5.3")
     val camera = "1.4.2"
     implementation("androidx.camera:camera-camera2:$camera")
     implementation("androidx.camera:camera-lifecycle:$camera")
     implementation("androidx.camera:camera-view:$camera")
-    implementation("com.google.mlkit:barcode-scanning:17.3.0")
-    implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     // Embedded text from airline e-ticket PDFs (more reliable than OCR alone)
@@ -214,7 +223,6 @@ dependencies {
     implementation("com.google.firebase:firebase-crashlytics")
     // In-app update API for every variant. The full downloader stays on internal
     // so Play builds do not ship the App Distribution installer.
-    implementation("com.google.firebase:firebase-appdistribution-api:16.0.0-beta20")
     add("internalImplementation", "com.google.firebase:firebase-appdistribution:16.0.0-beta20")
     add("playImplementation", "com.google.android.play:app-update:2.1.0")
 
