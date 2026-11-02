@@ -9,32 +9,26 @@ object AccessibilityServiceDisclosure {
     const val TITLE = "Accessibility Service for Send, Pay, and Repeat"
     const val AGREE = "Agree"
     const val NOT_NOW = "Not now"
+    const val CONTINUE_WITHOUT = "Continue without"
     /** Must match `@string/accessibility_service_label`. */
-    const val SERVICE_LABEL = "LipaBill Repeat Payment"
+    const val SERVICE_LABEL = "LipaBill M-Pesa payments"
+
+    /** Short in-app points. Join to [STANDARD_BODY] for tests and listing checks. */
+    val STANDARD_POINTS: List<String> = listOf(
+        "LipaBill uses Android’s AccessibilityService API to fill M-Pesa USSD screens for " +
+            "Send money, Pay, and Repeat after you confirm a payment.",
+        "It may read on-screen USSD prompts for that payment session only. That text is not " +
+            "stored, not sent off this phone, and not shared with anyone.",
+        "It does not read SMS and is not an accessibility tool for disabilities.",
+        "You can continue without enabling it. Send, Pay, and Repeat stay off until you " +
+            "turn on “$SERVICE_LABEL”. History, Insights, and Passes stay available."
+    )
 
     /**
      * Primary disclosure shown immediately before opening Android Accessibility settings
      * to enable LipaBill’s AccessibilityService.
      */
-    val STANDARD_BODY: String = listOf(
-        "LipaBill uses Android’s AccessibilityService API to help complete M-Pesa USSD " +
-            "payments that you start and confirm in the app.",
-        "This is needed for Send money, Pay (Paybill, till, and Pochi), and Repeat a past " +
-            "payment — so LipaBill can fill the Safaricom USSD screens after you tap Confirm.",
-        "After you confirm and enter your M-Pesa PIN on LipaBill’s secure keypad, the service " +
-            "may read on-screen USSD and dialer prompts and enter the next menu digit, phone " +
-            "number, amount, or PIN field for that payment only.",
-        "That on-screen text is used only to finish the payment you confirmed. It is not " +
-            "stored as a transcript, not sent off this phone, and not shared with anyone.",
-        "The service runs only while a payment session you started is active. It does not " +
-            "read SMS, does not change system settings, does not stop you from turning the " +
-            "service off or uninstalling LipaBill, and is not used to control unrelated apps " +
-            "in the background.",
-        "LipaBill is not an accessibility tool for people with disabilities.",
-        "You can continue without enabling Accessibility Service. Send, Pay, and automatic " +
-            "Repeat fill stay unavailable until you turn on “$SERVICE_LABEL” in Android " +
-            "Accessibility settings."
-    ).joinToString(separator = " ")
+    val STANDARD_BODY: String = STANDARD_POINTS.joinToString(separator = " ")
 
     /** Phrases that must appear in the disclosure (for unit tests / Play review). */
     val REQUIRED_PHRASES: List<String> = listOf(
