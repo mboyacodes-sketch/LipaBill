@@ -23,8 +23,5 @@ interface RepeatAttemptDao {
     fun observeRecent(limit: Int = 50): Flow<List<RepeatAttemptEntity>>
 
     @Query("SELECT * FROM repeat_attempts WHERE id = :id LIMIT 1")
-    suspend fun getById(id: Long): RepeatAttemptEntity?
-
-    @Query("SELECT * FROM repeat_attempts WHERE id = :id LIMIT 1")
     fun observeById(id: Long): Flow<RepeatAttemptEntity?>
 }
