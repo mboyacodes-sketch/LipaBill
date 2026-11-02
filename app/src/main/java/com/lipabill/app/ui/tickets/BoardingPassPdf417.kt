@@ -10,8 +10,8 @@ import com.google.zxing.pdf417.PDF417Writer
 import com.google.zxing.pdf417.encoder.Compaction
 
 /**
- * Paper-style **PDF417** boarding-pass barcode (IATA BCBP payload).
- * Display is horizontal (wide zebra), filling the ticket header width.
+ * Paper-style **PDF417** barcode. Display is horizontal (wide zebra),
+ * filling the ticket header width (SGR booking stub uses `REF:{PNR}`).
  */
 object BoardingPassPdf417 {
 
