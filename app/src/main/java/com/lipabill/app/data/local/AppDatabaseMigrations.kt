@@ -165,6 +165,30 @@ object AppDatabaseMigrations {
         }
     }
 
+    /**
+     * Ledger source (wallet or bank). Existing rows default to M-Pesa.
+     * Unique receipt codes are per source so two rails can share a ref.
+     */
+    val MIGRATION_11_12 = object : Migration(11, 12) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE `transactions` ADD COLUMN `source` TEXT NOT NULL DEFAULT 'MPESA'"
+            )
+            db.execSQL("DROP INDEX IF EXISTS `index_transactions_code`")
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_transactions_source_code` ON `transactions` (`source`, `code`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_transactions_source` ON `transactions` (`source`)"
+            )
+        }
+    }
+
     /** Migrations that preserve data. Add new ones at the end of this list. */
-    val ALL: Array<Migration> = arrayOf(MIGRATION_8_9, MIGRATION_9_11, MIGRATION_10_11)
+    val ALL: Array<Migration> = arrayOf(
+        MIGRATION_8_9,
+        MIGRATION_9_11,
+        MIGRATION_10_11,
+        MIGRATION_11_12
+    )
 }
