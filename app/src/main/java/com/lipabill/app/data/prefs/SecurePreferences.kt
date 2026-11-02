@@ -5,6 +5,12 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.lipabill.app.BuildConfig
+import com.lipabill.app.data.model.AppRegion
+import com.lipabill.app.data.model.MoneySource
+import com.lipabill.app.data.model.parseStoredSources
+import com.lipabill.app.data.model.resolvedLedgerSources
+import com.lipabill.app.data.model.serializeLedgerSources
+import com.lipabill.app.ui.privacy.RecordingCapture
 
 /**
  * App settings and auth flags stored in EncryptedSharedPreferences.
@@ -55,7 +61,7 @@ class SecurePreferences(context: Context) {
     /**
      * True after the user has successfully enabled LipaBill Accessibility.
      * Survives APK updates (`adb install -r` / Play update). Cleared when the
-     * user intentionally turns the service off from Profile. When the OS toggle
+     * user intentionally turns the service off from Settings. When the OS toggle
      * is off after an update, release builds use this flag for the re-enable coach.
      */
     var accessibilityPreferredOn: Boolean
@@ -86,15 +92,16 @@ class SecurePreferences(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_FAVOURITES_SECTION, value).apply()
 
     /**
-     * Debug builds only. When true, names, phone numbers, references, and ticket
-     * codes are blurred so a screen recording can show the app without them.
-     * Keyboards stay sharp. The M-Pesa PIN pad stays in phone order.
-     * Release builds ignore this flag.
+     * Debug / internal builds only. When true, FLAG_SECURE is cleared (scrcpy /
+     * screen record work) and names, numbers, references, and ticket codes are
+     * blurred. Keyboards stay sharp. Play release ignores this flag.
+     * Defaults on so a fresh debug/internal install can be recorded immediately.
      */
     var recordingPrivacy: Boolean
-        get() = BuildConfig.DEBUG && prefs.getBoolean(KEY_RECORDING_PRIVACY, false)
+        get() = RecordingCapture.available &&
+            prefs.getBoolean(KEY_RECORDING_PRIVACY, true)
         set(value) {
-            if (!BuildConfig.DEBUG) return
+            if (!RecordingCapture.available) return
             prefs.edit().putBoolean(KEY_RECORDING_PRIVACY, value).apply()
         }
 
@@ -105,6 +112,43 @@ class SecurePreferences(context: Context) {
     var hibernationPromptShown: Boolean
         get() = prefs.getBoolean(KEY_HIBERNATION_PROMPT_SHOWN, false)
         set(value) = prefs.edit().putBoolean(KEY_HIBERNATION_PROMPT_SHOWN, value).apply()
+
+    /** Country the ledger reads confirmation SMS for. Existing installs stay Kenya. */
+    var appRegion: AppRegion
+        get() = AppRegion.fromIso(prefs.getString(KEY_APP_REGION, null))
+        set(value) = prefs.edit().putString(KEY_APP_REGION, value.iso).apply()
+
+    /**
+     * After a region change, the next scan reads the whole inbox again so the
+     * new country's senders are not skipped by the previous high-water mark.
+     */
+    fun resetInboxScanForRegionChange() {
+        prefs.edit()
+            .putBoolean(KEY_INBOX_HISTORY_IMPORTED, false)
+            .putLong(KEY_INBOX_HIGH_WATER, 0L)
+            .putBoolean(KEY_BACKFILL_DONE, false)
+            .putBoolean(KEY_WALLET_RAILS_INBOX_SCAN, false)
+            .apply()
+    }
+
+    /**
+     * Wallets and banks on this ledger. Null storage means every rail in [region]
+     * so existing installs keep current behaviour until the user edits the list.
+     */
+    fun enabledLedgerSources(region: AppRegion = appRegion): Set<MoneySource> =
+        resolvedLedgerSources(region, storedLedgerSources())
+
+    fun storedLedgerSources(): Set<MoneySource>? =
+        if (prefs.contains(KEY_ENABLED_SOURCES)) {
+            parseStoredSources(prefs.getString(KEY_ENABLED_SOURCES, null)) ?: emptySet()
+        } else {
+            null
+        }
+
+    fun setEnabledLedgerSources(sources: Set<MoneySource>, region: AppRegion = appRegion) {
+        val next = resolvedLedgerSources(region, sources)
+        prefs.edit().putString(KEY_ENABLED_SOURCES, serializeLedgerSources(next)).apply()
+    }
 
     /** When true, first-run permissions + SIM setup has been completed. */
     var firstRunSetupDone: Boolean
@@ -149,7 +193,7 @@ class SecurePreferences(context: Context) {
         get() = prefs.getString(KEY_PAY_COLLECT_KIND, "phone") ?: "phone"
         set(value) = prefs.edit().putString(KEY_PAY_COLLECT_KIND, value).apply()
 
-    /** M-Pesa number this phone's pay code collects. Empty until the user sets it. */
+    /** Phone number this pay code collects. Empty until the user sets it. */
     var payPhone: String?
         get() = prefs.getString(KEY_PAY_PHONE, null)?.takeIf { it.isNotBlank() }
         set(value) = prefs.edit().putString(KEY_PAY_PHONE, value).apply()
@@ -187,6 +231,14 @@ class SecurePreferences(context: Context) {
     val inboxHighWaterMillis: Long
         get() = prefs.getLong(KEY_INBOX_HIGH_WATER, 0L)
 
+    /**
+     * When false, the next inbox read ignores the high-water mark so bank and
+     * wallet rails added after the first import are not skipped.
+     */
+    var walletRailsInboxScanDone: Boolean
+        get() = prefs.getBoolean(KEY_WALLET_RAILS_INBOX_SCAN, false)
+        set(value) = prefs.edit().putBoolean(KEY_WALLET_RAILS_INBOX_SCAN, value).apply()
+
     fun markInboxCaughtUp(highWaterMillis: Long) {
         val next = maxOf(inboxHighWaterMillis, highWaterMillis)
         prefs.edit()
@@ -210,6 +262,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_WEEKLY_CHECKIN = "weekly_checkin_enabled"
         private const val KEY_INBOX_HISTORY_IMPORTED = "inbox_history_imported_v1"
         private const val KEY_INBOX_HIGH_WATER = "inbox_high_water_millis"
+        private const val KEY_WALLET_RAILS_INBOX_SCAN = "wallet_rails_inbox_scan_v1"
         private const val KEY_REPEAT_ENABLED = "repeat_feature_enabled"
         private const val KEY_A11Y_ONBOARDING_SEEN = "a11y_onboarding_seen"
         private const val KEY_A11Y_PREFERRED_ON = "a11y_preferred_on"
@@ -220,6 +273,8 @@ class SecurePreferences(context: Context) {
         private const val KEY_RECORDING_PRIVACY = "recording_privacy"
         private const val KEY_HIBERNATION_PROMPT_SHOWN = "hibernation_prompt_shown"
         private const val KEY_FIRST_RUN_SETUP_DONE = "first_run_setup_done"
+        private const val KEY_APP_REGION = "app_region"
+        private const val KEY_ENABLED_SOURCES = "enabled_ledger_sources_v1"
         private const val KEY_PAY_COLLECT_KIND = "pay_collect_kind"
         private const val KEY_PAY_PHONE = "pay_phone"
         private const val KEY_PAY_TILL = "pay_till"
