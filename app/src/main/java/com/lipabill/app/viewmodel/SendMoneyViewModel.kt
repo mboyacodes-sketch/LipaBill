@@ -4,10 +4,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lipabill.app.LipaBillApp
-import com.lipabill.app.data.contacts.PhoneBookSearcher
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.repository.SendContact
+import com.lipabill.app.ussd.PaymentManualDetails
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.ussd.UssdMenuBuilder
@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 data class SendMoneyUiState(
     val contacts: List<SendContact> = emptyList(),
@@ -35,7 +36,6 @@ data class SendMoneyUiState(
     val selectedSubscriptionId: Int? = null,
     val hasSavedSimPreference: Boolean = false,
     val needsPhoneStatePermission: Boolean = false,
-    val hasContactsPermission: Boolean = false,
     val dialStarted: Boolean = false,
     val statusMessage: String? = null,
     /** What the user should do next on the recipient step (null when ready). */
@@ -51,31 +51,22 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
     private val selected = MutableStateFlow<SendContact?>(null)
     private val amountInput = MutableStateFlow("")
     private val _gates = MutableStateFlow(SendMoneyUiState())
-    private val contactsAccess = MutableStateFlow(PhoneBookSearcher.hasPermission(application))
 
     private val txContacts = app.repository.observeSendContacts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val phoneBookHits: StateFlow<List<SendContact>> = PhoneBookSearcher.observeSearch(
-        viewModelScope,
-        query,
-        contactsAccess,
-        application
-    )
-
     val uiState: StateFlow<SendMoneyUiState> = combine(
-        combine(txContacts, phoneBookHits, query, selected, amountInput) { tx, book, q, sel, amount ->
-            RecipientDraft(tx, book, q, sel, amount)
+        combine(txContacts, query, selected, amountInput) { tx, q, sel, amount ->
+            RecipientDraft(tx, q, sel, amount)
         },
         _gates
     ) { draft, gates ->
         val trimmed = draft.query.trim()
-        val filtered = mergeRecipientSearch(draft.tx, draft.book, trimmed)
+        val filtered = filterRecipientSearch(draft.tx, trimmed)
         val amountOk = RepeatTransactionViewModel.parseAmount(draft.amount) != null
         val detailsOk = draft.selected != null ||
             UssdMenuBuilder.normalizePhoneNumber(trimmed) != null
         val probeOk = detailsOk && buildProbe(draft.selected, trimmed) != null
-        val hasPerm = PhoneBookSearcher.hasPermission(getApplication())
         gates.copy(
             contacts = filtered,
             query = draft.query,
@@ -84,13 +75,11 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
             amountValid = amountOk,
             detailsValid = detailsOk,
             canSend = detailsOk && amountOk && probeOk && !gates.dialStarted,
-            hasContactsPermission = hasPerm,
             guidanceMessage = sendDetailsGuidance(
                 query = trimmed,
                 selected = draft.selected,
                 contacts = filtered,
-                detailsOk = detailsOk,
-                hasContactsPermission = hasPerm
+                detailsOk = detailsOk
             )
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, SendMoneyUiState())
@@ -99,30 +88,24 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
         query: String,
         selected: SendContact?,
         contacts: List<SendContact>,
-        detailsOk: Boolean,
-        hasContactsPermission: Boolean
+        detailsOk: Boolean
     ): String? {
         if (detailsOk || selected != null) return null
         val label = query.take(28).let { if (query.length > 28) "$it…" else it }
         return when {
             query.isBlank() ->
-                "Search a past contact, or type a phone number."
+                "Search a past send, choose a contact, or type a phone number."
             contacts.isEmpty() && query.any { it.isLetter() } ->
-                if (!hasContactsPermission) {
-                    "No past matches for \"$label\". Allow Contacts, or type a phone number."
-                } else {
-                    "No match for \"$label\". Keep typing a phone number to continue."
-                }
+                "No past matches for \"$label\". Choose a contact, or type a phone number."
             contacts.isEmpty() ->
                 "Enter a full phone number to continue."
             else ->
-                "Pick a contact, or enter a full phone number."
+                "Pick a past send, choose a contact, or enter a full phone number."
         }
     }
 
     private data class RecipientDraft(
         val tx: List<SendContact>,
-        val book: List<SendContact>,
         val query: String,
         val selected: SendContact?,
         val amount: String
@@ -134,7 +117,6 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun refreshGates() {
         val ctx = getApplication<Application>()
-        contactsAccess.value = PhoneBookSearcher.hasPermission(ctx)
         val lines = ctx.paymentLineSnapshot(coordinator, app.securePreferences)
         _gates.update {
             it.copy(
@@ -143,14 +125,9 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
                 simLines = lines.simLines,
                 selectedSubscriptionId = lines.selectedSubscriptionId,
                 hasSavedSimPreference = lines.hasSavedSimPreference,
-                needsPhoneStatePermission = lines.needsPhoneStatePermission,
-                hasContactsPermission = PhoneBookSearcher.hasPermission(ctx)
+                needsPhoneStatePermission = lines.needsPhoneStatePermission
             )
         }
-    }
-
-    fun refreshContactsAccess() {
-        contactsAccess.value = PhoneBookSearcher.hasPermission(getApplication())
     }
 
     fun setQuery(value: String) {
@@ -252,6 +229,33 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
         return true
     }
 
+    fun logManualCopy() {
+        viewModelScope.launch {
+            val tx = buildSyntheticTransaction() ?: return@launch
+            coordinator.recordManualCopy(tx)
+        }
+    }
+
+    fun manualDetailsText(): String {
+        val state = uiState.value
+        val amount = RepeatTransactionViewModel.parseAmount(state.amountInput)
+        val summary = confirmSummary()
+        val phone = state.selected?.normalizedPhone
+            ?: UssdMenuBuilder.normalizePhoneNumber(state.query)
+        val name = state.selected?.name ?: phone
+        return PaymentManualDetails.format(
+            typeLabel = summary?.first ?: "Send",
+            toLine = summary?.second
+                ?: listOfNotNull(name, phone).distinct().joinToString(" "),
+            amountLabel = summary?.third ?: amount?.let { formatKesMoney(it) },
+            planDescription = PaymentManualDetails.planDescription(
+                buildSyntheticTransaction(),
+                amount
+            ),
+            simLabel = PaymentManualDetails.simLabel(state.simLines, state.selectedSubscriptionId)
+        )
+    }
+
     fun confirmSummary(): Triple<String, String, String>? {
         val state = uiState.value
         val amount = RepeatTransactionViewModel.parseAmount(state.amountInput) ?: return null
@@ -282,29 +286,13 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     companion object {
-        /** Transaction matches first; phone-book fills gaps for the same query. */
-        fun mergeRecipientSearch(
+        fun filterRecipientSearch(
             txContacts: List<SendContact>,
-            phoneBook: List<SendContact>,
             query: String
         ): List<SendContact> {
             val trimmed = query.trim()
-            val txFiltered = if (trimmed.isEmpty()) {
-                txContacts
-            } else {
-                txContacts.filter { matchesQuery(it, trimmed) }
-            }
-            if (trimmed.isEmpty()) return txFiltered
-
-            val seen = LinkedHashSet<String>()
-            val out = ArrayList<SendContact>(txFiltered.size + phoneBook.size)
-            for (c in txFiltered) {
-                if (seen.add(c.normalizedPhone)) out.add(c)
-            }
-            for (c in phoneBook) {
-                if (seen.add(c.normalizedPhone)) out.add(c)
-            }
-            return out
+            if (trimmed.isEmpty()) return txContacts
+            return txContacts.filter { matchesQuery(it, trimmed) }
         }
 
         private fun matchesQuery(contact: SendContact, query: String): Boolean =
