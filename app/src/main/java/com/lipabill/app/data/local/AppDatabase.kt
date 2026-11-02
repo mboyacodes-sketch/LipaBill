@@ -40,7 +40,7 @@ import java.security.SecureRandom
         WeeklyCheckInEntity::class,
         CheckInStreakEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
