@@ -51,9 +51,7 @@ class TicketsViewModel(
             hasBoardingPass = true
         )
 
-    /**
-     * Import a file as an event ticket (one-shot) or flight e-ticket (awaits boarding).
-     */
+    /** Import a file as an event ticket (one-shot) or SGR e-ticket. */
     suspend fun addFromDocument(
         context: Context,
         uri: Uri,
@@ -65,11 +63,6 @@ class TicketsViewModel(
                 app.ticketRepository.addImport(
                     draft.copy(expectsBoardingPass = false, hasBoardingPass = true)
                 ) ?: throw IllegalArgumentException("That ticket is already saved.")
-            }
-            TicketDocumentKind.FLIGHT_E_TICKET -> {
-                app.ticketRepository.addImport(
-                    draft.copy(expectsBoardingPass = true, hasBoardingPass = draft.hasBoardingPass)
-                ) ?: throw IllegalArgumentException("That booking is already saved.")
             }
             else -> {
                 app.ticketRepository.addImport(draft)
@@ -105,18 +98,12 @@ class TicketDetailViewModel(
     ): Boolean =
         withContext(Dispatchers.IO) {
             val current = ticket.value ?: return@withContext false
-            val kind = resolveAttachKind(current)
-            var draft = TicketDocumentImporter.import(context, uri, kind)
-                .copy(expectsBoardingPass = true, hasBoardingPass = true)
-            draft = when (kind) {
-                // Flight boarding keeps PDF417 / BCBP-style codes
-                TicketDocumentKind.BOARDING_PASS ->
-                    draft.copy(barcodeFormat = TicketBarcodeFormat.PDF_417)
-                // SGR boarding is always a QR (never invent a flight PDF417)
-                TicketDocumentKind.SGR_TICKET ->
-                    draft.copy(barcodeFormat = TicketBarcodeFormat.QR_CODE)
-                else -> draft
-            }
+            val draft = TicketDocumentImporter.import(context, uri, TicketDocumentKind.SGR_TICKET)
+                .copy(
+                    expectsBoardingPass = true,
+                    hasBoardingPass = true,
+                    barcodeFormat = TicketBarcodeFormat.QR_CODE
+                )
             app.ticketRepository.attachBoardingPass(current.id, draft, leg) != null
         }
 
@@ -128,13 +115,11 @@ class TicketDetailViewModel(
             val current = ticket.value ?: return@withContext false
             val payload = barcodeValue.trim()
             if (payload.isEmpty()) return@withContext false
-            val isFlight = resolveAttachKind(current) == TicketDocumentKind.BOARDING_PASS
             val draft = TicketImport(
                 title = "Boarding pass",
                 barcodeValue = payload,
-                barcodeFormat = if (isFlight) TicketBarcodeFormat.PDF_417 else TicketBarcodeFormat.QR_CODE,
+                barcodeFormat = TicketBarcodeFormat.QR_CODE,
                 orderId = current.orderId,
-                notes = if (isFlight) "Boarding pass" else null,
                 source = TicketSource.MANUAL_SCAN,
                 expectsBoardingPass = true,
                 hasBoardingPass = true
@@ -148,20 +133,6 @@ class TicketDetailViewModel(
             app.ticketRepository.delete(current.id)
             onDone()
         }
-    }
-}
-
-private fun resolveAttachKind(current: Ticket): TicketDocumentKind {
-    val notes = current.notes.orEmpty()
-    val looksFlight = notes.contains("Electronic ticket", ignoreCase = true) ||
-        notes.contains("Airline:", ignoreCase = true) ||
-        current.title.contains(Regex("""(?i)\b([A-Z0-9]{2}\s?\d{2,4})\b""")) ||
-        current.venue.orEmpty().contains("→") &&
-        Regex("""\b[A-Z]{3}\b""").findAll(current.venue.orEmpty()).count() >= 2
-    return when {
-        looksFlight -> TicketDocumentKind.BOARDING_PASS
-        current.source == TicketSource.BOOKING_CONFIRMATION -> TicketDocumentKind.SGR_TICKET
-        else -> TicketDocumentKind.BOARDING_PASS
     }
 }
 
