@@ -1,10 +1,7 @@
 package com.lipabill.app.ui.paylink
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,7 +14,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -72,9 +68,7 @@ import com.lipabill.app.LipaBillApp
 import com.lipabill.app.R
 import com.lipabill.app.pay.PayLink
 import com.lipabill.app.ussd.SimLineHelper
-import com.lipabill.app.ui.permissions.PermissionGuideDialog
-import com.lipabill.app.ui.permissions.PermissionLesson
-import com.lipabill.app.ui.permissions.permissionGranted
+import com.lipabill.app.ui.permissions.rememberCameraAccessOffer
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.sheet.AmountKeypad
 import com.lipabill.app.ui.sheet.EditableSheetField
@@ -155,7 +149,6 @@ fun PayProfileScreen(
     var amountText by remember { mutableStateOf("") }
     var fieldError by remember { mutableStateOf<String?>(null) }
     var scanning by remember { mutableStateOf(false) }
-    var showCameraGuide by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(notice) {
@@ -170,11 +163,7 @@ fun PayProfileScreen(
         }
     }
 
-    val cameraPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) scanning = true
-    }
+    val offerCamera = rememberCameraAccessOffer { scanning = true }
 
     var payQrFixed by remember { mutableStateOf(prefs.payQrFixed) }
     var dayTick by remember { mutableStateOf(PayLink.dayIndex()) }
@@ -313,7 +302,6 @@ fun PayProfileScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .background(Canvas)
-                .navigationBarsPadding()
         ) {
             Box(
                 modifier = Modifier
@@ -376,7 +364,7 @@ fun PayProfileScreen(
                         Text(
                             text = when (collectKind) {
                                 PayLink.Kind.PHONE ->
-                                    "Add the number for your M-Pesa SIM. It stays off this screen."
+                                    "Add the number for your payment SIM. It stays off this screen."
                                 PayLink.Kind.TILL ->
                                     "Buy Goods till that should receive the payment."
                                 PayLink.Kind.PAYBILL ->
@@ -395,7 +383,7 @@ fun PayProfileScreen(
                                     fieldError = null
                                 },
                                 placeholder = when (collectKind) {
-                                    PayLink.Kind.PHONE -> "M-Pesa number"
+                                    PayLink.Kind.PHONE -> "Mobile money number"
                                     PayLink.Kind.TILL -> "Till number"
                                     PayLink.Kind.PAYBILL -> "Paybill number"
                                 },
@@ -607,7 +595,7 @@ fun PayProfileScreen(
                                 )
                             }
                             Text(
-                                text = "They confirm, then enter their M-Pesa PIN. Tap here to copy the link.",
+                                text = "They confirm, then enter their PIN. Tap here to copy the link.",
                                 style = HomeType.caption,
                                 color = Ink,
                                 modifier = Modifier.padding(start = 12.dp)
@@ -688,13 +676,7 @@ fun PayProfileScreen(
                             color = Accent,
                             modifier = Modifier
                                 .padding(top = 8.dp)
-                                .clickable {
-                                    if (context.permissionGranted(Manifest.permission.CAMERA)) {
-                                        scanning = true
-                                    } else {
-                                        showCameraGuide = true
-                                    }
-                                }
+                                .clickable { offerCamera() }
                                 .padding(vertical = 8.dp)
                         )
                         if (collectKind != PayLink.Kind.PHONE || simPhone == null) {
@@ -768,16 +750,6 @@ fun PayProfileScreen(
         }
     }
 
-    if (showCameraGuide) {
-        PermissionGuideDialog(
-            lesson = PermissionLesson.Camera,
-            onAllow = {
-                showCameraGuide = false
-                cameraPermission.launch(Manifest.permission.CAMERA)
-            },
-            onNotNow = { showCameraGuide = false }
-        )
-    }
 }
 
 @Composable
