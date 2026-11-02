@@ -8,5 +8,5 @@ object MarketingLinks {
     const val WEBSITE = "https://lipabill.app"
     const val PRIVACY = "$WEBSITE/privacy"
     const val SUPPORT = "$WEBSITE/support"
-    const val SUPPORT_EMAIL = "mboya.codes@gmail.com"
+    const val SUPPORT_EMAIL = "support@lipabill.app"
 }
