@@ -6,22 +6,33 @@ import android.app.TimePickerDialog
 import android.content.Context
 import android.net.Uri
 import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -34,12 +45,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ConfirmationNumber
 import androidx.compose.material.icons.outlined.Event
-import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Sms
-import androidx.compose.material.icons.outlined.Wallet
+import androidx.compose.material.icons.outlined.Train
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -51,6 +64,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -67,16 +81,22 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -91,9 +111,8 @@ import com.lipabill.app.metrics.TicketImportResult
 import com.lipabill.app.data.tickets.BookingConfirmationParser
 import com.lipabill.app.data.tickets.TicketDocumentKind
 import com.lipabill.app.ui.adapt.LocalWindowForm
-import com.lipabill.app.ui.permissions.PermissionGuideDialog
+import com.lipabill.app.ui.permissions.rememberCameraAccessOffer
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
-import com.lipabill.app.ui.permissions.PermissionLesson
 import com.lipabill.app.ui.permissions.permissionGranted
 import com.lipabill.app.ui.adapt.WindowWidth
 import com.lipabill.app.ui.theme.Canvas
@@ -106,7 +125,6 @@ import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Income
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Accent
-import com.lipabill.app.ui.theme.RouteBlue
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
@@ -127,7 +145,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 private enum class AddTicketMode {
-    CHOOSER,
     CONFIRMATION,
     MANUAL
 }
@@ -145,13 +162,14 @@ fun TicketsScreen(
     modifier: Modifier = Modifier
 ) {
     val tickets by viewModel.tickets.collectAsStateWithLifecycle()
-    // Flight / other travel designs paused — surface events + SGR only for now.
+    // Surface events + SGR only; leftover flight tickets stay off the list.
     val visibleTickets = remember(tickets) {
         tickets.filter { !it.expectsBoardingPass || it.isRailTravel }
     }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var addMode by remember { mutableStateOf<AddTicketMode?>(null) }
+    var addMenuOpen by remember { mutableStateOf(false) }
     var pendingDocumentKind by remember { mutableStateOf(TicketDocumentKind.AUTO) }
     var error by remember { mutableStateOf<String?>(null) }
     var importing by remember { mutableStateOf(false) }
@@ -227,6 +245,8 @@ fun TicketsScreen(
         }
     }
 
+    BackHandler(enabled = addMenuOpen) { addMenuOpen = false }
+
     Scaffold(
         modifier = modifier,
         containerColor = Canvas,
@@ -250,16 +270,22 @@ fun TicketsScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { addMode = AddTicketMode.CHOOSER },
-                containerColor = Accent,
-                contentColor = OnAccent
-            ) {
-                Icon(Icons.Outlined.Add, contentDescription = "Add pass")
-            }
+            AddPassSpeedDial(
+                expanded = addMenuOpen,
+                onToggle = { addMenuOpen = !addMenuOpen },
+                onEventTicket = {
+                    addMenuOpen = false
+                    launchDocumentPicker(TicketDocumentKind.EVENT)
+                },
+                onSgrSms = {
+                    addMenuOpen = false
+                    addMode = AddTicketMode.CONFIRMATION
+                }
+            )
         }
     ) { padding ->
-        if (visibleTickets.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (visibleTickets.isEmpty()) {
             EmptyTickets(
                 modifier = Modifier
                     .fillMaxSize()
@@ -281,6 +307,13 @@ fun TicketsScreen(
             val entries = remember(visibleTickets, category, today) {
                 buildPassList(visibleTickets, category, zone, today)
             }
+            val upcomingCount = visibleTickets.count {
+                it.effectiveStatus() != TicketStatus.USED
+            }
+            val todayCount = visibleTickets.count {
+                it.isOnDay(zone, today) && it.effectiveStatus() != TicketStatus.USED
+            }
+            val usedCount = visibleTickets.size - upcomingCount
             val window = LocalWindowForm.current.width
             val columns = when (window) {
                 WindowWidth.Compact -> GridCells.Fixed(1)
@@ -293,6 +326,12 @@ fun TicketsScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
+                PassStoryStrip(
+                    todayCount = todayCount,
+                    upcomingCount = upcomingCount,
+                    usedCount = usedCount,
+                    modifier = Modifier.padding(horizontal = sidePad, vertical = Space.gap)
+                )
                 PassCategoryChips(
                     selected = category,
                     counts = counts,
@@ -322,7 +361,10 @@ fun TicketsScreen(
                         }
                     ) { entry ->
                         when (entry) {
-                            is PassListItem.Section -> PassSectionLabel(entry.title)
+                            is PassListItem.Section -> PassSectionHeader(
+                                title = entry.title,
+                                count = entry.count
+                            )
                             is PassListItem.TodayHero -> TodayPassCard(
                                 ticket = entry.ticket,
                                 onClick = { onOpenTicket(entry.ticket.id) }
@@ -335,18 +377,26 @@ fun TicketsScreen(
                     }
                 }
             }
+            }
+            AnimatedVisibility(
+                visible = addMenuOpen,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Ink.copy(alpha = 0.28f))
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) { addMenuOpen = false }
+                )
+            }
         }
     }
 
     when (addMode) {
-        AddTicketMode.CHOOSER -> AddTicketChooserDialog(
-            onDismiss = { addMode = null },
-            onEventTicket = {
-                addMode = null
-                launchDocumentPicker(TicketDocumentKind.EVENT)
-            },
-            onSgrSms = { addMode = AddTicketMode.CONFIRMATION }
-        )
         AddTicketMode.CONFIRMATION -> PasteConfirmationDialog(
             onDismiss = { addMode = null },
             onSave = { message ->
@@ -397,7 +447,6 @@ fun TicketsScreen(
 
     if (importing || openedPass is OpenedPass.Reading) {
         val readingLabel = when (pendingDocumentKind) {
-            TicketDocumentKind.FLIGHT_E_TICKET -> "Reading flight e-ticket…"
             TicketDocumentKind.EVENT -> "Reading event ticket…"
             else -> "Reading ticket…"
         }
@@ -412,11 +461,7 @@ fun TicketsScreen(
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(28.dp), color = Ink)
                     Text(
-                        when (pendingDocumentKind) {
-                            TicketDocumentKind.FLIGHT_E_TICKET ->
-                                "Saving the booking — you’ll add the boarding pass on this ticket."
-                            else -> "Creating your ticket."
-                        },
+                        "Creating your ticket.",
                         style = HomeType.body,
                         color = Mute
                     )
@@ -433,65 +478,366 @@ private fun EmptyTickets(
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.Center,
+        modifier = modifier.verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(modifier = Modifier.height(Space.block))
+        Text(
+            text = "The trip. The night out.",
+            style = HomeType.greeting,
+            color = Ink,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Nothing here yet. A pass is what the money already became — show it at the gate even without data.",
+            style = HomeType.body,
+            color = Mute,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 8.dp)
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            EmptyEventPreview(
+                onClick = onEventTicket,
+                modifier = Modifier
+                    .weight(1f)
+                    .graphicsLayer { rotationZ = -5f }
+            )
+            EmptySgrPreview(
+                onClick = onSgrSms,
+                modifier = Modifier
+                    .weight(1f)
+                    .graphicsLayer { rotationZ = 5f }
+            )
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+        PassPathCard(
+            icon = Icons.Outlined.ConfirmationNumber,
+            title = "Event ticket",
+            body = "The night out is already paid. Import a PDF, photo, or pass.",
+            onClick = onEventTicket
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        PassPathCard(
+            icon = Icons.Outlined.Train,
+            title = "SGR booking SMS",
+            body = "The fare is already paid. Paste the SMS you got after booking.",
+            onClick = onSgrSms
+        )
+        Spacer(modifier = Modifier.height(88.dp))
+    }
+}
+
+@Composable
+private fun PassPathCard(
+    icon: ImageVector,
+    title: String,
+    body: String,
+    onClick: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(CardWhite)
+            .clickable(onClick = onClick)
+            .padding(horizontal = Space.card, vertical = Space.card)
+    ) {
+        PassFavicon(icon)
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = HomeType.rowTitle, color = Ink)
+            Spacer(modifier = Modifier.height(Space.tight))
+            Text(body, style = HomeType.caption, color = Mute)
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = Mute
+        )
+    }
+}
+
+@Composable
+private fun PassFavicon(
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    fill: Color = SoftBlue,
+    tint: Color = Accent,
+    size: Dp = 32.dp
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(fill),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(size * 0.5f)
+        )
+    }
+}
+
+@Composable
+private fun PassStoryStrip(
+    todayCount: Int,
+    upcomingCount: Int,
+    usedCount: Int,
+    modifier: Modifier = Modifier
+) {
+    val icon = when {
+        todayCount > 0 -> Icons.Outlined.CalendarMonth
+        upcomingCount > 0 -> Icons.Outlined.ConfirmationNumber
+        else -> Icons.Outlined.Check
+    }
+    val title = when {
+        todayCount > 0 -> "Today is the day"
+        upcomingCount > 0 -> "Ready at the gate"
+        else -> "Already shown"
+    }
+    val detail = when {
+        todayCount > 0 && todayCount == 1 -> "One pass to show at the gate."
+        todayCount > 1 -> "$todayCount passes today."
+        upcomingCount == 1 -> "One upcoming pass."
+        upcomingCount > 1 -> "$upcomingCount upcoming."
+        usedCount == 1 -> "The night or trip that already happened."
+        else -> "The nights and trips that already happened."
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(CardWhite)
+            .padding(horizontal = Space.card, vertical = Space.card)
+    ) {
+        PassFavicon(icon, size = 36.dp)
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = HomeType.section, color = Ink)
+            Spacer(modifier = Modifier.height(Space.tight))
+            Text(detail, style = HomeType.caption, color = Mute)
+        }
+    }
+}
+
+@Composable
+private fun EmptyEventPreview(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .shadow(10.dp, RoundedCornerShape(22.dp), clip = false)
+            .clip(RoundedCornerShape(22.dp))
+            .background(EventStage)
+            .clickable(onClick = onClick)
+            .padding(10.dp)
+            .semantics { contentDescription = "Add event ticket" }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(24.dp))
+                .clip(RoundedCornerShape(14.dp))
                 .background(CardWhite)
-                .padding(horizontal = Space.page, vertical = Space.section),
-            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                imageVector = Icons.Outlined.ConfirmationNumber,
-                contentDescription = null,
-                tint = Accent,
+            Row(
+                modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(SoftBlue),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Check,
+                        contentDescription = null,
+                        tint = Accent,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.size(8.dp))
+                Column {
+                    Text(
+                        text = "Congrats",
+                        color = Accent,
+                        fontFamily = GeometricSansFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                    Text(
+                        text = "Event ticket",
+                        color = Mute,
+                        fontFamily = GeometricSansFamily,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+            NotchTicketPerforation(
+                notchColor = EventStage,
+                dashColor = Mute.copy(alpha = 0.45f),
+                bandHeight = 14.dp,
+                dashInset = 10.dp
+            )
+            Box(
                 modifier = Modifier
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(SoftBlue)
-                    .padding(14.dp)
-            )
-            Spacer(modifier = Modifier.height(Space.block))
-            Text("No passes yet", style = HomeType.section, color = RouteBlue)
-            Spacer(modifier = Modifier.height(Space.gap))
-            Text(
-                text = "Add an event ticket or an SGR booking SMS.",
-                style = HomeType.body,
-                color = Mute,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(Space.block))
-            Button(
-                onClick = onEventTicket,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(26.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Outlined.Wallet, contentDescription = null)
-                Spacer(modifier = Modifier.size(8.dp))
-                Text("Event ticket")
+                EmptyPreviewQr()
             }
-            Spacer(modifier = Modifier.height(Space.gap))
-            OutlinedButton(
-                onClick = onSgrSms,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(26.dp)
+        }
+    }
+}
+
+@Composable
+private fun EmptySgrPreview(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .shadow(10.dp, RoundedCornerShape(22.dp), clip = false)
+            .clip(RoundedCornerShape(22.dp))
+            .background(SgrStage)
+            .clickable(onClick = onClick)
+            .padding(10.dp)
+            .semantics { contentDescription = "Add SGR booking SMS" }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(CardWhite)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Icon(Icons.Outlined.Sms, contentDescription = null)
-                Spacer(modifier = Modifier.size(8.dp))
-                Text("SGR booking SMS")
+                Text(
+                    text = "NBO",
+                    color = Ink,
+                    fontFamily = GeometricSansFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+                Icon(
+                    imageVector = Icons.Outlined.Train,
+                    contentDescription = null,
+                    tint = Accent,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = "MSA",
+                    color = Ink,
+                    fontFamily = GeometricSansFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
             }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(SgrMint)
+                    .padding(horizontal = 10.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text = "SGR",
+                    color = Ink,
+                    fontFamily = GeometricSansFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 10.sp
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            NotchTicketPerforation(
+                notchColor = SgrStage,
+                dashColor = Mute.copy(alpha = 0.45f),
+                bandHeight = 14.dp,
+                dashInset = 10.dp
+            )
+            EmptyPreviewBarcode(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(36.dp)
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyPreviewQr() {
+    val cells = remember {
+        listOf(
+            1, 1, 1, 0, 1,
+            1, 0, 1, 1, 1,
+            1, 1, 0, 1, 0,
+            0, 1, 1, 0, 1,
+            1, 0, 1, 1, 1
+        )
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        cells.chunked(5).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                row.forEach { on ->
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .background(if (on == 1) Ink else Color.Transparent)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyPreviewBarcode(modifier: Modifier = Modifier) {
+    val widths = remember { listOf(2, 1, 3, 1, 2, 2, 1, 3, 1, 2, 1, 3, 2, 1, 2, 3, 1, 2) }
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        widths.forEach { w ->
+            Box(
+                modifier = Modifier
+                    .width(w.dp)
+                    .fillMaxHeight()
+                    .background(Ink)
+            )
         }
     }
 }
 
 private enum class PassCategory(val label: String) {
     EVENTS("Events"),
-    SGR("SGR")
+    SGR("SGR");
+
+    val icon: ImageVector
+        get() = when (this) {
+            EVENTS -> Icons.Outlined.ConfirmationNumber
+            SGR -> Icons.Outlined.Train
+        }
 }
 
 private fun Ticket.passCategory(): PassCategory = when {
@@ -507,7 +853,7 @@ private fun Ticket.isOnDay(zone: ZoneId, day: LocalDate): Boolean {
 private sealed interface PassListItem {
     val key: String
 
-    data class Section(val title: String) : PassListItem {
+    data class Section(val title: String, val count: Int) : PassListItem {
         override val key: String = "section-$title"
     }
 
@@ -539,16 +885,14 @@ private fun buildPassList(
     )
     val items = mutableListOf<PassListItem>()
     if (heroes.isNotEmpty()) {
-        items += PassListItem.Section("Today")
+        items += PassListItem.Section("Today", heroes.size)
         heroes.forEach { items += PassListItem.TodayHero(it) }
     }
     PassCategory.entries.forEach { cat ->
         if (category != null && category != cat) return@forEach
         val rows = rest.filter { it.passCategory() == cat }.sortedWith(order)
         if (rows.isEmpty()) return@forEach
-        if (category == null || heroes.isNotEmpty()) {
-            items += PassListItem.Section(cat.label)
-        }
+        items += PassListItem.Section(cat.label, rows.size)
         rows.forEach { items += PassListItem.Pass(it) }
     }
     return items
@@ -573,6 +917,7 @@ private fun PassCategoryChips(
                 PassChip(
                     cat.label,
                     selected = selected == cat,
+                    icon = cat.icon,
                     onClick = { onSelect(cat) }
                 )
             }
@@ -584,28 +929,64 @@ private fun PassCategoryChips(
 private fun PassChip(
     label: String,
     selected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    icon: ImageVector? = null
 ) {
-    Text(
-        text = label,
-        style = HomeType.label,
-        color = if (selected) OnAccent else Ink,
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
             .background(if (selected) Accent else CardWhite)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp)
-    )
+    ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (selected) OnAccent else Accent,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+        }
+        Text(
+            text = label,
+            style = HomeType.label,
+            color = if (selected) OnAccent else Ink
+        )
+    }
 }
 
 @Composable
-private fun PassSectionLabel(title: String) {
-    Text(
-        text = title,
-        style = HomeType.label,
-        color = Mute,
-        modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp)
-    )
+private fun PassSectionHeader(
+    title: String,
+    count: Int
+) {
+    val icon = when (title) {
+        "Today" -> Icons.Outlined.CalendarMonth
+        PassCategory.SGR.label -> Icons.Outlined.Train
+        else -> Icons.Outlined.ConfirmationNumber
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = Space.block, bottom = Space.gap)
+    ) {
+        PassFavicon(icon, size = 36.dp)
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = title,
+            style = HomeType.section,
+            color = Ink,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = count.toString(),
+            style = HomeType.caption,
+            color = Mute
+        )
+    }
 }
 
 @Composable
@@ -681,6 +1062,13 @@ private fun TodayPassCard(
             Spacer(modifier = Modifier.size(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    PassFavicon(
+                        icon = ticket.passCategory().icon,
+                        fill = OnAccent.copy(alpha = 0.16f),
+                        tint = OnAccent,
+                        size = 22.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = ticket.passCategory().label,
                         style = HomeType.caption,
@@ -765,6 +1153,11 @@ private fun TicketListRow(
         ticket.isConfirmationOnly -> "Awaiting pass"
         else -> ticket.effectiveStatus().label()
     }
+    val rowIcon = when {
+        ticket.isConfirmationOnly -> Icons.Outlined.Sms
+        ticket.isRailTravel -> Icons.Outlined.Train
+        else -> Icons.Outlined.ConfirmationNumber
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -780,18 +1173,11 @@ private fun TicketListRow(
             .padding(horizontal = Space.card, vertical = Space.cardH),
         verticalAlignment = Alignment.CenterVertically
     ) {
-            Icon(
-            when {
-                ticket.isConfirmationOnly -> Icons.Outlined.Sms
-                else -> Icons.Outlined.ConfirmationNumber
-            },
-            contentDescription = null,
+        PassFavicon(
+            icon = rowIcon,
+            fill = if (used) Canvas else SoftBlue,
             tint = if (used) Mute else Accent,
-            modifier = Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(if (used) Canvas else SoftBlue)
-                .padding(10.dp)
+            size = 40.dp
         )
         Spacer(modifier = Modifier.size(Space.block))
         Column(modifier = Modifier.weight(1f)) {
@@ -833,47 +1219,83 @@ private fun TicketListRow(
 }
 
 @Composable
-private fun AddTicketChooserDialog(
-    onDismiss: () -> Unit,
+private fun AddPassSpeedDial(
+    expanded: Boolean,
+    onToggle: () -> Unit,
     onEventTicket: () -> Unit,
     onSgrSms: () -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add pass") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(Space.gap)) {
-                Text(
-                    text = "Event = one upload. SGR = booking SMS first.",
-                    style = HomeType.body,
-                    color = Mute
+    val rotation by animateFloatAsState(if (expanded) 45f else 0f, label = "addFab")
+    Column(
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn() + scaleIn(initialScale = 0.85f) + slideInVertically { it / 2 },
+            exit = fadeOut() + scaleOut(targetScale = 0.85f) + slideOutVertically { it / 2 }
+        ) {
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                SpeedDialAction(
+                    label = "SGR booking SMS",
+                    icon = Icons.Outlined.Train,
+                    onClick = onSgrSms
                 )
-                Button(
-                    onClick = onEventTicket,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Accent)
-                ) {
-                    Icon(Icons.Outlined.Wallet, contentDescription = null)
-                    Spacer(modifier = Modifier.size(8.dp))
-                    Text("Event ticket (photo / PDF / .pkpass)")
-                }
-                OutlinedButton(
-                    onClick = onSgrSms,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp)
-                ) {
-                    Icon(Icons.Outlined.Sms, contentDescription = null)
-                    Spacer(modifier = Modifier.size(8.dp))
-                    Text("SGR booking SMS")
-                }
+                SpeedDialAction(
+                    label = "Event ticket",
+                    icon = Icons.Outlined.ConfirmationNumber,
+                    onClick = onEventTicket
+                )
             }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
-    )
+        FloatingActionButton(
+            onClick = onToggle,
+            containerColor = Accent,
+            contentColor = OnAccent
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Add,
+                contentDescription = if (expanded) "Close" else "Add pass",
+                modifier = Modifier.rotate(rotation)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SpeedDialAction(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.padding(end = 8.dp)
+    ) {
+        Text(
+            text = label,
+            style = HomeType.caption,
+            color = Ink,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier
+                .shadow(6.dp, RoundedCornerShape(20.dp), clip = false)
+                .clip(RoundedCornerShape(20.dp))
+                .background(CardWhite)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+        )
+        SmallFloatingActionButton(
+            onClick = onClick,
+            containerColor = CardWhite,
+            contentColor = Accent
+        ) {
+            Icon(icon, contentDescription = label)
+        }
+    }
 }
 
 @Composable
@@ -1013,7 +1435,6 @@ fun TicketDetailScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var attaching by remember { mutableStateOf(false) }
     var showAttachScanner by remember { mutableStateOf(false) }
-    var showCameraGuide by remember { mutableStateOf(false) }
     var attachLeg by remember { mutableStateOf<BoardingLeg?>(null) }
     var showBoardingQrDialog by remember { mutableStateOf(false) }
 
@@ -1063,16 +1484,8 @@ fun TicketDetailScreen(
         }
     }
 
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        AppMetrics.cameraPermission(granted)
-        if (granted) {
-            showAttachScanner = true
-        } else {
-            error = "Camera permission is needed to scan a boarding pass."
-            attachLeg = null
-        }
+    val offerCamera = rememberCameraAccessOffer {
+        showAttachScanner = true
     }
 
     val documentPicker = rememberLauncherForActivityResult(
@@ -1098,26 +1511,11 @@ fun TicketDetailScreen(
 
     fun launchAttachScan(leg: BoardingLeg? = null) {
         attachLeg = leg
-        val granted = context.permissionGranted(Manifest.permission.CAMERA)
-        if (granted) {
+        if (context.permissionGranted(Manifest.permission.CAMERA)) {
             showAttachScanner = true
         } else {
-            showCameraGuide = true
+            offerCamera()
         }
-    }
-
-    if (showCameraGuide) {
-        PermissionGuideDialog(
-            lesson = PermissionLesson.Camera,
-            onAllow = {
-                showCameraGuide = false
-                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-            },
-            onNotNow = {
-                showCameraGuide = false
-                attachLeg = null
-            }
-        )
     }
 
     if (showAttachScanner) {
@@ -1228,16 +1626,9 @@ fun TicketDetailScreen(
             return@Scaffold
         }
 
-        val isReturnTrip = current.isReturnTrip
         val isRail = current.isRailTravel
         val outboundSnap = current.boardingSnapshot(BoardingLeg.OUTBOUND)
-        val returnSnap = current.boardingSnapshot(BoardingLeg.RETURN)
-
-        // Flight boarding keeps PDF417; SGR uses QR instead
-        val outboundPdf417 = rememberBoardingPdf417(if (isRail) null else outboundSnap)
-        val returnPdf417 = rememberBoardingPdf417(if (isRail) null else returnSnap)
         val outboundQr = rememberBoardingQr(if (isRail) outboundSnap else null)
-        val returnQr = rememberBoardingQr(if (isRail) returnSnap else null)
 
         // Event QR (non-travel)
         val eventGateCode = current.gateBarcodeValue.takeIf {
@@ -1265,38 +1656,19 @@ fun TicketDetailScreen(
         }
         val isUsed = displayStatus == TicketStatus.USED
         val bookingPdf417 = rememberHorizontalPdf417ImageBitmap(
-            bcbpPayload = when {
-                current.isTravelTicket && !isRail && current.barcodeValue.isNotBlank() ->
-                    current.barcodeValue
-                isRail -> {
-                    val ref = current.orderId?.takeIf { it.isNotBlank() }
-                        ?: current.barcodeValue
-                            .removePrefix("REF:")
-                            .removePrefix("ref:")
-                            .trim()
-                            .takeIf { it.isNotBlank() }
-                    ref?.let { "REF:$it" }
-                }
-                else -> null
+            bcbpPayload = if (isRail) {
+                val ref = current.orderId?.takeIf { it.isNotBlank() }
+                    ?: current.barcodeValue
+                        .removePrefix("REF:")
+                        .removePrefix("ref:")
+                        .trim()
+                        .takeIf { it.isNotBlank() }
+                ref?.let { "REF:$it" }
+            } else {
+                null
             },
             allowPlaceholder = true
         )
-        val bookingQrPayload = when {
-            !current.isTravelTicket || !isRail -> null
-            !current.orderId.isNullOrBlank() -> current.orderId
-            else -> current.barcodeValue
-                .removePrefix("REF:")
-                .removePrefix("ref:")
-                .trim()
-                .takeIf { it.isNotBlank() }
-        }
-        // Unused for rail booking stub (PDF417 only); kept for non-rail paths below
-        val bookingQr = rememberTicketQrBitmap(
-            value = bookingQrPayload.orEmpty(),
-            format = TicketBarcodeFormat.QR_CODE,
-            sizePx = 480
-        ).takeIf { !bookingQrPayload.isNullOrBlank() && !isRail }
-
         if (isRail) {
             Column(
                 modifier = Modifier
@@ -1486,61 +1858,13 @@ fun TicketDetailScreen(
                 Spacer(modifier = Modifier.height(Space.block))
 
                 if (current.isTravelTicket) {
-                    // Travel: booking first, boarding pass below
-                    SectionLabel("Booking ticket")
-                    Spacer(modifier = Modifier.height(Space.gap))
-                    BookingTicketStyleCard(
-                        ticket = current,
-                        pdf417 = bookingPdf417,
-                        qrBitmap = bookingQr,
-                        modifier = Modifier.fadeWhenUsed(isUsed),
-                        onChangeDate = if (!isUsed) {
-                            {
-                                pickEventDateTime(
-                                    view.context,
-                                    current.startsAtMillis
-                                ) { viewModel.setEventStartsAt(it) }
-                            }
-                        } else {
-                            null
-                        }
+                    Text(
+                        "This pass type is no longer available. You can delete it.",
+                        style = HomeType.body,
+                        color = Mute,
+                        textAlign = TextAlign.Center
                     )
-
-                    Spacer(modifier = Modifier.height(Space.block))
-                    TravelBoardingLegBlock(
-                        sectionLabel = if (isReturnTrip) "Outbound boarding" else "Boarding pass",
-                        headline = if (isReturnTrip) "Outbound Boarding Pass" else "Boarding Pass",
-                        snapshot = outboundSnap,
-                        pdf417 = outboundPdf417,
-                        qrBitmap = outboundQr,
-                        orderId = current.orderId,
-                        isUsed = isUsed,
-                        emptyHint = if (isReturnTrip) {
-                            "Import the outbound boarding pass when you have it."
-                        } else {
-                            "Import the boarding pass photo/PDF or scan the QR when you have it."
-                        },
-                        onImport = { launchAttachPicker(BoardingLeg.OUTBOUND) },
-                        onScan = { launchAttachScan(BoardingLeg.OUTBOUND) }
-                    )
-
-                    if (isReturnTrip) {
-                        Spacer(modifier = Modifier.height(Space.block))
-                        TravelBoardingLegBlock(
-                            sectionLabel = "Return boarding",
-                            headline = "Return Boarding Pass",
-                            snapshot = returnSnap,
-                            pdf417 = returnPdf417,
-                            qrBitmap = returnQr,
-                            orderId = current.orderId,
-                            isUsed = isUsed,
-                            emptyHint = "Import the return boarding pass when you have it.",
-                            onImport = { launchAttachPicker(BoardingLeg.RETURN) },
-                            onScan = { launchAttachScan(BoardingLeg.RETURN) }
-                        )
-                    }
                 } else {
-                    // Event: confirmed-style card (mirrors flight booking chrome)
                     EventTicketStyleCard(
                         ticket = current,
                         qrBitmap = gateQr,
@@ -1560,37 +1884,24 @@ fun TicketDetailScreen(
                 }
             }
 
-            if (!isUsed && current.canMarkUsedFromEventDay() && (
-                    !current.isTravelTicket ||
-                        current.hasBoardingPass ||
-                        (current.isReturnTrip && current.hasReturnBoardingPass)
+            if (!isUsed && !current.isTravelTicket && current.canMarkUsedFromEventDay()) {
+                Button(
+                    onClick = { viewModel.markUsed() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CardWhite,
+                        contentColor = Accent
                     )
-            ) {
-                if (isEventDetail) {
-                    Button(
-                        onClick = { viewModel.markUsed() },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp),
-                        shape = RoundedCornerShape(28.dp),
-                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = CardWhite,
-                            contentColor = Accent
-                        )
-                    ) {
-                        Text(
-                            "Mark as used",
-                            fontFamily = GeometricSansFamily,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                } else {
-                    OutlinedButton(
-                        onClick = { viewModel.markUsed() },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(26.dp)
-                    ) { Text("Mark as used") }
+                ) {
+                    Text(
+                        "Mark as used",
+                        fontFamily = GeometricSansFamily,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
             TextButton(
@@ -1654,22 +1965,6 @@ fun TicketDetailScreen(
 }
 
 @Composable
-private fun rememberBoardingPdf417(snapshot: BoardingPassSnapshot?): ImageBitmap? {
-    val code = snapshot?.barcodeValue?.takeIf { it.isNotBlank() } ?: return null
-    if (BookingConfirmationParser.isConfirmationPlaceholder(code)) return null
-    if (code.startsWith("ETKT:", ignoreCase = true)) return null
-    if (code.startsWith("BOARDING:", ignoreCase = true)) return null
-    val format = snapshot.barcodeFormat
-    val looksFlight = format == TicketBarcodeFormat.AZTEC ||
-        format == TicketBarcodeFormat.PDF_417 ||
-        snapshot.notes.orEmpty().contains("Boarding pass", ignoreCase = true) ||
-        code.startsWith("M1") ||
-        code.startsWith("M2")
-    if (!looksFlight) return null
-    return rememberHorizontalPdf417ImageBitmap(code)
-}
-
-@Composable
 private fun rememberBoardingQr(snapshot: BoardingPassSnapshot?): ImageBitmap? {
     val code = snapshot?.barcodeValue?.takeIf { it.isNotBlank() } ?: return null
     if (BookingConfirmationParser.isConfirmationPlaceholder(code)) return null
@@ -1679,151 +1974,6 @@ private fun rememberBoardingQr(snapshot: BoardingPassSnapshot?): ImageBitmap? {
         value = code,
         format = TicketBarcodeFormat.QR_CODE,
         sizePx = 480
-    )
-}
-
-@Composable
-private fun TravelBoardingLegBlock(
-    sectionLabel: String,
-    headline: String,
-    snapshot: BoardingPassSnapshot?,
-    pdf417: ImageBitmap?,
-    qrBitmap: ImageBitmap?,
-    orderId: String?,
-    isUsed: Boolean,
-    emptyHint: String,
-    onImport: () -> Unit,
-    onScan: () -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth().fadeWhenUsed(isUsed)) {
-    SectionLabel(sectionLabel)
-    Spacer(modifier = Modifier.height(Space.gap))
-    val barcode = qrBitmap ?: pdf417
-    when {
-        snapshot != null && barcode != null -> {
-            BoardingPassStyleCard(
-                snapshot = snapshot,
-                pdf417 = barcode,
-                orderId = orderId,
-                headline = headline,
-                barcodeIsQr = qrBitmap != null,
-                onReplace = if (!isUsed) onImport else null
-            )
-        }
-        snapshot != null -> {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .shadow(6.dp, RoundedCornerShape(24.dp), clip = false)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(CardWhite)
-                    .padding(Space.page),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = snapshot.title ?: headline,
-                    style = HomeType.rowTitle,
-                    color = Ink,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.recordingPrivacyCover(!snapshot.title.isNullOrBlank())
-                )
-                Spacer(modifier = Modifier.height(Space.block))
-                Text(
-                    "Couldn’t draw a code from that import — re-import a clearer stub photo or scan the QR.",
-                    style = HomeType.caption,
-                    color = Mute,
-                    textAlign = TextAlign.Center
-                )
-                if (!isUsed) {
-                    Spacer(modifier = Modifier.height(Space.block))
-                    TextButton(onClick = onImport) { Text("Replace boarding pass") }
-                    Spacer(modifier = Modifier.height(Space.gap))
-                    OutlinedButton(
-                        onClick = onScan,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp)
-                    ) {
-                        Icon(Icons.Outlined.QrCodeScanner, contentDescription = null)
-                        Spacer(modifier = Modifier.size(8.dp))
-                        Text("Scan boarding QR")
-                    }
-                }
-            }
-        }
-        !isUsed -> {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .shadow(6.dp, RoundedCornerShape(24.dp), clip = false)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(CardWhite)
-                    .padding(Space.page),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(
-                    Icons.Outlined.ConfirmationNumber,
-                    contentDescription = null,
-                    tint = Mute,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(SoftBlue.copy(alpha = 0.5f))
-                        .padding(12.dp)
-                )
-                Spacer(modifier = Modifier.height(Space.block))
-                Text("Not attached yet", style = HomeType.rowTitle, color = Ink)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    emptyHint,
-                    style = HomeType.caption,
-                    color = Mute,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(Space.block))
-                Button(
-                    onClick = onImport,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Accent)
-                ) {
-                    Icon(Icons.Outlined.Wallet, contentDescription = null)
-                    Spacer(modifier = Modifier.size(8.dp))
-                    Text("Import boarding pass")
-                }
-                Spacer(modifier = Modifier.height(Space.gap))
-                OutlinedButton(
-                    onClick = onScan,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp)
-                ) {
-                    Icon(Icons.Outlined.QrCodeScanner, contentDescription = null)
-                    Spacer(modifier = Modifier.size(8.dp))
-                    Text("Scan boarding QR")
-                }
-            }
-        }
-        else -> {
-            Text(
-                "No boarding pass on this ticket yet.",
-                style = HomeType.body,
-                color = Mute,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-    }
-}
-
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text = text,
-        style = HomeType.label,
-        color = Mute,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp),
-        textAlign = TextAlign.Start
     )
 }
 
