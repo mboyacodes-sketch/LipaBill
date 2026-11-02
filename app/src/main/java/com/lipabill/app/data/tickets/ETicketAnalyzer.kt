@@ -29,8 +29,8 @@ import kotlinx.coroutines.withContext
 /**
  * Reads a PDF or image e-ticket, extracts barcodes + text, and builds a [TicketImport].
  *
- * For PDFs we prefer embedded text (airline receipts are text-based). OCR on a
- * rendered page is the fallback — bitmaps are filled white first so ML Kit can read them.
+ * For PDFs we prefer embedded text. OCR on a rendered page is the fallback —
+ * bitmaps are filled white first so ML Kit can read them.
  */
 object ETicketAnalyzer {
 
@@ -66,9 +66,8 @@ object ETicketAnalyzer {
                 textParts += pdfText
             }
 
-            // Boarding-pass photos: always OCR (+ rotate) even if PDF text exists (rare)
-            val forceOcr = kind == TicketDocumentKind.BOARDING_PASS ||
-                kind == TicketDocumentKind.SGR_TICKET ||
+            // SGR / event photos: always OCR (+ rotate) even if PDF text exists (rare)
+            val forceOcr = kind == TicketDocumentKind.SGR_TICKET ||
                 kind == TicketDocumentKind.EVENT ||
                 pdfText.length < 40
 
@@ -84,8 +83,7 @@ object ETicketAnalyzer {
                         try {
                             val rotCodes = scanBarcodes(rotated)
                             val rotOcr = recognizeTextDetailed(rotated)
-                            val betterCodes = rotCodes.isNotEmpty() &&
-                                (pageBarcodes.isEmpty() || kind == TicketDocumentKind.BOARDING_PASS)
+                            val betterCodes = rotCodes.isNotEmpty() && pageBarcodes.isEmpty()
                             val betterText = (rotOcr.text.length > (pageOcr?.text?.length ?: 0)) ||
                                 looksReadableTicket(rotOcr.text)
                             if (betterCodes || betterText) {
