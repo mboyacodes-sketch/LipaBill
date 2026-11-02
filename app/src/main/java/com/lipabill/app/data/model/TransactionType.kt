@@ -10,15 +10,15 @@ enum class TransactionType {
     DEPOSIT,
     /** A prior payment was reversed and the amount credited back. */
     REVERSED,
-    /** Fuliza overdraft draw. Outstanding sits on the Fuliza balance, not M-PESA. */
+    /** Fuliza overdraft draw. Outstanding sits on the Fuliza balance, not the wallet. */
     FULIZA,
-    /** Money moved from M-PESA into the user's own savings, such as M-Shwari. */
+    /** Money moved from the wallet into the user's own savings, such as M-Shwari. */
     SAVINGS,
-    /** Airtime bought from the M-PESA balance. */
+    /** Airtime bought from the wallet balance. */
     AIRTIME,
     UNKNOWN;
 
-    /** Money leaving the M-PESA wallet. Unrecognized receipts stay on the expense side. */
+    /** Money leaving the wallet. Unrecognized receipts stay on the expense side. */
     fun isOutgoing(): Boolean = when (this) {
         SENT,
         PAYBILL,
