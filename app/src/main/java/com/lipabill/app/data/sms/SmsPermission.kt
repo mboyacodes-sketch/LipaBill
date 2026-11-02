@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 
+/** READ_SMS + RECEIVE_SMS for confirmation SMS from wallets and banks the user enabled. */
 fun Context.hasMpesaSmsPermission(): Boolean {
     val read = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS)
     val receive = ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS)
