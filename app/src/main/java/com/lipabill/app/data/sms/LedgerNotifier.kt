@@ -25,8 +25,8 @@ class LedgerNotifier(private val context: Context) {
         }
         context.postLipaBill(
             channelId = CHANNEL_ID,
-            channelName = "M-Pesa activity",
-            channelDescription = "A confirmation when M-Pesa activity arrives on this phone.",
+            channelName = "Money activity",
+            channelDescription = "A confirmation when money activity arrives on this phone.",
             importance = NotificationManager.IMPORTANCE_HIGH,
             notifyId = tx.code.hashCode(),
             title = title,
@@ -47,6 +47,7 @@ class LedgerNotifier(private val context: Context) {
     }
 
     companion object {
+        /** Historical id. The user-visible name is "Money activity". */
         const val CHANNEL_ID = "mpesa_activity_alert"
         private const val LEGACY_CHANNEL_ID = "mpesa_activity"
 
