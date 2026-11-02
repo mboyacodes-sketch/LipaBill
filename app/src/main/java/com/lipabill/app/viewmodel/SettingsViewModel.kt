@@ -3,8 +3,11 @@ package com.lipabill.app.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.lipabill.app.BuildConfig
 import com.lipabill.app.LipaBillApp
+import com.lipabill.app.data.model.AppRegion
+import com.lipabill.app.data.model.MoneySource
+import com.lipabill.app.data.model.providerCatalog
+import com.lipabill.app.data.model.toggleLedgerSource
 import com.lipabill.app.data.local.entity.RepeatAttemptEntity
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
 import com.lipabill.app.ussd.AccessibilityHelper
@@ -18,6 +21,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 
 data class SettingsUiState(
+    val region: AppRegion = AppRegion.DEFAULT,
+    val enabledSources: Set<MoneySource> = AppRegion.DEFAULT.sources,
+    val providerChoices: List<MoneySource> = providerCatalog(AppRegion.DEFAULT),
     val timeoutMinutes: Int = 2,
     val fontSizeSp: Int = 12,
     val alwaysShowBalance: Boolean = false,
@@ -51,6 +57,21 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             AccessibilityPreferred.markUserTurningOn(app.securePreferences)
         }
         _ui.value = state
+    }
+
+    fun setRegion(region: AppRegion) {
+        app.setAppRegion(region, rescan = true)
+        refresh()
+    }
+
+    fun toggleProvider(source: MoneySource) {
+        val next = toggleLedgerSource(
+            _ui.value.enabledSources,
+            source,
+            _ui.value.region.sources
+        )
+        app.setEnabledSources(next, rescan = true)
+        refresh()
     }
 
     fun setTimeoutMinutes(minutes: Int) {
@@ -118,18 +139,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         auth.lockNow()
     }
 
-    fun openAccessibilitySettings() {
-        AccessibilityHelper.openAppAccessibilityDetails(getApplication())
-    }
-
-    /** Profile Turn on/off — remember intent so updates can prompt re-enable. */
+    /** Settings Turn on/off — remember intent so updates can prompt re-enable. */
     fun onAccessibilityToggleConfirmed(currentlyEnabled: Boolean) {
         if (currentlyEnabled) {
             AccessibilityPreferred.markUserTurningOff(app.securePreferences)
         } else {
             AccessibilityPreferred.markUserTurningOn(app.securePreferences)
         }
-        openAccessibilitySettings()
+        AccessibilityHelper.openAppAccessibilityDetails(getApplication())
     }
 
     private fun buildState(): SettingsUiState {
@@ -143,12 +160,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val selected = lines.firstOrNull { it.subscriptionId == preferred && it.isSafaricom }
             ?.subscriptionId
             ?: SimLineHelper.findSafaricom(lines)?.subscriptionId
+        val region = app.securePreferences.appRegion
         return SettingsUiState(
+            region = region,
+            enabledSources = app.enabledSources.value,
+            providerChoices = providerCatalog(region),
             timeoutMinutes = auth.timeoutMinutes(),
             fontSizeSp = app.securePreferences.uiFontSizeSp,
             alwaysShowBalance = app.securePreferences.alwaysShowBalance,
             favouritesSectionEnabled = app.securePreferences.favouritesSectionEnabled,
-            recordingPrivacy = BuildConfig.DEBUG && app.securePreferences.recordingPrivacy,
+            recordingPrivacy = app.securePreferences.recordingPrivacy,
             darkMode = app.securePreferences.darkMode,
             challengesEnabled = app.securePreferences.challengesEnabled,
             weeklyCheckInEnabled = app.securePreferences.weeklyCheckInEnabled,
