@@ -11,30 +11,27 @@ import androidx.compose.runtime.setValue
 import com.lipabill.app.ussd.AccessibilityHelper
 
 /**
- * Coach before leaving LipaBill for the system Accessibility toggle.
- * Turning on uses the full AccessibilityService prominent disclosure (alone).
+ * Confirm before leaving LipaBill to turn the AccessibilityService off.
+ * Turning on uses the consent wizard, not this coach.
  */
 @Composable
 fun AccessibilityToggleCoachDialog(
-    currentlyEnabled: Boolean,
     onConfirmOpen: () -> Unit,
     onDismiss: () -> Unit,
     dismissLabel: String = "Cancel"
 ) {
-    if (!currentlyEnabled) {
-        AccessibilityServiceDisclosureDialog(
-            onContinueToSettings = {
-                onDismiss()
-                onConfirmOpen()
-            },
-            onNotNow = onDismiss
-        )
-        return
-    }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Turn off LipaBill") },
-        text = { Text(AccessibilityHelper.coachMessage(turningOn = false)) },
+        title = { Text("Turn off ${AccessibilityServiceDisclosure.SERVICE_LABEL}") },
+        text = {
+            Text(
+                "Send, Pay, and Repeat stay off until this is on again. " +
+                    AccessibilityHelper.coachMessage(
+                        turningOn = false,
+                        serviceLabel = AccessibilityServiceDisclosure.SERVICE_LABEL
+                    )
+            )
+        },
         confirmButton = {
             TextButton(
                 onClick = {
@@ -64,11 +61,10 @@ fun rememberAccessibilityToggleCoach(
     var showCoach by remember { mutableStateOf(false) }
     return AccessibilityToggleCoachState(
         showCoach = showCoach,
-        requestToggle = { showCoach = true },
+        requestToggle = { if (currentlyEnabled) showCoach = true },
         Dialog = {
             if (showCoach) {
                 AccessibilityToggleCoachDialog(
-                    currentlyEnabled = currentlyEnabled,
                     onConfirmOpen = onOpenSettings,
                     onDismiss = { showCoach = false }
                 )
