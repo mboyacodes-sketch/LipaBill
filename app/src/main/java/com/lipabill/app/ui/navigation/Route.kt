@@ -6,8 +6,15 @@ sealed class Route(val path: String) {
     data object List : Route("list")
     data object Profile : Route("profile")
     data object Settings : Route("settings")
-    data object Permission : Route("permission")
     data object FirstRunSetup : Route("first_run_setup")
+    /** Later SMS / Phone / Accessibility consent — same pages as first-run. */
+    data object Consent : Route("consent/{page}") {
+        const val pattern = "consent/{page}"
+        fun of(page: String) = "consent/$page"
+        const val SMS = "sms"
+        const val PHONE = "phone"
+        const val ACCESSIBILITY = "accessibility"
+    }
     data object Metrics : Route("metrics")
     data object Tickets : Route("tickets")
     data object Habits : Route("habits")
