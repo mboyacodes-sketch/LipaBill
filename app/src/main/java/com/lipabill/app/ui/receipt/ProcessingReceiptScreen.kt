@@ -1,8 +1,5 @@
 package com.lipabill.app.ui.receipt
 
-import android.Manifest
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -68,12 +65,11 @@ import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.tickets.PunchedTicketPerforation
 import com.lipabill.app.ui.tickets.TicketDetailsFrame
 import com.lipabill.app.ui.tickets.TicketMetaField
+import com.lipabill.app.MainActivity
 import com.lipabill.app.ui.theme.Accent
-import com.lipabill.app.ui.permissions.PermissionGuideDialog
-import com.lipabill.app.ui.permissions.PermissionLesson
-import com.lipabill.app.ui.permissions.onNotificationPermission
-import com.lipabill.app.ui.permissions.onNotificationsDismissed
+import com.lipabill.app.ui.permissions.FirstRunPage
 import com.lipabill.app.ui.permissions.shouldOfferPostNotifications
+import com.lipabill.app.ui.util.findComponentActivity
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.OnAccent
@@ -132,14 +128,11 @@ fun ProcessingReceiptScreen(
 ) {
     val app = LocalContext.current.applicationContext as LipaBillApp
     val context = LocalContext.current
-    var askNotifications by remember { mutableStateOf(false) }
-    val notificationLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        onNotificationPermission(granted)
-    }
+    val activity = context.findComponentActivity() as? MainActivity
     LaunchedEffect(Unit) {
-        askNotifications = context.shouldOfferPostNotifications()
+        if (context.shouldOfferPostNotifications()) {
+            activity?.askConsent(FirstRunPage.Notifications)
+        }
     }
     val snapshot = remember(auditId) { PendingPaymentReceipt.peek(auditId) }
     val attempt by app.repeatRepository.observeById(auditId)
@@ -163,7 +156,7 @@ fun ProcessingReceiptScreen(
     val amount = matchedTx?.amount ?: snapshot?.amount ?: attempt?.amount
     val smsName = matchedTx?.counterpartyName?.trim()?.takeIf { it.isNotBlank() }
     val dialName = snapshot?.counterpartyName ?: attempt?.counterpartyName
-    // Prefer M-Pesa SMS name when the dial was a bare number / unknown contact.
+    // Prefer the confirmation SMS name when the dial was a bare number / unknown contact.
     val name = when {
         smsName != null && !isPhoneLikeName(smsName) -> smsName
         smsName != null && (dialName == null || isPhoneLikeName(dialName)) -> smsName
@@ -226,9 +219,9 @@ fun ProcessingReceiptScreen(
     }
     val headerSubtitle = when (tag) {
         ReceiptTag.DONE ->
-            "M-Pesa confirmation received"
+            "Confirmation received"
         ReceiptTag.INTERRUPTED ->
-            "Automation stopped — check M-Pesa on your phone"
+            "Automation stopped — check the payment on your phone"
         ReceiptTag.CANCELLED ->
             "This payment was cancelled"
         ReceiptTag.PROCESSING -> when (attempt?.outcome) {
@@ -366,19 +359,6 @@ fun ProcessingReceiptScreen(
                 Spacer(modifier = Modifier.height(Space.section))
             }
         }
-    }
-    if (askNotifications) {
-        PermissionGuideDialog(
-            lesson = PermissionLesson.Notifications,
-            onAllow = {
-                askNotifications = false
-                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            },
-            onNotNow = {
-                askNotifications = false
-                onNotificationsDismissed()
-            }
-        )
     }
 }
 
