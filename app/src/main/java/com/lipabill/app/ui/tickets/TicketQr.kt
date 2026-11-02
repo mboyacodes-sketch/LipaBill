@@ -55,72 +55,7 @@ fun encodeTicketBarcode(
             }
         }
     }
-    if (format == TicketBarcodeFormat.AZTEC) {
-        return encodeAztecBoardingPass(value, sizePx)
-    }
     return encodeWithZxing(value, format.toZxing(), sizePx, fg, bg)
-}
-
-/**
- * Flight boarding pass only — **Aztec via ZXing, no QR fallback**.
- * Encodes the IATA BCBP payload exactly as on the pass (scanned or rebuilt).
- */
-private fun encodeAztecBoardingPass(
-    bcbpPayload: String,
-    sizePx: Int = 512
-): ImageBitmap? {
-    val raw = bcbpPayload.trim()
-    if (raw.isEmpty()) return null
-    // Never draw ETKT:/BOARDING: stubs as if they were gate codes
-    if (raw.startsWith("ETKT:", ignoreCase = true) ||
-        raw.startsWith("BOARDING:", ignoreCase = true) ||
-        raw.startsWith("REF:", ignoreCase = true)
-    ) {
-        Log.w(TAG, "refusing non-BCBP placeholder for Aztec")
-        return null
-    }
-
-    val sizes = listOf(sizePx, 640, 800, 1024).distinct().sorted()
-    for (size in sizes) {
-        val matrix = encodeAztecMatrix(raw, size) ?: continue
-        return bitMatrixToImage(
-            matrix,
-            quietZonePx = (size * 0.06f).toInt().coerceIn(8, 24)
-        )
-    }
-    Log.w(TAG, "Aztec encode failed for payload len=${raw.length}")
-    return null
-}
-
-private fun encodeAztecMatrix(value: String, sizePx: Int): BitMatrix? {
-    val hintSets = listOf(
-        // ~23% EC — common for airline mobile boarding passes
-        mapOf(
-            EncodeHintType.CHARACTER_SET to "ISO-8859-1",
-            EncodeHintType.ERROR_CORRECTION to 23,
-            EncodeHintType.MARGIN to 0
-        ),
-        mapOf(
-            EncodeHintType.CHARACTER_SET to "ISO-8859-1",
-            EncodeHintType.MARGIN to 0
-        ),
-        mapOf(EncodeHintType.MARGIN to 0),
-        emptyMap<EncodeHintType, Any>()
-    )
-    for (hints in hintSets) {
-        runCatching {
-            return MultiFormatWriter().encode(
-                value,
-                BarcodeFormat.AZTEC,
-                sizePx,
-                sizePx,
-                hints.ifEmpty { null }
-            )
-        }.onFailure { t ->
-            Log.d(TAG, "Aztec attempt failed size=$sizePx: ${t.message}")
-        }
-    }
-    return null
 }
 
 private fun encodeWithZxing(
