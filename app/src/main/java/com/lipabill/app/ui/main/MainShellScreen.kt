@@ -1,11 +1,6 @@
 package com.lipabill.app.ui.main
 
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.lipabill.app.data.repository.SendContact
@@ -29,29 +24,21 @@ fun MainShellScreen(
     onOpenProfile: () -> Unit = {},
     onOpenHabits: () -> Unit = {}
 ) {
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0)
-    ) { innerPadding ->
-        TransactionListScreen(
-            viewModel = listVm,
-            openReceipt = openReceipt,
-            onReceiptOpened = onReceiptOpened,
-            onRepeatTransaction = onRepeatTransaction,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .navigationBarsPadding(),
-            onSend = onOpenSend,
-            onSendTo = onOpenSendTo,
-            onReceive = onOpenPay,
-            onExchange = onOpenMetrics,
-            onTickets = onOpenTickets,
-            onRequestSms = onRequestSms,
-            onRescan = { listVm.rescanInbox() },
-            onOpenSettings = onOpenSettings,
-            onOpenProfile = onOpenProfile,
-            onOpenHabits = onOpenHabits
-        )
-    }
+    TransactionListScreen(
+        viewModel = listVm,
+        openReceipt = openReceipt,
+        onReceiptOpened = onReceiptOpened,
+        onRepeatTransaction = onRepeatTransaction,
+        modifier = Modifier.fillMaxSize(),
+        onSend = onOpenSend,
+        onSendTo = onOpenSendTo,
+        onReceive = onOpenPay,
+        onExchange = onOpenMetrics,
+        onTickets = onOpenTickets,
+        onRequestSms = onRequestSms,
+        onRescan = { listVm.rescanInbox() },
+        onOpenSettings = onOpenSettings,
+        onOpenProfile = onOpenProfile,
+        onOpenHabits = onOpenHabits
+    )
 }
