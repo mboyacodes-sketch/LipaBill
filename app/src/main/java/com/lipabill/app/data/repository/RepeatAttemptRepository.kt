@@ -33,10 +33,6 @@ class RepeatAttemptRepository(
             )
         }
 
-    suspend fun getById(id: Long): RepeatAttemptEntity? = withContext(Dispatchers.IO) {
-        dao.getById(id)
-    }
-
     suspend fun finish(id: Long, outcome: RepeatOutcome, detail: String? = null) =
         withContext(Dispatchers.IO) {
             dao.updateOutcome(id, outcome, detail)
