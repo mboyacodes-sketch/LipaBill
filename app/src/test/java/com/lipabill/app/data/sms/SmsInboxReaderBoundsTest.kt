@@ -1,5 +1,6 @@
 package com.lipabill.app.data.sms
 
+import com.lipabill.app.data.model.AppRegion
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -25,7 +26,10 @@ class SmsInboxReaderBoundsTest {
             newerThanMillis = null
         )
         assertFalse(selection.contains("date >"))
-        assertEquals(listOf("%MPESA%", "%M-PESA%", "%Confirmed%"), args.toList())
+        val likes = AppRegion.KENYA.inboxAddressLikes
+        assertEquals(likes + listOf("%Confirmed%"), args.toList())
+        assertTrue(likes.contains("%MPESA%"))
+        assertTrue(likes.contains("%KCB%"))
     }
 
     @Test
