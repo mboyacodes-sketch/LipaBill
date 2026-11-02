@@ -2,14 +2,17 @@ package com.lipabill.app.data.repository
 
 import com.lipabill.app.data.local.dao.TransactionDao
 import com.lipabill.app.data.local.entity.TransactionEntity
+import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.prefs.SecurePreferences
+import com.lipabill.app.data.parser.KenyanConfirmationParser
 import com.lipabill.app.data.parser.MpesaSmsParser
+import com.lipabill.app.data.model.MoneySource
+import com.lipabill.app.data.sms.ConfirmationIngestion
 import com.lipabill.app.data.sms.InboxScan
 import com.lipabill.app.data.sms.LedgerNotifier
 import com.lipabill.app.data.sms.MpesaSmsFilter
-import com.lipabill.app.data.sms.MpesaSmsIngestion
 import com.lipabill.app.data.sms.SmsInboxReader
 import com.lipabill.app.ussd.UssdMenuBuilder
 import kotlinx.coroutines.Dispatchers
@@ -83,7 +86,7 @@ class TransactionRepository(
         limit: Int = 12
     ): Flow<List<MerchantHit>> = merchantDirectory.observeSearch(type, query, limit)
 
-    /** Full history for one ledger. M-Pesa and Fuliza are not mixed in this query. */
+    /** Full history for one ledger. Money and Fuliza are not mixed in this query. */
     fun observeWallet(fuliza: Boolean): Flow<List<MpesaTransaction>> =
         enrichList(dao.observeWallet(if (fuliza) 1 else 0))
 
@@ -98,7 +101,7 @@ class TransactionRepository(
         }.flowOn(Dispatchers.Default)
 
     /**
-     * Notification taps prefer the stored row id, then the M-Pesa confirmation code
+     * Notification taps prefer the stored row id, then the confirmation code
      * when that id is missing or belongs to a different payment.
      */
     suspend fun resolveReceiptId(id: Long?, code: String?): Long? = withContext(Dispatchers.IO) {
@@ -112,10 +115,20 @@ class TransactionRepository(
 
     suspend fun upsert(tx: MpesaTransaction): Boolean = withContext(Dispatchers.IO) {
         // Skip non-confirmation SMS (promos, PIN notices, etc.)
-        if (tx.rawBody.isNotBlank() && !MpesaSmsFilter.isTransactionConfirmation(tx.rawBody)) {
+        if (tx.rawBody.isNotBlank() &&
+            !ConfirmationIngestion.shouldAcceptBody(
+                tx.source,
+                tx.rawBody,
+                securePreferences.appRegion
+            )
+        ) {
             return@withContext false
         }
-        val enriched = merchantDirectory.enrichIncomingSms(tx)
+        val enriched = if (tx.source == MoneySource.MPESA) {
+            merchantDirectory.enrichIncomingSms(tx)
+        } else {
+            tx
+        }
         val withPhone = enrichSingleFromDirectory(enriched)
         val rowId = dao.insertIgnore(TransactionEntity.fromDomain(withPhone))
         if (rowId != -1L) {
@@ -127,6 +140,7 @@ class TransactionRepository(
         }
         // Already present — refresh money fields from the latest parse (fixes bad amounts).
         dao.updateParsedMoneyByCode(
+            source = withPhone.source,
             code = withPhone.code,
             amount = withPhone.amount,
             balance = withPhone.balance,
@@ -160,26 +174,46 @@ class TransactionRepository(
             linkPhonesByName()
             return 0
         }
-        val since = InboxScan.newerThanMillis(
-            historyImported = securePreferences.inboxHistoryImported,
-            highWaterMillis = securePreferences.inboxHighWaterMillis
+        val fullHistory = !securePreferences.walletRailsInboxScanDone
+        val since = if (fullHistory) {
+            null
+        } else {
+            InboxScan.newerThanMillis(
+                historyImported = securePreferences.inboxHistoryImported,
+                highWaterMillis = securePreferences.inboxHighWaterMillis
+            )
+        }
+        val region = securePreferences.appRegion
+        val enabled = securePreferences.enabledLedgerSources(region)
+        val incoming = inboxReader.readMessages(
+            newerThanMillis = since,
+            region = region,
+            enabled = enabled
         )
-        val incoming = inboxReader.readMessages(newerThanMillis = since)
-        val known = dao.allCodes().toHashSet()
+        val known = dao.allSourceCodes().toHashSet()
         var newestSeen = securePreferences.inboxHighWaterMillis
         var directory: Map<String, String>? = null
         val pending = ArrayList<MpesaTransaction>()
         for (sms in incoming) {
             if (sms.dateMillis > newestSeen) newestSeen = sms.dateMillis
-            val quickCode = MpesaSmsParser.receiptCode(sms.body)
-            if (quickCode != null && quickCode in known) continue
-            val parsed = MpesaSmsIngestion.acceptAndParse(
+            val source = MoneySource.fromSender(sms.address, region) ?: continue
+            val quickCode = if (source == MoneySource.MPESA && region == AppRegion.KENYA) {
+                MpesaSmsParser.receiptCode(sms.body)
+            } else {
+                KenyanConfirmationParser.receiptCode(sms.body)
+            }
+            if (quickCode != null && "${source.name}:$quickCode" in known) continue
+            val parsed = ConfirmationIngestion.acceptAndParse(
                 sms.address,
                 sms.body,
-                sms.dateMillis
+                sms.dateMillis,
+                region,
+                enabled
             ) ?: continue
-            if (!known.add(parsed.code)) continue
-            val enriched = if (InboxScan.mayMatchPendingDial(parsed.timestampMillis)) {
+            if (!known.add(ConfirmationIngestion.sourceKey(parsed))) continue
+            val enriched = if (parsed.source == MoneySource.MPESA &&
+                InboxScan.mayMatchPendingDial(parsed.timestampMillis)
+            ) {
                 merchantDirectory.enrichIncomingSms(parsed)
             } else {
                 parsed
@@ -207,6 +241,9 @@ class TransactionRepository(
         }
         securePreferences.smsBackfillDone = true
         securePreferences.markInboxCaughtUp(newestSeen)
+        if (fullHistory) {
+            securePreferences.walletRailsInboxScanDone = true
+        }
         if (inserted > 0) {
             linkPhonesByName()
             afterInsert?.invoke()
@@ -243,10 +280,11 @@ class TransactionRepository(
         fixed
     }
 
-    suspend fun repairParsedAmounts(): Int = withContext(Dispatchers.IO) {
+    private suspend fun repairParsedAmounts(): Int = withContext(Dispatchers.IO) {
         val rows = dao.getAllForAmountRepair()
         var fixed = 0
         for (row in rows) {
+            if (row.source != MoneySource.MPESA) continue
             if (row.rawBody.isBlank()) continue
             if (!MpesaSmsFilter.isTransactionConfirmation(row.rawBody)) continue
             val reparsed = MpesaSmsParser.parse(row.rawBody, row.timestampMillis)
@@ -276,10 +314,11 @@ class TransactionRepository(
         fixed
     }
 
-    suspend fun reclassifySavings(): Int = withContext(Dispatchers.IO) {
+    private suspend fun reclassifySavings(): Int = withContext(Dispatchers.IO) {
         val rows = dao.getAllForClassification()
         var fixed = 0
         for (row in rows) {
+            if (row.source != MoneySource.MPESA) continue
             if (row.rawBody.isBlank()) continue
             if (MpesaSmsFilter.isBalanceEnquiry(row.rawBody)) {
                 dao.deleteByIds(listOf(row.id))
@@ -320,10 +359,11 @@ class TransactionRepository(
         fixed
     }
 
-    suspend fun reclassifyUnknownParties(): Int = withContext(Dispatchers.IO) {
+    private suspend fun reclassifyUnknownParties(): Int = withContext(Dispatchers.IO) {
         val rows = dao.getAllForClassification()
         var fixed = 0
         for (row in rows) {
+            if (row.source != MoneySource.MPESA) continue
             if (row.type != TransactionType.UNKNOWN) continue
             if (row.rawBody.isBlank()) continue
             if (!MpesaSmsFilter.isTransactionConfirmation(row.rawBody)) continue
@@ -390,7 +430,7 @@ class TransactionRepository(
     }
 
     /**
-     * One-time cleanup of rows that are not real Confirmed + M-PESA balance SMS.
+     * One-time cleanup of rows that are not money confirmation SMS.
      * Manual/synthetic codes are kept. Does not wipe the database or touch
      * confirmation rows. Only forces a re-scan when something was actually removed.
      */
@@ -406,12 +446,12 @@ class TransactionRepository(
         removed
     }
 
-    suspend fun purgeNonConfirmations(): Int = withContext(Dispatchers.IO) {
+    private suspend fun purgeNonConfirmations(): Int = withContext(Dispatchers.IO) {
         val doomed = dao.getAllForPurge()
             .filter { row ->
                 val code = row.code
                 if (code.startsWith("MANUAL-") || code.startsWith("PROBE")) return@filter false
-                !MpesaSmsFilter.isTransactionConfirmation(row.rawBody)
+                !ConfirmationIngestion.looksLikeStoredConfirmation(row.source, row.rawBody)
             }
             .map { it.id }
         if (doomed.isEmpty()) return@withContext 0
