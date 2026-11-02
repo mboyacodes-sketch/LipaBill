@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.ussd.PaymentManualDetails
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.ussd.UssdMenuBuilder
@@ -138,28 +139,17 @@ class RepeatTransactionViewModel(
 
     fun manualDetailsText(): String {
         val tx = transaction.value ?: return ""
-        val amount = parseAmount(_ui.value.amountInput)
-        val plan = amount?.let { UssdMenuBuilder.build(tx, amountOverride = it) }
-        val line = _ui.value.simLines.firstOrNull {
-            it.subscriptionId == _ui.value.selectedSubscriptionId
-        }
-        return buildString {
-            appendLine("Dial ${UssdMenuBuilder.USSD_CODE}")
-            if (line != null) appendLine("Use line: ${line.label}")
-            appendLine("Type: ${tx.type}")
-            appendLine("To: ${tx.counterpartyName ?: "—"} ${tx.counterpartyPhone ?: ""}")
-            val shownAmount = amount ?: tx.amount
-            if (shownAmount != null) {
-                appendLine("Amount: ${formatKesMoney(shownAmount)}")
-            } else {
-                appendLine("Amount: —")
-            }
-            if (plan != null) {
-                appendLine("Plan: ${plan.describe()}")
-            }
-            appendLine()
-            appendLine("Enter your M-Pesa PIN on LipaBill’s keypad when using automation. PIN is not stored.")
-        }
+        val state = _ui.value
+        val amount = parseAmount(state.amountInput)
+        return PaymentManualDetails.format(
+            typeLabel = tx.type.toString(),
+            toLine = listOfNotNull(tx.counterpartyName, tx.counterpartyPhone)
+                .joinToString(" ")
+                .ifBlank { "—" },
+            amountLabel = (amount ?: tx.amount)?.let { formatKesMoney(it) },
+            planDescription = PaymentManualDetails.planDescription(tx, amount),
+            simLabel = PaymentManualDetails.simLabel(state.simLines, state.selectedSubscriptionId)
+        )
     }
 
     companion object {
