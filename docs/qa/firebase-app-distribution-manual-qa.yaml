@@ -33,7 +33,7 @@ environment_matrix:
     - multi_sim
     - no_safaricom
     - no_sim
-    - contacts_denied
+    - contact_picker
     - play_protect_on
 
 prerequisites:
@@ -53,14 +53,14 @@ prerequisites:
       installs grey out the Accessibility toggle until Allow restricted settings.
     steps:
       - In LipaBill, open Accessibility setup (first-run Step 4, Profile, or Enable Repeat Payment).
-      - Tap "1 · Open Accessibility" and try turning on "LipaBill Repeat Payment".
+      - Tap "1 · Open Accessibility" and try turning on "LipaBill M-Pesa payments".
       - Expect "Restricted setting" / unavailable — that is expected.
       - Tap "2 · Open App info" → ⋮ or More → Allow restricted settings → confirm PIN/biometrics.
-      - Tap "3 · Open Accessibility again" → Installed apps → LipaBill Repeat Payment → On.
+      - Tap "3 · Open Accessibility again" → Installed apps → LipaBill M-Pesa payments → On.
       - Return to LipaBill → "I've enabled it — continue".
     expected:
-      - Profile / setup shows "LipaBill Accessibility is on" / "LipaBill Repeat Payment is enabled."
-      - Send and Pay are no longer grey solely due to Accessibility.
+      - Profile / setup shows "LipaBill Accessibility is on" / "LipaBill M-Pesa payments is enabled."
+      - Send and Pay open fully (not the Accessibility agreement).
 
   - id: PRE-03
     title: Unlock SMS restricted settings (Android 15–24)
@@ -71,7 +71,7 @@ prerequisites:
       - Permissions → SMS → Allow.
       - Return to LipaBill.
     expected:
-      - SMS permission granted; Rescan SMS can import M-Pesa confirmations.
+      - SMS permission granted; Rescan SMS can import Kenyan money confirmations.
 
   - id: PRE-04
     title: Runtime permissions for dial
@@ -203,7 +203,8 @@ suites:
           - Ensure SMS allowed (PRE-03 if needed).
           - Home → Rescan SMS (or pull to refresh).
         expected:
-          - M-Pesa confirmation SMS appear as transactions; balance updates when present.
+          - Matching confirmation SMS (M-Pesa and other Kenyan wallets/banks) appear as
+            transactions; M-Pesa Available balance updates when present.
 
       - id: SMS-02
         title: Continue without SMS
@@ -234,22 +235,24 @@ suites:
     name: Send / Pay hard gates
     cases:
       - id: GATES-01
-        title: Send/Pay grey when Accessibility off
+        title: Send/Pay stay off when Accessibility off
         priority: P0
         steps:
           - Disable LipaBill Accessibility in system settings.
-          - Return to home; tap dimmed Send or Pay.
+          - Return to home; tap Send or Pay.
         expected:
-          - Toast about enabling LipaBill Accessibility; sheet does not dial.
+          - Accessibility agreement (Agree / Not now). Not now stays on home.
+          - Sheet does not open. No Copy details instead. History and Passes still work.
 
       - id: GATES-02
-        title: Automation off in Profile
+        title: Automatic repeat off in Settings
         priority: P0
         steps:
-          - Profile → turn off Enable repeat automation.
-          - Tap Send / Pay on home.
+          - Settings → turn off Automatic repeat.
+          - Tap Send / Pay on home; then Repeat a past payment from a receipt.
         expected:
-          - Toast to turn on payment automation in Profile.
+          - Send / Pay still open and dial when Accessibility is on.
+          - Repeat opens Copy payment details. No Accessibility dial.
 
       - id: GATES-03
         title: Missing CALL_PHONE
@@ -258,7 +261,7 @@ suites:
           - Revoke Phone permission in App info.
           - Attempt Send/Pay.
         expected:
-          - Toast requiring Phone permission to send and pay.
+          - Phone access prompt. Not now stays on home. Sheet does not open.
 
       - id: GATES-04
         title: Missing READ_PHONE_STATE
@@ -392,18 +395,19 @@ suites:
         title: Automation off → Copy payment details
         priority: P1
         steps:
-          - Profile → disable Enable repeat automation.
+          - Settings → disable Automatic repeat.
           - Receipt → Another transaction.
         expected:
           - Copy payment details screen; Copy details works; no Accessibility dial.
 
       - id: REPEAT-03
-        title: Accessibility missing → onboarding
+        title: Accessibility missing → agreement, Repeat stays off
         priority: P0
         steps:
-          - Turn Accessibility off; start Another transaction / Send confirm path.
+          - Turn Accessibility off; tap Another transaction on a receipt.
         expected:
-          - Enable Repeat Payment onboarding with sideload unlock steps.
+          - Accessibility agreement (Agree / Not now). Not now stays on home / receipt.
+          - Repeat confirm does not open until LipaBill M-Pesa payments is on.
 
       - id: REPEAT-04
         title: Unsupported transaction type
@@ -644,7 +648,7 @@ tester_checklist_short:
   - "[ ] SMOKE-02 Rescan SMS"
   - "[ ] SMOKE-03 one Send or Pay E2E"
   - "[ ] SEND-03 / PAY-05 PIN Cancel returns to amount"
-  - "[ ] GATES-01 Send/Pay grey without Accessibility"
+  - "[ ] GATES-01 Send/Pay stay off without Accessibility"
 
 known_limitations:
   - >
