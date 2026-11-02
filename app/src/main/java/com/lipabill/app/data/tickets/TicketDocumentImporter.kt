@@ -21,13 +21,6 @@ object TicketDocumentImporter {
             name?.endsWith(".pkpass", ignoreCase = true) == true
 
         return when {
-            isPkPass && kind == TicketDocumentKind.FLIGHT_E_TICKET -> {
-                // Wallet pass on the flight path = boarding already in hand
-                PkPassParser.parse(context, uri).toTicketImport().copy(
-                    expectsBoardingPass = true,
-                    hasBoardingPass = true
-                )
-            }
             isPkPass -> PkPassParser.parse(context, uri).toTicketImport()
             else -> ETicketAnalyzer.analyze(context, uri, kind)
         }
