@@ -73,8 +73,7 @@ fun dialStartedStatus(
 
 /** One-shot flag so Send/Pay reopen on the amount step after PIN cancel. */
 class AmountStepResume {
-    var pending: Boolean = false
-        private set
+    private var pending: Boolean = false
 
     fun mark() {
         pending = true
