@@ -1,6 +1,7 @@
 package com.lipabill.app.data.local
 
 import androidx.room.TypeConverter
+import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.TicketBarcodeFormat
 import com.lipabill.app.data.model.TicketSource
 import com.lipabill.app.data.model.TicketStatus
@@ -8,6 +9,13 @@ import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.ussd.RepeatOutcome
 
 class Converters {
+    @TypeConverter
+    fun fromMoneySource(source: MoneySource): String = source.name
+
+    @TypeConverter
+    fun toMoneySource(value: String): MoneySource =
+        runCatching { MoneySource.valueOf(value) }.getOrDefault(MoneySource.MPESA)
+
     @TypeConverter
     fun fromType(type: TransactionType): String = type.name
 
