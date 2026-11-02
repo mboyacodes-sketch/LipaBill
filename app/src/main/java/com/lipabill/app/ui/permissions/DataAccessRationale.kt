@@ -42,9 +42,10 @@ object DataAccessRationale {
     )
 
     val SMS = DataAccessCopy(
-        title = "SMS builds M-Pesa history",
-        body = "LipaBill reads Safaricom M-Pesa confirmation messages to keep your ledger on this phone. " +
-            "It does not send SMS."
+        title = "SMS shows where it went",
+        body = "LipaBill reads money confirmation SMS from wallets and banks you enable " +
+            "to keep your ledger, available balance, and spending overview on this phone. " +
+            "It does not send SMS or read OTPs."
     )
 
     val PHONE = DataAccessCopy(
@@ -54,20 +55,21 @@ object DataAccessRationale {
     )
 
     val CONTACTS = DataAccessCopy(
-        title = "Contacts match a name you type",
-        body = "LipaBill looks up people saved on this phone when you type a recipient. " +
-            "You can type a number without contacts."
+        title = "Contacts are not read in the background",
+        body = "LipaBill does not browse your address book. When you tap Contacts, " +
+            "Android's picker shares one number you choose for Send or Pochi. " +
+            "You can always type a number instead."
     )
 
     val NOTIFICATIONS = DataAccessCopy(
         title = "Alerts for payments and confirmations",
-        body = "LipaBill can notify you when an M-Pesa confirmation arrives, " +
+        body = "LipaBill can notify you when a confirmation arrives, " +
             "and when a payment you started needs you."
     )
 
     val GENERAL = DataAccessCopy(
         title = "Why LipaBill uses this access",
-        body = "LipaBill uses device access for the feature you opened: M-Pesa history, " +
-            "a payment you confirm, a contact lookup, or a ticket scan. That data stays on this phone."
+        body = "LipaBill uses device access for the feature you opened: where your money went, " +
+            "a payment you confirm, or a ticket scan. That data stays on this phone."
     )
 }
