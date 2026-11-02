@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
@@ -27,7 +28,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import android.graphics.Color as AndroidColor
 import android.view.WindowManager
 import androidx.lifecycle.Lifecycle
@@ -64,26 +65,20 @@ import com.lipabill.app.ui.main.MainShellScreen
 import com.lipabill.app.ui.navigation.Route
 import com.lipabill.app.update.AppUpdates
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
-import com.lipabill.app.ui.permissions.AccessibilityServiceDisclosureDialog
+import com.lipabill.app.ui.permissions.FirstRunPage
 import com.lipabill.app.ui.permissions.HibernationExemptionPrompt
 import com.lipabill.app.ui.permissions.FirstRunSetupScreen
-import com.lipabill.app.ui.permissions.PaymentAccessDialog
-import com.lipabill.app.ui.permissions.PaymentAccessNeed
-import com.lipabill.app.ui.permissions.PermissionGuideDialog
-import com.lipabill.app.ui.permissions.permissionGranted
-import com.lipabill.app.ui.permissions.rememberAccessibilityEnableRequest
-import com.lipabill.app.ui.permissions.shouldOfferPostNotifications
+import com.lipabill.app.ui.permissions.PermissionPromptMemory
+import com.lipabill.app.ui.permissions.consentPageFor
 import com.lipabill.app.ui.permissions.missingPaymentAccess
 import com.lipabill.app.ui.permissions.onNotificationPermission
 import com.lipabill.app.ui.permissions.onNotificationsDismissed
 import com.lipabill.app.ui.permissions.toBlocker
-import com.lipabill.app.ui.permissions.PermissionLesson
-import com.lipabill.app.ui.permissions.SmsPermissionScreen
-import com.lipabill.app.ui.permissions.phoneLessonFor
+import com.lipabill.app.ui.permissions.toConsentRoute
+import com.lipabill.app.ui.permissions.RouteConsent
 import com.lipabill.app.ui.permissions.SmsRestrictedSettings
 import com.lipabill.app.ui.pay.PayMoneyBottomSheetFragment
 import com.lipabill.app.ui.receipt.ProcessingReceiptScreen
-import com.lipabill.app.ui.region.KenyaOnlyScreen
 import com.lipabill.app.ui.repeat.ManualRepeatScreen
 import com.lipabill.app.ui.repeat.RepeatConfirmScreen
 import com.lipabill.app.ui.send.SendMoneyBottomSheetFragment
@@ -97,7 +92,6 @@ import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
 import com.lipabill.app.device.HandheldDeviceGate
 import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.metrics.SetupBlocker
-import com.lipabill.app.region.KenyaRegionGate
 import com.lipabill.app.ui.device.UnsupportedDeviceScreen
 import com.lipabill.app.pay.PayLink
 import com.lipabill.app.ui.paylink.PayProfileScreen
@@ -121,6 +115,11 @@ class MainActivity : AppCompatActivity(),
 
     var sendConfirmHandler: (() -> Unit)? = null
     var payConfirmHandler: (() -> Unit)? = null
+    var requestConsent: ((FirstRunPage, (() -> Unit)?) -> Unit)? = null
+
+    fun askConsent(page: FirstRunPage, onComplete: (() -> Unit)? = null) {
+        requestConsent?.invoke(page, onComplete)
+    }
 
     override fun onSendSheetConfirm() {
         sendConfirmHandler?.invoke()
@@ -171,9 +170,12 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    /** Screenshots, recents, and screen capture stay off for the whole session. */
+    /**
+     * Screenshots, recents, and screen capture stay off unless recording mode is on
+     * (debug / internal builds only — see [RecordingCapture]).
+     */
     fun applyCaptureProtection(
-        recording: Boolean = BuildConfig.DEBUG && (application as LipaBillApp).recordingPrivacy.value
+        recording: Boolean = (application as LipaBillApp).recordingPrivacy.value
     ) {
         if (recording) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -291,9 +293,6 @@ private fun LipaBillRoot(
 ) {
     val authState by app.authManager.state.collectAsStateWithLifecycle()
     var authError by remember { mutableStateOf<String?>(null) }
-    var regionVerdict by remember {
-        mutableStateOf(KenyaRegionGate.evaluate(activity))
-    }
     var phoneOrTablet by remember {
         mutableStateOf(HandheldDeviceGate.isPhoneOrTablet(activity))
     }
@@ -303,7 +302,6 @@ private fun LipaBillRoot(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 phoneOrTablet = HandheldDeviceGate.isPhoneOrTablet(activity)
-                regionVerdict = KenyaRegionGate.evaluate(activity)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -315,21 +313,12 @@ private fun LipaBillRoot(
         return
     }
 
-    when (val region = regionVerdict) {
-        is KenyaRegionGate.Verdict.Blocked -> {
-            AdaptiveFrame(expandedMax = 520.dp) {
-                KenyaOnlyScreen(
-                    detectedIso = region.detectedIso,
-                    onTryAgain = { regionVerdict = KenyaRegionGate.evaluate(activity) }
-                )
-            }
+    when (authState) {
+        AuthUiState.Unlocked -> {
+            AuthenticatedApp(activity = activity, app = app)
         }
-        KenyaRegionGate.Verdict.Allowed -> when (authState) {
-            AuthUiState.Unlocked -> {
-                AuthenticatedApp(activity = activity, app = app)
-            }
-            else -> {
-                AdaptiveFrame(expandedMax = 520.dp) {
+        else -> {
+            AdaptiveFrame(expandedMax = 520.dp) {
                 AuthGateScreen(
                     state = authState,
                     errorMessage = authError,
@@ -345,7 +334,6 @@ private fun LipaBillRoot(
                         app.authManager.authenticate(activity) { authError = it }
                     }
                 )
-                }
             }
         }
     }
@@ -423,17 +411,29 @@ private fun AuthenticatedApp(
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) ==
             PackageManager.PERMISSION_GRANTED
 
-    fun hasContactsPermission(): Boolean =
-        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
+    fun hasCameraPermission(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
             PackageManager.PERMISSION_GRANTED
 
+    fun hasNotificationsPermission(): Boolean =
+        Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+
     var smsGranted by remember { mutableStateOf(hasSmsPermission()) }
-    var offerNotifications by remember { mutableStateOf(false) }
+    var a11yEnabled by remember {
+        mutableStateOf(AccessibilityHelper.isLipaBillServiceEnabled(context))
+    }
+    var extraAccessTick by remember { mutableStateOf(0) }
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         onNotificationPermission(granted)
+        extraAccessTick++
     }
+    val hibernationSettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { }
     var permanentlyDenied by remember { mutableStateOf(false) }
     var pendingDialTxId by remember { mutableStateOf<Long?>(null) }
     var phoneStateRefreshKey by remember { mutableStateOf(0) }
@@ -451,9 +451,6 @@ private fun AuthenticatedApp(
         val granted = result.values.all { it }
         smsGranted = granted
         AppMetrics.smsPermission(granted)
-        if (granted && context.shouldOfferPostNotifications()) {
-            offerNotifications = true
-        }
         if (!granted) {
             permanentlyDenied =
                 supportsRestrictedSmsUnlock ||
@@ -473,6 +470,8 @@ private fun AuthenticatedApp(
                 receive == PackageManager.PERMISSION_GRANTED
             smsGranted = ok
             if (ok) permanentlyDenied = false
+            a11yEnabled = AccessibilityHelper.isLipaBillServiceEnabled(context)
+            extraAccessTick++
             // Some updates leave Accessibility off. Coach only on release/Play builds —
             // debug installs restore via adb (scripts/install-play-debug.sh) so UI work
             // isn't interrupted every push.
@@ -489,48 +488,54 @@ private fun AuthenticatedApp(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    if (showAccessibilityReenable) {
-        AccessibilityServiceDisclosureDialog(
-            titleOverride = "Turn Accessibility Service back on",
-            bodyPrefix = "Android turns LipaBill’s Accessibility Service off after each update.",
-            onContinueToSettings = {
-                showAccessibilityReenable = false
-                dismissedA11yReenableThisSession = true
-                AccessibilityPreferred.markUserTurningOn(app.securePreferences)
-                AccessibilityHelper.openAppAccessibilityDetails(context)
-            },
-            onNotNow = {
-                showAccessibilityReenable = false
-                dismissedA11yReenableThisSession = true
-            }
-        )
-    }
+    var pendingConsentComplete by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var accessibilityNote by remember { mutableStateOf<String?>(null) }
 
-    var paymentAccessPrompt by remember { mutableStateOf(false) }
-    var paymentAccessFootnote by remember { mutableStateOf<String?>(null) }
-    var pendingPaymentOpen by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var paymentAccessRevision by remember { mutableIntStateOf(0) }
-    /** Returning from the Accessibility screen stays on home. The next tap can open Send or Pay. */
-    var skipOpenAfterAccessibility by remember { mutableStateOf(false) }
-
-    fun dismissPaymentAccess() {
-        paymentAccessPrompt = false
-        paymentAccessFootnote = null
-        pendingPaymentOpen = null
-    }
-
-    fun finishPaymentAccessIfReady() {
-        if (!paymentAccessPrompt) return
-        paymentAccessRevision++
-        if (skipOpenAfterAccessibility) {
-            skipOpenAfterAccessibility = false
-            dismissPaymentAccess()
-            return
+    fun dismissMoneySheets() {
+        val fm = activity.supportFragmentManager
+        listOf(SendMoneyBottomSheetFragment.TAG, PayMoneyBottomSheetFragment.TAG).forEach { tag ->
+            (fm.findFragmentByTag(tag) as? BottomSheetDialogFragment)
+                ?.dismissAllowingStateLoss()
         }
-        if (context.missingPaymentAccess().isNotEmpty()) return
-        val open = pendingPaymentOpen
-        dismissPaymentAccess()
-        open?.invoke()
+    }
+
+    fun openConsent(
+        page: FirstRunPage,
+        note: String? = null,
+        onComplete: (() -> Unit)? = null
+    ) {
+        if (!app.securePreferences.firstRunSetupDone) return
+        val fm = activity.supportFragmentManager
+        val reopenSend = fm.findFragmentByTag(SendMoneyBottomSheetFragment.TAG) != null
+        val reopenPay = fm.findFragmentByTag(PayMoneyBottomSheetFragment.TAG) != null
+        dismissMoneySheets()
+        pendingConsentComplete = {
+            onComplete?.invoke()
+            if (reopenSend && fm.findFragmentByTag(SendMoneyBottomSheetFragment.TAG) == null) {
+                SendMoneyBottomSheetFragment.newInstance()
+                    .show(fm, SendMoneyBottomSheetFragment.TAG)
+            }
+            if (reopenPay && fm.findFragmentByTag(PayMoneyBottomSheetFragment.TAG) == null) {
+                PayMoneyBottomSheetFragment.newInstance()
+                    .show(fm, PayMoneyBottomSheetFragment.TAG)
+            }
+        }
+        accessibilityNote = note
+        navController.navigate(Route.Consent.of(page.toConsentRoute())) {
+            launchSingleTop = true
+        }
+    }
+
+    host.requestConsent = { page, onComplete -> openConsent(page, onComplete = onComplete) }
+
+    LaunchedEffect(showAccessibilityReenable) {
+        if (!showAccessibilityReenable) return@LaunchedEffect
+        showAccessibilityReenable = false
+        dismissedA11yReenableThisSession = true
+        openConsent(
+            FirstRunPage.Accessibility,
+            note = "Android turns LipaBill’s Accessibility Service off after each update."
+        )
     }
 
     fun openPaymentOrExplain(open: () -> Unit) {
@@ -539,8 +544,9 @@ private fun AuthenticatedApp(
             open()
         } else {
             missing.first().toBlocker()?.let(AppMetrics::setupBlocked)
-            pendingPaymentOpen = open
-            paymentAccessPrompt = true
+            openConsent(consentPageFor(missing)) {
+                if (context.missingPaymentAccess().isEmpty()) open()
+            }
         }
     }
 
@@ -557,10 +563,6 @@ private fun AuthenticatedApp(
             AppMetrics.phonePermission(granted)
         }
         phoneStateRefreshKey++
-        if (paymentAccessPrompt) {
-            finishPaymentAccessIfReady()
-            return@rememberLauncherForActivityResult
-        }
         val txId = pendingDialTxId
         pendingDialTxId = null
         when {
@@ -568,28 +570,12 @@ private fun AuthenticatedApp(
                 Toast.makeText(context, "Permissions granted — tap Confirm again", Toast.LENGTH_LONG)
                     .show()
             !callOk ->
-                Toast.makeText(context, "Phone permission is required for M-Pesa payments", Toast.LENGTH_LONG)
+                Toast.makeText(context, "Phone permission is required for Send and Pay", Toast.LENGTH_LONG)
                     .show()
             else ->
                 Toast.makeText(context, "SIM access updated — pick your line, then Confirm", Toast.LENGTH_LONG)
                     .show()
         }
-    }
-
-    val phoneStatePermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        AppMetrics.phonePermission(granted)
-        phoneStateRefreshKey++
-        if (paymentAccessPrompt) finishPaymentAccessIfReady()
-    }
-
-    var phoneLesson by remember { mutableStateOf<PermissionLesson?>(null) }
-    var phoneLessonAllow by remember { mutableStateOf<(() -> Unit)?>(null) }
-
-    fun explainPhoneAccess(lesson: PermissionLesson, onAllow: () -> Unit) {
-        phoneLesson = lesson
-        phoneLessonAllow = onAllow
     }
 
     /** Opens system Accessibility settings. Call only after prominent disclosure. */
@@ -599,84 +585,12 @@ private fun AuthenticatedApp(
         AccessibilityHelper.openAppAccessibilityDetails(context)
     }
 
-    val accessibilityEnable = rememberAccessibilityEnableRequest {
-        openPaymentAccessibilitySettings()
-    }
-    accessibilityEnable.Dialog()
-
-    /** Direct paths that did not already show [AccessibilityServiceDisclosureDialog]. */
-    fun requestAccessibilityEnable(
-        titleOverride: String? = null,
-        bodyPrefix: String? = null
-    ) {
-        accessibilityEnable.request(titleOverride, bodyPrefix)
-    }
-
-    fun allowNextPaymentAccess() {
-        when (context.missingPaymentAccess().firstOrNull()) {
-            PaymentAccessNeed.Phone ->
-                callPermissionLauncher.launch(arrayOf(Manifest.permission.CALL_PHONE))
-            PaymentAccessNeed.PhoneState ->
-                phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
-            PaymentAccessNeed.Accessibility -> {
-                skipOpenAfterAccessibility = true
-                pendingPaymentOpen = null
-                // PaymentAccessDialog already showed the AccessibilityService disclosure.
-                openPaymentAccessibilitySettings()
-            }
-            null -> finishPaymentAccessIfReady()
-        }
-    }
-
-    val activePhoneLesson = phoneLesson
-    if (activePhoneLesson != null) {
-        PermissionGuideDialog(
-            lesson = activePhoneLesson,
-            onAllow = {
-                val allow = phoneLessonAllow
-                phoneLesson = null
-                phoneLessonAllow = null
-                allow?.invoke()
-            },
-            onNotNow = {
-                phoneLesson = null
-                phoneLessonAllow = null
-                pendingDialTxId = null
-            }
-        )
-    }
-
-    if (paymentAccessPrompt) {
-        val missing = remember(paymentAccessRevision) { context.missingPaymentAccess() }
-        LaunchedEffect(missing) {
-            if (missing.isEmpty()) finishPaymentAccessIfReady()
-        }
-        if (missing.isNotEmpty()) {
-            PaymentAccessDialog(
-                missing = missing,
-                footnote = paymentAccessFootnote,
-                onAllow = { allowNextPaymentAccess() },
-                onNotNow = { dismissPaymentAccess() }
-            )
-        }
-    }
-
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) finishPaymentAccessIfReady()
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
     fun requestPhoneStateWithGuide() {
         if (hasPhoneStatePermission()) {
             phoneStateRefreshKey++
             return
         }
-        explainPhoneAccess(PermissionLesson.PhoneState) {
-            phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
-        }
+        openConsent(FirstRunPage.Phone)
     }
 
     val listVm: TransactionListViewModel = viewModel(viewModelStoreOwner = activity)
@@ -690,10 +604,18 @@ private fun AuthenticatedApp(
 
     val mainActivity = activity as MainActivity
 
-    fun refreshPaymentContacts() {
-        if (!hasContactsPermission()) return
-        sendVm.refreshContactsAccess()
-        payVm.refreshContactsAccess()
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        AppMetrics.cameraPermission(granted)
+        extraAccessTick++
+    }
+
+    fun openHibernationSettings() {
+        val intent = runCatching {
+            IntentCompat.createManageUnusedAppRestrictionsIntent(context, context.packageName)
+        }.getOrNull() ?: return
+        hibernationSettingsLauncher.launch(intent)
     }
 
     fun showSendSheet(preselect: SendContact? = null, preserveState: Boolean = false) {
@@ -705,7 +627,6 @@ private fun AuthenticatedApp(
                     sendVm.select(preselect)
                 }
             }
-            refreshPaymentContacts()
             val existing = activity.supportFragmentManager.findFragmentByTag(SendMoneyBottomSheetFragment.TAG)
             if (existing == null) {
                 SendMoneyBottomSheetFragment.newInstance()
@@ -720,7 +641,6 @@ private fun AuthenticatedApp(
                 payVm.clearMethod()
                 payVm.selectMethod(PayMethod.PAYBILL)
             }
-            refreshPaymentContacts()
             val existing = activity.supportFragmentManager.findFragmentByTag(PayMoneyBottomSheetFragment.TAG)
             if (existing == null) {
                 PayMoneyBottomSheetFragment.newInstance()
@@ -737,17 +657,18 @@ private fun AuthenticatedApp(
         ).show()
     }
 
-    /** Send/Pay from Home. Permission opens the access prompt; a missing balance only explains. */
+    /** Send/Pay from Home. Missing access opens the wizard; a missing balance only explains. */
     fun attemptPayment(open: () -> Unit) {
         val state = listVm.uiState.value
         val funded = state.canFundPayment()
-        if (context.missingPaymentAccess().isNotEmpty()) {
-            paymentAccessFootnote = if (funded) null else state.unfundedPaymentMessage()
-            pendingPaymentOpen = {
+        val missing = context.missingPaymentAccess()
+        if (missing.isNotEmpty()) {
+            missing.first().toBlocker()?.let(AppMetrics::setupBlocked)
+            openConsent(consentPageFor(missing)) {
                 val now = listVm.uiState.value
+                if (context.missingPaymentAccess().isNotEmpty()) return@openConsent
                 if (now.canFundPayment()) open() else toastUnfundedPayment()
             }
-            paymentAccessPrompt = true
             return
         }
         if (!funded) {
@@ -773,7 +694,6 @@ private fun AuthenticatedApp(
                         name = null,
                         amountInput = amount
                     )
-                    refreshPaymentContacts()
                     SendMoneyBottomSheetFragment.newInstance()
                         .show(fm, SendMoneyBottomSheetFragment.TAG)
                 }
@@ -837,7 +757,9 @@ private fun AuthenticatedApp(
     fun navigateRepeat(txId: Long, amount: String = "") {
         if (!app.repeatCoordinator.isFeatureEnabled()) {
             navController.navigate(Route.RepeatManual(txId, amount).path)
-        } else {
+            return
+        }
+        openPaymentOrExplain {
             navController.navigate(Route.RepeatConfirm(txId, amount).path)
         }
     }
@@ -895,13 +817,6 @@ private fun AuthenticatedApp(
         restoreAmountAfterPinCancel()
     }
 
-    fun dismissMoneySheets() {
-        listOf(SendMoneyBottomSheetFragment.TAG, PayMoneyBottomSheetFragment.TAG).forEach { tag ->
-            (activity.supportFragmentManager.findFragmentByTag(tag) as? BottomSheetDialogFragment)
-                ?.dismissAllowingStateLoss()
-        }
-    }
-
     LaunchedEffect(openReceipt) {
         if (openReceipt == null || !app.securePreferences.firstRunSetupDone) return@LaunchedEffect
         dismissMoneySheets()
@@ -921,16 +836,12 @@ private fun AuthenticatedApp(
     ) {
         val needCall = !hasCallPermission()
         val needState = !hasPhoneStatePermission()
-        val lesson = phoneLessonFor(needCall, needState)
-        if (lesson != null) {
+        if (needCall || needState) {
             pendingDialTxId = pendingId
-            explainPhoneAccess(lesson) {
-                callPermissionLauncher.launch(
-                    buildList {
-                        if (needCall) add(Manifest.permission.CALL_PHONE)
-                        if (needState) add(Manifest.permission.READ_PHONE_STATE)
-                    }.toTypedArray()
-                )
+            openConsent(FirstRunPage.Phone) {
+                if (hasCallPermission() && hasPhoneStatePermission()) {
+                    runStepUpAndDial(flow, prepare, startDial, pendingId)
+                }
             }
             return
         }
@@ -991,34 +902,24 @@ private fun AuthenticatedApp(
     }
 
     fun runFulizaOptIn() {
-        val needCall = !hasCallPermission()
-        val needState = !hasPhoneStatePermission()
-        val lesson = phoneLessonFor(needCall, needState)
-        if (lesson != null) {
-            explainPhoneAccess(lesson) {
-                callPermissionLauncher.launch(
-                    buildList {
-                        if (needCall) add(Manifest.permission.CALL_PHONE)
-                        if (needState) add(Manifest.permission.READ_PHONE_STATE)
-                    }.toTypedArray()
-                )
+        val missing = context.missingPaymentAccess()
+        if (missing.isNotEmpty()) {
+            missing.first().toBlocker()?.let(AppMetrics::setupBlocked)
+            openConsent(consentPageFor(missing)) {
+                if (context.missingPaymentAccess().isEmpty()) runFulizaOptIn()
             }
             return
         }
         settingsVm.refresh()
         val state = settingsVm.uiState.value
         when {
-            !state.repeatEnabled ->
-                Toast.makeText(
-                    context,
-                    "Turn on automatic repeat in Settings to fill the Fuliza menus",
-                    Toast.LENGTH_LONG
-                ).show()
-            !state.lipaBillA11yEnabled -> requestAccessibilityEnable()
+            !state.lipaBillA11yEnabled -> openConsent(FirstRunPage.Accessibility) {
+                if (context.missingPaymentAccess().isEmpty()) runFulizaOptIn()
+            }
             state.simLines.size > 1 && state.preferredSimSubscriptionId == null ->
                 Toast.makeText(
                     context,
-                    "Choose the M-Pesa line in Settings first",
+                    "Choose the payment SIM in Settings first",
                     Toast.LENGTH_LONG
                 ).show()
             else -> scope.launch {
@@ -1038,22 +939,16 @@ private fun AuthenticatedApp(
     SideEffect {
         fun gateConfirm(
             refresh: () -> Unit,
-            readState: () -> Triple<Boolean, Boolean, Boolean>,
+            readState: () -> Pair<Boolean, Boolean>,
             needsSimSetup: () -> Boolean,
             dial: () -> Unit
         ) {
             refresh()
-            val (featureEnabled, accessibilityEnabled, needsPhoneState) = readState()
+            val (accessibilityEnabled, needsPhoneState) = readState()
             when {
-                !featureEnabled ->
-                    Toast.makeText(
-                        context,
-                        "Payment automation is off — enable it in Profile",
-                        Toast.LENGTH_LONG
-                    ).show()
                 !accessibilityEnabled -> {
                     AppMetrics.setupBlocked(SetupBlocker.NoAccessibility)
-                    requestAccessibilityEnable()
+                    openConsent(FirstRunPage.Accessibility)
                 }
                 needsPhoneState -> {
                     AppMetrics.setupBlocked(SetupBlocker.NoSim)
@@ -1071,7 +966,7 @@ private fun AuthenticatedApp(
                 refresh = sendVm::refreshGates,
                 readState = {
                     val s = sendVm.uiState.value
-                    Triple(s.featureEnabled, s.accessibilityEnabled, s.needsPhoneStatePermission)
+                    s.accessibilityEnabled to s.needsPhoneStatePermission
                 },
                 needsSimSetup = {
                     val s = sendVm.uiState.value
@@ -1085,7 +980,7 @@ private fun AuthenticatedApp(
                 refresh = payVm::refreshGates,
                 readState = {
                     val s = payVm.uiState.value
-                    Triple(s.featureEnabled, s.accessibilityEnabled, s.needsPhoneStatePermission)
+                    s.accessibilityEnabled to s.needsPhoneStatePermission
                 },
                 needsSimSetup = {
                     val s = payVm.uiState.value
@@ -1117,6 +1012,67 @@ private fun AuthenticatedApp(
         AppMetrics.screen(screen)
     }
 
+    @Composable
+    fun BoundWizard(
+        firstRun: Boolean,
+        startPage: FirstRunPage = FirstRunPage.Welcome,
+        note: String? = null,
+        onFinished: () -> Unit
+    ) {
+        extraAccessTick
+        phoneStateRefreshKey
+        val region by app.appRegion.collectAsStateWithLifecycle()
+        FirstRunSetupScreen(
+            onFinished = onFinished,
+            smsGranted = smsGranted,
+            permanentlyDenied = permanentlyDenied,
+            showRestrictedSettingsHelp = showRestrictedSettingsHelp,
+            onRequestSms = {
+                permissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.READ_SMS,
+                        Manifest.permission.RECEIVE_SMS
+                    )
+                )
+            },
+            onOpenSmsSettings = {
+                val intent = Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.fromParts("package", context.packageName, null)
+                )
+                context.startActivity(intent)
+            },
+            phoneGranted = hasCallPermission(),
+            simGranted = hasPhoneStatePermission(),
+            onRequestPhone = {
+                val need = buildList {
+                    if (!hasCallPermission()) add(Manifest.permission.CALL_PHONE)
+                    if (!hasPhoneStatePermission()) add(Manifest.permission.READ_PHONE_STATE)
+                }
+                if (need.isNotEmpty()) {
+                    callPermissionLauncher.launch(need.toTypedArray())
+                }
+            },
+            accessibilityEnabled = a11yEnabled,
+            onAgreeAccessibility = { openPaymentAccessibilitySettings() },
+            cameraGranted = hasCameraPermission(),
+            notificationsGranted = hasNotificationsPermission(),
+            onRequestCamera = { cameraLauncher.launch(Manifest.permission.CAMERA) },
+            onRequestNotifications = {
+                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            },
+            onSkipNotifications = { onNotificationsDismissed() },
+            onSkipHibernation = { app.securePreferences.hibernationPromptShown = true },
+            onOpenHibernationSettings = { openHibernationSettings() },
+            startPage = startPage,
+            firstRun = firstRun,
+            accessibilityNote = note,
+            region = region,
+            onRegionSelected = { app.setAppRegion(it, rescan = false) },
+            onProvidersSelected = { app.setEnabledSources(it, rescan = false) }
+        )
+    }
+
     NavHost(
         navController = navController,
         startDestination = startDestination,
@@ -1136,49 +1092,41 @@ private fun AuthenticatedApp(
         }
     ) {
         composable(Route.FirstRunSetup.path) {
-            AdaptiveFrame { FirstRunSetupScreen(
-                onFinished = {
-                    app.securePreferences.firstRunSetupDone = true
-                    AppMetrics.firstRunCompleted()
-                    smsGranted = hasSmsPermission()
-                    listVm.setSmsPermission(smsGranted)
-                    navController.navigate(Route.List.path) {
-                        popUpTo(Route.FirstRunSetup.path) { inclusive = true }
+            AdaptiveFrame {
+                BoundWizard(
+                    firstRun = true,
+                    onFinished = {
+                        app.securePreferences.firstRunSetupDone = true
+                        AppMetrics.firstRunCompleted()
+                        smsGranted = hasSmsPermission()
+                        listVm.setSmsPermission(smsGranted)
+                        navController.navigate(Route.List.path) {
+                            popUpTo(Route.FirstRunSetup.path) { inclusive = true }
+                        }
                     }
-                }
-            ) }
+                )
+            }
         }
-        composable(Route.Permission.path) {
-            AdaptiveFrame { SmsPermissionScreen(
-                permanentlyDenied = permanentlyDenied,
-                showRestrictedSettingsHelp = showRestrictedSettingsHelp,
-                onRequestPermission = {
-                    permissionLauncher.launch(
-                        arrayOf(
-                            Manifest.permission.READ_SMS,
-                            Manifest.permission.RECEIVE_SMS
-                        )
-                    )
-                },
-                onOpenSettings = {
-                    val intent = Intent(
-                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.fromParts("package", context.packageName, null)
-                    )
-                    context.startActivity(intent)
-                },
-                onContinueWithout = {
-                    navController.navigate(Route.List.path) {
-                        popUpTo(Route.Permission.path) { inclusive = true }
+        composable(
+            route = Route.Consent.pattern,
+            arguments = listOf(
+                navArgument("page") { type = NavType.StringType }
+            )
+        ) { entry ->
+            val startPage = RouteConsent.pageOf(entry.arguments?.getString("page"))
+            AdaptiveFrame {
+                BoundWizard(
+                    firstRun = false,
+                    startPage = startPage,
+                    note = accessibilityNote,
+                    onFinished = {
+                        accessibilityNote = null
+                        val done = pendingConsentComplete
+                        pendingConsentComplete = null
+                        navController.popBackStack()
+                        done?.invoke()
                     }
-                }
-            ) }
-            LaunchedEffect(smsGranted) {
-                if (smsGranted) {
-                    navController.navigate(Route.List.path) {
-                        popUpTo(Route.Permission.path) { inclusive = true }
-                    }
-                }
+                )
             }
         }
         composable(Route.List.path) {
@@ -1204,7 +1152,7 @@ private fun AuthenticatedApp(
                         smsGranted = true
                         listVm.setSmsPermission(true)
                     } else {
-                        navController.navigate(Route.Permission.path)
+                        openConsent(FirstRunPage.Sms)
                     }
                 },
                 onOpenSettings = {
@@ -1314,7 +1262,7 @@ private fun AuthenticatedApp(
             AdaptiveFrame { RepeatConfirmScreen(
                 viewModel = repeatVm,
                 onBack = { navigateHome() },
-                onNeedAccessibility = { requestAccessibilityEnable() },
+                onNeedAccessibility = { openConsent(FirstRunPage.Accessibility) },
                 onManualFallback = {
                     navController.navigate(Route.RepeatManual(id).path)
                 },
@@ -1359,6 +1307,7 @@ private fun AuthenticatedApp(
                     viewModel = settingsVm,
                     onBack = { navigateHome() },
                     onRequestPhoneStatePermission = { requestPhoneStateWithGuide() },
+                    onRequestAccessibilityConsent = { openConsent(FirstRunPage.Accessibility) },
                     onOptInFuliza = { runFulizaOptIn() },
                     onCheckForUpdate = { AppUpdates.check(activity, manual = true) }
                 )
@@ -1383,21 +1332,8 @@ private fun AuthenticatedApp(
     val onHome = navBackStackEntry?.destination?.route == Route.List.path
     HibernationExemptionPrompt(
         enabled = onHome &&
-            !offerNotifications &&
             !showAccessibilityReenable &&
-            !paymentAccessPrompt
+            navBackStackEntry?.destination?.route != Route.Consent.pattern,
+        onNeedConsent = { openConsent(FirstRunPage.Hibernation) }
     )
-    if (offerNotifications) {
-        PermissionGuideDialog(
-            lesson = PermissionLesson.Notifications,
-            onAllow = {
-                offerNotifications = false
-                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            },
-            onNotNow = {
-                offerNotifications = false
-                onNotificationsDismissed()
-            }
-        )
-    }
 }
