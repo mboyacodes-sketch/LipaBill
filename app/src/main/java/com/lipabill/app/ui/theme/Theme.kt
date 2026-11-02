@@ -29,6 +29,7 @@ import com.lipabill.app.BuildConfig
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.R
 import com.lipabill.app.ui.privacy.LocalRecordingPrivacy
+import com.lipabill.app.ui.privacy.RecordingCapture
 import com.lipabill.app.ui.util.findComponentActivity
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -112,8 +113,6 @@ val Accent: Color
 /** Text and icons that sit on [Accent]. */
 val OnAccent: Color
     @Composable @ReadOnlyComposable get() = LocalLipaColors.current.onAccent
-val RouteBlue: Color
-    @Composable @ReadOnlyComposable get() = Accent
 val LabelBlue: Color
     @Composable @ReadOnlyComposable get() = LocalLipaColors.current.labelBlue
 
@@ -388,7 +387,7 @@ fun LipaBillTheme(
         LocalAppType provides typeScale,
         LocalAppSpace provides space,
         LocalLipaColors provides colors,
-        LocalRecordingPrivacy provides (BuildConfig.DEBUG && recordingPrivacy)
+        LocalRecordingPrivacy provides (RecordingCapture.available && recordingPrivacy)
     ) {
         MaterialTheme(
             colorScheme = colors.toScheme(darkTheme),
