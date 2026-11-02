@@ -8,7 +8,6 @@ import com.lipabill.app.data.model.TicketBarcodeFormat
 import com.lipabill.app.data.model.TicketSource
 import com.lipabill.app.data.model.TicketStatus
 import com.lipabill.app.data.model.notesValue
-import com.lipabill.app.data.tickets.KNOWN_IATA
 import com.lipabill.app.data.tickets.TicketImport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -220,14 +219,8 @@ class TicketRepository(
     }
 
     private fun routeHintMatch(haystack: String, needle: String): Boolean {
-        if (needle.isBlank()) return false
-        val h = haystack.uppercase(Locale.US)
-        val codes = Regex("""\b([A-Z]{3})\b""").findAll(needle.uppercase(Locale.US))
-            .map { it.groupValues[1] }
-            .filter { it in KNOWN_IATA }
-            .toList()
-        if (codes.size >= 2) return codes.all { h.contains(it) }
-        return needle.length >= 4 && h.contains(needle.uppercase(Locale.US).take(24))
+        if (needle.isBlank() || needle.length < 4) return false
+        return haystack.uppercase(Locale.US).contains(needle.uppercase(Locale.US).take(24))
     }
 
     private fun mirroredRouteMatch(draft: String, outboundVenue: String?): Boolean {
