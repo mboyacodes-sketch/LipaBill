@@ -1,7 +1,7 @@
 package com.lipabill.app.data.model
 
 /**
- * Structured representation of a parsed M-Pesa confirmation SMS.
+ * Structured representation of a parsed money confirmation SMS.
  * Pure data — no Android framework types.
  *
  * @param id Room row id when loaded from DB (0 if not yet persisted).
@@ -23,5 +23,6 @@ data class MpesaTransaction(
      * (keep structured fields only if share/reparse can work without it).
      * Must not be logged or uploaded by app code.
      */
-    val rawBody: String
+    val rawBody: String,
+    val source: MoneySource = MoneySource.MPESA
 )
