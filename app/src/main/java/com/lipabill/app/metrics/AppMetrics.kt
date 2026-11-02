@@ -9,7 +9,6 @@ import com.lipabill.app.ussd.RepeatOutcome
 /** Closed values for [AppMetrics.permissionResult]. */
 enum class PermissionKind(val key: String) {
     Sms("sms"),
-    Contacts("contacts"),
     Camera("camera"),
     Notifications("notifications"),
     Phone("phone")
@@ -89,9 +88,6 @@ object AppMetrics {
         permissionResult(PermissionKind.Sms, granted)
         if (!granted) setupBlocked(SetupBlocker.NoSms)
     }
-
-    fun contactsPermission(granted: Boolean) =
-        permissionResult(PermissionKind.Contacts, granted)
 
     fun cameraPermission(granted: Boolean) =
         permissionResult(PermissionKind.Camera, granted)
