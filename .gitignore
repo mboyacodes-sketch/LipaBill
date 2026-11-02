@@ -34,9 +34,15 @@ firebase-adminsdk*.json
 *.jks
 *.keystore
 
+# Founder-skill local planning (business, pitch, panel) — not the product
+/founder/
+
 # --- Private IP: keep on this machine only (repo must not be enough to clone the product) ---
 # USSD dial / accessibility automation / PIN overlay / dialer adapters
+# Flavor copies stay local too (internal Settings walk, Play no-op). Tests stay in git.
 /app/src/main/java/com/lipabill/app/ussd/
+/app/src/internal/java/com/lipabill/app/ussd/
+/app/src/play/java/com/lipabill/app/ussd/
 /app/src/main/res/xml/ussd_accessibility_service.xml
 # M-Pesa SMS → transaction parsing (core ingest logic)
 /app/src/main/java/com/lipabill/app/data/parser/
