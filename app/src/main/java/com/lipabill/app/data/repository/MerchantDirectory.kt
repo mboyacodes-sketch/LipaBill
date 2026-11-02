@@ -110,7 +110,7 @@ class MerchantDirectory(
 
     /**
      * When a confirmation SMS arrives, match a recent pending dial and prefer SMS party details
-     * (name from M-Pesa) over dial-time placeholders for new numbers.
+     * (name from the confirmation SMS) over dial-time placeholders for new numbers.
      */
     suspend fun enrichIncomingSms(tx: MpesaTransaction): MpesaTransaction = withContext(Dispatchers.IO) {
         val amount = tx.amount ?: return@withContext tx
