@@ -10,7 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
- * Live SMS ingestion for M-Pesa messages arriving after install.
+ * Live SMS ingestion for money confirmation messages arriving after install.
  * Upserts the broadcast payload immediately, then kicks a quiet inbox
  * rescan so multipart / delayed writes still land in Room.
  *
@@ -31,10 +31,12 @@ class MpesaSmsReceiver : BroadcastReceiver() {
                 messages.forEach { sms ->
                     val address = sms.displayOriginatingAddress.orEmpty()
                     val body = sms.messageBody.orEmpty()
-                    val parsed = MpesaSmsIngestion.acceptAndParse(
+                    val parsed = ConfirmationIngestion.acceptAndParse(
                         address = address,
                         body = body,
-                        timestampMillis = sms.timestampMillis
+                        timestampMillis = sms.timestampMillis,
+                        region = app.securePreferences.appRegion,
+                        enabled = app.enabledSources.value
                     ) ?: return@forEach
                     matched = true
                     app.repository.upsert(parsed)
