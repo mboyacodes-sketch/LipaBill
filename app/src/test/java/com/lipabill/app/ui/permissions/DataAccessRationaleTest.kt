@@ -1,6 +1,8 @@
 package com.lipabill.app.ui.permissions
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DataAccessRationaleTest {
@@ -33,10 +35,10 @@ class DataAccessRationaleTest {
             DataAccessRationale.PHONE,
             DataAccessRationale.forPermissionGroup("android.permission-group.PHONE")
         )
-        assertEquals(
-            DataAccessRationale.CONTACTS,
-            DataAccessRationale.forPermissionGroup("android.permission-group.CONTACTS")
-        )
+        val contacts = DataAccessRationale.forPermissionGroup("android.permission-group.CONTACTS")
+        assertEquals(DataAccessRationale.CONTACTS, contacts)
+        assertTrue(contacts.body.contains("picker", ignoreCase = true))
+        assertFalse(contacts.body.contains("type a recipient", ignoreCase = true))
         assertEquals(
             DataAccessRationale.NOTIFICATIONS,
             DataAccessRationale.forPermissionGroup("android.permission-group.NOTIFICATIONS")
