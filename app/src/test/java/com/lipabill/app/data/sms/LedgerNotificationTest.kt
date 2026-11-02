@@ -1,5 +1,6 @@
 package com.lipabill.app.data.sms
 
+import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import org.junit.Assert.assertEquals
@@ -14,7 +15,7 @@ class LedgerNotificationTest {
         val (title, body) = ledgerNotificationCopy(
             sample(TransactionType.RECEIVED, "JANE WANJIKU", "0712345678")
         )
-        assertEquals("Received · Ksh 500.00", title)
+        assertEquals("M-Pesa · Received · Ksh 500.00", title)
         assertEquals("From JANE WANJIKU", body)
     }
 
@@ -24,6 +25,15 @@ class LedgerNotificationTest {
             sample(TransactionType.SENT, "PETER KAMAU", null)
         )
         assertEquals("To PETER KAMAU", body)
+    }
+
+    @Test
+    fun bank_row_names_the_institution() {
+        val (title, body) = ledgerNotificationCopy(
+            sample(TransactionType.RECEIVED, "Salary", null, MoneySource.KCB)
+        )
+        assertEquals("KCB · Received · Ksh 500.00", title)
+        assertEquals("From Salary", body)
     }
 
     @Test
@@ -41,7 +51,12 @@ class LedgerNotificationTest {
         assertFalse(LedgerNotifier.isFresh(now - LedgerNotifier.FRESH_WINDOW_MS - 1, now))
     }
 
-    private fun sample(type: TransactionType, name: String?, phone: String?) = MpesaTransaction(
+    private fun sample(
+        type: TransactionType,
+        name: String?,
+        phone: String?,
+        source: MoneySource = MoneySource.MPESA
+    ) = MpesaTransaction(
         code = "ABC123",
         type = type,
         amount = 500.0,
@@ -50,6 +65,7 @@ class LedgerNotificationTest {
         timestampMillis = 0L,
         balance = null,
         cost = null,
-        rawBody = ""
+        rawBody = "",
+        source = source
     )
 }
