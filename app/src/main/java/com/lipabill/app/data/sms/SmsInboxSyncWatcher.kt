@@ -16,7 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Watches the device SMS inbox and quietly re-imports matching M-Pesa messages
+ * Watches the device SMS inbox and quietly re-imports matching confirmation messages
  * whenever the inbox changes (new SMS, multipart assemble, etc.).
  */
 class SmsInboxSyncWatcher(
