@@ -117,6 +117,9 @@ fun MoneySheetScaffold(
     ctaLabel: String,
     ctaEnabled: Boolean,
     onCta: () -> Unit,
+    secondaryCtaLabel: String? = null,
+    secondaryCtaEnabled: Boolean = true,
+    onSecondaryCta: (() -> Unit)? = null,
     onKey: (String) -> Unit,
     onBackspace: () -> Unit,
     extraAboveKeypad: (@Composable () -> Unit)? = null,
@@ -300,6 +303,15 @@ fun MoneySheetScaffold(
             )
         ) {
             Text(ctaLabel, style = HomeType.rowTitle)
+        }
+        if (secondaryCtaLabel != null && onSecondaryCta != null) {
+            TextButton(
+                onClick = onSecondaryCta,
+                enabled = secondaryCtaEnabled,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(secondaryCtaLabel, style = HomeType.rowTitle)
+            }
         }
     }
     }
@@ -805,7 +817,7 @@ fun MoneyConfirmDialog(
     amountLabel: String,
     detail: String,
     confirmLabel: String = "Confirm",
-    note: String = "You’ll enter your M-Pesa PIN on LipaBill’s secure keypad.",
+    note: String = "You’ll enter your PIN on LipaBill’s secure keypad.",
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
