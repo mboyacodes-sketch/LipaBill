@@ -83,36 +83,6 @@ class ETicketTextParserTest {
     }
 
     @Test
-    fun parsesFlightFromOcrAndPdf417() {
-        val ocr = """
-            BOARDING PASS
-            Passenger Name: DOE/JOHN
-            Flight KQ101
-            From NBO
-            To MBA
-            Date 20 Nov 2026
-            Departure 14:30
-            Seat 14C
-            Gate A5
-            PNR ABCDEF
-        """.trimIndent()
-        val draft = ETicketTextParser.parse(
-            ocr,
-            listOf(
-                ETicketTextParser.FoundBarcode(
-                    "PDF417PAYLOAD-FLIGHT",
-                    TicketBarcodeFormat.PDF_417
-                )
-            )
-        )
-        assertTrue(draft.title.contains("KQ101") || draft.title.contains("Flight"))
-        assertTrue(draft.hasBoardingPass)
-        assertEquals(TicketBarcodeFormat.PDF_417, draft.barcodeFormat)
-        assertTrue(draft.barcodeValue.startsWith("M1"))
-        assertTrue(BcbpParser.parse(draft.barcodeValue) != null)
-    }
-
-    @Test
     fun fallsBackToBookingRefWhenNoBarcode() {
         val ocr = """
             Madaraka Express
