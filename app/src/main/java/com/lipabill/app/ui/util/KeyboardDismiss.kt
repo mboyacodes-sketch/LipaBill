@@ -3,10 +3,12 @@ package com.lipabill.app.ui.util
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.displayCutout
-import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.runtime.Composable
@@ -43,12 +45,23 @@ fun Modifier.hideKeyboardOnOutsideTap(onOutsideTap: () -> Unit = {}): Modifier =
 }
 
 /**
- * Status bar, navigation bar, and display cutout. Does not include the IME.
- * Use on full-screen sheets that draw behind the system bars.
+ * Status, navigation, cutout, and IME. Use on content that must not sit under
+ * the system bars. Keep this off decorative backgrounds so they can draw edge-to-edge.
  */
 fun Modifier.systemBarsAndCutoutPadding(): Modifier = composed {
-    windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))
+    windowInsetsPadding(WindowInsets.safeDrawing)
 }
+
+/** Status bar and horizontal cutout. Canvas behind can still draw under the nav bar. */
+fun Modifier.safeDrawingTopPadding(): Modifier = composed {
+    windowInsetsPadding(
+        WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)
+    )
+}
+
+@Composable
+fun safeDrawingBottomPadding(): Dp =
+    WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding()
 
 /**
  * When this field is focused, scroll it into the visible area after the IME
