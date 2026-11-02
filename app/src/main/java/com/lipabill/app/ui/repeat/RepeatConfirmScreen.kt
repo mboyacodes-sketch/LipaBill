@@ -17,6 +17,7 @@ import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.parser.extractAccount
 import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.metrics.SetupBlocker
+import com.lipabill.app.ui.permissions.AccessibilityServiceDisclosure
 import com.lipabill.app.ui.sheet.MoneyConfirmDialog
 import com.lipabill.app.ui.sheet.MoneySheetScaffold
 import com.lipabill.app.ui.sheet.SheetFeedbackTone
@@ -75,14 +76,14 @@ fun RepeatConfirmScreen(
         state.needsPhoneStatePermission ->
             "Allow phone access to use your default SIM."
         missingSafaricom ->
-            "A Safaricom SIM is required to dial M-Pesa."
+            "A Safaricom SIM is required to send."
         needsSimSetup ->
-            "Set your default M-Pesa SIM in Settings first."
+            "Set your default payment SIM in Settings first."
         !state.featureEnabled ->
-            "Payment automation is off. Copy the details instead."
+            "Automatic repeat is off in Settings. Copy the details instead."
         !state.accessibilityEnabled ->
-            "Enable LipaBill’s Accessibility Service to fill the M-Pesa USSD screens " +
-                "for this Repeat payment."
+            "Turn on “${AccessibilityServiceDisclosure.SERVICE_LABEL}” to Repeat. " +
+                "History stays available."
         else -> amountStepGuidance(
             onAmountStep = true,
             exceedsBalance = exceedsBalance,
