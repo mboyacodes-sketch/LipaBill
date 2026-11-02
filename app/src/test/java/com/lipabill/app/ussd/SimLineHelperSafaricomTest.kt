@@ -1,5 +1,6 @@
 package com.lipabill.app.ussd
 
+import android.content.Intent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -76,6 +77,12 @@ class SimLineHelperSafaricomTest {
     fun findSafaricom_null_when_none() {
         assertNull(SimLineHelper.findSafaricom(listOf(sim(id = 1, safaricom = false))))
         assertNull(SimLineHelper.findSafaricom(emptyList()))
+    }
+
+    @Test
+    fun dial_without_call_phone_uses_action_dial() {
+        assertEquals(Intent.ACTION_DIAL, SimLineHelper.dialIntentAction(callPhoneGranted = false))
+        assertEquals(Intent.ACTION_CALL, SimLineHelper.dialIntentAction(callPhoneGranted = true))
     }
 
     private fun sim(id: Int, safaricom: Boolean) = SimLine(
