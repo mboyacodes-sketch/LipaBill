@@ -1,6 +1,7 @@
 package com.lipabill.app.ui.permissions
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -72,6 +73,9 @@ import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
 import kotlinx.coroutines.launch
 
+/** Pager turn for first-run / consent — about half the default spring settle. */
+private const val PAGE_TURN_MS = 180
+
 /**
  * Consent wizard. Welcome → Region → Providers → SMS → (Kenya: Phone → Accessibility).
  * Later visits skip Welcome: payment access is still a cluster; Camera,
@@ -124,7 +128,13 @@ fun FirstRunSetupScreen(
     val pager = rememberPagerState(initialPage = startIndex, pageCount = { pages.size })
     val scope = rememberCoroutineScope()
     fun goTo(index: Int) {
-        scope.launch { pager.animateScrollToPage(index.coerceIn(0, pages.lastIndex)) }
+        // ~half the default pager spring settle — snappier first-run / Maestro taps.
+        scope.launch {
+            pager.animateScrollToPage(
+                page = index.coerceIn(0, pages.lastIndex),
+                animationSpec = tween(durationMillis = PAGE_TURN_MS)
+            )
+        }
     }
     fun commitProviders() {
         if (firstRun) onProvidersSelected(selectedProviders)
