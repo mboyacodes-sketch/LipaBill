@@ -1,5 +1,7 @@
 package com.lipabill.app.data.repository
 
+import com.lipabill.app.BuildConfig
+import com.lipabill.app.data.DemoLedger
 import com.lipabill.app.data.local.dao.TicketDao
 import com.lipabill.app.data.local.entity.TicketEntity
 import com.lipabill.app.data.model.BoardingLeg
@@ -8,6 +10,7 @@ import com.lipabill.app.data.model.TicketBarcodeFormat
 import com.lipabill.app.data.model.TicketSource
 import com.lipabill.app.data.model.TicketStatus
 import com.lipabill.app.data.model.notesValue
+import com.lipabill.app.data.tickets.BookingConfirmationParser
 import com.lipabill.app.data.tickets.TicketImport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -99,6 +102,16 @@ class TicketRepository(
         }
         val ref = orderId?.trim()?.ifBlank { null } ?: return@withContext null
         dao.getByOrderId(ref)?.id
+    }
+
+    /** Debug captures only — sample SGR booking so Passes isn’t empty for Maestro. */
+    suspend fun seedDemoPassIfEmpty() {
+        if (!BuildConfig.DEBUG) return
+        withContext(Dispatchers.IO) {
+            if (dao.getByOrderId("KRCX1Y2Z3") != null) return@withContext
+            val draft = BookingConfirmationParser.parse(DemoLedger.SGR_BOOKING_SMS)
+            addImport(draft)
+        }
     }
 
     suspend fun addImport(draft: TicketImport): Long? {
