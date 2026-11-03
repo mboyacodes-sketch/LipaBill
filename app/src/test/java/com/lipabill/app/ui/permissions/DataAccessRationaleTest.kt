@@ -39,10 +39,12 @@ class DataAccessRationaleTest {
         assertEquals(DataAccessRationale.CONTACTS, contacts)
         assertTrue(contacts.body.contains("picker", ignoreCase = true))
         assertFalse(contacts.body.contains("type a recipient", ignoreCase = true))
-        assertEquals(
-            DataAccessRationale.NOTIFICATIONS,
-            DataAccessRationale.forPermissionGroup("android.permission-group.NOTIFICATIONS")
+        val notifications = DataAccessRationale.forPermissionGroup(
+            "android.permission-group.NOTIFICATIONS"
         )
+        assertEquals(DataAccessRationale.NOTIFICATIONS, notifications)
+        assertTrue(notifications.body.contains("confirmation", ignoreCase = true))
+        assertTrue(notifications.body.contains("receipt", ignoreCase = true))
     }
 
     @Test
