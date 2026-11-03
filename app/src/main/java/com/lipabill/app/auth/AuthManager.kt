@@ -8,6 +8,7 @@ import androidx.biometric.BiometricManager.Authenticators
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import com.lipabill.app.BuildConfig
 import com.lipabill.app.data.prefs.SecurePreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,7 +46,7 @@ class AuthManager(
     private val _state = MutableStateFlow<AuthUiState>(AuthUiState.Locked)
     val state: StateFlow<AuthUiState> = _state.asStateFlow()
 
-    fun capability(): AuthCapability =
+    private fun capability(): AuthCapability =
         if (hasBiometricEnrolled() || hasDeviceCredential()) {
             AuthCapability.AVAILABLE
         } else {
@@ -53,12 +54,12 @@ class AuthManager(
         }
 
     /** Class 3 fingerprint / face enrolled and usable. Class 2 biometrics do not unlock the ledger. */
-    fun hasBiometricEnrolled(): Boolean =
+    private fun hasBiometricEnrolled(): Boolean =
         biometricManager.canAuthenticate(Authenticators.BIOMETRIC_STRONG) ==
             BiometricManager.BIOMETRIC_SUCCESS
 
     /** Phone PIN, pattern, or password is set. */
-    fun hasDeviceCredential(): Boolean {
+    private fun hasDeviceCredential(): Boolean {
         if (keyguardManager.isDeviceSecure) return true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             return biometricManager.canAuthenticate(Authenticators.DEVICE_CREDENTIAL) ==
@@ -71,7 +72,7 @@ class AuthManager(
      * Class 3 biometrics, with the device PIN as fallback on Android 11+.
      * Older releases cannot combine the two in one prompt.
      */
-    fun allowedAuthenticators(): Int {
+    private fun allowedAuthenticators(): Int {
         val strong = hasBiometricEnrolled()
         val credential = hasDeviceCredential()
         val canCombine = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
@@ -85,7 +86,7 @@ class AuthManager(
     }
 
     fun onColdStart() {
-        if (!securePreferences.authRequired) {
+        if (skipLockForCapture() || !securePreferences.authRequired) {
             _state.value = AuthUiState.Unlocked
             return
         }
@@ -100,7 +101,7 @@ class AuthManager(
     }
 
     fun onAppForegrounded() {
-        if (!securePreferences.authRequired) {
+        if (skipLockForCapture() || !securePreferences.authRequired) {
             _state.value = AuthUiState.Unlocked
             return
         }
@@ -121,12 +122,19 @@ class AuthManager(
     }
 
     fun lockNow() {
+        if (skipLockForCapture()) {
+            _state.value = AuthUiState.Unlocked
+            return
+        }
         if (capability() == AuthCapability.NONE) {
             _state.value = AuthUiState.LockScreenMissing
         } else {
             _state.value = AuthUiState.Locked
         }
     }
+
+    /** Debug captures (Maestro) skip the device lock so the wizard and demo ledger can run. */
+    private fun skipLockForCapture(): Boolean = BuildConfig.DEBUG
 
     fun authenticate(
         activity: FragmentActivity,
