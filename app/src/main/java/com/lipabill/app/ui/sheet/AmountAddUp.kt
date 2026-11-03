@@ -42,6 +42,7 @@ import com.lipabill.app.ui.util.appendAmountKey
 import com.lipabill.app.ui.util.formatKesMoney
 import com.lipabill.app.ui.util.formatMoneyInputDisplay
 import com.lipabill.app.ui.util.sanitizeAmountInput
+import com.lipabill.app.ui.util.toAmountInput
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
 
 /**
@@ -166,10 +167,8 @@ private fun moneyText(value: Double): String {
     }
 }
 
-private fun amountInputString(total: Double): String {
-    if (total <= 0.0) return ""
-    return sanitizeAmountInput(moneyText(total))
-}
+private fun amountInputString(total: Double): String =
+    total.toAmountInput(blankIfNonPositive = true)
 
 @Composable
 fun AmountAddUpDialog(
