@@ -26,12 +26,9 @@ data class SettingsUiState(
     val providerChoices: List<MoneySource> = providerCatalog(AppRegion.DEFAULT),
     val timeoutMinutes: Int = 2,
     val fontSizeSp: Int = 12,
-    val alwaysShowBalance: Boolean = false,
     val favouritesSectionEnabled: Boolean = true,
     val recordingPrivacy: Boolean = false,
     val darkMode: Boolean = false,
-    val challengesEnabled: Boolean = false,
-    val weeklyCheckInEnabled: Boolean = false,
     val repeatEnabled: Boolean = true,
     val lipaBillA11yEnabled: Boolean = false,
     val simLines: List<SimLine> = emptyList(),
@@ -84,10 +81,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         refresh()
     }
 
-    fun setAlwaysShowBalance(enabled: Boolean) {
-        app.setAlwaysShowBalance(enabled)
-        refresh()
-    }
 
     fun setFavouritesSectionEnabled(enabled: Boolean) {
         app.setFavouritesSectionEnabled(enabled)
@@ -99,15 +92,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         refresh()
     }
 
-    fun setChallengesEnabled(enabled: Boolean) {
-        app.setChallengesEnabled(enabled)
-        refresh()
-    }
 
-    fun setWeeklyCheckInEnabled(enabled: Boolean) {
-        app.setWeeklyCheckInEnabled(enabled)
-        refresh()
-    }
 
     fun setRecordingPrivacy(enabled: Boolean) {
         app.setRecordingPrivacy(enabled)
@@ -167,12 +152,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             providerChoices = providerCatalog(region),
             timeoutMinutes = auth.timeoutMinutes(),
             fontSizeSp = app.securePreferences.uiFontSizeSp,
-            alwaysShowBalance = app.securePreferences.alwaysShowBalance,
             favouritesSectionEnabled = app.securePreferences.favouritesSectionEnabled,
             recordingPrivacy = app.securePreferences.recordingPrivacy,
             darkMode = app.securePreferences.darkMode,
-            challengesEnabled = app.securePreferences.challengesEnabled,
-            weeklyCheckInEnabled = app.securePreferences.weeklyCheckInEnabled,
             repeatEnabled = app.securePreferences.repeatFeatureEnabled,
             lipaBillA11yEnabled = AccessibilityHelper.isLipaBillServiceEnabled(ctx),
             simLines = lines,
