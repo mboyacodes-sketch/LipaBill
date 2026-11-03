@@ -23,4 +23,13 @@ class AppMetricsTest {
         assertEquals("added", ledgerRefreshResult(1))
         assertEquals("added", ledgerRefreshResult(40))
     }
+
+    @Test
+    fun payment_reason_maps_known_codes_and_strips_pii_shaped_text() {
+        assertEquals("pin_injected", paymentReasonCode("pin_injected"))
+        assertEquals("other_a11y", paymentReasonCode("other_accessibility_service"))
+        assertEquals("call_permission", paymentReasonCode("CALL_PHONE denied"))
+        assertEquals("inject_failed", paymentReasonCode("Could not type into USSD field"))
+        assertEquals("other", paymentReasonCode("paid 0712345678 KES 500"))
+    }
 }

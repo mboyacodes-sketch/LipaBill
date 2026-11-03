@@ -72,6 +72,7 @@ object AppMetrics {
                 FirebaseAnalytics.Param.SCREEN_CLASS to name.take(36)
             )
         )
+        AppCrashReporting.breadcrumb("screen:${name.take(24)}")
     }
 
     fun firstRunCompleted() = log("first_run_completed")
@@ -104,22 +105,39 @@ object AppMetrics {
     fun paymentStarted(flow: String) {
         val safe = flow.take(16)
         activePaymentFlow = safe
+        AppCrashReporting.setKey("payment_flow", safe)
+        AppCrashReporting.setKey("payment_result", "started")
+        AppCrashReporting.breadcrumb("pay:start:$safe")
         log("payment_started", bundleOf("flow" to safe))
     }
 
-    fun paymentFinished(outcome: RepeatOutcome) {
+    /**
+     * @param reason closed code only — never dialog text / amounts / phones.
+     * Examples: pin_injected, accessibility_off, other_a11y, call_permission,
+     * dial_failed, inject_failed, menu_mismatch, service_interrupted,
+     * driver_error, user_cancelled, confirm_no, finished_notice.
+     */
+    fun paymentFinished(outcome: RepeatOutcome, reason: String? = null) {
         val result = paymentFinishResult(outcome) ?: return
+        val safeReason = reason?.let { paymentReasonCode(it) }
+        AppCrashReporting.setKey("payment_result", result)
+        if (safeReason != null) AppCrashReporting.setKey("payment_reason", safeReason)
+        AppCrashReporting.breadcrumb("pay:finish:$result:${safeReason ?: "none"}")
         log(
             "payment_finished",
             bundleOf(
                 "flow" to (activePaymentFlow ?: "unknown"),
-                "result" to result
+                "result" to result,
+                "reason" to safeReason
             )
         )
+        activePaymentFlow = null
     }
 
-    fun setupBlocked(blocker: SetupBlocker) =
+    fun setupBlocked(blocker: SetupBlocker) {
+        AppCrashReporting.breadcrumb("setup:${blocker.key}")
         log("setup_blocked", bundleOf("blocker" to blocker.key))
+    }
 
     fun permissionResult(kind: PermissionKind, granted: Boolean) =
         log("permission_result", bundleOf("kind" to kind.key, "granted" to granted))
@@ -149,18 +167,50 @@ object AppMetrics {
     }
 
     fun ledgerRefreshFailed(error: Throwable? = null) {
+        AppCrashReporting.breadcrumb("ledger:error")
         log("ledger_refresh", bundleOf("result" to "error"))
         if (error != null && error !is SecurityException) AppCrashReporting.recordCaught(error)
     }
 
-    fun paymentAborted(flow: String, reason: String) =
+    fun paymentAborted(flow: String, reason: String) {
+        val safeFlow = flow.take(16)
+        val safeReason = paymentReasonCode(reason)
+        AppCrashReporting.setKey("payment_flow", safeFlow)
+        AppCrashReporting.setKey("payment_reason", safeReason)
+        AppCrashReporting.breadcrumb("pay:abort:$safeReason")
         log(
             "payment_aborted",
             bundleOf(
-                "flow" to flow.take(16),
-                "reason" to reason.take(32)
+                "flow" to safeFlow,
+                "reason" to safeReason
             )
         )
+    }
+
+    /** result: success, cancel, error, no_lock. */
+    fun authResult(result: String) {
+        val safe = paymentReasonCode(result)
+        AppCrashReporting.breadcrumb("auth:$safe")
+        log("auth_result", bundleOf("result" to safe))
+    }
+
+    /** result: matched, parse_error, error. Never address/body. */
+    fun smsIngest(result: String) {
+        val safe = paymentReasonCode(result)
+        log("sms_ingest", bundleOf("result" to safe))
+        if (result == "error") AppCrashReporting.breadcrumb("sms:error")
+    }
+
+    /** kind: challenge / checkin / pass_reminder. result: ok / error. */
+    fun engagementWorker(kind: String, result: String) {
+        log(
+            "engagement_worker",
+            bundleOf(
+                "kind" to kind.take(16),
+                "result" to paymentReasonCode(result)
+            )
+        )
+    }
 
     fun log(event: String, params: Bundle = Bundle()) {
         val fa = analytics ?: return
@@ -198,3 +248,47 @@ internal fun paymentFinishResult(outcome: RepeatOutcome): String? = when (outcom
 
 internal fun ledgerRefreshResult(inserted: Int): String =
     if (inserted > 0) "added" else "unchanged"
+
+/** Collapse free text to a closed analytics token. Unknown → other. */
+internal fun paymentReasonCode(raw: String): String {
+    val key = raw.trim().lowercase()
+        .replace(Regex("[^a-z0-9_]+"), "_")
+        .trim('_')
+        .take(32)
+    return when (key) {
+        "pin_injected",
+        "finished_notice",
+        "accessibility_off",
+        "other_accessibility_service",
+        "other_a11y",
+        "call_permission",
+        "call_phone_denied",
+        "dial_failed",
+        "inject_failed",
+        "menu_mismatch",
+        "service_interrupted",
+        "driver_error",
+        "user_cancelled",
+        "confirm_no",
+        "feature_disabled",
+        "prepare_failed",
+        "success",
+        "cancel",
+        "error",
+        "no_lock",
+        "matched",
+        "parse_error",
+        "ok",
+        "aborted" -> when (key) {
+            "other_accessibility_service" -> "other_a11y"
+            "call_phone_denied" -> "call_permission"
+            else -> key
+        }
+        else -> when {
+            key.contains("call_phone") -> "call_permission"
+            key.contains("other_accessibility") -> "other_a11y"
+            key.contains("could_not_type") || key.contains("inject") -> "inject_failed"
+            else -> "other"
+        }
+    }
+}

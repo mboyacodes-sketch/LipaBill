@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import com.lipabill.app.LipaBillApp
+import com.lipabill.app.metrics.AppCrashReporting
+import com.lipabill.app.metrics.AppMetrics
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -29,22 +31,34 @@ class MpesaSmsReceiver : BroadcastReceiver() {
             try {
                 var matched = false
                 messages.forEach { sms ->
-                    val address = sms.displayOriginatingAddress.orEmpty()
-                    val body = sms.messageBody.orEmpty()
-                    val parsed = ConfirmationIngestion.acceptAndParse(
-                        address = address,
-                        body = body,
-                        timestampMillis = sms.timestampMillis,
-                        region = app.securePreferences.appRegion,
-                        enabled = app.enabledSources.value
-                    ) ?: return@forEach
-                    matched = true
-                    app.repository.upsert(parsed)
+                    when (
+                        val outcome = ConfirmationIngestion.acceptOutcome(
+                            address = sms.displayOriginatingAddress.orEmpty(),
+                            body = sms.messageBody.orEmpty(),
+                            timestampMillis = sms.timestampMillis,
+                            region = app.securePreferences.appRegion,
+                            enabled = app.enabledSources.value
+                        )
+                    ) {
+                        is ConfirmationIngestion.Outcome.Matched -> {
+                            matched = true
+                            AppMetrics.smsIngest("matched")
+                            app.repository.upsert(outcome.tx)
+                        }
+                        ConfirmationIngestion.Outcome.Skipped -> Unit
+                        is ConfirmationIngestion.Outcome.ParseFailed -> {
+                            // Format quirks are common — analytics only, no Crashlytics flood.
+                            AppMetrics.smsIngest("parse_error")
+                        }
+                    }
                 }
                 if (matched) {
                     app.repository.linkPhonesByName()
                     app.smsInboxSyncWatcher.syncQuietNow()
                 }
+            } catch (error: Exception) {
+                AppMetrics.smsIngest("error")
+                AppCrashReporting.recordCaught(error)
             } finally {
                 pendingResult.finish()
             }

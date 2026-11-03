@@ -411,6 +411,7 @@ fun TicketsScreen(
                         }
                     } catch (t: Throwable) {
                         if (t is CancellationException) throw t
+                        AppMetrics.ticketImportFailure("paste", t)
                         error = t.message?.takeIf { it.isNotBlank() }
                             ?: "Couldn’t parse that confirmation."
                     }

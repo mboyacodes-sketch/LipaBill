@@ -10,6 +10,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import com.lipabill.app.BuildConfig
 import com.lipabill.app.data.prefs.SecurePreferences
+import com.lipabill.app.metrics.AppMetrics
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -170,6 +171,7 @@ class AuthManager(
     ) {
         if (capability() == AuthCapability.NONE) {
             _state.value = AuthUiState.LockScreenMissing
+            AppMetrics.authResult("no_lock")
             onCancel()
             return
         }
@@ -182,6 +184,7 @@ class AuthManager(
                 override fun onAuthenticationSucceeded(
                     result: BiometricPrompt.AuthenticationResult
                 ) {
+                    AppMetrics.authResult("success")
                     onSuccess()
                 }
 
@@ -190,8 +193,11 @@ class AuthManager(
                         errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON ||
                         errorCode == BiometricPrompt.ERROR_CANCELED
                     ) {
+                        AppMetrics.authResult("cancel")
                         onCancel()
                     } else {
+                        // Never send errString — OEM copy can include device details.
+                        AppMetrics.authResult("error")
                         onError(errString.toString())
                     }
                 }

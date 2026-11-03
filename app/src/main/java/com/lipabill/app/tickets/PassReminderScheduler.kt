@@ -11,12 +11,14 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.MainActivity
-import com.lipabill.app.notify.mainActivityPendingIntent
-import com.lipabill.app.notify.postLipaBill
 import com.lipabill.app.data.model.Ticket
 import com.lipabill.app.data.model.TicketStatus
 import com.lipabill.app.data.tickets.PassReminderKind
 import com.lipabill.app.data.tickets.planPassReminders
+import com.lipabill.app.metrics.AppCrashReporting
+import com.lipabill.app.metrics.AppMetrics
+import com.lipabill.app.notify.mainActivityPendingIntent
+import com.lipabill.app.notify.postLipaBill
 import com.lipabill.app.ui.util.formatEventSchedule
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
@@ -87,18 +89,27 @@ class PassReminderWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        val id = inputData.getLong(KEY_TICKET_ID, 0L)
-        val kind = inputData.getString(KEY_KIND)?.let { raw ->
-            runCatching { PassReminderKind.valueOf(raw) }.getOrNull()
-        } ?: return Result.success()
-        if (id == 0L) return Result.success()
-        val app = applicationContext as LipaBillApp
-        val ticket = app.ticketRepository.get(id) ?: return Result.success()
-        val start = ticket.occasionMillis ?: return Result.success()
-        if (ticket.effectiveStatus() == TicketStatus.USED) return Result.success()
-        if (start < System.currentTimeMillis() - TimeUnit.HOURS.toMillis(6)) return Result.success()
-        PassReminderNotifier(applicationContext).show(ticket, kind)
-        return Result.success()
+        return try {
+            val id = inputData.getLong(KEY_TICKET_ID, 0L)
+            val kind = inputData.getString(KEY_KIND)?.let { raw ->
+                runCatching { PassReminderKind.valueOf(raw) }.getOrNull()
+            } ?: return Result.success()
+            if (id == 0L) return Result.success()
+            val app = applicationContext as LipaBillApp
+            val ticket = app.ticketRepository.get(id) ?: return Result.success()
+            val start = ticket.occasionMillis ?: return Result.success()
+            if (ticket.effectiveStatus() == TicketStatus.USED) return Result.success()
+            if (start < System.currentTimeMillis() - TimeUnit.HOURS.toMillis(6)) {
+                return Result.success()
+            }
+            PassReminderNotifier(applicationContext).show(ticket, kind)
+            AppMetrics.engagementWorker("pass_reminder", "ok")
+            Result.success()
+        } catch (t: Throwable) {
+            AppMetrics.engagementWorker("pass_reminder", "error")
+            AppCrashReporting.recordCaught(t)
+            Result.retry()
+        }
     }
 
     companion object {

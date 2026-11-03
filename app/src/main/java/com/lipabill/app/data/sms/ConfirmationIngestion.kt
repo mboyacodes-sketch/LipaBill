@@ -13,6 +13,13 @@ import com.lipabill.app.data.parser.MpesaSmsParser
  */
 object ConfirmationIngestion {
 
+    /** Outcome of trying to turn one SMS into a ledger row (no address/body retained). */
+    sealed class Outcome {
+        data class Matched(val tx: MpesaTransaction) : Outcome()
+        data object Skipped : Outcome()
+        data class ParseFailed(val error: Throwable) : Outcome()
+    }
+
     fun shouldAccept(
         address: String?,
         body: String?,
@@ -58,18 +65,35 @@ object ConfirmationIngestion {
         timestampMillis: Long,
         region: AppRegion = AppRegion.DEFAULT,
         enabled: Set<MoneySource> = region.sources
-    ): MpesaTransaction? {
-        val source = MoneySource.fromSender(address, region) ?: return null
-        val text = body?.takeIf { it.isNotBlank() } ?: return null
-        if (!shouldAcceptBody(source, text, region, enabled)) return null
+    ): MpesaTransaction? = when (
+        val outcome = acceptOutcome(address, body, timestampMillis, region, enabled)
+    ) {
+        is Outcome.Matched -> outcome.tx
+        else -> null
+    }
+
+    fun acceptOutcome(
+        address: String?,
+        body: String?,
+        timestampMillis: Long,
+        region: AppRegion = AppRegion.DEFAULT,
+        enabled: Set<MoneySource> = region.sources
+    ): Outcome {
+        val source = MoneySource.fromSender(address, region) ?: return Outcome.Skipped
+        val text = body?.takeIf { it.isNotBlank() } ?: return Outcome.Skipped
+        if (!shouldAcceptBody(source, text, region, enabled)) return Outcome.Skipped
         return runCatching {
             when {
                 source == MoneySource.MPESA && region == AppRegion.KENYA ->
                     MpesaSmsParser.parse(text, timestampMillis).copy(source = MoneySource.MPESA)
                 else ->
                     KenyanConfirmationParser.parse(text, timestampMillis, source)
+                        ?: error("confirmation_unparsed")
             }
-        }.getOrNull()
+        }.fold(
+            onSuccess = { Outcome.Matched(it) },
+            onFailure = { Outcome.ParseFailed(it) }
+        )
     }
 
     fun sourceKey(tx: MpesaTransaction): String = "${tx.source.name}:${tx.code}"
