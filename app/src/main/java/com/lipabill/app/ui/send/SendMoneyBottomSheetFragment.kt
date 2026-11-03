@@ -201,7 +201,6 @@ fun SendMoneySheetContent(
         balance = shownBalance,
         balanceCaption = WalletAccount.MPESA.balanceCaption,
         balancePrefix = WalletAccount.MPESA.balancePrefix,
-        alwaysShowBalance = sheetAccess.alwaysShowBalance,
         pendingDeduction = pendingAmount,
         selectedName = selectedName,
         selectedSubtitle = selectedSubtitle,
