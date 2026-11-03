@@ -37,8 +37,6 @@ data class ChallengeCardState(
 )
 
 data class EngageUiState(
-    val challengesOn: Boolean = false,
-    val checkInOn: Boolean = false,
     val card: ChallengeCardState? = null,
     val weekId: String = "",
     val checkInDone: Boolean = false,
@@ -55,19 +53,11 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
     private val checkInDone = MutableStateFlow(false)
 
     val uiState: StateFlow<EngageUiState> = combine(
-        app.challengesEnabled,
-        app.weeklyCheckInEnabled,
         app.engagement.observeLatest(),
         app.engagement.observeStreak(),
         summary,
         checkInDone
-    ) { values ->
-        val challengesOn = values[0] as Boolean
-        val checkInOn = values[1] as Boolean
-        val latest = values[2] as ChallengeEntity?
-        val streak = values[3] as com.lipabill.app.data.local.entity.CheckInStreakEntity?
-        val week = values[4] as WeeklySummary?
-        val done = values[5] as Boolean
+    ) { latest, streak, week, done ->
         val streakCount = streak?.count ?: 0
         val nextStreak = if (week == null) {
             streakCount
@@ -82,9 +72,7 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
             ).count
         }
         EngageUiState(
-            challengesOn = challengesOn,
-            checkInOn = checkInOn,
-            card = if (challengesOn) cardFor(latest) else null,
+            card = cardFor(latest),
             weekId = week?.weekId.orEmpty(),
             checkInDone = done,
             streakCount = streakCount,
@@ -100,18 +88,11 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
 
     fun refresh() {
         viewModelScope.launch {
-            if (!app.securePreferences.challengesEnabled && !app.securePreferences.weeklyCheckInEnabled) {
-                return@launch
-            }
-            if (app.securePreferences.challengesEnabled) {
-                val end = app.engagement.evaluate()
-                if (end != null) app.engagementScheduler.scheduleChallengeEnd(end)
-            }
-            if (app.securePreferences.weeklyCheckInEnabled) {
-                val built = app.engagement.weeklySummary()
-                summary.value = built
-                checkInDone.value = app.engagement.hasCheckIn(built.weekId)
-            }
+            val end = app.engagement.evaluate()
+            if (end != null) app.engagementScheduler.scheduleChallengeEnd(end)
+            val built = app.engagement.weeklySummary()
+            summary.value = built
+            checkInDone.value = app.engagement.hasCheckIn(built.weekId)
         }
     }
 
@@ -133,13 +114,13 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
 
     fun completeCheckIn(selected: Map<String, String>) {
         val week = summary.value ?: return
+        checkInDone.value = true
         viewModelScope.launch {
             app.engagement.completeCheckIn(
                 weekId = week.weekId,
                 answers = selected.entries.joinToString("\n") { "${it.key}=${it.value}" },
                 now = System.currentTimeMillis()
             )
-            checkInDone.value = true
         }
     }
 
