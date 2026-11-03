@@ -40,7 +40,7 @@ class EngagementRepository(
     suspend fun startFoodDeliveryChallenge(now: Long = System.currentTimeMillis()): Long? =
         start(ChallengeTemplates.foodDelivery3Days, now)
 
-    suspend fun start(template: ChallengeTemplate, now: Long): Long? = withContext(Dispatchers.IO) {
+    private suspend fun start(template: ChallengeTemplate, now: Long): Long? = withContext(Dispatchers.IO) {
         val existing = challenges.listEvaluable(now, ChallengeEvaluator.GRACE_MILLIS)
             .firstOrNull { it.status == ChallengeStatus.ACTIVE.name }
         if (existing != null) return@withContext existing.id
