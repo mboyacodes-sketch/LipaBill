@@ -2,6 +2,7 @@ package com.lipabill.app.ui.permissions
 
 import android.Manifest
 import android.content.Context
+import com.lipabill.app.BuildConfig
 import com.lipabill.app.metrics.SetupBlocker
 import com.lipabill.app.ussd.AccessibilityHelper
 
@@ -31,11 +32,15 @@ fun PaymentAccessNeed.toBlocker(): SetupBlocker? = when (this) {
     PaymentAccessNeed.Phone -> null
 }
 
-fun Context.missingPaymentAccess(): List<PaymentAccessNeed> = buildList {
-    if (!permissionGranted(Manifest.permission.CALL_PHONE)) add(PaymentAccessNeed.Phone)
-    if (!permissionGranted(Manifest.permission.READ_PHONE_STATE)) add(PaymentAccessNeed.PhoneState)
-    if (!AccessibilityHelper.isLipaBillServiceEnabled(this@missingPaymentAccess)) {
-        add(PaymentAccessNeed.Accessibility)
+fun Context.missingPaymentAccess(): List<PaymentAccessNeed> {
+    // Debug captures open Send/Pay sheets (calculator, QR) without enabling USSD fill.
+    if (BuildConfig.DEBUG) return emptyList()
+    return buildList {
+        if (!permissionGranted(Manifest.permission.CALL_PHONE)) add(PaymentAccessNeed.Phone)
+        if (!permissionGranted(Manifest.permission.READ_PHONE_STATE)) add(PaymentAccessNeed.PhoneState)
+        if (!AccessibilityHelper.isLipaBillServiceEnabled(this@missingPaymentAccess)) {
+            add(PaymentAccessNeed.Accessibility)
+        }
     }
 }
 
