@@ -96,7 +96,7 @@ fun HabitMark(
     val pulseIndex = if (kind == ChallengeCardKind.ACTIVE) (day - 1).coerceIn(0, days - 1) else -1
     val arc by animateFloatAsState(
         targetValue = done / days.toFloat() * 360f,
-        animationSpec = tween(if (motion) 700 else 0),
+        animationSpec = tween(if (motion) 350 else 0),
         label = "arc"
     )
     val burst = remember { Animatable(if (kind == ChallengeCardKind.COMPLETED && !motion) 1f else 0f) }
@@ -104,7 +104,7 @@ fun HabitMark(
         if (kind == ChallengeCardKind.COMPLETED) {
             if (motion) {
                 burst.snapTo(0f)
-                burst.animateTo(1f, tween(1100, easing = FastOutSlowInEasing))
+                burst.animateTo(1f, tween(550, easing = FastOutSlowInEasing))
             } else {
                 burst.snapTo(1f)
             }
