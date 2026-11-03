@@ -40,9 +40,9 @@ enum class WalletAccount(
     val emptyHistoryTitle: String,
     val emptyHistoryDetail: String
 ) {
-    /** Money history for every enabled wallet and bank. The enum name is historical. */
+    /** Primary ledger (M-Pesa balance; other wallets/banks mix into history). */
     MPESA(
-        chipLabel = "Money",
+        chipLabel = "M-Pesa",
         balanceCaption = "Available balance",
         balancePrefix = "Available",
         ledgerTitle = "Transactions",
