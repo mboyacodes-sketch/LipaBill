@@ -22,6 +22,27 @@ A full local workspace is required to build a production binary.
 
 Flavors: **`play`** (default, Play submission) and **`internal`** (sideload helpers such as Settings restricted-unlock auto-navigation). Both keep SMS ledger + USSD Accessibility fill.
 
+## Maestro suites
+
+Two entry points. Phone must be unlocked (fingerprint or swipe). Neither suite
+types an M-Pesa PIN; both stop if a PIN pad appears (`guard-pin.yaml`).
+
+```bash
+./promo/run.sh   # Demo: SMS denied, demo ledger, debug Send walkthrough, stills
+./promo/export.sh
+./live/run.sh    # Live: grant SMS/phone/camera/alerts + Accessibility, real inbox
+```
+
+| | Demo (`./promo/run.sh`) | Live (`./live/run.sh`) |
+|---|---|---|
+| Flow | `.maestro/promo.yaml` | `.maestro/live/happy-path.yaml` |
+| SMS | Denied (`Continue without SMS`) | Allowed (adb + Allow dialogs) |
+| Ledger | Debug `DemoLedger` seed | Real confirmation SMS |
+| Accessibility | Skipped | Enabled via adb (+ UI fallback) |
+| Send / Pay | Debug walkthrough stills only | Send `0711222333` & Pay Till `111222` to PIN, then Cancel |
+
+App ID is `com.lipabill.app`.
+
 ## Notes
 
 - Repo name and Play listing name do not need to match.
