@@ -68,7 +68,6 @@ import com.lipabill.app.ui.permissions.AccessibilityPreferred
 import com.lipabill.app.ui.permissions.FirstRunPage
 import com.lipabill.app.ui.permissions.HibernationExemptionPrompt
 import com.lipabill.app.ui.permissions.FirstRunSetupScreen
-import com.lipabill.app.ui.permissions.PermissionPromptMemory
 import com.lipabill.app.ui.permissions.consentPageFor
 import com.lipabill.app.ui.permissions.missingPaymentAccess
 import com.lipabill.app.ui.permissions.onNotificationPermission
@@ -79,15 +78,18 @@ import com.lipabill.app.ui.permissions.RouteConsent
 import com.lipabill.app.ui.permissions.SmsRestrictedSettings
 import com.lipabill.app.ui.pay.PayMoneyBottomSheetFragment
 import com.lipabill.app.ui.receipt.ProcessingReceiptScreen
+import com.lipabill.app.ui.demo.DemoPaymentWalkthrough
 import com.lipabill.app.ui.repeat.ManualRepeatScreen
 import com.lipabill.app.ui.repeat.RepeatConfirmScreen
 import com.lipabill.app.ui.send.SendMoneyBottomSheetFragment
 import com.lipabill.app.ui.settings.SettingsScreen
 import com.lipabill.app.ui.adapt.AdaptiveFrame
 import com.lipabill.app.ui.adapt.ProvideWindowWidth
+import com.lipabill.app.ui.privacy.RecordingCapture
 import com.lipabill.app.ui.theme.LipaBillTheme
 import com.lipabill.app.ui.tickets.TicketDetailScreen
 import com.lipabill.app.ui.tickets.TicketsScreen
+import com.lipabill.app.ui.util.formatKesMoney
 import com.lipabill.app.ui.util.hideKeyboardOnOutsideTap
 import com.lipabill.app.device.HandheldDeviceGate
 import com.lipabill.app.metrics.AppMetrics
@@ -97,7 +99,9 @@ import com.lipabill.app.pay.PayLink
 import com.lipabill.app.ui.paylink.PayProfileScreen
 import com.lipabill.app.ussd.AccessibilityHelper
 import com.lipabill.app.ussd.PendingPaymentReceipt
+import com.lipabill.app.ussd.RepeatOutcome
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
+import com.lipabill.app.ussd.UssdAutomationMask
 import com.lipabill.app.viewmodel.PayMoneyViewModel
 import com.lipabill.app.viewmodel.PayMethod
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
@@ -107,6 +111,7 @@ import com.lipabill.app.viewmodel.TicketDetailViewModel
 import com.lipabill.app.viewmodel.TicketsViewModel
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import com.lipabill.app.viewmodel.viewModelFactory
+import com.lipabill.app.BuildConfig
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity(),
@@ -171,13 +176,15 @@ class MainActivity : AppCompatActivity(),
     }
 
     /**
-     * Screenshots, recents, and screen capture stay off unless recording mode is on
-     * (debug / internal builds only — see [RecordingCapture]).
+     * Play release keeps FLAG_SECURE on. Debug / internal builds stay capturable
+     * (Maestro, scrcpy) so dummy-data stills are possible without blur mode.
      */
     fun applyCaptureProtection(
         recording: Boolean = (application as LipaBillApp).recordingPrivacy.value
     ) {
-        if (recording) {
+        if (RecordingCapture.available) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } else if (recording) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         } else {
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -874,6 +881,90 @@ private fun AuthenticatedApp(
         }
     }
 
+    suspend fun finishDemoWalkthrough(auditId: Long, cancelled: Boolean) {
+        if (cancelled) {
+            app.repeatRepository.finish(
+                auditId,
+                RepeatOutcome.USER_CANCELLED,
+                "demo_cancelled"
+            )
+            PendingPaymentReceipt.clear()
+            navigateHome()
+            return
+        }
+        val snap = PendingPaymentReceipt.peek(auditId)
+        if (snap != null) {
+            PendingPaymentReceipt.queueDemoHomeReveal(snap)
+        }
+        app.repeatRepository.finish(
+            auditId,
+            RepeatOutcome.COMPLETED_TO_PIN,
+            "demo_walkthrough"
+        )
+        navController.navigate(Route.Processing(auditId).path) {
+            popUpTo(Route.List.path) { inclusive = false }
+            launchSingleTop = true
+        }
+    }
+
+    /**
+     * Debug / Maestro only. Prefers the real USSD mask (progress → Yes/No → PIN)
+     * when Accessibility is on; otherwise the Compose fallback. Never dials *334#
+     * and never stores PIN digits.
+     */
+    fun runDemoPaymentWalkthrough(
+        flow: String,
+        prepare: suspend () -> RepeatTransactionCoordinator.PreparedRepeat?,
+        summary: () -> Triple<String, String, String>?
+    ) {
+        scope.launch {
+            val prepared = prepare()
+            if (prepared == null) {
+                AppMetrics.paymentAborted(flow, "prepare_failed")
+                Toast.makeText(
+                    context,
+                    "Couldn’t start payment — check amount and recipient",
+                    Toast.LENGTH_LONG
+                ).show()
+                return@launch
+            }
+            AppMetrics.paymentStarted(flow)
+            PendingPaymentReceipt.capture(prepared)
+            dismissMoneySheets()
+            val labels = summary()
+            val amountLabel = labels?.third ?: formatKesMoney(prepared.amount)
+            val detail = labels?.let { "${it.first} · ${it.second}" }
+                ?: listOfNotNull(
+                    prepared.transaction.counterpartyName,
+                    prepared.transaction.counterpartyPhone
+                ).joinToString(" · ").ifBlank { "Demo payment" }
+            val auditId = prepared.auditId
+            val maskSummary = "$amountLabel\n$detail\nDemo walkthrough — no USSD dial"
+            val usedMask = UssdAutomationMask.startDebugWalkthrough(
+                totalSteps = prepared.plan.actions.size.coerceAtLeast(1),
+                summary = maskSummary,
+                onComplete = {
+                    scope.launch { finishDemoWalkthrough(auditId, cancelled = false) }
+                },
+                onCancel = {
+                    scope.launch { finishDemoWalkthrough(auditId, cancelled = true) }
+                }
+            )
+            if (!usedMask) {
+                navController.navigate(
+                    Route.DemoPayment(
+                        auditId = auditId,
+                        amountLabel = amountLabel,
+                        detail = detail
+                    ).path
+                ) {
+                    popUpTo(Route.List.path) { inclusive = false }
+                    launchSingleTop = true
+                }
+            }
+        }
+    }
+
     fun runStepUpAndDial(repeatVm: RepeatTransactionViewModel) {
         runStepUpAndDial(
             flow = "repeat",
@@ -884,6 +975,14 @@ private fun AuthenticatedApp(
     }
 
     fun runStepUpAndDial(sendVm: SendMoneyViewModel) {
+        if (BuildConfig.DEBUG) {
+            runDemoPaymentWalkthrough(
+                flow = "send",
+                prepare = { sendVm.prepare() },
+                summary = { sendVm.confirmSummary() }
+            )
+            return
+        }
         runStepUpAndDial(
             flow = "send",
             prepare = { sendVm.prepare() },
@@ -893,6 +992,14 @@ private fun AuthenticatedApp(
     }
 
     fun runStepUpAndDial(payVm: PayMoneyViewModel) {
+        if (BuildConfig.DEBUG) {
+            runDemoPaymentWalkthrough(
+                flow = "pay",
+                prepare = { payVm.prepare() },
+                summary = { payVm.confirmSummary() }
+            )
+            return
+        }
         runStepUpAndDial(
             flow = "pay",
             prepare = { payVm.prepare() },
@@ -962,32 +1069,40 @@ private fun AuthenticatedApp(
             }
         }
         mainActivity.sendConfirmHandler = {
-            gateConfirm(
-                refresh = sendVm::refreshGates,
-                readState = {
-                    val s = sendVm.uiState.value
-                    s.accessibilityEnabled to s.needsPhoneStatePermission
-                },
-                needsSimSetup = {
-                    val s = sendVm.uiState.value
-                    s.simLines.size > 1 && !s.hasSavedSimPreference
-                },
-                dial = { runStepUpAndDial(sendVm) }
-            )
+            if (BuildConfig.DEBUG) {
+                runStepUpAndDial(sendVm)
+            } else {
+                gateConfirm(
+                    refresh = sendVm::refreshGates,
+                    readState = {
+                        val s = sendVm.uiState.value
+                        s.accessibilityEnabled to s.needsPhoneStatePermission
+                    },
+                    needsSimSetup = {
+                        val s = sendVm.uiState.value
+                        s.simLines.size > 1 && !s.hasSavedSimPreference
+                    },
+                    dial = { runStepUpAndDial(sendVm) }
+                )
+            }
         }
         mainActivity.payConfirmHandler = {
-            gateConfirm(
-                refresh = payVm::refreshGates,
-                readState = {
-                    val s = payVm.uiState.value
-                    s.accessibilityEnabled to s.needsPhoneStatePermission
-                },
-                needsSimSetup = {
-                    val s = payVm.uiState.value
-                    s.simLines.size > 1 && !s.hasSavedSimPreference
-                },
-                dial = { runStepUpAndDial(payVm) }
-            )
+            if (BuildConfig.DEBUG) {
+                runStepUpAndDial(payVm)
+            } else {
+                gateConfirm(
+                    refresh = payVm::refreshGates,
+                    readState = {
+                        val s = payVm.uiState.value
+                        s.accessibilityEnabled to s.needsPhoneStatePermission
+                    },
+                    needsSimSetup = {
+                        val s = payVm.uiState.value
+                        s.simLines.size > 1 && !s.hasSavedSimPreference
+                    },
+                    dial = { runStepUpAndDial(payVm) }
+                )
+            }
         }
     }
 
@@ -1100,6 +1215,7 @@ private fun AuthenticatedApp(
                         AppMetrics.firstRunCompleted()
                         smsGranted = hasSmsPermission()
                         listVm.setSmsPermission(smsGranted)
+                        app.ensureDemoLedger()
                         navController.navigate(Route.List.path) {
                             popUpTo(Route.FirstRunSetup.path) { inclusive = true }
                         }
@@ -1324,6 +1440,42 @@ private fun AuthenticatedApp(
                     auditId = auditId,
                     onDone = { navigateHome() },
                     onBack = { navigateHome() }
+                )
+            }
+        }
+        if (BuildConfig.DEBUG) {
+            composable(
+                route = Route.DemoPayment.pattern,
+                arguments = listOf(
+                    navArgument("auditId") { type = NavType.LongType },
+                    navArgument("amount") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    },
+                    navArgument("detail") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    }
+                )
+            ) { entry ->
+                val auditId = entry.arguments?.getLong("auditId") ?: return@composable
+                val amountLabel = entry.arguments?.getString("amount").orEmpty()
+                    .ifBlank { "KES" }
+                val detail = entry.arguments?.getString("detail").orEmpty()
+                    .ifBlank { "Demo payment" }
+                BackHandler {
+                    PendingPaymentReceipt.clear()
+                    navigateHome()
+                }
+                DemoPaymentWalkthrough(
+                    amountLabel = amountLabel,
+                    detail = detail,
+                    onCancel = {
+                        scope.launch { finishDemoWalkthrough(auditId, cancelled = true) }
+                    },
+                    onComplete = {
+                        scope.launch { finishDemoWalkthrough(auditId, cancelled = false) }
+                    }
                 )
             }
         }
