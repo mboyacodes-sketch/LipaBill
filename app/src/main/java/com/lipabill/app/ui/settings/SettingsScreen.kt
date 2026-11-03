@@ -28,7 +28,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Payments
@@ -71,7 +70,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lipabill.app.BuildConfig
 import com.lipabill.app.MarketingLinks
-import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.groupedProviderCatalog
 import com.lipabill.app.R
 import com.lipabill.app.data.local.entity.RepeatAttemptEntity
@@ -266,22 +264,15 @@ fun SettingsScreen(
             }
 
             SettingsSection("Home", Icons.Outlined.Home) {
-                SettingsSwitchRow(
-                    title = "Show balance",
-                    subtitle = "Always visible. Off hides it until you tap.",
-                    checked = state.alwaysShowBalance,
-                    onCheckedChange = viewModel::setAlwaysShowBalance
-                )
                 if (state.region.canSendPay) {
-                    SettingsDivider()
                     SettingsSwitchRow(
                         title = "Favourites",
                         subtitle = "Frequent contacts on the home screen.",
                         checked = state.favouritesSectionEnabled,
                         onCheckedChange = viewModel::setFavouritesSectionEnabled
                     )
+                    SettingsDivider()
                 }
-                SettingsDivider()
                 SettingsSwitchRow(
                     title = "Dark mode",
                     subtitle = "Navy screens at night. Passes stay paper white.",
@@ -337,22 +328,6 @@ fun SettingsScreen(
                 )
             }
 
-            SettingsSection(stringResource(R.string.settings_habits), Icons.Outlined.Flag) {
-                SettingsSwitchRow(
-                    title = stringResource(R.string.settings_challenges_title),
-                    subtitle = stringResource(R.string.settings_challenges_body),
-                    checked = state.challengesEnabled,
-                    onCheckedChange = viewModel::setChallengesEnabled
-                )
-                SettingsDivider()
-                SettingsSwitchRow(
-                    title = stringResource(R.string.settings_checkin_title),
-                    subtitle = stringResource(R.string.settings_checkin_body),
-                    checked = state.weeklyCheckInEnabled,
-                    onCheckedChange = viewModel::setWeeklyCheckInEnabled
-                )
-            }
-
             SettingsSection("About", Icons.Outlined.Info) {
                 SettingsNavRow(
                     title = stringResource(R.string.settings_check_update),
@@ -387,7 +362,7 @@ fun SettingsScreen(
                 SettingsSection("Developer", Icons.Outlined.Code) {
                     SettingsSwitchRow(
                         title = "Screen recording",
-                        subtitle = "Allows capture and blurs names and amounts.",
+                        subtitle = "Blur names and amounts while you capture. Off for demo data.",
                         checked = state.recordingPrivacy,
                         onCheckedChange = viewModel::setRecordingPrivacy
                     )
