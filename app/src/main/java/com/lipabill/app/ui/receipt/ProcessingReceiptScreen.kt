@@ -56,6 +56,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lipabill.app.BuildConfig
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
@@ -70,7 +71,6 @@ import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.permissions.FirstRunPage
 import com.lipabill.app.ui.permissions.shouldOfferPostNotifications
 import com.lipabill.app.ui.util.findComponentActivity
-import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.Expense
@@ -118,6 +118,8 @@ private const val SMS_ARRIVAL_WAIT_MS = 10_000L
 
 /** Confirmed receipt stays up long enough to read, then returns home. */
 private const val CONFIRMED_HOLD_MS = 2_500L
+/** Faster dismiss during debug/promo capture. */
+private const val CONFIRMED_HOLD_DEBUG_MS = 1_000L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -192,8 +194,13 @@ fun ProcessingReceiptScreen(
         }
     }
 
+    // Debug walkthrough: Confirmed without a DB row so Home can scroll first.
+    val demoWalkthroughDone = BuildConfig.DEBUG &&
+        attempt?.outcome == RepeatOutcome.COMPLETED_TO_PIN &&
+        attempt?.detail == "demo_walkthrough"
+
     val tag: ReceiptTag = when {
-        matchedTx != null -> ReceiptTag.DONE
+        matchedTx != null || demoWalkthroughDone -> ReceiptTag.DONE
         attempt?.outcome == RepeatOutcome.ABORTED_MISMATCH ||
             attempt?.outcome == RepeatOutcome.ABORTED_ERROR -> ReceiptTag.INTERRUPTED
         attempt?.outcome == RepeatOutcome.USER_CANCELLED &&
@@ -201,13 +208,19 @@ fun ProcessingReceiptScreen(
         else -> ReceiptTag.PROCESSING
     }
 
-    LaunchedEffect(matchedTx?.id, attempt?.outcome) {
+    LaunchedEffect(matchedTx?.id, attempt?.outcome, attempt?.detail) {
         when {
-            matchedTx != null -> delay(CONFIRMED_HOLD_MS)
+            matchedTx != null || demoWalkthroughDone -> delay(
+                if (BuildConfig.DEBUG) CONFIRMED_HOLD_DEBUG_MS else CONFIRMED_HOLD_MS
+            )
             attempt?.outcome == RepeatOutcome.COMPLETED_TO_PIN -> delay(SMS_ARRIVAL_WAIT_MS)
             else -> return@LaunchedEffect
         }
-        PendingPaymentReceipt.clear()
+        if (demoWalkthroughDone) {
+            PendingPaymentReceipt.clearLeavingDemoHomeReveal()
+        } else {
+            PendingPaymentReceipt.clear()
+        }
         onDone()
     }
 
@@ -336,7 +349,11 @@ fun ProcessingReceiptScreen(
                 Spacer(modifier = Modifier.height(Space.block))
                 Button(
                     onClick = {
-                        PendingPaymentReceipt.clear()
+                        if (demoWalkthroughDone) {
+                            PendingPaymentReceipt.clearLeavingDemoHomeReveal()
+                        } else {
+                            PendingPaymentReceipt.clear()
+                        }
                         onDone()
                     },
                     modifier = Modifier
@@ -351,7 +368,11 @@ fun ProcessingReceiptScreen(
                     Text(if (tag == ReceiptTag.DONE) "Done" else "Close")
                 }
                 TextButton(onClick = {
-                    PendingPaymentReceipt.clear()
+                    if (demoWalkthroughDone) {
+                        PendingPaymentReceipt.clearLeavingDemoHomeReveal()
+                    } else {
+                        PendingPaymentReceipt.clear()
+                    }
                     onBack()
                 }) {
                     Text("Back to home")
