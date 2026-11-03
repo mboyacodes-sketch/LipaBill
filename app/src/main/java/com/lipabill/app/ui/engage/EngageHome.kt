@@ -28,7 +28,6 @@ import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.Space
-import com.lipabill.app.viewmodel.ChallengeCardKind
 import com.lipabill.app.viewmodel.EngageUiState
 
 @Composable
@@ -37,30 +36,19 @@ fun EngageHomeSection(
     onOpen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    if (!state.challengesOn && !state.checkInOn) return
     val card = state.card
-    val showChallenge = state.challengesOn && card != null
+    val showChallenge = card != null
     val title = if (showChallenge) {
-        when (card.kind) {
-            ChallengeCardKind.OFFER -> stringResource(R.string.challenge_offer_title)
-            ChallengeCardKind.ACTIVE -> stringResource(R.string.challenge_active_title, card.day, card.totalDays)
-            ChallengeCardKind.COMPLETED -> stringResource(R.string.challenge_completed_title)
-            ChallengeCardKind.BROKEN -> stringResource(R.string.challenge_ended_title)
-        }
+        challengeTitle(card.kind, card.day, card.totalDays)
     } else {
         stringResource(R.string.checkin_offer_title)
     }
     val body = if (showChallenge) {
-        when (card.kind) {
-            ChallengeCardKind.OFFER -> stringResource(R.string.challenge_offer_body)
-            ChallengeCardKind.ACTIVE -> stringResource(R.string.challenge_active_body)
-            ChallengeCardKind.COMPLETED -> stringResource(R.string.challenge_completed_body)
-            ChallengeCardKind.BROKEN -> stringResource(R.string.challenge_ended_body)
-        }
+        challengeBody(card.kind, card.day, card.totalDays)
     } else {
         stringResource(R.string.checkin_offer_body)
     }
-    val checkInReady = state.checkInOn && !state.checkInDone && showChallenge
+    val checkInReady = !state.checkInDone && showChallenge
     Row(
         modifier = modifier
             .fillMaxWidth()
