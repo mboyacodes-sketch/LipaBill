@@ -101,7 +101,6 @@ val SheetInputStyle: TextStyle
 @Composable
 fun MoneySheetScaffold(
     balance: Double?,
-    alwaysShowBalance: Boolean,
     pendingDeduction: Double? = null,
     balanceCaption: String = "Available balance",
     balancePrefix: String = "Available",
@@ -178,7 +177,6 @@ fun MoneySheetScaffold(
         if (showKeypad) {
             AmountStage(
                 balance = balance,
-                alwaysShowBalance = alwaysShowBalance,
                 balancePrefix = balancePrefix,
                 selectedName = selectedName,
                 selectedSubtitle = selectedSubtitle,
@@ -231,7 +229,6 @@ fun MoneySheetScaffold(
                 Spacer(modifier = Modifier.height(Space.block))
                 BalanceCard(
                     balance = balance,
-                    alwaysShowBalance = alwaysShowBalance,
                     pendingDeduction = null,
                     caption = balanceCaption
                 )
@@ -336,7 +333,6 @@ fun MoneySheetScaffold(
 @Composable
 private fun AmountStage(
     balance: Double?,
-    alwaysShowBalance: Boolean,
     balancePrefix: String,
     selectedName: String?,
     selectedSubtitle: String?,
@@ -388,7 +384,6 @@ private fun AmountStage(
                     Text("$balancePrefix ", style = HomeType.caption, color = Mute)
                     BalanceAmountRow(
                         balance = balance,
-                        alwaysShow = alwaysShowBalance,
                         amountStyle = HomeType.caption,
                         pendingDeduction = null,
                         horizontalArrangement = Arrangement.Start
@@ -465,7 +460,6 @@ private fun CompactRecipientChip(
 @Composable
 private fun BalanceCard(
     balance: Double?,
-    alwaysShowBalance: Boolean,
     pendingDeduction: Double? = null,
     caption: String = "Available balance"
 ) {
@@ -491,7 +485,6 @@ private fun BalanceCard(
             Spacer(modifier = Modifier.height(Space.tight))
             BalanceAmountRow(
                 balance = balance,
-                alwaysShow = alwaysShowBalance,
                 pendingDeduction = pendingDeduction,
                 amountStyle = HomeType.greeting
             )
