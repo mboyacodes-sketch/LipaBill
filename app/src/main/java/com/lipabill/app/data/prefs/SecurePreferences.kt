@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import com.lipabill.app.BuildConfig
 import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.parseStoredSources
@@ -81,10 +80,6 @@ class SecurePreferences(context: Context) {
         get() = prefs.getInt(KEY_UI_FONT_SIZE_SP, DEFAULT_FONT_SIZE_SP).coerceIn(8, 22)
         set(value) = prefs.edit().putInt(KEY_UI_FONT_SIZE_SP, value.coerceIn(8, 22)).apply()
 
-    /** When true, available balance is always visible (no tap-to-reveal / auto-hide). */
-    var alwaysShowBalance: Boolean
-        get() = prefs.getBoolean(KEY_ALWAYS_SHOW_BALANCE, false)
-        set(value) = prefs.edit().putBoolean(KEY_ALWAYS_SHOW_BALANCE, value).apply()
 
     /** When true, the home Favourites (Frequent) section is shown. */
     var favouritesSectionEnabled: Boolean
@@ -92,14 +87,13 @@ class SecurePreferences(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_FAVOURITES_SECTION, value).apply()
 
     /**
-     * Debug / internal builds only. When true, FLAG_SECURE is cleared (scrcpy /
-     * screen record work) and names, numbers, references, and ticket codes are
-     * blurred. Keyboards stay sharp. Play release ignores this flag.
-     * Defaults on so a fresh debug/internal install can be recorded immediately.
+     * Debug / internal builds only. When true, names, numbers, references, and
+     * ticket codes are blurred in the framebuffer. Keyboards stay sharp.
+     * Play release ignores this flag. Defaults off so dummy/demo captures stay readable.
      */
     var recordingPrivacy: Boolean
         get() = RecordingCapture.available &&
-            prefs.getBoolean(KEY_RECORDING_PRIVACY, true)
+            prefs.getBoolean(KEY_RECORDING_PRIVACY, false)
         set(value) {
             if (!RecordingCapture.available) return
             prefs.edit().putBoolean(KEY_RECORDING_PRIVACY, value).apply()
@@ -180,10 +174,6 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_DARK_MODE, false)
         set(value) = prefs.edit().putBoolean(KEY_DARK_MODE, value).apply()
 
-    /** When true, the home screen can start a no-spend challenge. Default off. */
-    var challengesEnabled: Boolean
-        get() = prefs.getBoolean(KEY_CHALLENGES, false)
-        set(value) = prefs.edit().putBoolean(KEY_CHALLENGES, value).apply()
 
     /**
      * How this phone's Request QR collects money: `phone`, `till`, or `paybill`.
@@ -218,10 +208,6 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_PAY_QR_FIXED, false)
         set(value) = prefs.edit().putBoolean(KEY_PAY_QR_FIXED, value).apply()
 
-    /** When true, the weekly spending check-in is offered. Default off. */
-    var weeklyCheckInEnabled: Boolean
-        get() = prefs.getBoolean(KEY_WEEKLY_CHECKIN, false)
-        set(value) = prefs.edit().putBoolean(KEY_WEEKLY_CHECKIN, value).apply()
 
     /** When true, the inbox has been read once without a date bound. Later scans stay incremental. */
     val inboxHistoryImported: Boolean
@@ -258,8 +244,6 @@ class SecurePreferences(context: Context) {
         private const val KEY_SAVINGS_CLASSIFY_REPAIR_DONE = "savings_classify_repair_v2"
         private const val KEY_UNKNOWN_PARTY_REPAIR_DONE = "unknown_party_repair_v1"
         private const val KEY_DARK_MODE = "dark_mode"
-        private const val KEY_CHALLENGES = "challenges_enabled"
-        private const val KEY_WEEKLY_CHECKIN = "weekly_checkin_enabled"
         private const val KEY_INBOX_HISTORY_IMPORTED = "inbox_history_imported_v1"
         private const val KEY_INBOX_HIGH_WATER = "inbox_high_water_millis"
         private const val KEY_WALLET_RAILS_INBOX_SCAN = "wallet_rails_inbox_scan_v1"
@@ -268,7 +252,6 @@ class SecurePreferences(context: Context) {
         private const val KEY_A11Y_PREFERRED_ON = "a11y_preferred_on"
         private const val KEY_PREFERRED_SIM_SUB_ID = "preferred_sim_subscription_id"
         private const val KEY_UI_FONT_SIZE_SP = "ui_font_size_sp_v2"
-        private const val KEY_ALWAYS_SHOW_BALANCE = "always_show_balance"
         private const val KEY_FAVOURITES_SECTION = "favourites_section_enabled"
         private const val KEY_RECORDING_PRIVACY = "recording_privacy"
         private const val KEY_HIBERNATION_PROMPT_SHOWN = "hibernation_prompt_shown"
