@@ -62,8 +62,8 @@ object DataAccessRationale {
     )
 
     val NOTIFICATIONS = DataAccessCopy(
-        title = "Alerts for payments and confirmations",
-        body = "LipaBill can notify you when a confirmation arrives, " +
+        title = "Alerts when money moves",
+        body = "LipaBill can notify you when a confirmation arrives so you can open the receipt, " +
             "and when a payment you started needs you."
     )
 
