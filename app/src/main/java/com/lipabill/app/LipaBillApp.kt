@@ -67,9 +67,6 @@ class LipaBillApp : Application() {
     private val _fontSizeSp = MutableStateFlow(12)
     val fontSizeSp: StateFlow<Int> = _fontSizeSp.asStateFlow()
 
-    private val _alwaysShowBalance = MutableStateFlow(false)
-    val alwaysShowBalance: StateFlow<Boolean> = _alwaysShowBalance.asStateFlow()
-
     private val _favouritesSectionEnabled = MutableStateFlow(true)
     val favouritesSectionEnabled: StateFlow<Boolean> = _favouritesSectionEnabled.asStateFlow()
 
@@ -78,10 +75,6 @@ class LipaBillApp : Application() {
 
     private val _darkMode = MutableStateFlow(false)
     val darkMode: StateFlow<Boolean> = _darkMode.asStateFlow()
-    private val _challengesEnabled = MutableStateFlow(false)
-    val challengesEnabled: StateFlow<Boolean> = _challengesEnabled.asStateFlow()
-    private val _weeklyCheckInEnabled = MutableStateFlow(false)
-    val weeklyCheckInEnabled: StateFlow<Boolean> = _weeklyCheckInEnabled.asStateFlow()
 
     private val _appRegion = MutableStateFlow(AppRegion.DEFAULT)
     val appRegion: StateFlow<AppRegion> = _appRegion.asStateFlow()
@@ -138,12 +131,9 @@ class LipaBillApp : Application() {
         AppCrashReporting.init(this)
         securePreferences = SecurePreferences(this)
         _fontSizeSp.value = securePreferences.uiFontSizeSp
-        _alwaysShowBalance.value = securePreferences.alwaysShowBalance
         _favouritesSectionEnabled.value = securePreferences.favouritesSectionEnabled
         _recordingPrivacy.value = recordingCaptureEnabled()
         _darkMode.value = securePreferences.darkMode
-        _challengesEnabled.value = securePreferences.challengesEnabled
-        _weeklyCheckInEnabled.value = securePreferences.weeklyCheckInEnabled
         _appRegion.value = securePreferences.appRegion
         _enabledSources.value = securePreferences.enabledLedgerSources(_appRegion.value)
         ActiveRegion.current = _appRegion.value
@@ -187,16 +177,12 @@ class LipaBillApp : Application() {
         )
         engagementScheduler = EngagementScheduler(this)
         repository.afterInsert = {
-            if (securePreferences.challengesEnabled) {
-                val end = engagement.evaluate()
-                if (end != null) engagementScheduler.scheduleChallengeEnd(end)
-            }
+            val end = engagement.evaluate()
+            if (end != null) engagementScheduler.scheduleChallengeEnd(end)
         }
         smsInboxSyncWatcher = SmsInboxSyncWatcher(this, repository)
         smsInboxSyncWatcher.start()
-        if (securePreferences.challengesEnabled || securePreferences.weeklyCheckInEnabled) {
-            engagementScheduler.ensureScheduled()
-        }
+        engagementScheduler.ensureScheduled()
         appScope.launch {
             ticketRepository.observeAll().collect { tickets ->
                 runCatching { PassReminderScheduler(this@LipaBillApp).sync(tickets) }
@@ -206,6 +192,7 @@ class LipaBillApp : Application() {
         appScope.launch {
             runCatching { merchantDirectory.restoreFromSnapshotIfEmpty() }
         }
+        ensureDemoLedger()
 
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
@@ -219,13 +206,9 @@ class LipaBillApp : Application() {
                         repository.repairParsedAmountsIfNeeded()
                         AppMetrics.ledgerRefresh(repository.rescanInbox())
                         repository.linkPhonesByName()
-                        if (securePreferences.challengesEnabled) {
-                            val end = engagement.evaluate()
-                            if (end != null) engagementScheduler.scheduleChallengeEnd(end)
-                        }
-                        if (securePreferences.challengesEnabled || securePreferences.weeklyCheckInEnabled) {
-                            engagementScheduler.ensureScheduled()
-                        }
+                        val end = engagement.evaluate()
+                        if (end != null) engagementScheduler.scheduleChallengeEnd(end)
+                        engagementScheduler.ensureScheduled()
                     } catch (error: Exception) {
                         AppMetrics.ledgerRefreshFailed(error)
                     }
@@ -245,11 +228,6 @@ class LipaBillApp : Application() {
         _fontSizeSp.value = securePreferences.uiFontSizeSp
     }
 
-    fun setAlwaysShowBalance(enabled: Boolean) {
-        securePreferences.alwaysShowBalance = enabled
-        _alwaysShowBalance.value = enabled
-    }
-
     fun setFavouritesSectionEnabled(enabled: Boolean) {
         securePreferences.favouritesSectionEnabled = enabled
         _favouritesSectionEnabled.value = enabled
@@ -258,18 +236,6 @@ class LipaBillApp : Application() {
     fun setDarkMode(enabled: Boolean) {
         securePreferences.darkMode = enabled
         _darkMode.value = enabled
-    }
-
-    fun setChallengesEnabled(enabled: Boolean) {
-        securePreferences.challengesEnabled = enabled
-        _challengesEnabled.value = enabled
-        if (enabled) engagementScheduler.ensureScheduled()
-    }
-
-    fun setWeeklyCheckInEnabled(enabled: Boolean) {
-        securePreferences.weeklyCheckInEnabled = enabled
-        _weeklyCheckInEnabled.value = enabled
-        if (enabled) engagementScheduler.ensureScheduled()
     }
 
     fun setAppRegion(region: AppRegion, rescan: Boolean = true) {
@@ -302,6 +268,16 @@ class LipaBillApp : Application() {
         if (!::repository.isInitialized) return
         securePreferences.resetInboxScanForRegionChange()
         appScope.launch { repository.rescanInbox() }
+    }
+
+    fun ensureDemoLedger() {
+        if (!::repository.isInitialized) return
+        appScope.launch {
+            runCatching { repository.seedDemoLedgerIfEmpty() }
+            if (::ticketRepository.isInitialized) {
+                runCatching { ticketRepository.seedDemoPassIfEmpty() }
+            }
+        }
     }
 
     fun setRecordingPrivacy(enabled: Boolean) {
