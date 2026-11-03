@@ -1,6 +1,7 @@
 package com.lipabill.app.data.repository
 
 import android.util.Log
+import com.lipabill.app.data.foldMerchantName
 import com.lipabill.app.data.local.dao.MerchantDao
 import com.lipabill.app.data.local.entity.MerchantEntity
 import com.lipabill.app.data.local.entity.PendingMerchantPaymentEntity
@@ -298,7 +299,7 @@ class MerchantDirectory(
     }
 
     private fun normalizeName(name: String): String =
-        name.trim().lowercase(Locale.US).replace(Regex("\\s+"), " ")
+        foldMerchantName(name).orEmpty()
 
     companion object {
         private const val TAG = "LipaBill.Merchants"
