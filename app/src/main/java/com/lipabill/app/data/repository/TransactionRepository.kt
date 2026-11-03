@@ -1,5 +1,7 @@
 package com.lipabill.app.data.repository
 
+import com.lipabill.app.BuildConfig
+import com.lipabill.app.data.DemoLedger
 import com.lipabill.app.data.local.dao.TransactionDao
 import com.lipabill.app.data.local.entity.TransactionEntity
 import com.lipabill.app.data.model.AppRegion
@@ -14,6 +16,7 @@ import com.lipabill.app.data.sms.InboxScan
 import com.lipabill.app.data.sms.LedgerNotifier
 import com.lipabill.app.data.sms.MpesaSmsFilter
 import com.lipabill.app.data.sms.SmsInboxReader
+import com.lipabill.app.ussd.PendingPaymentReceipt
 import com.lipabill.app.ussd.UssdMenuBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -162,6 +165,80 @@ class TransactionRepository(
      */
     suspend fun rescanInbox(): Int = withContext(Dispatchers.IO) {
         rescanLock.withLock { importNewConfirmations() }
+    }
+
+    /**
+     * Debug / promo only. Lands a fake confirmation that matches [snapshot]
+     * so ProcessingReceipt can show Confirmed and Home gains a new row.
+     * Never dials USSD. Body avoids real “Confirmed.” / balance copy for OCR gates.
+     */
+    suspend fun insertDemoPaymentResult(
+        snapshot: PendingPaymentReceipt.Snapshot
+    ): MpesaTransaction? {
+        if (!BuildConfig.DEBUG) return null
+        return withContext(Dispatchers.IO) {
+            val prior = dao.latestMpesaBalance()
+            val amount = snapshot.amount
+            val nextBalance = prior?.let { it - amount }
+            val code = "DEMO${System.currentTimeMillis() % 100_000}"
+            val party = snapshot.counterpartyName ?: snapshot.counterpartyPhone ?: "Demo"
+            val phone = snapshot.counterpartyPhone
+            val typeLabel = when (snapshot.type) {
+                TransactionType.SENT -> "sent to"
+                TransactionType.BUY_GOODS -> "paid to till"
+                TransactionType.PAYBILL -> "paid to paybill"
+                TransactionType.POCHI -> "sent to Pochi"
+                else -> "paid to"
+            }
+            val tx = MpesaTransaction(
+                code = code,
+                type = snapshot.type,
+                amount = amount,
+                counterpartyName = party,
+                counterpartyPhone = phone,
+                timestampMillis = System.currentTimeMillis(),
+                balance = nextBalance,
+                cost = null,
+                rawBody = "Demo payment $code. Ksh${"%.0f".format(amount)} $typeLabel $party" +
+                    (phone?.let { " $it" } ?: "") +
+                    ". Balance shown in app only. Not a real message. Not a PIN.",
+                source = MoneySource.MPESA
+            )
+            dao.insertIgnore(TransactionEntity.fromDomain(tx))
+            if (snapshot.type == TransactionType.PAYBILL ||
+                snapshot.type == TransactionType.BUY_GOODS
+            ) {
+                merchantDirectory.rememberOutgoing(tx, amount)
+            }
+            tx
+        }
+    }
+
+    /**
+     * Debug captures only. Skipped when SMS is on (real inbox would mix in)
+     * or when the ledger already has a row. Does not open a PIN screen.
+     */
+    suspend fun seedDemoLedgerIfEmpty() {
+        if (!BuildConfig.DEBUG) return
+        if (!securePreferences.firstRunSetupDone) return
+        if (inboxReader.hasSmsPermission()) return
+        if (securePreferences.payPhone.isNullOrBlank()) {
+            securePreferences.payPhone = DemoLedger.REQUEST_PHONE
+        }
+        withContext(Dispatchers.IO) {
+            if (dao.count() > 0) return@withContext
+            val rows = DemoLedger.rows(System.currentTimeMillis())
+            dao.insertIgnoreAll(rows)
+            rows.forEach { row ->
+                if (row.type == TransactionType.PAYBILL || row.type == TransactionType.BUY_GOODS) {
+                    val tx = row.toDomain()
+                    val amount = tx.amount ?: return@forEach
+                    if (!tx.counterpartyPhone.isNullOrBlank()) {
+                        merchantDirectory.rememberOutgoing(tx, amount)
+                    }
+                }
+            }
+        }
     }
 
     private suspend fun importNewConfirmations(): Int {
