@@ -133,7 +133,6 @@ fun MetricsScreen(
     val emptyPeriod = stats.txnCount == 0
     var showDatePicker by remember { mutableStateOf(false) }
     val app = LocalContext.current.applicationContext as LipaBillApp
-    val alwaysShowBalance by app.alwaysShowBalance.collectAsStateWithLifecycle()
 
     Scaffold(
         modifier = modifier,
@@ -188,7 +187,6 @@ fun MetricsScreen(
                 Spacer(modifier = Modifier.height(Space.block))
                 BalanceAmountRow(
                     balance = shownBalance,
-                    alwaysShow = alwaysShowBalance,
                     amountStyle = HomeType.amount,
                     showEyeToggle = true
                 )
