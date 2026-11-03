@@ -152,6 +152,15 @@ class FirstRunWizardTest {
     }
 
     @Test
+    fun notifications_page_explains_confirmation_alerts() {
+        assertEquals("Hear when money moves", FirstRunWizard.NOTIFICATIONS_TITLE)
+        assertTrue(FirstRunWizard.NOTIFICATIONS_BODY.contains("confirmation", ignoreCase = true))
+        assertTrue(FirstRunWizard.NOTIFICATIONS_BODY.contains("without hunting SMS", ignoreCase = true))
+        assertTrue(FirstRunWizard.NOTIFICATIONS_BODY.contains("without alerts", ignoreCase = true))
+        assertEquals("Allow alerts", PermissionLesson.Notifications.allowLabel)
+    }
+
+    @Test
     fun camera_page_covers_ticket_and_pay_codes() {
         assertTrue(FirstRunWizard.CAMERA_BODY.contains("ticket", ignoreCase = true))
         assertTrue(FirstRunWizard.CAMERA_BODY.contains("pay QR", ignoreCase = true))
