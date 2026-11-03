@@ -18,6 +18,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.lipabill.app.LipaBillApp
+import com.lipabill.app.ui.privacy.RecordingCapture
 import com.lipabill.app.ui.theme.LipaBillTheme
 
 /** Full-height Pay/Send sheet. */
@@ -96,7 +97,7 @@ fun BottomSheetDialog.expandForComposeContent() {
 private fun secureMoneyWindow(window: Window?, context: Context) {
     if (window == null) return
     val recording = (context.applicationContext as? LipaBillApp)?.recordingPrivacy?.value == true
-    if (recording) {
+    if (RecordingCapture.available || recording) {
         window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     } else {
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
