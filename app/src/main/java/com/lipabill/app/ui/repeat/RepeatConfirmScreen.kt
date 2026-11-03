@@ -48,7 +48,6 @@ fun RepeatConfirmScreen(
     val listVm: TransactionListViewModel = activityViewModel(viewModelStoreOwner = activity)
     val listState by listVm.uiState.collectAsStateWithLifecycle()
     val app = activity.application as LipaBillApp
-    val alwaysShowBalance by app.alwaysShowBalance.collectAsStateWithLifecycle()
     var showConfirm by remember { mutableStateOf(false) }
 
     val tx = state.transaction
@@ -113,7 +112,6 @@ fun RepeatConfirmScreen(
             balance = shownBalance,
             balanceCaption = WalletAccount.MPESA.balanceCaption,
             balancePrefix = WalletAccount.MPESA.balancePrefix,
-            alwaysShowBalance = alwaysShowBalance,
             pendingDeduction = pendingAmount,
             selectedName = recipient,
             selectedSubtitle = subtitle,
