@@ -7,18 +7,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalView
 import com.lipabill.app.ui.privacy.LocalRecordingPrivacy
+import com.lipabill.app.ui.privacy.RecordingCapture
 
 /**
  * While a LipaBill keyboard is on screen, that window is left out of screenshots,
- * recents, and screen capture. Debug recording mode skips this so the keypad
- * can still be filmed.
+ * recents, and screen capture. Debug / internal builds skip this so dummy-data
+ * Maestro stills and scrcpy can see the keypad.
  */
 @Composable
 fun SecureKeyboardWindow() {
     val view = LocalView.current
     val recording = LocalRecordingPrivacy.current
     DisposableEffect(view, recording) {
-        if (recording) return@DisposableEffect onDispose {}
+        if (RecordingCapture.available || recording) return@DisposableEffect onDispose {}
         var applied = false
         fun apply() {
             if (applied) return
