@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.lipabill.app.BuildConfig
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.R
 import com.lipabill.app.ui.privacy.LocalRecordingPrivacy
@@ -206,7 +205,6 @@ data class AppSpace(
     val block: Dp,
     val gap: Dp,
     val tight: Dp,
-    val row: Dp,
     val chip: Dp,
     val card: Dp,
     val cardH: Dp,
@@ -223,7 +221,6 @@ fun appSpace(baseSp: Int): AppSpace {
         block = s(6f),
         gap = s(4f),
         tight = s(2f),
-        row = s(6f),
         chip = s(8f),
         card = s(10f),
         cardH = s(11f),
@@ -247,8 +244,6 @@ object Space {
         @Composable @ReadOnlyComposable get() = LocalAppSpace.current.gap
     val tight: Dp
         @Composable @ReadOnlyComposable get() = LocalAppSpace.current.tight
-    val row: Dp
-        @Composable @ReadOnlyComposable get() = LocalAppSpace.current.row
     val chip: Dp
         @Composable @ReadOnlyComposable get() = LocalAppSpace.current.chip
     val card: Dp
