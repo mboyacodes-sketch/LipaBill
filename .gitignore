@@ -51,7 +51,13 @@ firebase-adminsdk*.json
 
 # Brag / launch-video artifacts
 brag-output/
+brag-output-*/
 *brag*
+
+# Maestro flows + capture runners / stills (local)
+.maestro/
+/promo/
+/live/
 
 # Markdown — keep README only
 *.md
@@ -62,6 +68,7 @@ brag-output/
 
 # Local design / review media (large; not needed to build)
 /artwork/
+/raw/
 
 # Tests for private parser IP
 /app/src/test/java/com/lipabill/app/data/parser/
