@@ -282,7 +282,6 @@ fun PayMoneySheetContent(
         balance = shownBalance,
         balanceCaption = WalletAccount.MPESA.balanceCaption,
         balancePrefix = WalletAccount.MPESA.balancePrefix,
-        alwaysShowBalance = sheetAccess.alwaysShowBalance,
         pendingDeduction = pendingAmount,
         selectedName = selectedName ?: "Choose merchant",
         selectedSubtitle = selectedSubtitle ?: state.method.labelOrPick(),
