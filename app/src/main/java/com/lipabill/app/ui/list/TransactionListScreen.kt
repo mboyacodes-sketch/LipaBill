@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
@@ -52,6 +53,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -73,13 +75,21 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lipabill.app.BuildConfig
 import com.lipabill.app.LipaBillApp
+import com.lipabill.app.ussd.PendingPaymentReceipt
+import kotlinx.coroutines.delay
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
@@ -198,7 +208,17 @@ fun TransactionListScreen(
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
     val app = context.applicationContext as LipaBillApp
-    val alwaysShowBalance by app.alwaysShowBalance.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var homeResumeTick by remember { mutableIntStateOf(0) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                homeResumeTick++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val favouritesSectionEnabled by app.favouritesSectionEnabled.collectAsStateWithLifecycle()
     val engageVm: EngagementViewModel = viewModel()
     val engage by engageVm.uiState.collectAsStateWithLifecycle()
@@ -261,6 +281,24 @@ fun TransactionListScreen(
     /** Same landing as See all: the transaction list fills the screen, header at the top. */
     fun showAllTransactions() {
         scope.launch { listState.animateScrollToItem(txHeaderIndex) }
+    }
+
+    val density = LocalDensity.current
+    // Debug/Maestro: scroll history into frame, then drop in the completed demo row.
+    // Unit covers NavHost recomposing Home already RESUMED; tick covers keep-alive resume.
+    suspend fun revealDemoHomeRowIfQueued() {
+        if (!BuildConfig.DEBUG) return
+        val snap = PendingPaymentReceipt.takeDemoHomeReveal() ?: return
+        listState.animateScrollToItem(txHeaderIndex)
+        delay(180)
+        listState.animateScrollBy(with(density) { 64.dp.toPx() })
+        delay(140)
+        app.repository.insertDemoPaymentResult(snap)
+    }
+    LaunchedEffect(Unit) { revealDemoHomeRowIfQueued() }
+    LaunchedEffect(homeResumeTick) {
+        if (homeResumeTick == 0) return@LaunchedEffect
+        revealDemoHomeRowIfQueued()
     }
 
     fun openSearch(index: Int) {
@@ -379,7 +417,6 @@ fun TransactionListScreen(
                 showingReceipt = showingReceipt,
                 listState = listState,
                 balance = shownBalance,
-                alwaysShowBalance = alwaysShowBalance,
                 frequent = frequent,
                 showFrequent = showFrequent,
                 account = state.account,
@@ -466,7 +503,6 @@ fun TransactionListScreen(
                         ) {
                             BalanceSection(
                                 balance = shownBalance,
-                                alwaysShowBalance = alwaysShowBalance,
                                 account = state.account,
                                 onAccountSelected = viewModel::setWalletAccount,
                                 onOpenProfile = onOpenProfile,
@@ -486,7 +522,6 @@ fun TransactionListScreen(
                     } else {
             BalanceSection(
                 balance = shownBalance,
-                alwaysShowBalance = alwaysShowBalance,
                 account = state.account,
                 onAccountSelected = viewModel::setWalletAccount,
                 onOpenProfile = onOpenProfile,
@@ -636,7 +671,6 @@ private fun HomeExpandedPane(
     showingReceipt: Boolean,
     listState: LazyListState,
     balance: Double?,
-    alwaysShowBalance: Boolean,
     frequent: List<SendContact>,
     showFrequent: Boolean,
     account: WalletAccount,
@@ -692,7 +726,6 @@ private fun HomeExpandedPane(
             )
             BalanceSection(
                 balance = balance,
-                alwaysShowBalance = alwaysShowBalance,
                 account = account,
                 onAccountSelected = onAccountSelected,
                 onOpenProfile = onOpenProfile,
@@ -853,7 +886,6 @@ private fun HeaderIconButton(
 @Composable
 private fun BalanceSection(
     balance: Double?,
-    alwaysShowBalance: Boolean,
     account: WalletAccount,
     onAccountSelected: (WalletAccount) -> Unit,
     onOpenProfile: () -> Unit,
@@ -945,7 +977,6 @@ private fun BalanceSection(
             )
             BalanceAmountRow(
                 balance = balance,
-                alwaysShow = alwaysShowBalance,
                 amountStyle = HomeType.balance,
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Start
@@ -982,6 +1013,36 @@ private fun QuickActionsRow(
     modifier: Modifier = Modifier,
     showSendPay: Boolean = true
 ) {
+    if (!showSendPay) {
+        if (spread) {
+            LedgerMovesRow(
+                onInsights = onDetails,
+                onPasses = onTickets,
+                modifier = modifier
+            )
+        } else {
+            Row(
+                modifier = modifier,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                QuickAction(
+                    icon = Icons.Outlined.BarChart,
+                    label = "Insights",
+                    onClick = onDetails,
+                    face = ActionMetrics,
+                    iconTint = BrandNavy
+                )
+                QuickAction(
+                    icon = Icons.Outlined.ConfirmationNumber,
+                    label = "Passes",
+                    onClick = onTickets,
+                    face = ActionTickets,
+                    iconTint = BrandNavy
+                )
+            }
+        }
+        return
+    }
     Row(
         modifier = if (spread) modifier.fillMaxWidth() else modifier,
         horizontalArrangement = if (spread) {
@@ -990,24 +1051,22 @@ private fun QuickActionsRow(
             Arrangement.spacedBy(12.dp)
         }
     ) {
-        if (showSendPay) {
-            QuickAction(
-                icon = Icons.Outlined.NorthEast,
-                label = "Send",
-                onClick = onSend,
-                enabled = sendPayEnabled,
-                face = Accent,
-                iconTint = OnAccent
-            )
-            QuickAction(
-                icon = Icons.Outlined.Payments,
-                label = "Pay",
-                onClick = onDeposit,
-                enabled = sendPayEnabled,
-                face = ActionPay,
-                iconTint = BrandNavy
-            )
-        }
+        QuickAction(
+            icon = Icons.Outlined.NorthEast,
+            label = "Send",
+            onClick = onSend,
+            enabled = sendPayEnabled,
+            face = Accent,
+            iconTint = OnAccent
+        )
+        QuickAction(
+            icon = Icons.Outlined.Payments,
+            label = "Pay",
+            onClick = onDeposit,
+            enabled = sendPayEnabled,
+            face = ActionPay,
+            iconTint = BrandNavy
+        )
         QuickAction(
             icon = Icons.Outlined.BarChart,
             label = "Insights",
@@ -1022,6 +1081,84 @@ private fun QuickActionsRow(
             face = ActionTickets,
             iconTint = BrandNavy
         )
+    }
+}
+
+@Composable
+private fun LedgerMovesRow(
+    onInsights: () -> Unit,
+    onPasses: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        LedgerMoveCard(
+            icon = Icons.Outlined.BarChart,
+            label = "Insights",
+            caption = "Where it went",
+            face = ActionMetrics,
+            onClick = onInsights,
+            modifier = Modifier.weight(1f)
+        )
+        LedgerMoveCard(
+            icon = Icons.Outlined.ConfirmationNumber,
+            label = "Passes",
+            caption = "What it became",
+            face = ActionTickets,
+            onClick = onPasses,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun LedgerMoveCard(
+    icon: ImageVector,
+    label: String,
+    caption: String,
+    face: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(CardWhite)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(face),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = BrandNavy,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Column(modifier = Modifier.weight(1f, fill = false)) {
+            Text(
+                text = label,
+                style = HomeType.rowTitle,
+                color = Ink,
+                maxLines = 1
+            )
+            Text(
+                text = caption,
+                style = HomeType.caption,
+                color = Mute,
+                maxLines = 1
+            )
+        }
     }
 }
 
