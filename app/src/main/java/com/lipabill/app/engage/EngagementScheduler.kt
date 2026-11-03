@@ -18,14 +18,8 @@ import java.util.concurrent.TimeUnit
 class EngagementScheduler(private val context: Context) {
 
     fun ensureScheduled() {
-        val app = context.applicationContext as LipaBillApp
-        val prefs = app.securePreferences
-        if (prefs.challengesEnabled || prefs.weeklyCheckInEnabled) {
-            scheduleCheckIn(ChallengeClock.deviceZone())
-        }
-        if (prefs.challengesEnabled) {
-            scheduleChallengeSweep()
-        }
+        scheduleCheckIn(ChallengeClock.deviceZone())
+        scheduleChallengeSweep()
     }
 
     fun scheduleChallengeSweep() {
@@ -76,7 +70,6 @@ class ChallengeWindowWorker(
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val app = applicationContext as LipaBillApp
-        if (!app.securePreferences.challengesEnabled) return Result.success()
         val nextEnd = app.engagement.evaluate()
         if (nextEnd != null) {
             app.engagementScheduler.scheduleChallengeEnd(nextEnd)
@@ -93,9 +86,7 @@ class WeeklyCheckInWorker(
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val app = applicationContext as LipaBillApp
-        if (app.securePreferences.weeklyCheckInEnabled) {
-            CheckInNotifier(applicationContext).show()
-        }
+        CheckInNotifier(applicationContext).show()
         app.engagementScheduler.scheduleCheckIn(ChallengeClock.deviceZone())
         return Result.success()
     }
