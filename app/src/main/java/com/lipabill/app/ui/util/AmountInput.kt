@@ -60,6 +60,21 @@ fun formatMoneyInputLabel(raw: String): String = "KES ${formatMoneyInputDisplay(
 /** Settled amount for confirm dialogs: `"KES 1,500.00"`. */
 fun formatKesMoney(amount: Double): String = "KES ${formatKes(amount)}"
 
+/**
+ * Digits for amount fields: whole values without a decimal, else up to 2 fraction digits.
+ * When [blankIfNonPositive], zero/negative become blank (add-up “use total”).
+ */
+fun Double.toAmountInput(blankIfNonPositive: Boolean = false): String {
+    if (blankIfNonPositive && this <= 0.0) return ""
+    val rounded = kotlin.math.round(this * 100.0) / 100.0
+    val text = if (kotlin.math.abs(rounded % 1.0) < 0.001) {
+        rounded.toLong().toString()
+    } else {
+        "%.2f".format(Locale.US, rounded).trimEnd('0').trimEnd('.')
+    }
+    return sanitizeAmountInput(text)
+}
+
 private fun formatIntegerGrouping(digits: String): String {
     val n = digits.toLongOrNull() ?: return digits
     return NumberFormat.getIntegerInstance(Locale.US).format(n)
