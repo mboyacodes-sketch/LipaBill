@@ -44,4 +44,20 @@ sealed class Route(val path: String) {
             const val pattern = "processing/{auditId}"
         }
     }
+
+    /**
+     * Debug / promo only. Mirrors USSD steps → confirm → PIN without dialing.
+     * Query carries display labels; the pending receipt holds the payment.
+     */
+    data class DemoPayment(
+        val auditId: Long,
+        val amountLabel: String,
+        val detail: String
+    ) : Route(
+        "demo_payment/$auditId?amount=${Uri.encode(amountLabel)}&detail=${Uri.encode(detail)}"
+    ) {
+        companion object {
+            const val pattern = "demo_payment/{auditId}?amount={amount}&detail={detail}"
+        }
+    }
 }
