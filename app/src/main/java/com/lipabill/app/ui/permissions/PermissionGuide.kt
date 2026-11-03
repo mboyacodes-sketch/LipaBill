@@ -28,11 +28,11 @@ enum class PermissionLesson(
         allowLabel = "Allow camera"
     ),
     Notifications(
-        title = "Payment alerts on this phone",
-        body = "LipaBill can notify you when a confirmation arrives, " +
-            "and if a payment you started needs you. " +
+        title = "Hear when money moves",
+        body = "LipaBill can notify you when a confirmation arrives so you can open the receipt " +
+            "without hunting SMS. It also alerts if a payment you started needs you. " +
             "You can use the app without alerts.",
-        allowLabel = "Allow notifications"
+        allowLabel = "Allow alerts"
     ),
     Hibernation(
         title = "Keep payment access",
@@ -60,7 +60,7 @@ fun onNotificationsDismissed() {
     AppMetrics.setupBlocked(SetupBlocker.NotificationsOff)
 }
 
-/** Notification access is asked when alerts become useful, not when Home first opens. */
+/** Notification access is offered on Home with a reason, and again when a payment needs you. */
 fun Context.shouldOfferPostNotifications(): Boolean =
     Build.VERSION.SDK_INT >= 33 &&
         !permissionGranted(Manifest.permission.POST_NOTIFICATIONS) &&
