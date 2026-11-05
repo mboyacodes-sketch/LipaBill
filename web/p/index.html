@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0B1F3A" />
+  <title>LipaBill link</title>
+  <style>
+    :root {
+      --ink: #0b1f3a;
+      --mute: #5b6b7c;
+      --accent: #1f6feb;
+      --on-accent: #ffffff;
+      --canvas: #f3f6fb;
+      --card: #ffffff;
+      --soft: #d7e4f7;
+      --danger: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 500px at 100% -10%, var(--soft), transparent 60%),
+        var(--canvas);
+      display: flex;
+      justify-content: center;
+      padding: 28px 20px 40px;
+    }
+    main {
+      width: min(440px, 100%);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .brand {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .card {
+      background: var(--card);
+      border-radius: 20px;
+      padding: 22px 20px;
+      box-shadow: 0 10px 30px rgba(11, 31, 58, 0.06);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.45rem;
+      line-height: 1.25;
+    }
+    .mute {
+      color: var(--mute);
+      font-size: 0.95rem;
+      line-height: 1.45;
+      margin: 0;
+    }
+    .dest {
+      margin-top: 18px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: var(--canvas);
+      border: 1px solid var(--soft);
+    }
+    .dest-label {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--mute);
+      margin-bottom: 4px;
+    }
+    .dest-value {
+      font-size: 1.35rem;
+      font-weight: 700;
+      word-break: break-all;
+    }
+    .amount {
+      margin-top: 10px;
+      font-weight: 600;
+    }
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    button, a.btn {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      min-height: 52px;
+      padding: 0 18px;
+      font: inherit;
+      font-weight: 650;
+      text-align: center;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .primary {
+      background: var(--accent);
+      color: var(--on-accent);
+    }
+    .secondary {
+      background: var(--canvas);
+      color: var(--ink);
+      border: 1px solid var(--soft);
+    }
+    .ghost {
+      background: transparent;
+      color: var(--accent);
+    }
+    .error h1 { color: var(--danger); }
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      background: var(--ink);
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .toast.show { opacity: 1; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand">LipaBill</div>
+
+    <section id="loading" class="card">
+      <p class="mute">Opening link…</p>
+    </section>
+
+    <section id="ok" class="card hidden">
+      <h1 id="title">Here’s a LipaBill link</h1>
+      <p id="subtitle" class="mute"></p>
+      <div class="dest">
+        <div class="dest-label" id="destLabel">Destination</div>
+        <div class="dest-value" id="destValue"></div>
+        <div class="amount hidden" id="amountRow"></div>
+      </div>
+      <div class="actions">
+        <button type="button" class="primary" id="copyBtn">Copy details</button>
+        <button type="button" class="secondary" id="mpesaBtn">Open M-Pesa to complete this</button>
+        <button type="button" class="secondary" id="appBtn">Open in LipaBill</button>
+        <button type="button" class="ghost" id="storeBtn">Get LipaBill</button>
+      </div>
+    </section>
+
+    <section id="err" class="card error hidden">
+      <h1>This code isn’t valid anymore</h1>
+      <p class="mute">Ask for a fresh LipaBill link, or open M-Pesa and enter the details yourself.</p>
+      <div class="actions">
+        <button type="button" class="secondary" id="errMpesaBtn">Open M-Pesa</button>
+        <button type="button" class="ghost" id="errStoreBtn">Get LipaBill</button>
+      </div>
+    </section>
+  </main>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="./paylink.js"></script>
+  <script>
+    (function () {
+      var path = location.pathname.replace(/\/+$/, "");
+      var parts = path.split("/");
+      var token = parts[parts.length - 1];
+      if (!token || token === "p") {
+        token = (location.search.match(/[?&]t=([^&]+)/) || [])[1] || "";
+      }
+      token = decodeURIComponent(token || "");
+
+      var loading = document.getElementById("loading");
+      var ok = document.getElementById("ok");
+      var err = document.getElementById("err");
+      var toast = document.getElementById("toast");
+
+      function showToast(msg) {
+        toast.textContent = msg;
+        toast.classList.add("show");
+        setTimeout(function () { toast.classList.remove("show"); }, 1600);
+      }
+
+      function show(el) {
+        loading.classList.add("hidden");
+        ok.classList.add("hidden");
+        err.classList.add("hidden");
+        el.classList.remove("hidden");
+      }
+
+      var target = PayLinkWeb.parse(token) || PayLinkWeb.parse("https://lipabill.app/p/" + token);
+      if (!target) {
+        show(err);
+      } else {
+        var title = document.getElementById("title");
+        var subtitle = document.getElementById("subtitle");
+        var destLabel = document.getElementById("destLabel");
+        var destValue = document.getElementById("destValue");
+        var amountRow = document.getElementById("amountRow");
+        var copyPayload = "";
+
+        if (target.kind === "PHONE") {
+          title.textContent = "Here’s a LipaBill send-money link";
+          subtitle.textContent = "Copy the number, or continue in M-Pesa or LipaBill.";
+          destLabel.textContent = "Send money to";
+          destValue.textContent = target.identifier;
+          copyPayload = target.identifier;
+        } else if (target.kind === "TILL") {
+          title.textContent = "Here’s a LipaBill till link";
+          subtitle.textContent = "Use Buy Goods in M-Pesa, or open LipaBill if you have it.";
+          destLabel.textContent = "Till";
+          destValue.textContent = target.identifier;
+          copyPayload = target.identifier;
+        } else {
+          title.textContent = "Here’s a LipaBill paybill link";
+          subtitle.textContent = "Use Pay Bill in M-Pesa, or open LipaBill if you have it.";
+          destLabel.textContent = "Paybill · Account";
+          destValue.textContent = target.identifier + " · " + target.account;
+          copyPayload = target.identifier + " " + target.account;
+        }
+
+        if (target.amountShillings) {
+          amountRow.textContent = "Amount · KES " + target.amountShillings.toLocaleString("en-KE");
+          amountRow.classList.remove("hidden");
+          copyPayload += " KES " + target.amountShillings;
+        }
+
+        document.getElementById("copyBtn").onclick = function () {
+          PayLinkWeb.copyText(copyPayload).then(
+            function () { showToast("Copied"); },
+            function () { showToast("Couldn’t copy"); }
+          );
+        };
+        document.getElementById("mpesaBtn").onclick = function () {
+          PayLinkWeb.openMpesa();
+        };
+        document.getElementById("appBtn").onclick = function () {
+          PayLinkWeb.openLipaBill(PayLinkWeb.tokenFrom(token) || token);
+        };
+        document.getElementById("storeBtn").onclick = function () {
+          PayLinkWeb.getLipaBill();
+        };
+        show(ok);
+      }
+
+      document.getElementById("errMpesaBtn").onclick = function () {
+        PayLinkWeb.openMpesa();
+      };
+      document.getElementById("errStoreBtn").onclick = function () {
+        PayLinkWeb.getLipaBill();
+      };
+    })();
+  </script>
+</body>
+</html>

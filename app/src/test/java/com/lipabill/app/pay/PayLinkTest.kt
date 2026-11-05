@@ -20,10 +20,18 @@ class PayLinkTest {
         assertNull(link.amountShillings)
         assertFalse(link.shareUrl.contains("0712345678"))
         assertFalse(link.shareUrl.contains("254712345678"))
-        assertTrue(link.shareUrl.startsWith("lipabill://p/"))
+        assertTrue(link.shareUrl.startsWith(PayLink.WEB_PREFIX))
         assertEquals(link.phone, PayLink.parse(link.shareUrl)?.phone)
-        assertEquals(link.phone, PayLink.parse("https://lipabill.app/p/${link.token}")?.phone)
+        assertEquals(link.phone, PayLink.parse("lipabill://p/${link.token}")?.phone)
         assertNull(PayLink.parse(link.shareUrl)?.amountShillings)
+    }
+
+    @Test
+    fun share_url_is_https_landing_and_legacy_app_scheme_still_parses() {
+        val link = PayLink.encode("0712345678", rotateDaily = false)
+        requireNotNull(link)
+        assertEquals("${PayLink.WEB_PREFIX}${link.token}", link.shareUrl)
+        assertEquals(link.phone, PayLink.parse("${PayLink.APP_PREFIX}${link.token}")?.phone)
     }
 
     @Test

@@ -22,6 +22,12 @@ A full local workspace is required to build a production binary.
 
 Flavors: **`play`** (default, Play submission) and **`internal`** (sideload helpers such as Settings restricted-unlock auto-navigation). Both keep SMS ledger + USSD Accessibility fill.
 
+### Pay-link web fallback
+
+Shared pay QRs use `https://lipabill.app/p/{token}`. Without LipaBill installed, that URL
+serves the static landing in [`web/`](web/README.md) (copy details / open M-Pesa / Get LipaBill).
+Deploy `web/` to the same Vercel host (include `/.well-known/assetlinks.json` for App Links).
+
 ## Maestro suites
 
 Two entry points. Phone must be unlocked (fingerprint or swipe). Neither suite

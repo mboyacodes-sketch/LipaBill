@@ -6,7 +6,9 @@ import java.math.BigInteger
 
 /**
  * Short pay code for a destination and optional whole-shilling amount.
- * Shared links use `lipabill://p/{code}` so a tap opens this app.
+ * Shared links use `https://lipabill.app/p/{code}` so a tap opens the
+ * landing page when LipaBill is not installed; App Links open this app when it is.
+ * Legacy `lipabill://p/{code}` still parses.
  *
  * Version 3 packs phone, till, or paybill (one kind only).
  * Version 2 phone codes rotate each UTC day unless fixed.
@@ -14,6 +16,7 @@ import java.math.BigInteger
  */
 object PayLink {
     const val APP_PREFIX = "lipabill://p/"
+    const val WEB_PREFIX = "https://lipabill.app/p/"
 
     private const val VERSION_V1 = 1
     private const val VERSION_V2 = 2
@@ -48,7 +51,7 @@ object PayLink {
         val amountShillings: Long?,
         val token: String
     ) {
-        val shareUrl: String get() = APP_PREFIX + token
+        val shareUrl: String get() = WEB_PREFIX + token
 
         /** Phone destination when [kind] is [Kind.PHONE]. */
         val phone: String get() = if (kind == Kind.PHONE) identifier else ""

@@ -114,12 +114,22 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="lipabill" android:host="receipt" />
             </intent-filter>
-            <!-- Pay code. Shared links use lipabill://. https://lipabill.app is not claimed until that host serves asset links. -->
+            <!-- Pay code — legacy custom scheme. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="lipabill" android:host="p" android:pathPrefix="/" />
+            </intent-filter>
+            <!-- Pay code — HTTPS App Links (assetlinks at https://lipabill.app/.well-known/assetlinks.json). -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="lipabill.app"
+                    android:pathPrefix="/p/" />
             </intent-filter>
             <!-- Apple Wallet passes. Generic zip and PDF shares stay in the in-app picker. -->
             <intent-filter>

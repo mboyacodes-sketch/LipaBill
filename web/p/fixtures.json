@@ -1,0 +1,41 @@
+{
+  "nowMillis": 1706702400000,
+  "cases": [
+    {
+      "kind": "PHONE",
+      "identifier": "0712345678",
+      "account": null,
+      "amountShillings": null,
+      "token": "yJQLB3qDyJaVpwq7NmwIMVGZLyqH0NBy3FrV"
+    },
+    {
+      "kind": "PHONE",
+      "identifier": "0712345678",
+      "account": null,
+      "amountShillings": 1500,
+      "token": "yJQLB3qDyJaVpwqHUnIPKYFWOzrhjSM66n0i"
+    },
+    {
+      "kind": "TILL",
+      "identifier": "400200",
+      "account": null,
+      "amountShillings": 250,
+      "token": "yJG9JU9Qar2PcmIx7SavZdYYqJyCC7zQdeRu"
+    },
+    {
+      "kind": "PAYBILL",
+      "identifier": "888880",
+      "account": "Shop12",
+      "amountShillings": null,
+      "token": "yJoMXJPJ0EJbXJV0DRb2TO1aObwXIwxCReYC"
+    },
+    {
+      "kind": "PHONE",
+      "identifier": "0712345678",
+      "account": null,
+      "amountShillings": 200,
+      "token": "yJQLB3qDyJXDULjBVAQJDe8pDppO86JbHWAR",
+      "rotating": true
+    }
+  ]
+}
