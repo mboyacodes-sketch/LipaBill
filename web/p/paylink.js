@@ -277,18 +277,15 @@
     });
   }
 
-  var MPESA_PACKAGES = [
-    "com.safaricom.mpesa.finance",
-    "com.android.safaricommpesa",
-    "ke.co.safaricom.mpesa"
-  ];
+  // Official Safaricom M-PESA app on Play (Lifestyle).
+  var MPESA_PACKAGE = "com.safaricom.mpesa.lifestyle";
 
   function openMpesa() {
     var fallback =
-      "https://play.google.com/store/apps/details?id=" + MPESA_PACKAGES[0];
+      "https://play.google.com/store/apps/details?id=" + MPESA_PACKAGE;
     var intent =
       "intent://#Intent;package=" +
-      MPESA_PACKAGES[0] +
+      MPESA_PACKAGE +
       ";S.browser_fallback_url=" +
       encodeURIComponent(fallback) +
       ";end";
