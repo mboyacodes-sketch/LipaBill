@@ -1,7 +1,20 @@
-# lipabill.app web (pay-link fallback)
+# lipabill.app pay-link fallback (source mirror)
 
-Static site for `https://lipabill.app` — deploy this folder (or merge into the
-existing Vercel project) next to `/ota/`.
+Static pay-link assets for `https://lipabill.app`. **Production hosts these from
+the marketing site repo** (`lipabill_web`), not from a separate Vercel project
+rooted at this folder.
+
+Copy / sync into `lipabill_web`:
+
+| This folder | Deployed path on lipabill.app |
+|---|---|
+| `p/index.html`, `p/paylink.js`, `p/fixtures.json` | `public/p/…` |
+| `.well-known/assetlinks.json` | `public/.well-known/assetlinks.json` |
+| `vercel.json` rewrites/headers | `lipabill_web/next.config.ts` |
+
+If you change decode logic or fixtures here, update `lipabill_web` the same way
+and redeploy that repo — otherwise `/p/{token}` and App Links stay 404 on the
+live domain.
 
 ## Pay landing (`/p/{token}`)
 
@@ -31,5 +44,5 @@ Both use `web/p/fixtures.json` golden vectors.
 
 ## Vercel
 
-`vercel.json` rewrites `/p/:token` → `/p/index.html`. Point the project root at
-`web/` or copy these paths into the site that already hosts `/ota/`.
+`vercel.json` documents the intended rewrites (`/p/:token` → landing). On the
+live Next.js site those live in `next.config.ts` instead.
