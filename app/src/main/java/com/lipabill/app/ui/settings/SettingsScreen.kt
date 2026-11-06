@@ -1,7 +1,5 @@
 package com.lipabill.app.ui.settings
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -70,6 +68,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lipabill.app.BuildConfig
 import com.lipabill.app.MarketingLinks
+import com.lipabill.app.ui.components.AccentGlyphBadge
+import com.lipabill.app.ui.util.openHttpsUrl
+import com.lipabill.app.ui.util.openMailto
 import com.lipabill.app.data.model.groupedProviderCatalog
 import com.lipabill.app.R
 import com.lipabill.app.data.local.entity.RepeatAttemptEntity
@@ -354,7 +355,7 @@ fun SettingsScreen(
                     title = "Email",
                     subtitle = MarketingLinks.SUPPORT_EMAIL,
                     showChevron = true,
-                    onClick = { openMailto(context, MarketingLinks.SUPPORT_EMAIL) }
+                    onClick = { openSupportEmail(context, MarketingLinks.SUPPORT_EMAIL) }
                 )
             }
 
@@ -362,7 +363,7 @@ fun SettingsScreen(
                 SettingsSection("Developer", Icons.Outlined.Code) {
                     SettingsSwitchRow(
                         title = "Screen recording",
-                        subtitle = "Blur names and amounts while you capture. Off for demo data.",
+                        subtitle = "Off by default. On clears capture protection and blurs names and amounts for scrcpy.",
                         checked = state.recordingPrivacy,
                         onCheckedChange = viewModel::setRecordingPrivacy
                     )
@@ -405,7 +406,7 @@ private fun SettingsSection(
                 bottom = Space.block
             )
         ) {
-            SettingsFavicon(icon, size = 36.dp)
+            AccentGlyphBadge(icon, size = 36.dp)
             Spacer(modifier = Modifier.width(12.dp))
             Text(title, style = HomeType.section, color = Ink)
         }
@@ -413,28 +414,6 @@ private fun SettingsSection(
         Column(
             modifier = Modifier.padding(horizontal = Space.card),
             content = content
-        )
-    }
-}
-
-@Composable
-private fun SettingsFavicon(
-    icon: ImageVector,
-    modifier: Modifier = Modifier,
-    size: Dp = 32.dp
-) {
-    Box(
-        modifier = modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(SoftBlue),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = Accent,
-            modifier = Modifier.size(size * 0.5f)
         )
     }
 }
@@ -754,18 +733,9 @@ private fun outcomeLabel(outcome: RepeatOutcome): String = when (outcome) {
 }
 
 private fun openHttps(context: android.content.Context, url: String) {
-    runCatching {
-        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-    }
+    context.openHttpsUrl(url)
 }
 
-private fun openMailto(context: android.content.Context, email: String) {
-    runCatching {
-        val intent = Intent(Intent.ACTION_SENDTO).apply {
-            data = Uri.parse("mailto:")
-            putExtra(Intent.EXTRA_EMAIL, arrayOf(email))
-            putExtra(Intent.EXTRA_SUBJECT, "LipaBill support")
-        }
-        context.startActivity(Intent.createChooser(intent, "Email support"))
-    }
+private fun openSupportEmail(context: android.content.Context, email: String) {
+    context.openMailto(email, subject = "LipaBill support")
 }
