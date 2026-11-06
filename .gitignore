@@ -75,3 +75,9 @@ brag-output-*/
 
 # Local install helpers (references private USSD service)
 /tools/
+
+# Built OTA artifacts (upload to lipabill.app; do not commit APKs)
+/ota/dist/
+
+# Pay-link web mirror — production lives in lipabill_web
+/web/
