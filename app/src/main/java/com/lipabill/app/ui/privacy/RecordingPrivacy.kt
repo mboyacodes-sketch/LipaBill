@@ -17,8 +17,9 @@ import com.lipabill.app.BuildConfig
 /**
  * Debug / internal (sideload) builds only.
  *
- * When on: FLAG_SECURE is cleared so scrcpy / screen recording can capture the UI,
- * and sensitive glyphs are blurred in the framebuffer. Keyboards stay sharp.
+ * Off by default: FLAG_SECURE stays on. When enabled in Settings, FLAG_SECURE is
+ * cleared so scrcpy / screen recording can capture, and sensitive glyphs are
+ * blurred in the framebuffer. Keyboards stay sharp while the toggle is on.
  * Play release builds leave capture blocked and this mode unavailable.
  */
 object RecordingCapture {
