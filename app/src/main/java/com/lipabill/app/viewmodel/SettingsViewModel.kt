@@ -62,10 +62,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun toggleProvider(source: MoneySource) {
+        val region = app.appRegion.value
         val next = toggleLedgerSource(
-            _ui.value.enabledSources,
+            app.enabledSources.value,
             source,
-            _ui.value.region.sources
+            region.sources
         )
         app.setEnabledSources(next, rescan = true)
         refresh()
