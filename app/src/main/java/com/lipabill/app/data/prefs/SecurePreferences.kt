@@ -4,11 +4,14 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.lipabill.app.BuildConfig
 import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.parseStoredSources
 import com.lipabill.app.data.model.resolvedLedgerSources
 import com.lipabill.app.data.model.serializeLedgerSources
+import com.lipabill.app.pay.PayLink
+import com.lipabill.app.social.SocialLink
 import com.lipabill.app.ui.privacy.RecordingCapture
 
 /**
@@ -87,9 +90,10 @@ class SecurePreferences(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_FAVOURITES_SECTION, value).apply()
 
     /**
-     * Debug / internal builds only. When true, names, numbers, references, and
-     * ticket codes are blurred in the framebuffer. Keyboards stay sharp.
-     * Play release ignores this flag. Defaults off so dummy/demo captures stay readable.
+     * Debug / internal builds only. When true, FLAG_SECURE is cleared and names,
+     * numbers, references, and ticket codes are blurred in the framebuffer.
+     * Keyboards stay sharp. Play release ignores this flag. Defaults off so
+     * capture stays blocked until a developer opts in.
      */
     var recordingPrivacy: Boolean
         get() = RecordingCapture.available &&
@@ -188,6 +192,14 @@ class SecurePreferences(context: Context) {
         get() = prefs.getString(KEY_PAY_PHONE, null)?.takeIf { it.isNotBlank() }
         set(value) = prefs.edit().putString(KEY_PAY_PHONE, value).apply()
 
+    /**
+     * When true, Request → Payments hides Send Money even if a SIM number is present
+     * (user deleted that destination). Cleared when they add/save a phone again.
+     */
+    var payPhoneHidden: Boolean
+        get() = prefs.getBoolean(KEY_PAY_PHONE_HIDDEN, false)
+        set(value) = prefs.edit().putBoolean(KEY_PAY_PHONE_HIDDEN, value).apply()
+
     var payTill: String?
         get() = prefs.getString(KEY_PAY_TILL, null)?.takeIf { it.isNotBlank() }
         set(value) = prefs.edit().putString(KEY_PAY_TILL, value).apply()
@@ -200,6 +212,21 @@ class SecurePreferences(context: Context) {
         get() = prefs.getString(KEY_PAY_BILL_ACCOUNT, null)?.takeIf { it.isNotBlank() }
         set(value) = prefs.edit().putString(KEY_PAY_BILL_ACCOUNT, value).apply()
 
+    /** Clears a Request → Payments destination (and hides SIM-backed phone when deleted). */
+    fun clearPayDestination(kind: PayLink.Kind) {
+        when (kind) {
+            PayLink.Kind.PHONE -> {
+                payPhone = null
+                payPhoneHidden = true
+            }
+            PayLink.Kind.TILL -> payTill = null
+            PayLink.Kind.PAYBILL -> {
+                payBillBusiness = null
+                payBillAccount = null
+            }
+        }
+    }
+
     /**
      * When false (default), the Request QR changes every UTC day.
      * When true, the same code is shown until the destination or amount changes.
@@ -208,6 +235,52 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_PAY_QR_FIXED, false)
         set(value) = prefs.edit().putBoolean(KEY_PAY_QR_FIXED, value).apply()
 
+    /**
+     * Request screen top mode: `payments` (pay QR) or `socials` (profile QR).
+     */
+    var requestQrMode: String
+        get() = prefs.getString(KEY_REQUEST_QR_MODE, "payments") ?: "payments"
+        set(value) = prefs.edit().putString(KEY_REQUEST_QR_MODE, value).apply()
+
+    /** Last social network chosen on the Request → Socials tab. */
+    var socialPlatformKey: String
+        get() = prefs.getString(KEY_SOCIAL_PLATFORM, "instagram") ?: "instagram"
+        set(value) = prefs.edit().putString(KEY_SOCIAL_PLATFORM, value).apply()
+
+    fun socialHandle(platformKey: String): String? =
+        prefs.getString(socialHandlePrefKey(platformKey), null)?.takeIf { it.isNotBlank() }
+
+    fun setSocialHandle(platformKey: String, handle: String?) {
+        prefs.edit().putString(socialHandlePrefKey(platformKey), handle?.takeIf { it.isNotBlank() }).apply()
+    }
+
+    /**
+     * Debug / internal only: fill every Socials platform with a demo handle so
+     * Request → Socials can flip through QR badges without typing.
+     * Overwrites existing social handles once per install (keyed flag).
+     */
+    fun seedDemoSocialHandles() {
+        if (!BuildConfig.DEBUG && !BuildConfig.SIDELOAD_DISTRIBUTION) return
+        if (prefs.getBoolean(KEY_DEMO_SOCIAL_SEEDED, false)) return
+        // Only a few so Request → Socials still has room to exercise Add.
+        val demo = mapOf(
+            SocialLink.Platform.INSTAGRAM to "natgeo",
+            SocialLink.Platform.WHATSAPP to "254712345678",
+            SocialLink.Platform.X to "NASA"
+        )
+        val edit = prefs.edit()
+        SocialLink.Platform.entries.forEach { platform ->
+            edit.remove(socialHandlePrefKey(platform.storageKey))
+        }
+        demo.forEach { (platform, handle) ->
+            val clean = SocialLink.canonicalHandle(platform, handle) ?: handle
+            edit.putString(socialHandlePrefKey(platform.storageKey), clean)
+        }
+        edit.putString(KEY_SOCIAL_PLATFORM, SocialLink.Platform.WHATSAPP.storageKey)
+        edit.putString(KEY_REQUEST_QR_MODE, "socials")
+        edit.putBoolean(KEY_DEMO_SOCIAL_SEEDED, true)
+        edit.apply()
+    }
 
     /** When true, the inbox has been read once without a date bound. Later scans stay incremental. */
     val inboxHistoryImported: Boolean
@@ -260,10 +333,15 @@ class SecurePreferences(context: Context) {
         private const val KEY_ENABLED_SOURCES = "enabled_ledger_sources_v1"
         private const val KEY_PAY_COLLECT_KIND = "pay_collect_kind"
         private const val KEY_PAY_PHONE = "pay_phone"
+        private const val KEY_PAY_PHONE_HIDDEN = "pay_phone_hidden"
         private const val KEY_PAY_TILL = "pay_till"
         private const val KEY_PAY_BILL_BUSINESS = "pay_bill_business"
         private const val KEY_PAY_BILL_ACCOUNT = "pay_bill_account"
         private const val KEY_PAY_QR_FIXED = "pay_qr_fixed"
+        private const val KEY_REQUEST_QR_MODE = "request_qr_mode"
+        private const val KEY_SOCIAL_PLATFORM = "social_platform_key"
+        private const val KEY_DEMO_SOCIAL_SEEDED = "demo_social_handles_seeded_v2"
+        private fun socialHandlePrefKey(platformKey: String) = "social_handle_$platformKey"
         const val DEFAULT_TIMEOUT_MS = 2 * 60 * 1000L
         const val DEFAULT_FONT_SIZE_SP = 12
     }
