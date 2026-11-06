@@ -64,6 +64,14 @@ class PayLinkTest {
     }
 
     @Test
+    fun rejects_cleartext_http_pay_links() {
+        val link = PayLink.encode("0712345678", rotateDaily = false)
+        requireNotNull(link)
+        assertNull(PayLink.parse("http://lipabill.app/p/${link.token}"))
+        assertEquals(link.phone, PayLink.parse("https://lipabill.app/p/${link.token}")?.phone)
+    }
+
+    @Test
     fun rotating_code_changes_each_day_and_rejects_older_scans() {
         val noon = 1_704_067_200_000L + (10 * dayMs) + (12 * 60 * 60 * 1000L)
         val today = PayLink.encode("0712345678", 200, rotateDaily = true, nowMillis = noon)
