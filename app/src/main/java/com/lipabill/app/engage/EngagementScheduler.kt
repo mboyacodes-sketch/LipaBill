@@ -11,8 +11,7 @@ import androidx.work.WorkerParameters
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.MainActivity
 import com.lipabill.app.R
-import com.lipabill.app.metrics.AppCrashReporting
-import com.lipabill.app.metrics.AppMetrics
+import com.lipabill.app.metrics.runEngagementWork
 import com.lipabill.app.notify.mainActivityPendingIntent
 import com.lipabill.app.notify.postLipaBill
 import java.util.concurrent.TimeUnit
@@ -70,7 +69,7 @@ class ChallengeWindowWorker(
     context: Context,
     params: WorkerParameters
 ) : CoroutineWorker(context, params) {
-    override suspend fun doWork(): Result = try {
+    override suspend fun doWork(): Result = runEngagementWork("challenge") {
         val app = applicationContext as LipaBillApp
         val nextEnd = app.engagement.evaluate()
         if (nextEnd != null) {
@@ -78,12 +77,6 @@ class ChallengeWindowWorker(
         } else {
             app.engagementScheduler.scheduleChallengeSweep()
         }
-        AppMetrics.engagementWorker("challenge", "ok")
-        Result.success()
-    } catch (t: Throwable) {
-        AppMetrics.engagementWorker("challenge", "error")
-        AppCrashReporting.recordCaught(t)
-        Result.retry()
     }
 }
 
@@ -91,16 +84,10 @@ class WeeklyCheckInWorker(
     context: Context,
     params: WorkerParameters
 ) : CoroutineWorker(context, params) {
-    override suspend fun doWork(): Result = try {
+    override suspend fun doWork(): Result = runEngagementWork("checkin") {
         val app = applicationContext as LipaBillApp
         CheckInNotifier(applicationContext).show()
         app.engagementScheduler.scheduleCheckIn(ChallengeClock.deviceZone())
-        AppMetrics.engagementWorker("checkin", "ok")
-        Result.success()
-    } catch (t: Throwable) {
-        AppMetrics.engagementWorker("checkin", "error")
-        AppCrashReporting.recordCaught(t)
-        Result.retry()
     }
 }
 
