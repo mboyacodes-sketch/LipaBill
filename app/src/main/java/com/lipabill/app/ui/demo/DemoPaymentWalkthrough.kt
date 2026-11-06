@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.BuildConfig
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
@@ -62,6 +63,10 @@ enum class DemoPayPhase {
     Pin
 }
 
+/** Per-menu pause while the demo fills steps (feels like live USSD). */
+private const val STEP_MS = 550L
+private const val STEP_HOLD_MS = 350L
+
 @Composable
 fun DemoPaymentWalkthrough(
     amountLabel: String,
@@ -79,11 +84,12 @@ fun DemoPaymentWalkthrough(
         if (phase != DemoPayPhase.Steps) return@LaunchedEffect
         completed = 0
         val steps = totalSteps.coerceAtLeast(1)
+        // Brief pauses so the bar reads like a real *334# fill, not a flash.
         repeat(steps) { i ->
-            delay(60)
+            delay(STEP_MS)
             completed = i + 1
         }
-        delay(40)
+        delay(STEP_HOLD_MS)
         phase = DemoPayPhase.Confirm
     }
 
@@ -266,11 +272,26 @@ private fun DemoConfirmPage(
                 .background(SoftBlue)
                 .padding(14.dp)
         ) {
-            Text(amountLabel, style = HomeType.rowTitle, color = Ink)
+            Text(
+                text = amountLabel,
+                style = HomeType.rowTitle,
+                color = Ink,
+                modifier = Modifier.recordingPrivacyCover(amountLabel.isNotBlank())
+            )
             Spacer(modifier = Modifier.height(4.dp))
-            Text(detail, style = HomeType.body, color = Ink)
+            Text(
+                text = detail,
+                style = HomeType.body,
+                color = Ink,
+                modifier = Modifier.recordingPrivacyCover(detail.isNotBlank())
+            )
             Spacer(modifier = Modifier.height(4.dp))
-            Text("Demo walkthrough — no USSD dial", style = HomeType.caption, color = Mute)
+            Text(
+                text = "Demo walkthrough — no USSD dial",
+                style = HomeType.caption,
+                color = Mute,
+                modifier = Modifier.recordingPrivacyCover()
+            )
         }
         Spacer(modifier = Modifier.height(20.dp))
         Button(
