@@ -17,6 +17,7 @@ import com.lipabill.app.ussd.UssdMenuBuilder
 import com.lipabill.app.ui.util.appendAmountKey as applyAmountKey
 import com.lipabill.app.ui.util.formatKesMoney
 import com.lipabill.app.ui.util.sanitizeAmountInput
+import com.lipabill.app.ui.util.sanitizeDigits
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -239,7 +240,7 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
 
     fun setMerchantQuery(value: String) {
         merchantQuery.value = value
-        val digits = value.filter { it.isDigit() }.take(12)
+        val digits = sanitizeDigits(value)
         val numericEntry = value.isNotBlank() && value.none { it.isLetter() } && digits.length >= 5
         _ui.update { state ->
             when (state.method) {
