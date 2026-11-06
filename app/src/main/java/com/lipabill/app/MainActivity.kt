@@ -23,7 +23,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -36,6 +39,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
 import android.graphics.Color as AndroidColor
@@ -101,6 +105,7 @@ import com.lipabill.app.ussd.AccessibilityHelper
 import com.lipabill.app.ussd.PendingPaymentReceipt
 import com.lipabill.app.ussd.RepeatOutcome
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
+import com.lipabill.app.ussd.UssdAccessibilityService
 import com.lipabill.app.ussd.UssdAutomationMask
 import com.lipabill.app.viewmodel.PayMoneyViewModel
 import com.lipabill.app.viewmodel.PayMethod
@@ -176,15 +181,13 @@ class MainActivity : AppCompatActivity(),
     }
 
     /**
-     * Play release keeps FLAG_SECURE on. Debug / internal builds stay capturable
-     * (Maestro, scrcpy) so dummy-data stills are possible without blur mode.
+     * FLAG_SECURE is on by default. Debug / internal builds clear it only when
+     * the Settings “Screen recording” developer toggle is on (blur + capturable).
      */
     fun applyCaptureProtection(
         recording: Boolean = (application as LipaBillApp).recordingPrivacy.value
     ) {
-        if (RecordingCapture.available) {
-            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        } else if (recording) {
+        if (RecordingCapture.available && recording) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         } else {
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -269,14 +272,27 @@ class MainActivity : AppCompatActivity(),
     var incomingDocumentUri by mutableStateOf<Uri?>(null)
         private set
 
+    /**
+     * Shared `.pkpass` URIs held until biometric unlock so import does not
+     * write to the encrypted DB while the session is locked.
+     */
+    var pendingPassImports by mutableStateOf<List<Uri>>(emptyList())
+        private set
+
     fun clearIncomingDocument() {
         incomingDocumentUri = null
+    }
+
+    fun consumePendingPassImports(): List<Uri> {
+        val out = pendingPassImports
+        pendingPassImports = emptyList()
+        return out
     }
 
     private fun captureIncomingDocument(intent: Intent?) {
         val passes = PkPassIntents.preparePkPasses(this, intent)
         if (passes.isNotEmpty()) {
-            (application as LipaBillApp).importOpenedPasses(passes)
+            pendingPassImports = passes
             return
         }
         PkPassIntents.capture(this, intent)?.let { incomingDocumentUri = it }
@@ -357,6 +373,12 @@ private fun AuthenticatedApp(
     val host = activity as MainActivity
     LaunchedEffect(Unit) {
         AppUpdates.check(activity, manual = false)
+    }
+    val pendingPassImports = host.pendingPassImports
+    LaunchedEffect(pendingPassImports) {
+        if (pendingPassImports.isEmpty()) return@LaunchedEffect
+        val uris = host.consumePendingPassImports()
+        if (uris.isNotEmpty()) app.importOpenedPasses(uris)
     }
     val pendingPkPassUri = host.incomingDocumentUri
     val openedPass by app.openedPass.collectAsStateWithLifecycle()
@@ -748,6 +770,21 @@ private fun AuthenticatedApp(
         }
     }
 
+    /**
+     * Debug walkthrough: land the ledger row before Home resumes so a cancelled
+     * scroll animation cannot drop the queued reveal. Home still scrolls to it.
+     */
+    fun navigateHomeAfterDemoReceipt() {
+        scope.launch {
+            if (BuildConfig.DEBUG) {
+                PendingPaymentReceipt.peekDemoHomeReveal()?.let { snap ->
+                    runCatching { app.repository.insertDemoPaymentResult(snap) }
+                }
+            }
+            navigateHome()
+        }
+    }
+
     LaunchedEffect(openCheckIn) {
         if (!openCheckIn || !app.securePreferences.firstRunSetupDone) return@LaunchedEffect
         navController.navigate(Route.Habits.path) { launchSingleTop = true }
@@ -1051,6 +1088,14 @@ private fun AuthenticatedApp(
             dial: () -> Unit
         ) {
             refresh()
+            if (UssdAccessibilityService.foreignServicesEnabled(context)) {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.pay_blocked_other_accessibility),
+                    Toast.LENGTH_LONG
+                ).show()
+                return
+            }
             val (accessibilityEnabled, needsPhoneState) = readState()
             when {
                 !accessibilityEnabled -> {
@@ -1108,6 +1153,7 @@ private fun AuthenticatedApp(
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val pendingPay = host.pendingPay
+    var confirmIncomingPay by remember { mutableStateOf<PayLink.Target?>(null) }
     LaunchedEffect(pendingPay, navBackStackEntry?.destination?.route) {
         val target = pendingPay ?: return@LaunchedEffect
         if (!app.securePreferences.firstRunSetupDone) return@LaunchedEffect
@@ -1119,7 +1165,29 @@ private fun AuthenticatedApp(
                 navController.navigate(Route.List.path) { launchSingleTop = true }
             }
         }
-        openIncomingPay(target)
+        confirmIncomingPay = target
+    }
+    confirmIncomingPay?.let { target ->
+        AlertDialog(
+            onDismissRequest = { confirmIncomingPay = null },
+            title = { Text(stringResource(R.string.pay_link_confirm_title)) },
+            text = { Text(incomingPayConfirmMessage(target)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmIncomingPay = null
+                        openIncomingPay(target)
+                    }
+                ) {
+                    Text(stringResource(R.string.pay_link_confirm_continue))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmIncomingPay = null }) {
+                    Text(stringResource(R.string.pay_link_confirm_cancel))
+                }
+            }
+        )
     }
     LaunchedEffect(navBackStackEntry?.destination?.route) {
         val route = navBackStackEntry?.destination?.route ?: return@LaunchedEffect
@@ -1283,11 +1351,7 @@ private fun AuthenticatedApp(
             BackHandler { navController.popBackStack() }
             AdaptiveFrame {
                 PayProfileScreen(
-                    onBack = { navController.popBackStack() },
-                    onPay = { target ->
-                        navController.popBackStack()
-                        openIncomingPay(target)
-                    }
+                    onBack = { navController.popBackStack() }
                 )
             }
         }
@@ -1434,12 +1498,12 @@ private fun AuthenticatedApp(
             arguments = listOf(navArgument("auditId") { type = NavType.LongType })
         ) { entry ->
             val auditId = entry.arguments?.getLong("auditId") ?: return@composable
-            BackHandler { navigateHome() }
+            BackHandler { navigateHomeAfterDemoReceipt() }
             AdaptiveFrame(expandedMax = 720.dp) {
                 ProcessingReceiptScreen(
                     auditId = auditId,
-                    onDone = { navigateHome() },
-                    onBack = { navigateHome() }
+                    onDone = { navigateHomeAfterDemoReceipt() },
+                    onBack = { navigateHomeAfterDemoReceipt() }
                 )
             }
         }
@@ -1488,4 +1552,27 @@ private fun AuthenticatedApp(
             navBackStackEntry?.destination?.route != Route.Consent.pattern,
         onNeedConsent = { openConsent(FirstRunPage.Hibernation) }
     )
+}
+
+@Composable
+private fun incomingPayConfirmMessage(target: PayLink.Target): String {
+    val destination = when (target.kind) {
+        PayLink.Kind.PHONE -> target.identifier
+        PayLink.Kind.TILL -> "till ${target.identifier}"
+        PayLink.Kind.PAYBILL -> buildString {
+            append("paybill ${target.identifier}")
+            val account = target.account
+            if (!account.isNullOrBlank()) append(" / $account")
+        }
+    }
+    val amount = target.amountShillings
+    return if (amount != null) {
+        stringResource(
+            R.string.pay_link_confirm_body_amount,
+            formatKesMoney(amount.toDouble()),
+            destination
+        )
+    } else {
+        stringResource(R.string.pay_link_confirm_body, destination)
+    }
 }
