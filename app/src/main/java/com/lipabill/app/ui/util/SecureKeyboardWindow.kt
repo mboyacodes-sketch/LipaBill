@@ -11,15 +11,15 @@ import com.lipabill.app.ui.privacy.RecordingCapture
 
 /**
  * While a LipaBill keyboard is on screen, that window is left out of screenshots,
- * recents, and screen capture. Debug / internal builds skip this so dummy-data
- * Maestro stills and scrcpy can see the keypad.
+ * recents, and screen capture. Debug / internal builds skip this only when the
+ * Settings “Screen recording” toggle is on.
  */
 @Composable
 fun SecureKeyboardWindow() {
     val view = LocalView.current
     val recording = LocalRecordingPrivacy.current
     DisposableEffect(view, recording) {
-        if (RecordingCapture.available || recording) return@DisposableEffect onDispose {}
+        if (RecordingCapture.available && recording) return@DisposableEffect onDispose {}
         var applied = false
         fun apply() {
             if (applied) return
