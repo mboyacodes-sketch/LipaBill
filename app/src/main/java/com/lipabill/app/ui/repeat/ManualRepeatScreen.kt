@@ -85,9 +85,13 @@ fun ManualRepeatScreen(
             Spacer(modifier = Modifier.height(Space.section))
             Button(
                 onClick = {
-                    context.copyPlainText("LipaBill repeat", details)
-                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
-                    onCopied()
+                    val ok = context.copyPlainText("LipaBill repeat", details)
+                    Toast.makeText(
+                        context,
+                        if (ok) "Copied" else "Couldn’t copy right now",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    if (ok) onCopied()
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
