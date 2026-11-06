@@ -124,7 +124,11 @@ import com.lipabill.app.ui.theme.GeometricSansFamily
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Income
 import com.lipabill.app.ui.theme.Ink
+import com.lipabill.app.ui.components.AccentGlyphBadge
+import com.lipabill.app.ui.components.SpeedDialColumn
+import com.lipabill.app.ui.components.SpeedDialItem
 import com.lipabill.app.ui.theme.Accent
+import com.lipabill.app.ui.util.takePersistableRead
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
@@ -206,12 +210,7 @@ fun TicketsScreen(
         OpenTicketDocumentContract()
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        runCatching {
-            context.contentResolver.takePersistableUriPermission(
-                uri,
-                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-        }
+        context.takePersistableRead(uri)
         scope.launch { importDocument(uri, pendingDocumentKind) }
     }
 
@@ -270,17 +269,26 @@ fun TicketsScreen(
             )
         },
         floatingActionButton = {
-            AddPassSpeedDial(
+            SpeedDialColumn(
                 expanded = addMenuOpen,
                 onToggle = { addMenuOpen = !addMenuOpen },
-                onEventTicket = {
-                    addMenuOpen = false
-                    launchDocumentPicker(TicketDocumentKind.EVENT)
-                },
-                onSgrSms = {
-                    addMenuOpen = false
-                    addMode = AddTicketMode.CONFIRMATION
-                }
+                contentDescriptionCollapsed = "Add pass",
+                actions = listOf(
+                    SpeedDialItem(
+                        label = "SGR booking SMS",
+                        icon = Icons.Outlined.Train
+                    ) {
+                        addMenuOpen = false
+                        addMode = AddTicketMode.CONFIRMATION
+                    },
+                    SpeedDialItem(
+                        label = "Event ticket",
+                        icon = Icons.Outlined.ConfirmationNumber
+                    ) {
+                        addMenuOpen = false
+                        launchDocumentPicker(TicketDocumentKind.EVENT)
+                    }
+                )
             )
         }
     ) { padding ->
@@ -550,7 +558,7 @@ private fun PassPathCard(
             .clickable(onClick = onClick)
             .padding(horizontal = Space.card, vertical = Space.card)
     ) {
-        PassFavicon(icon)
+        AccentGlyphBadge(icon)
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = HomeType.rowTitle, color = Ink)
@@ -561,30 +569,6 @@ private fun PassPathCard(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
             tint = Mute
-        )
-    }
-}
-
-@Composable
-private fun PassFavicon(
-    icon: ImageVector,
-    modifier: Modifier = Modifier,
-    fill: Color = SoftBlue,
-    tint: Color = Accent,
-    size: Dp = 32.dp
-) {
-    Box(
-        modifier = modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(fill),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = tint,
-            modifier = Modifier.size(size * 0.5f)
         )
     }
 }
@@ -622,7 +606,7 @@ private fun PassStoryStrip(
             .background(CardWhite)
             .padding(horizontal = Space.card, vertical = Space.card)
     ) {
-        PassFavicon(icon, size = 36.dp)
+        AccentGlyphBadge(icon, size = 36.dp)
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = HomeType.section, color = Ink)
@@ -974,7 +958,7 @@ private fun PassSectionHeader(
             .fillMaxWidth()
             .padding(top = Space.block, bottom = Space.gap)
     ) {
-        PassFavicon(icon, size = 36.dp)
+        AccentGlyphBadge(icon, size = 36.dp)
         Spacer(modifier = Modifier.width(12.dp))
         Text(
             text = title,
@@ -1063,7 +1047,7 @@ private fun TodayPassCard(
             Spacer(modifier = Modifier.size(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    PassFavicon(
+                    AccentGlyphBadge(
                         icon = ticket.passCategory().icon,
                         fill = OnAccent.copy(alpha = 0.16f),
                         tint = OnAccent,
@@ -1174,7 +1158,7 @@ private fun TicketListRow(
             .padding(horizontal = Space.card, vertical = Space.cardH),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        PassFavicon(
+        AccentGlyphBadge(
             icon = rowIcon,
             fill = if (used) Canvas else SoftBlue,
             tint = if (used) Mute else Accent,
@@ -1216,86 +1200,6 @@ private fun TicketListRow(
                 .background(statusColor.copy(alpha = 0.18f))
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         )
-    }
-}
-
-@Composable
-private fun AddPassSpeedDial(
-    expanded: Boolean,
-    onToggle: () -> Unit,
-    onEventTicket: () -> Unit,
-    onSgrSms: () -> Unit
-) {
-    val rotation by animateFloatAsState(if (expanded) 45f else 0f, label = "addFab")
-    Column(
-        horizontalAlignment = Alignment.End,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        AnimatedVisibility(
-            visible = expanded,
-            enter = fadeIn() + scaleIn(initialScale = 0.85f) + slideInVertically { it / 2 },
-            exit = fadeOut() + scaleOut(targetScale = 0.85f) + slideOutVertically { it / 2 }
-        ) {
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                SpeedDialAction(
-                    label = "SGR booking SMS",
-                    icon = Icons.Outlined.Train,
-                    onClick = onSgrSms
-                )
-                SpeedDialAction(
-                    label = "Event ticket",
-                    icon = Icons.Outlined.ConfirmationNumber,
-                    onClick = onEventTicket
-                )
-            }
-        }
-        FloatingActionButton(
-            onClick = onToggle,
-            containerColor = Accent,
-            contentColor = OnAccent
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Add,
-                contentDescription = if (expanded) "Close" else "Add pass",
-                modifier = Modifier.rotate(rotation)
-            )
-        }
-    }
-}
-
-@Composable
-private fun SpeedDialAction(
-    label: String,
-    icon: ImageVector,
-    onClick: () -> Unit
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.padding(end = 8.dp)
-    ) {
-        Text(
-            text = label,
-            style = HomeType.caption,
-            color = Ink,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier
-                .shadow(6.dp, RoundedCornerShape(20.dp), clip = false)
-                .clip(RoundedCornerShape(20.dp))
-                .background(CardWhite)
-                .clickable(onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 8.dp)
-        )
-        SmallFloatingActionButton(
-            onClick = onClick,
-            containerColor = CardWhite,
-            contentColor = Accent
-        ) {
-            Icon(icon, contentDescription = label)
-        }
     }
 }
 
@@ -1496,12 +1400,7 @@ fun TicketDetailScreen(
             attachLeg = null
             return@rememberLauncherForActivityResult
         }
-        runCatching {
-            context.contentResolver.takePersistableUriPermission(
-                uri,
-                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-        }
+        context.takePersistableRead(uri)
         scope.launch { attachUri(uri) }
     }
 
