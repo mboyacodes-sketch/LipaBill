@@ -1,7 +1,6 @@
 package com.lipabill.app.ui.detail
 
 import android.content.Context
-import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -72,6 +71,7 @@ import com.lipabill.app.ui.util.copyPlainText
 import com.lipabill.app.ui.util.displayLabel
 import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.ui.util.formatTimestamp
+import com.lipabill.app.ui.util.sharePlainText
 import com.lipabill.app.ussd.UssdMenuBuilder
 
 private val DetailFill: Color
@@ -447,15 +447,16 @@ private fun TicketPerforation() {
 }
 
 private fun copyText(context: Context, text: String, toast: String) {
-    context.copyPlainText("LipaBill", text)
-    Toast.makeText(context, toast, Toast.LENGTH_SHORT).show()
+    val ok = context.copyPlainText("LipaBill", text)
+    Toast.makeText(
+        context,
+        if (ok) toast else "Couldn’t copy right now",
+        Toast.LENGTH_SHORT
+    ).show()
 }
 
 private fun shareTransaction(context: Context, tx: MpesaTransaction) {
-    val text = shareTextFor(tx)
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, text)
+    if (!context.sharePlainText("Share transaction", shareTextFor(tx))) {
+        Toast.makeText(context, "Couldn’t share right now", Toast.LENGTH_SHORT).show()
     }
-    context.startActivity(Intent.createChooser(intent, "Share transaction"))
 }
