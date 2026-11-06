@@ -844,7 +844,7 @@ fun MoneyConfirmDialog(
                 textAlign = TextAlign.Center,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.recordingPrivacyCover()
+                modifier = Modifier.recordingPrivacyCover(detail.isNotBlank())
             )
             if (note.isNotBlank()) {
                 Spacer(modifier = Modifier.height(Space.gap))
