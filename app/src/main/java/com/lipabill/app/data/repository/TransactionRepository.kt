@@ -18,6 +18,7 @@ import com.lipabill.app.data.sms.MpesaSmsFilter
 import com.lipabill.app.data.sms.SmsInboxReader
 import com.lipabill.app.ussd.PendingPaymentReceipt
 import com.lipabill.app.ussd.UssdMenuBuilder
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -48,6 +49,21 @@ class TransactionRepository(
 ) {
 
     private val rescanLock = Mutex()
+
+    /**
+     * Bumped when country or enabled rails change so an in-flight scan cannot
+     * mark the inbox "caught up" and skip the full re-read that must follow.
+     */
+    private val inboxScanEpoch = AtomicInteger(0)
+
+    /**
+     * Drop high-water marks so the next import re-reads the whole inbox for
+     * newly enabled wallets and banks.
+     */
+    fun invalidateInboxScanProgress() {
+        inboxScanEpoch.incrementAndGet()
+        securePreferences.resetInboxScanForRegionChange()
+    }
 
     fun observeTransactions(
         query: String = "",
@@ -161,10 +177,12 @@ class TransactionRepository(
      * Import confirmations that are not already stored.
      * The first scan reads the whole inbox. Later scans only ask for messages
      * newer than the last one considered, and rows already saved are left untouched.
+     * Pass [forceFullHistory] after enabling a new wallet/bank so older SMS for
+     * that rail are not skipped by the high-water mark.
      * @return number of newly inserted rows
      */
-    suspend fun rescanInbox(): Int = withContext(Dispatchers.IO) {
-        rescanLock.withLock { importNewConfirmations() }
+    suspend fun rescanInbox(forceFullHistory: Boolean = false): Int = withContext(Dispatchers.IO) {
+        rescanLock.withLock { importNewConfirmations(forceFullHistory = forceFullHistory) }
     }
 
     /**
@@ -180,7 +198,8 @@ class TransactionRepository(
             val prior = dao.latestMpesaBalance()
             val amount = snapshot.amount
             val nextBalance = prior?.let { it - amount }
-            val code = "DEMO${System.currentTimeMillis() % 100_000}"
+            val code = snapshot.demoLedgerCode?.takeIf { it.isNotBlank() }
+                ?: "DEMO-${System.currentTimeMillis()}"
             val party = snapshot.counterpartyName ?: snapshot.counterpartyPhone ?: "Demo"
             val phone = snapshot.counterpartyPhone
             val typeLabel = when (snapshot.type) {
@@ -241,7 +260,8 @@ class TransactionRepository(
         }
     }
 
-    private suspend fun importNewConfirmations(): Int {
+    private suspend fun importNewConfirmations(forceFullHistory: Boolean = false): Int {
+        val epochAtStart = inboxScanEpoch.get()
         purgeNonConfirmationsIfNeeded()
         repairParsedAmountsIfNeeded()
         reclassifySavingsIfNeeded()
@@ -251,7 +271,11 @@ class TransactionRepository(
             linkPhonesByName()
             return 0
         }
-        val fullHistory = !securePreferences.walletRailsInboxScanDone
+        // Re-read prefs under the lock so a settings change that invalidated the
+        // scan is visible even when this pass was queued before that change.
+        val region = securePreferences.appRegion
+        val enabled = securePreferences.enabledLedgerSources(region)
+        val fullHistory = forceFullHistory || !securePreferences.walletRailsInboxScanDone
         val since = if (fullHistory) {
             null
         } else {
@@ -260,8 +284,6 @@ class TransactionRepository(
                 highWaterMillis = securePreferences.inboxHighWaterMillis
             )
         }
-        val region = securePreferences.appRegion
-        val enabled = securePreferences.enabledLedgerSources(region)
         val incoming = inboxReader.readMessages(
             newerThanMillis = since,
             region = region,
@@ -315,6 +337,15 @@ class TransactionRepository(
                     onNewTransaction(tx.copy(id = rowId))
                 }
             }
+        }
+        // A newer country/rails change landed while we worked — leave watermarks
+        // alone so the forced follow-up scan still reads the full inbox.
+        if (epochAtStart != inboxScanEpoch.get()) {
+            if (inserted > 0) {
+                linkPhonesByName()
+                afterInsert?.invoke()
+            }
+            return inserted
         }
         securePreferences.smsBackfillDone = true
         securePreferences.markInboxCaughtUp(newestSeen)
@@ -527,7 +558,12 @@ class TransactionRepository(
         val doomed = dao.getAllForPurge()
             .filter { row ->
                 val code = row.code
-                if (code.startsWith("MANUAL-") || code.startsWith("PROBE")) return@filter false
+                if (code.startsWith("MANUAL-") ||
+                    code.startsWith("PROBE") ||
+                    code.startsWith("DEMO")
+                ) {
+                    return@filter false
+                }
                 !ConfirmationIngestion.looksLikeStoredConfirmation(row.source, row.rawBody)
             }
             .map { it.id }
