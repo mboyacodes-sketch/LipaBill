@@ -99,6 +99,7 @@ import com.lipabill.app.ui.SourceFilterRow
 import com.lipabill.app.ui.adapt.LocalWindowForm
 import com.lipabill.app.ui.adapt.WindowWidth
 import com.lipabill.app.ui.components.BalanceAmountRow
+import com.lipabill.app.ui.components.ConsumeSnackbarMessage
 import com.lipabill.app.ui.components.WalletAccountSwitch
 import com.lipabill.app.ui.detail.TransactionReceiptPopup
 import com.lipabill.app.ui.engage.EngageHomeSection
@@ -236,9 +237,7 @@ fun TransactionListScreen(
         viewModel.observeTransaction(resolved).filterNotNull().first()
         onReceiptOpened()
     }
-    LaunchedEffect(state.scanMessage) {
-        val msg = state.scanMessage ?: return@LaunchedEffect
-        snackbar.showSnackbar(msg)
+    ConsumeSnackbarMessage(state.scanMessage, snackbar) {
         viewModel.clearScanMessage()
     }
 
@@ -285,15 +284,22 @@ fun TransactionListScreen(
 
     val density = LocalDensity.current
     // Debug/Maestro: scroll history into frame, then drop in the completed demo row.
-    // Unit covers NavHost recomposing Home already RESUMED; tick covers keep-alive resume.
+    // Peek until insert succeeds — taking first lost the queue when this effect was
+    // cancelled mid-scroll (lifecycle pause, search dismiss, recomposition).
     suspend fun revealDemoHomeRowIfQueued() {
         if (!BuildConfig.DEBUG) return
-        val snap = PendingPaymentReceipt.takeDemoHomeReveal() ?: return
-        listState.animateScrollToItem(txHeaderIndex)
-        delay(180)
-        listState.animateScrollBy(with(density) { 64.dp.toPx() })
-        delay(140)
-        app.repository.insertDemoPaymentResult(snap)
+        val snap = PendingPaymentReceipt.peekDemoHomeReveal() ?: return
+        suppressSearchDismiss[0]++
+        try {
+            listState.animateScrollToItem(txHeaderIndex)
+            delay(180)
+            listState.animateScrollBy(with(density) { 64.dp.toPx() })
+            delay(140)
+            app.repository.insertDemoPaymentResult(snap)
+            PendingPaymentReceipt.takeDemoHomeReveal()
+        } finally {
+            suppressSearchDismiss[0]--
+        }
     }
     LaunchedEffect(Unit) { revealDemoHomeRowIfQueued() }
     LaunchedEffect(homeResumeTick) {
@@ -331,11 +337,9 @@ fun TransactionListScreen(
         if (focused) {
             searchOpen = true
             searchFocused = true
-        } else if (wasFocused && state.searchQuery.isBlank() && searchEditor.text.isEmpty()) {
-            searchOpen = false
-            searchFocused = false
         } else if (wasFocused) {
-            searchFocused = false
+            // Leaving the field drops the query so the list is not left filtered.
+            closeSearch()
         }
     }
     val listCoversSwoosh by remember {
@@ -366,12 +370,7 @@ fun TransactionListScreen(
     LaunchedEffect(listState.isScrollInProgress) {
         if (suppressSearchDismiss[0] > 0) return@LaunchedEffect
         if (listState.isScrollInProgress && searchFocused) {
-            searchFieldFocused = false
-            searchFocused = false
-            focusManager.clearFocus(force = true)
-            if (state.searchQuery.isBlank() && searchEditor.text.isEmpty()) {
-                searchOpen = false
-            }
+            closeSearch()
         }
     }
 
