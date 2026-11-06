@@ -130,6 +130,7 @@ class LipaBillApp : Application() {
         AppMetrics.init(this)
         AppCrashReporting.init(this)
         securePreferences = SecurePreferences(this)
+        securePreferences.seedDemoSocialHandles()
         _fontSizeSp.value = securePreferences.uiFontSizeSp
         _favouritesSectionEnabled.value = securePreferences.favouritesSectionEnabled
         _recordingPrivacy.value = recordingCaptureEnabled()
@@ -266,8 +267,10 @@ class LipaBillApp : Application() {
 
     private fun refreshLedger() {
         if (!::repository.isInitialized) return
-        securePreferences.resetInboxScanForRegionChange()
-        appScope.launch { repository.rescanInbox() }
+        // Invalidate before the coroutine so an in-flight catch-up scan cannot
+        // rewrite the high-water mark and skip SMS for newly enabled rails.
+        repository.invalidateInboxScanProgress()
+        appScope.launch { repository.rescanInbox(forceFullHistory = true) }
     }
 
     fun ensureDemoLedger() {
