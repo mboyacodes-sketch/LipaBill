@@ -55,6 +55,29 @@ object PayLink {
 
         /** Phone destination when [kind] is [Kind.PHONE]. */
         val phone: String get() = if (kind == Kind.PHONE) identifier else ""
+
+        /** Polite share-sheet body (invite, not a demand). */
+        val shareMessage: String
+            get() {
+                val lead = when (kind) {
+                    Kind.PHONE -> if (amountShillings != null) {
+                        "Here's a LipaBill link for KES $amountShillings"
+                    } else {
+                        "Here's my LipaBill link"
+                    }
+                    Kind.TILL -> if (amountShillings != null) {
+                        "Here's a LipaBill link for KES $amountShillings (till $identifier)"
+                    } else {
+                        "Here's my LipaBill till link ($identifier)"
+                    }
+                    Kind.PAYBILL -> if (amountShillings != null) {
+                        "Here's a LipaBill link for KES $amountShillings (paybill $identifier)"
+                    } else {
+                        "Here's my LipaBill paybill link ($identifier)"
+                    }
+                }
+                return "$lead\n$shareUrl"
+            }
     }
 
     fun canonicalPhone(raw: String?): String? = strictKenyanMobile(raw)
@@ -213,11 +236,10 @@ object PayLink {
         val lower = trimmed.lowercase()
         val appMarker = "lipabill://p/"
         val webMarker = "https://lipabill.app/p/"
-        val httpMarker = "http://lipabill.app/p/"
+        // http:// is rejected — cleartext links are not accepted.
         return when {
             lower.startsWith(appMarker) -> trimmed.substring(appMarker.length)
             lower.startsWith(webMarker) -> trimmed.substring(webMarker.length)
-            lower.startsWith(httpMarker) -> trimmed.substring(httpMarker.length)
             lower.contains("://") || lower.contains('/') || lower.contains('.') -> null
             else -> trimmed
         }
