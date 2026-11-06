@@ -247,6 +247,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                 } else {
                     ledger.filter { it.source == activeSource }
                 }
+                val balanceSource = activeSource ?: region.primaryWallet
                 val available = sourced.map { it.type }.inCategoryOrder()
                 val activeType = requestedType?.takeIf { it in available }
                 WalletSlice(
@@ -256,7 +257,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                     },
                     analytics = sourced,
                     mpesaBalance = regional.firstOrNull {
-                        it.source == region.primaryWallet && it.balance != null
+                        it.source == balanceSource && it.balance != null
                     }?.balance,
                     fulizaOutstanding = regionalFuliza.firstOrNull { it.balance != null }?.balance,
                     account = selected,
@@ -295,9 +296,10 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         core.copy(searchQuery = query)
     }
         .flowOn(Dispatchers.Default)
+        // Eager so enabling a rail in Settings updates home chips before you return.
         .stateIn(
             viewModelScope,
-            SharingStarted.WhileSubscribed(5_000),
+            SharingStarted.Eagerly,
             TransactionListUiState()
         )
 
@@ -308,7 +310,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         core.copy(frequentContacts = frequent)
     }.stateIn(
         viewModelScope,
-        SharingStarted.WhileSubscribed(5_000),
+        SharingStarted.Eagerly,
         TransactionListUiState()
     )
 
