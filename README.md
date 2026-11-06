@@ -17,10 +17,22 @@ A full local workspace is required to build a production binary.
 ```bash
 ./gradlew :app:assemblePlayDebug
 ./gradlew :app:bundlePlayRelease      # Play Store AAB
-./gradlew :app:assembleInternalRelease  # Firebase / sideload
+./gradlew :app:assembleInternalRelease  # Sideload + self-hosted OTA
+./scripts/publish-ota.sh               # Build APK + write ota/dist/latest.json
 ```
 
-Flavors: **`play`** (default, Play submission) and **`internal`** (sideload helpers such as Settings restricted-unlock auto-navigation). Both keep SMS ledger + USSD Accessibility fill.
+Flavors: **`play`** (default, Play submission — updates via Play in-app updates) and **`internal`** (sideload + **self-hosted OTA** from `https://lipabill.app/ota/latest.json`). Both keep SMS ledger + USSD Accessibility fill.
+
+### OTA (skip the Play review queue)
+
+Play review cannot be bypassed for Play installs. For people on the **internal** APK:
+
+1. Bump `versionCode` / `versionName` in `app/build.gradle.kts`
+2. Run `./scripts/publish-ota.sh`
+3. Upload `ota/dist/LipaBill-…-internal.apk` and `ota/dist/latest.json` to the lipabill.app Vercel project under `/ota/`
+4. Open LipaBill → Settings → **Check for updates** (or relaunch — auto-check once per process)
+
+Manifest shape: see `ota/latest.example.json`. APK SHA-256 is verified before install.
 
 ### Pay-link web fallback
 
