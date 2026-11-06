@@ -32,8 +32,8 @@ android {
         applicationId = "com.lipabill.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 33
-        versionName = "2.1.0"
+        versionCode = 34
+        versionName = "2.2.0"
         // Real devices are arm64; drop x86/x86_64 emulator ABIs from shipped APKs.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -53,11 +53,19 @@ android {
             dimension = "distribution"
             isDefault = true
             buildConfigField("boolean", "SIDELOAD_DISTRIBUTION", "false")
+            // Play in-app updates only — no self-hosted APK channel.
+            buildConfigField("String", "OTA_MANIFEST_URL", "\"\"")
         }
         create("internal") {
             dimension = "distribution"
             versionNameSuffix = "-internal"
             buildConfigField("boolean", "SIDELOAD_DISTRIBUTION", "true")
+            // Hosted on lipabill.app (Vercel). See ota/ in the repo root.
+            buildConfigField(
+                "String",
+                "OTA_MANIFEST_URL",
+                "\"https://lipabill.app/ota/latest.json\""
+            )
         }
     }
 
@@ -221,9 +229,7 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-crashlytics")
-    // In-app update API for every variant. The full downloader stays on internal
-    // so Play builds do not ship the App Distribution installer.
-    add("internalImplementation", "com.google.firebase:firebase-appdistribution:16.0.0-beta20")
+    // Play → Play in-app updates. Internal → self-hosted OTA (HttpURLConnection + FileProvider).
     add("playImplementation", "com.google.android.play:app-update:2.1.0")
 
     testImplementation("junit:junit:4.13.2")
