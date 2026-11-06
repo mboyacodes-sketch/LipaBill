@@ -1,0 +1,8 @@
+{
+  "versionCode": 34,
+  "versionName": "2.1.1",
+  "apkUrl": "https://lipabill.app/ota/LipaBill-2.1.1-internal.apk",
+  "sha256": "REPLACE_WITH_SHA256_OF_THE_APK",
+  "mandatory": false,
+  "notes": "Crash and payment diagnostics. Install while Play review is pending."
+}
