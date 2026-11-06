@@ -9,9 +9,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Offers an update from the channel that installed this build.
  *
- * Play builds use Play in-app updates. Internal builds use Firebase App
- * Distribution. Debug installs are left alone, because neither channel can
- * replace an app that was pushed from the computer.
+ * Play builds use Play in-app updates (still waits on Play review).
+ * Internal / sideload builds use self-hosted OTA from [BuildConfig.OTA_MANIFEST_URL]
+ * so fixes can ship while Play is stuck in review.
+ * Debug installs are left alone — they update from the computer.
  */
 object AppUpdates {
 
