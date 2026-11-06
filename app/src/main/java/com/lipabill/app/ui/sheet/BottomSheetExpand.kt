@@ -35,12 +35,8 @@ fun Fragment.themedComposeView(content: @Composable () -> Unit): View {
         )
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         setContent {
-            val fontSize by app.fontSizeSp.collectAsStateWithLifecycle(
-                initialValue = app.fontSizeSp.value
-            )
-            val darkMode by app.darkMode.collectAsStateWithLifecycle(
-                initialValue = app.darkMode.value
-            )
+            val fontSize by app.fontSizeSp.collectAsStateWithLifecycle()
+            val darkMode by app.darkMode.collectAsStateWithLifecycle()
             LipaBillTheme(fontSizeSp = fontSize, darkTheme = darkMode, content = content)
         }
     }
@@ -97,7 +93,7 @@ fun BottomSheetDialog.expandForComposeContent() {
 private fun secureMoneyWindow(window: Window?, context: Context) {
     if (window == null) return
     val recording = (context.applicationContext as? LipaBillApp)?.recordingPrivacy?.value == true
-    if (RecordingCapture.available || recording) {
+    if (RecordingCapture.available && recording) {
         window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     } else {
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
