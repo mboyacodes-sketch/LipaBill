@@ -84,11 +84,6 @@ class SecurePreferences(context: Context) {
         set(value) = prefs.edit().putInt(KEY_UI_FONT_SIZE_SP, value.coerceIn(8, 22)).apply()
 
 
-    /** When true, the home Favourites (Frequent) section is shown. */
-    var favouritesSectionEnabled: Boolean
-        get() = prefs.getBoolean(KEY_FAVOURITES_SECTION, true)
-        set(value) = prefs.edit().putBoolean(KEY_FAVOURITES_SECTION, value).apply()
-
     /**
      * Debug / internal builds only. When true, FLAG_SECURE is cleared and names,
      * numbers, references, and ticket codes are blurred in the framebuffer.
@@ -182,11 +177,6 @@ class SecurePreferences(context: Context) {
     var watchedPayees: Set<String>
         get() = prefs.getStringSet(KEY_WATCHED_PAYEES, null)?.toSet() ?: emptySet()
         set(value) = prefs.edit().putStringSet(KEY_WATCHED_PAYEES, HashSet(value)).apply()
-
-    /** The name printed on the person's own tickets; used to check scanned passes. */
-    var ticketHolderName: String?
-        get() = prefs.getString(KEY_TICKET_HOLDER_NAME, null)?.takeIf { it.isNotBlank() }
-        set(value) = prefs.edit().putString(KEY_TICKET_HOLDER_NAME, value?.trim()).apply()
 
     /** Insights badges already earned; once earned they stay. */
     var earnedBadges: Set<String>
@@ -340,7 +330,6 @@ class SecurePreferences(context: Context) {
         private const val KEY_ESSENTIAL_PAYEES = "essential_payees"
         private const val KEY_WATCHED_PAYEES = "watched_payees"
         private const val KEY_EARNED_BADGES = "earned_badges"
-        private const val KEY_TICKET_HOLDER_NAME = "ticket_holder_name"
         private const val KEY_INBOX_HISTORY_IMPORTED = "inbox_history_imported_v1"
         private const val KEY_INBOX_HIGH_WATER = "inbox_high_water_millis"
         private const val KEY_WALLET_RAILS_INBOX_SCAN = "wallet_rails_inbox_scan_v1"
@@ -349,7 +338,6 @@ class SecurePreferences(context: Context) {
         private const val KEY_A11Y_PREFERRED_ON = "a11y_preferred_on"
         private const val KEY_PREFERRED_SIM_SUB_ID = "preferred_sim_subscription_id"
         private const val KEY_UI_FONT_SIZE_SP = "ui_font_size_sp_v2"
-        private const val KEY_FAVOURITES_SECTION = "favourites_section_enabled"
         private const val KEY_RECORDING_PRIVACY = "recording_privacy"
         private const val KEY_HIBERNATION_PROMPT_SHOWN = "hibernation_prompt_shown"
         private const val KEY_FIRST_RUN_SETUP_DONE = "first_run_setup_done"
