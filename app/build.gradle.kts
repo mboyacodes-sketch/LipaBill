@@ -220,7 +220,7 @@ dependencies {
     // Offline QR encode (display) + CameraX/ML Kit scan + e-ticket OCR.
     // Unbundled ML Kit: Play Services delivers barcode + Latin OCR models after install
     // instead of shipping ~17MB of native libs in the AAB.
-    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.zxing:core:3.5.4")
     val camera = "1.4.2"
     implementation("androidx.camera:camera-camera2:$camera")
     implementation("androidx.camera:camera-lifecycle:$camera")
