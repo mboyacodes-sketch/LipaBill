@@ -74,6 +74,101 @@ class CostInsightsTest {
     }
 
     @Test
+    fun two_similar_monthly_pays_still_count_on_short_history() {
+        val today = LocalDate.of(2026, 11, 10)
+        val fibre = listOf(
+            LocalDate.of(2026, 9, 14),
+            LocalDate.of(2026, 10, 14)
+        ).map { tx(TransactionType.PAYBILL, "Safaricom Home", 2_999.0, it) }
+
+        val regular = detectRegulars(fibre, zone, today).single()
+        assertEquals(Cadence.MONTHLY, regular.cadence)
+        assertEquals(2, regular.payments)
+        // Sep 14 → Oct 14 is 30 days, so next due is Oct 14 + 30.
+        assertEquals(LocalDate.of(2026, 11, 13), regular.nextDue)
+    }
+
+    @Test
+    fun late_rent_around_forty_days_is_still_monthly() {
+        val today = LocalDate.of(2026, 11, 10)
+        val rent = listOf(
+            LocalDate.of(2026, 7, 1),
+            LocalDate.of(2026, 8, 10),
+            LocalDate.of(2026, 9, 20)
+        ).map { tx(TransactionType.SENT, "Landlord", 15_000.0, it) }
+
+        val regular = detectRegulars(rent, zone, today).single()
+        assertEquals(Cadence.MONTHLY, regular.cadence)
+    }
+
+    @Test
+    fun named_and_phone_only_sends_collapse_to_one_payee() {
+        val today = LocalDate.of(2026, 11, 10)
+        val phone = "254712345678"
+        val pays = listOf(
+            tx(TransactionType.SENT, "JOHN KAMAU", 500.0, LocalDate.of(2026, 10, 20), phone = phone),
+            tx(TransactionType.SENT, null, 500.0, LocalDate.of(2026, 10, 27), phone = "0712345678"),
+            tx(TransactionType.SENT, "John Kamau", 520.0, LocalDate.of(2026, 11, 3), phone = phone)
+        )
+        val regular = detectRegulars(pays, zone, today).single()
+        assertEquals("tel:712345678", regular.key)
+        assertEquals(Cadence.WEEKLY, regular.cadence)
+        assertEquals(3, regular.payments)
+    }
+
+    @Test
+    fun till_branches_fold_into_one_habit() {
+        val day = LocalDate.of(2026, 11, 5)
+        val txs = listOf(
+            tx(TransactionType.BUY_GOODS, "Java House Westlands", 450.0, day),
+            tx(TransactionType.BUY_GOODS, "Java House Kilimani", 480.0, day),
+            tx(TransactionType.BUY_GOODS, "Naivas", 2_000.0, day)
+        )
+        assertEquals("java house", foldPayeeName("Java House Westlands"))
+        assertEquals("java house", foldPayeeName("Java House Kilimani"))
+        val habit = topHabit(txs, minVisits = 2)
+        assertTrue(habit?.name?.startsWith("Java House") == true)
+        assertEquals(2, habit?.visits)
+    }
+
+    @Test
+    fun paybill_placeholder_folds_to_bill_id_while_sms_names_stay_on_name() {
+        // Short business numbers are not Kenyan mobiles, so phone-first identity does not
+        // collapse "Paybill 888880" with "Safaricom Limited" — that still needs merchant learning.
+        assertEquals(
+            "bill:888880",
+            payeeKey(tx(TransactionType.PAYBILL, "Paybill 888880", 100.0, LocalDate.of(2026, 11, 1)))
+        )
+        assertEquals(
+            "safaricom limited",
+            payeeKey(
+                tx(
+                    TransactionType.PAYBILL,
+                    "Safaricom Limited",
+                    100.0,
+                    LocalDate.of(2026, 11, 1),
+                    phone = "888880"
+                )
+            )
+        )
+        assertNull(phoneKey("888880"))
+    }
+
+    @Test
+    fun regular_keeps_named_display_when_latest_sms_is_phone_only() {
+        val today = LocalDate.of(2026, 11, 10)
+        val phone = "254700111222"
+        val pays = listOf(
+            tx(TransactionType.SENT, "Landlord", 5_000.0, LocalDate.of(2026, 10, 20), phone = phone),
+            tx(TransactionType.SENT, "Landlord", 5_000.0, LocalDate.of(2026, 10, 27), phone = phone),
+            tx(TransactionType.SENT, null, 5_000.0, LocalDate.of(2026, 11, 3), phone = phone)
+        )
+        val regular = detectRegulars(pays, zone, today, essentials = setOf("landlord")).single()
+        assertEquals("Landlord", regular.name)
+        assertTrue(regular.essential)
+    }
+
+    @Test
     fun irregular_or_stopped_payees_are_not_regulars() {
         val today = LocalDate.of(2026, 11, 10)
         val scattered = listOf(1, 3, 20, 21).map {
@@ -100,6 +195,23 @@ class CostInsightsTest {
     }
 
     @Test
+    fun essential_name_mark_still_matches_phone_keyed_regular() {
+        val today = LocalDate.of(2026, 11, 10)
+        val rent = listOf(5, 12, 19, 26).map {
+            tx(
+                TransactionType.SENT,
+                "Landlord",
+                5_000.0,
+                LocalDate.of(2026, 10, it),
+                phone = "254700111222"
+            )
+        }
+        val regular = detectRegulars(rent, zone, today, essentials = setOf("landlord")).single()
+        assertEquals("tel:700111222", regular.key)
+        assertTrue(regular.essential)
+    }
+
+    @Test
     fun top_habit_is_the_most_visited_place_outside_regulars() {
         val day = LocalDate.of(2026, 11, 5)
         val txs = List(4) { tx(TransactionType.BUY_GOODS, "Java House", 450.0, day) } +
@@ -111,6 +223,26 @@ class CostInsightsTest {
         assertEquals("Java House", habit?.name)
         assertEquals(4, habit?.visits)
         assertEquals(1_800.0, habit?.total ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun short_ranges_need_fewer_habit_visits() {
+        assertEquals(2, habitMinVisits(7))
+        assertEquals(2, habitMinVisits(14))
+        assertEquals(3, habitMinVisits(30))
+        val day = LocalDate.of(2026, 11, 5)
+        val txs = List(2) { tx(TransactionType.BUY_GOODS, "Naivas", 1_000.0, day) }
+        assertEquals("Naivas", topHabit(txs, minVisits = habitMinVisits(7))?.name)
+        assertNull(topHabit(txs, minVisits = habitMinVisits(30)))
+    }
+
+    @Test
+    fun airtime_is_not_treated_as_a_regular_bill() {
+        val today = LocalDate.of(2026, 11, 10)
+        val airtime = listOf(5, 12, 19, 26).map {
+            tx(TransactionType.AIRTIME, "Airtime", 100.0, LocalDate.of(2026, 10, it))
+        }
+        assertTrue(detectRegulars(airtime, zone, today).isEmpty())
     }
 
     @Test
@@ -222,14 +354,15 @@ class CostInsightsTest {
         date: LocalDate,
         code: String = "A${date}${name.orEmpty()}",
         cost: Double? = null,
-        raw: String = ""
+        raw: String = "",
+        phone: String? = null
     ) = MpesaTransaction(
         id = 0,
         code = code,
         type = type,
         amount = amount,
         counterpartyName = name,
-        counterpartyPhone = null,
+        counterpartyPhone = phone,
         timestampMillis = date.atTime(12, 0).toInstant(ZoneOffset.UTC).toEpochMilli(),
         balance = null,
         cost = cost,
