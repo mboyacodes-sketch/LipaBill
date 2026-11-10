@@ -1,13 +1,5 @@
 package com.lipabill.app.viewmodel
 
-import com.lipabill.app.data.tickets.ETicketAnalyzer
-import com.lipabill.app.data.tickets.smart.GeminiNanoPassAi
-import com.lipabill.app.data.tickets.smart.PassDraft
-import com.lipabill.app.data.tickets.smart.PassInput
-import com.lipabill.app.data.tickets.smart.SmartPassReader
-import com.lipabill.app.data.tickets.smart.toTicketImport
-import java.time.LocalDate
-import java.time.ZoneId
 import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -35,46 +27,6 @@ class TicketsViewModel(
 
     val tickets: StateFlow<List<Ticket>> = app.ticketRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    private val smartReader = SmartPassReader(GeminiNanoPassAi())
-
-    var ticketHolderName: String?
-        get() = app.securePreferences.ticketHolderName
-        set(value) {
-            app.securePreferences.ticketHolderName = value
-        }
-
-    /** Smart add: read pasted text or a scanned code into a draft. Nothing is saved. */
-    suspend fun readPass(input: PassInput): PassDraft = withContext(Dispatchers.Default) {
-        smartReader.read(input, LocalDate.now(), ticketHolderName)
-    }
-
-    /** What smart add did with a picked file. */
-    sealed interface SmartDocument {
-        /** A .pkpass: saved straight away, like a pass shared into the app. */
-        data class Saved(val id: Long?) : SmartDocument
-        /** A PDF or photo: read into a draft for the review screen. */
-        data class Review(val draft: PassDraft) : SmartDocument
-    }
-
-    /** Smart add for a picked file: .pkpass saves directly; PDFs and photos go to review. */
-    suspend fun importSmartDocument(context: Context, uri: Uri): SmartDocument = withContext(Dispatchers.IO) {
-        if (TicketDocumentImporter.isPkPass(context, uri)) {
-            SmartDocument.Saved(addFromDocument(context, uri, TicketDocumentKind.PKPASS))
-        } else {
-            val read = ETicketAnalyzer.extract(context, uri)
-            val input = PassInput(text = read.text, barcodes = read.barcodes, source = TicketSource.E_TICKET)
-            SmartDocument.Review(smartReader.read(input, LocalDate.now(), ticketHolderName))
-        }
-    }
-
-    /** Saves a reviewed draft the same way today's imports are saved. */
-    suspend fun saveDraft(draft: PassDraft): Long? = withContext(Dispatchers.IO) {
-        val import = draft.toTicketImport(ZoneId.systemDefault())
-            ?: throw IllegalArgumentException("This pass has no scannable code yet.")
-        app.ticketRepository.addImport(import)
-            ?: throw IllegalArgumentException("That ticket is already saved.")
-    }
 
     /** SGR: paste booking SMS → ticket awaiting boarding pass. */
     suspend fun addFromConfirmation(message: String): Long? = withContext(Dispatchers.IO) {
