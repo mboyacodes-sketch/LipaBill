@@ -103,7 +103,18 @@ data class PulseCell(
 ) {
     val hasOutflow: Boolean get() = outflow > 0.005
     val hasInflow: Boolean get() = inflow > 0.005
+    val net: Double get() = inflow - outflow
+    val flow: DayFlow
+        get() = when {
+            hasInflow && hasOutflow -> if (net >= 0.0) DayFlow.NET_UP else DayFlow.NET_DOWN
+            hasInflow -> DayFlow.IN_ONLY
+            hasOutflow -> DayFlow.OUT_ONLY
+            else -> DayFlow.NONE
+        }
 }
+
+/** How money moved on one day: one way only, or both ways with the net up or down. */
+enum class DayFlow { NONE, IN_ONLY, OUT_ONLY, NET_UP, NET_DOWN }
 
 fun quietDaysInRange(from: LocalDate, to: LocalDate, outflowDates: Set<LocalDate>): Int {
     val days = ChronoUnit.DAYS.between(from, to) + 1

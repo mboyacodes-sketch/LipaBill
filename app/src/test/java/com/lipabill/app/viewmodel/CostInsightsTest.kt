@@ -204,6 +204,17 @@ class CostInsightsTest {
         assertEquals(40.0, daily, 0.001)
     }
 
+    @Test
+    fun day_flow_tells_one_way_days_from_net_up_and_net_down() {
+        val day = LocalDate.of(2026, 11, 5)
+        fun cell(inflow: Double, outflow: Double) = PulseCell(day, true, false, inflow, outflow)
+        assertEquals(DayFlow.IN_ONLY, cell(1_000.0, 0.0).flow)
+        assertEquals(DayFlow.OUT_ONLY, cell(0.0, 400.0).flow)
+        assertEquals(DayFlow.NET_UP, cell(1_000.0, 400.0).flow)
+        assertEquals(DayFlow.NET_DOWN, cell(300.0, 400.0).flow)
+        assertEquals(DayFlow.NONE, cell(0.0, 0.0).flow)
+    }
+
     private fun tx(
         type: TransactionType,
         name: String?,

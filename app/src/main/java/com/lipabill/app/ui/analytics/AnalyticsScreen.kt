@@ -86,6 +86,7 @@ import com.lipabill.app.viewmodel.AnalyticsRange
 import com.lipabill.app.viewmodel.AnalyticsSummary
 import com.lipabill.app.viewmodel.ChallengeCardKind
 import com.lipabill.app.viewmodel.CounterpartySpend
+import com.lipabill.app.viewmodel.DayFlow
 import com.lipabill.app.viewmodel.EngagementViewModel
 import com.lipabill.app.viewmodel.FeeSummary
 import com.lipabill.app.viewmodel.InsightBadge
@@ -110,9 +111,23 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.TextStyle
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private val CardShape = RoundedCornerShape(20.dp)
+
+/** Amber for days that ended down despite money coming in; differs from red in hue and lightness. */
+private val NetDown = Color(0xFFD97706)
+
+/** Calendar fill per kind of day. Each differs in hue and lightness so they read apart. */
+@Composable
+private fun DayFlow.fill(): Color = when (this) {
+    DayFlow.IN_ONLY -> Income.copy(alpha = 0.18f)
+    DayFlow.OUT_ONLY -> Expense.copy(alpha = 0.16f)
+    DayFlow.NET_UP -> Accent.copy(alpha = 0.22f)
+    DayFlow.NET_DOWN -> NetDown.copy(alpha = 0.26f)
+    DayFlow.NONE -> Color.Transparent
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -983,14 +998,20 @@ private fun RhythmCard(stats: AnalyticsSummary, fuliza: Boolean) {
     InsightCard(title = title, caption = caption) {
         if (stats.pulse.isNotEmpty()) {
             PulseGrid(cells = stats.pulse, fuliza = fuliza)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (!fuliza) LegendSwatch(fill = Income.copy(alpha = 0.14f), border = null, label = "Money in")
-                LegendSwatch(
-                    fill = Expense.copy(alpha = 0.14f),
-                    border = null,
-                    label = if (fuliza) "Drawn" else "Money out"
-                )
-                if (!fuliza) LegendSwatch(fill = CardWhite, border = Accent, label = "Due")
+            if (fuliza) {
+                LegendSwatch(fill = DayFlow.OUT_ONLY.fill(), border = null, label = "Drawn")
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        LegendSwatch(fill = DayFlow.IN_ONLY.fill(), border = null, label = "Only in")
+                        LegendSwatch(fill = DayFlow.OUT_ONLY.fill(), border = null, label = "Only out")
+                        LegendSwatch(fill = CardWhite, border = Accent, label = "Due")
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        LegendSwatch(fill = DayFlow.NET_UP.fill(), border = null, label = "Both, net up")
+                        LegendSwatch(fill = DayFlow.NET_DOWN.fill(), border = null, label = "Both, net down")
+                    }
+                }
             }
         } else if (stats.periodBars.isNotEmpty()) {
             PeriodBars(bars = stats.periodBars, fuliza = fuliza)
@@ -1073,6 +1094,16 @@ private fun PulseGrid(cells: List<PulseCell>, fuliza: Boolean) {
                     modifier = Modifier.recordingPrivacyCover()
                 )
             }
+            if (day.hasInflow && day.hasOutflow) {
+                val up = day.net >= 0.0
+                Text(
+                    "Net ${if (up) "+" else "−"}${formatKsh(abs(day.net))}",
+                    style = HomeType.body,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (up) Income else Expense,
+                    modifier = Modifier.recordingPrivacyCover()
+                )
+            }
             if (!day.hasInflow && !day.hasOutflow) {
                 Text(
                     if (day.isDue) "A regular payment is due" else "Nothing moved this day",
@@ -1094,9 +1125,7 @@ private fun PulseDayCell(
     val shape = RoundedCornerShape(10.dp)
     val fill = when {
         !cell.inRange -> Color.Transparent
-        cell.hasOutflow && cell.hasInflow -> CardWhite
-        cell.hasOutflow -> Expense.copy(alpha = 0.14f)
-        cell.hasInflow -> Income.copy(alpha = 0.14f)
+        cell.flow != DayFlow.NONE -> cell.flow.fill()
         cell.isDue || cell.isToday -> CardWhite
         else -> Canvas
     }
@@ -1104,7 +1133,6 @@ private fun PulseDayCell(
         !cell.inRange -> null
         selected || cell.isToday -> Ink
         cell.isDue -> Accent
-        cell.hasOutflow && cell.hasInflow -> Hairline
         else -> null
     }
     Column(
