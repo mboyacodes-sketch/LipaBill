@@ -142,6 +142,8 @@ import com.lipabill.app.viewmodel.DayGroup
 import com.lipabill.app.viewmodel.EngagementViewModel
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import com.lipabill.app.viewmodel.WalletAccount
+import com.lipabill.app.viewmodel.fulizaDueCopy
+import java.time.LocalDate
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -416,6 +418,7 @@ fun TransactionListScreen(
                 showingReceipt = showingReceipt,
                 listState = listState,
                 balance = shownBalance,
+                fulizaDue = state.fulizaDue,
                 frequent = frequent,
                 showFrequent = showFrequent,
                 account = state.account,
@@ -502,6 +505,7 @@ fun TransactionListScreen(
                         ) {
                             BalanceSection(
                                 balance = shownBalance,
+                                fulizaDue = state.fulizaDue,
                                 account = state.account,
                                 onAccountSelected = viewModel::setWalletAccount,
                                 onOpenProfile = onOpenProfile,
@@ -521,6 +525,7 @@ fun TransactionListScreen(
                     } else {
                         BalanceSection(
                             balance = shownBalance,
+                            fulizaDue = state.fulizaDue,
                             account = state.account,
                             onAccountSelected = viewModel::setWalletAccount,
                             onOpenProfile = onOpenProfile,
@@ -663,6 +668,7 @@ private fun HomeExpandedPane(
     showingReceipt: Boolean,
     listState: LazyListState,
     balance: Double?,
+    fulizaDue: LocalDate?,
     frequent: List<SendContact>,
     showFrequent: Boolean,
     account: WalletAccount,
@@ -718,6 +724,7 @@ private fun HomeExpandedPane(
             )
             BalanceSection(
                 balance = balance,
+                fulizaDue = fulizaDue,
                 account = account,
                 onAccountSelected = onAccountSelected,
                 onOpenProfile = onOpenProfile,
@@ -896,7 +903,8 @@ private fun BalanceSection(
     onAccountSelected: (WalletAccount) -> Unit,
     onOpenProfile: () -> Unit,
     modifier: Modifier = Modifier,
-    showFuliza: Boolean = true
+    showFuliza: Boolean = true,
+    fulizaDue: LocalDate? = null
 ) {
     Box(
         modifier = modifier
@@ -987,6 +995,14 @@ private fun BalanceSection(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Start
             )
+            if (account == WalletAccount.FULIZA && fulizaDue != null && (balance ?: 0.0) > 0.0) {
+                Text(
+                    text = fulizaDueCopy(fulizaDue, LocalDate.now()).replaceFirstChar { it.uppercase() } +
+                        " · daily charges since are not included",
+                    style = HomeType.caption,
+                    color = Mute
+                )
+            }
         }
         Box(
             modifier = Modifier

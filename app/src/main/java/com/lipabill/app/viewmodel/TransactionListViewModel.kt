@@ -181,6 +181,8 @@ data class TransactionListUiState(
     val hasSmsPermission: Boolean = false,
     val latestBalance: Double? = null,
     val fulizaOutstanding: Double? = null,
+    /** Due date from the latest Fuliza draw text. */
+    val fulizaDue: LocalDate? = null,
     val account: WalletAccount = WalletAccount.MPESA,
     val analytics: AnalyticsSummary = AnalyticsSummary(),
     val frequentContacts: List<SendContact> = emptyList(),
@@ -302,7 +304,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                     mpesaBalance = regional.firstOrNull {
                         it.source == balanceSource && it.balance != null
                     }?.balance,
-                    fulizaOutstanding = regionalFuliza.firstOrNull { it.balance != null }?.balance,
+                    fulizaStatus = latestFulizaStatus(regionalFuliza),
                     account = selected,
                     typeFilter = activeType,
                     availableTypes = available,
@@ -324,7 +326,8 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                 scanMessage = message,
                 hasSmsPermission = smsOk,
                 latestBalance = wallet.mpesaBalance,
-                fulizaOutstanding = wallet.fulizaOutstanding,
+                fulizaOutstanding = wallet.fulizaStatus?.outstanding,
+                fulizaDue = wallet.fulizaStatus?.dueDate,
                 account = wallet.account,
                 analytics = buildAnalytics(wallet.analytics, range, wallet.account, marks),
                 typeFilter = wallet.typeFilter,
@@ -918,7 +921,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         val visible: List<MpesaTransaction>,
         val analytics: List<MpesaTransaction>,
         val mpesaBalance: Double?,
-        val fulizaOutstanding: Double?,
+        val fulizaStatus: FulizaStatus?,
         val account: WalletAccount,
         val typeFilter: TransactionType? = null,
         val availableTypes: List<TransactionType> = emptyList(),

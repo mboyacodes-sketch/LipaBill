@@ -107,6 +107,7 @@ import com.lipabill.app.viewmodel.TypeBreakdown
 import com.lipabill.app.viewmodel.WalletAccount
 import com.lipabill.app.viewmodel.busiestDayLabel
 import com.lipabill.app.viewmodel.calendarAmountLabel
+import com.lipabill.app.viewmodel.fulizaDueCopy
 import com.lipabill.app.viewmodel.formatPeriodSpan
 import com.lipabill.app.viewmodel.regularCadenceCopy
 import com.lipabill.app.viewmodel.shortPeriodSpan
@@ -294,7 +295,13 @@ fun MetricsScreen(
                 onSelectFuliza = viewModel::selectFulizaLedger
             )
 
-            HeroCard(stats = stats, account = account, showFigures = stats.hasLedger && !emptyPeriod)
+            HeroCard(
+                stats = stats,
+                account = account,
+                showFigures = stats.hasLedger && !emptyPeriod,
+                fulizaOutstanding = if (state.showFuliza) state.fulizaOutstanding else null,
+                fulizaDue = state.fulizaDue
+            )
 
             if (stats.hasLedger && mpesa &&
                 (stats.regulars.isNotEmpty() || stats.fees.total > 0.0 || stats.habit != null)
@@ -475,7 +482,13 @@ private fun shortRangeLabel(stats: AnalyticsSummary): String {
 // region Hero
 
 @Composable
-private fun HeroCard(stats: AnalyticsSummary, account: WalletAccount, showFigures: Boolean) {
+private fun HeroCard(
+    stats: AnalyticsSummary,
+    account: WalletAccount,
+    showFigures: Boolean,
+    fulizaOutstanding: Double?,
+    fulizaDue: LocalDate?
+) {
     val soft = OnAccent.copy(alpha = 0.82f)
     val mpesa = account == WalletAccount.MPESA
     Column(
@@ -502,6 +515,19 @@ private fun HeroCard(stats: AnalyticsSummary, account: WalletAccount, showFigure
         val detail = if (stats.keptHeadline != null) null else stats.storyDetail
         if (detail != null) {
             Text(detail, style = HomeType.body, color = soft)
+        }
+        if (fulizaOutstanding != null && fulizaOutstanding > 0.0) {
+            val due = fulizaDue?.let { " · ${fulizaDueCopy(it, LocalDate.now())}" }.orEmpty()
+            Text(
+                text = (if (mpesa) "Fuliza outstanding " else "Outstanding ") + formatKsh(fulizaOutstanding) + due,
+                style = HomeType.label,
+                color = Accent,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(OnAccent)
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                    .recordingPrivacyCover()
+            )
         }
         if (showFigures) {
             Row(modifier = Modifier.fillMaxWidth()) {
