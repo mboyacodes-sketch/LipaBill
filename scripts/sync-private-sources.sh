@@ -15,6 +15,10 @@ PATHS=(
   app/src/main/java/com/lipabill/app/data/parser
   app/src/main/java/com/lipabill/app/security/AppAtRestCrypto.kt
   app/src/test/java/com/lipabill/app/data/parser
+  # Gitignored inputs that unit tests check for drift.
+  docs/play-store-listing.md
+  docs/play-store-sms-permission-review.md
+  web/p/fixtures.json
 )
 
 if [[ ! -d "$DEST/.git" ]]; then
