@@ -45,7 +45,9 @@ data class SendMoneyUiState(
     /** Sends to the chosen person this calendar month. */
     val sentThisMonth: Int = 0,
     /** Fee on a past send of a similar size; null when unknown. */
-    val feeEstimate: Double? = null
+    val feeEstimate: Double? = null,
+    /** Sends this month per [phoneKey], for the recipient list. */
+    val monthlyCounts: Map<String, Int> = emptyMap()
 )
 
 class SendMoneyViewModel(application: Application) : AndroidViewModel(application) {
@@ -79,6 +81,7 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
         val probeOk = detailsOk && buildProbe(draft.selected, trimmed) != null
         val phone = draft.selected?.normalizedPhone ?: UssdMenuBuilder.normalizePhoneNumber(trimmed)
         val parsedAmount = RepeatTransactionViewModel.parseAmount(draft.amount)
+        val counts = monthlySendCounts(past, LocalDate.now(), ZoneId.systemDefault())
         gates.copy(
             contacts = filtered,
             query = draft.query,
@@ -93,9 +96,8 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
                 contacts = filtered,
                 detailsOk = detailsOk
             ),
-            sentThisMonth = phone?.let {
-                sendsThisMonth(past, it, LocalDate.now(), ZoneId.systemDefault())
-            } ?: 0,
+            sentThisMonth = phoneKey(phone)?.let { counts[it] } ?: 0,
+            monthlyCounts = counts,
             feeEstimate = parsedAmount?.let { estimatedSendFee(past, it) }
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, SendMoneyUiState())

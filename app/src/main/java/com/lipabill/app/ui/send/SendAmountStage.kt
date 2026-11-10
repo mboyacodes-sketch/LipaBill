@@ -44,6 +44,7 @@ import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.util.formatKsh
 import com.lipabill.app.ui.util.formatMoneyInputDisplay
 import com.lipabill.app.viewmodel.maskPhone
+import com.lipabill.app.viewmodel.sentThisMonthCopy
 
 /** Amber note for Fuliza cover; dark text keeps it readable in both themes. */
 private val FulizaNoteFill = Color(0xFFFDF0DC)
@@ -75,21 +76,7 @@ internal fun SendAmountStage(
         modifier = modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "Send money",
-                style = HomeType.section,
-                fontWeight = FontWeight.Bold,
-                color = Ink,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = balance?.let { "Available ${formatKsh(it)}" } ?: "Balance not read yet",
-                style = HomeType.caption,
-                color = Mute,
-                modifier = Modifier.recordingPrivacyCover()
-            )
-        }
+        SendSheetHeader(balance)
 
         RecipientCard(
             name = recipientName,
@@ -202,6 +189,79 @@ internal fun SendAmountStage(
     }
 }
 
+/** "Send money · Available KSh …" — the same top line on both Send steps. */
+@Composable
+internal fun SendSheetHeader(balance: Double?) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "Send money",
+            style = HomeType.section,
+            fontWeight = FontWeight.Bold,
+            color = Ink,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = balance?.let { "Available ${formatKsh(it)}" } ?: "Balance not read yet",
+            style = HomeType.caption,
+            color = Mute,
+            modifier = Modifier.recordingPrivacyCover()
+        )
+    }
+}
+
+/** One past recipient on the first Send step, styled like the amount step's card. */
+@Composable
+internal fun SendRecipientRow(
+    name: String,
+    phone: String,
+    sentThisMonth: Int,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .border(if (selected) 2.dp else 1.dp, if (selected) Accent else Hairline, RoundedCornerShape(16.dp))
+            .background(if (selected) SoftBlue else CardWhite)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(SoftBlue)
+        ) {
+            Text(
+                name.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+                style = HomeType.rowTitle,
+                fontWeight = FontWeight.Bold,
+                color = Accent
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                name,
+                style = HomeType.rowTitle,
+                color = Ink,
+                maxLines = 1,
+                modifier = Modifier.recordingPrivacyCover()
+            )
+            Text(
+                "${maskPhone(phone)} · ${sentThisMonthCopy(sentThisMonth)}",
+                style = HomeType.caption,
+                color = Mute,
+                maxLines = 1,
+                modifier = Modifier.recordingPrivacyCover()
+            )
+        }
+    }
+}
+
 @Composable
 private fun RecipientCard(
     name: String?,
@@ -241,13 +301,8 @@ private fun RecipientCard(
                 modifier = Modifier.recordingPrivacyCover()
             )
             if (phone != null) {
-                val history = when (sentThisMonth) {
-                    0 -> "first send this month"
-                    1 -> "sent once this month"
-                    else -> "sent $sentThisMonth times this month"
-                }
                 Text(
-                    "${maskPhone(phone)} · $history",
+                    "${maskPhone(phone)} · ${sentThisMonthCopy(sentThisMonth)}",
                     style = HomeType.caption,
                     color = Mute,
                     maxLines = 1,

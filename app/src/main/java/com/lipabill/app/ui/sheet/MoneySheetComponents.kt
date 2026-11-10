@@ -139,6 +139,8 @@ fun MoneySheetScaffold(
     amountStage: (@Composable (Modifier) -> Unit)? = null,
     /** Small note under the primary button, e.g. where the PIN is entered. */
     footnote: String? = null,
+    /** Replaces the balance card at the top of the details step. */
+    detailsHeader: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val amountValue = pendingDeduction
@@ -240,11 +242,15 @@ fun MoneySheetScaffold(
                     .verticalScroll(detailsScroll)
             ) {
                 Spacer(modifier = Modifier.height(Space.block))
-                BalanceCard(
-                    balance = balance,
-                    pendingDeduction = null,
-                    caption = balanceCaption
-                )
+                if (detailsHeader != null) {
+                    detailsHeader()
+                } else {
+                    BalanceCard(
+                        balance = balance,
+                        pendingDeduction = null,
+                        caption = balanceCaption
+                    )
+                }
                 if (showRecipients) {
                     Spacer(modifier = Modifier.height(Space.block))
                     Row(

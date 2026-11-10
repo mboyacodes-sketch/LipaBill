@@ -43,6 +43,23 @@ class SendInsightsTest {
     }
 
     @Test
+    fun monthly_counts_key_by_last_nine_digits() {
+        val today = LocalDate.of(2026, 11, 10)
+        val counts = monthlySendCounts(
+            listOf(
+                send(500.0, phone = "0712345678", date = LocalDate.of(2026, 11, 2)),
+                send(800.0, phone = "+254712345678", date = LocalDate.of(2026, 11, 5)),
+                send(800.0, phone = "0799999999", date = LocalDate.of(2026, 10, 5))
+            ),
+            today,
+            zone
+        )
+        assertEquals(mapOf("712345678" to 2), counts)
+        assertEquals("sent 2 times this month", sentThisMonthCopy(2))
+        assertEquals("first send this month", sentThisMonthCopy(0))
+    }
+
+    @Test
     fun phone_is_masked_in_the_middle() {
         assertEquals("07** *** 678", maskPhone("0712345678"))
         assertEquals("07** *** 678", maskPhone("254712345678"))

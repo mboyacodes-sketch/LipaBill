@@ -23,6 +23,27 @@ fun estimatedSendFee(history: List<MpesaTransaction>, amount: Double): Double? {
     return nearest.cost.takeIf { gap <= max(amount * 0.25, 100.0) }
 }
 
+/** Last nine digits: the same number whether written 07…, 2547… or +2547…. */
+fun phoneKey(phone: String?): String? =
+    phone?.filter { it.isDigit() }?.takeLast(9)?.takeIf { it.length == 9 }
+
+/** Sends per [phoneKey] in the current calendar month. */
+fun monthlySendCounts(
+    history: List<MpesaTransaction>,
+    today: LocalDate,
+    zone: ZoneId
+): Map<String, Int> {
+    val month = YearMonth.from(today)
+    return history
+        .filter { tx ->
+            tx.type == TransactionType.SENT &&
+                YearMonth.from(Instant.ofEpochMilli(tx.timestampMillis).atZone(zone)) == month
+        }
+        .mapNotNull { phoneKey(it.counterpartyPhone) }
+        .groupingBy { it }
+        .eachCount()
+}
+
 /** Sends to [phone] in the current calendar month. */
 fun sendsThisMonth(
     history: List<MpesaTransaction>,
@@ -30,14 +51,14 @@ fun sendsThisMonth(
     today: LocalDate,
     zone: ZoneId
 ): Int {
-    val digits = phone.filter { it.isDigit() }.takeLast(9)
-    if (digits.length < 9) return 0
-    val month = YearMonth.from(today)
-    return history.count { tx ->
-        tx.type == TransactionType.SENT &&
-            tx.counterpartyPhone?.filter { it.isDigit() }?.takeLast(9) == digits &&
-            YearMonth.from(Instant.ofEpochMilli(tx.timestampMillis).atZone(zone)) == month
-    }
+    val key = phoneKey(phone) ?: return 0
+    return monthlySendCounts(history, today, zone)[key] ?: 0
+}
+
+fun sentThisMonthCopy(count: Int): String = when (count) {
+    0 -> "first send this month"
+    1 -> "sent once this month"
+    else -> "sent $count times this month"
 }
 
 /** "0712345678" → "07** *** 678": enough to recognise, not enough to read off a screen. */
