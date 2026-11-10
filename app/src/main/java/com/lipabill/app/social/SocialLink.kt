@@ -53,7 +53,19 @@ object SocialLink {
          */
         val shareUrl: String
             get() = WEB_SOCIAL_PREFIX + platform.storageKey + "/" +
-                Uri.encode(handle)
+                encodePathSegment(handle)
+    }
+
+    /** Same output as Uri.encode, without the Android stub (keeps JVM unit tests runnable). */
+    private fun encodePathSegment(value: String): String = buildString {
+        for (byte in value.toByteArray(Charsets.UTF_8)) {
+            val c = byte.toInt().toChar()
+            if (byte >= 0 && (c.isLetterOrDigit() || c in "_-!.~'()*")) {
+                append(c)
+            } else {
+                append('%').append("%02X".format(byte.toInt() and 0xFF))
+            }
+        }
     }
 
     fun fromStorageKey(key: String?): Platform =
