@@ -4,6 +4,8 @@ import android.Manifest
 import com.lipabill.app.data.model.TicketSource
 import com.lipabill.app.data.tickets.smart.PassValidator
 import com.lipabill.app.data.tickets.smart.PassInput
+import com.lipabill.app.data.tickets.smart.PasteRoute
+import com.lipabill.app.data.tickets.smart.pasteRoute
 import com.lipabill.app.data.tickets.smart.PassField
 import com.lipabill.app.data.tickets.smart.PassDraft
 import com.lipabill.app.data.tickets.ETicketTextParser
@@ -476,7 +478,22 @@ fun TicketsScreen(
             onDismiss = { smartPaste = false },
             onRead = { text ->
                 smartPaste = false
-                readSmart { viewModel.readPass(PassInput(text = text, source = TicketSource.MANUAL_PASTE)) }
+                if (pasteRoute(text) == PasteRoute.SGR_CONFIRMATION) {
+                    // Same as the SGR booking SMS button: save straight away, no review step.
+                    scope.launch {
+                        try {
+                            val id = viewModel.addFromConfirmation(text)
+                            if (id == null) error = "That booking ref is already saved." else onOpenTicket(id)
+                        } catch (t: Throwable) {
+                            if (t is CancellationException) throw t
+                            AppMetrics.ticketImportFailure("paste", t)
+                            error = t.message?.takeIf { it.isNotBlank() }
+                                ?: "Couldn’t parse that confirmation."
+                        }
+                    }
+                } else {
+                    readSmart { viewModel.readPass(PassInput(text = text, source = TicketSource.MANUAL_PASTE)) }
+                }
             }
         )
     }

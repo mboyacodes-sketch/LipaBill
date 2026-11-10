@@ -156,3 +156,9 @@ class SmartPassReader(
         ticket.orderId?.takeIf { it.isNotBlank() }?.let { put(PassField.BOOKING_REF, DraftField(it, source)) }
     }
 }
+
+/** What happens to pasted text: SGR booking SMS saves straight away, as the SGR button does. */
+enum class PasteRoute { SGR_CONFIRMATION, REVIEW }
+
+fun pasteRoute(text: String): PasteRoute =
+    if (BookingConfirmationParser.looksLikeConfirmation(text)) PasteRoute.SGR_CONFIRMATION else PasteRoute.REVIEW
