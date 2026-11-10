@@ -1,13 +1,11 @@
 package com.lipabill.app.viewmodel
 
 import com.lipabill.app.data.tickets.ETicketAnalyzer
-import com.lipabill.app.data.tickets.PkPassParser
 import com.lipabill.app.data.tickets.smart.GeminiNanoPassAi
 import com.lipabill.app.data.tickets.smart.PassDraft
 import com.lipabill.app.data.tickets.smart.PassInput
 import com.lipabill.app.data.tickets.smart.SmartPassReader
 import com.lipabill.app.data.tickets.smart.toTicketImport
-import com.lipabill.app.data.tickets.toTicketImport
 import java.time.LocalDate
 import java.time.ZoneId
 import android.content.Context
@@ -51,17 +49,23 @@ class TicketsViewModel(
         smartReader.read(input, LocalDate.now(), ticketHolderName)
     }
 
-    /** Smart add: read a .pkpass, PDF or photo into a draft. Nothing is saved. */
-    suspend fun readPassDocument(context: Context, uri: Uri): PassDraft = withContext(Dispatchers.IO) {
-        val mime = context.contentResolver.getType(uri)
-        val isPkPass = PkPassParser.isPkPassUri(uri, mime, uri.lastPathSegment)
-        val input = if (isPkPass) {
-            PassInput(pkpass = PkPassParser.parse(context, uri).toTicketImport(), source = TicketSource.PKPASS)
+    /** What smart add did with a picked file. */
+    sealed interface SmartDocument {
+        /** A .pkpass: saved straight away, like a pass shared into the app. */
+        data class Saved(val id: Long?) : SmartDocument
+        /** A PDF or photo: read into a draft for the review screen. */
+        data class Review(val draft: PassDraft) : SmartDocument
+    }
+
+    /** Smart add for a picked file: .pkpass saves directly; PDFs and photos go to review. */
+    suspend fun importSmartDocument(context: Context, uri: Uri): SmartDocument = withContext(Dispatchers.IO) {
+        if (TicketDocumentImporter.isPkPass(context, uri)) {
+            SmartDocument.Saved(addFromDocument(context, uri, TicketDocumentKind.PKPASS))
         } else {
             val read = ETicketAnalyzer.extract(context, uri)
-            PassInput(text = read.text, barcodes = read.barcodes, source = TicketSource.E_TICKET)
+            val input = PassInput(text = read.text, barcodes = read.barcodes, source = TicketSource.E_TICKET)
+            SmartDocument.Review(smartReader.read(input, LocalDate.now(), ticketHolderName))
         }
-        smartReader.read(input, LocalDate.now(), ticketHolderName)
     }
 
     /** Saves a reviewed draft the same way today's imports are saved. */

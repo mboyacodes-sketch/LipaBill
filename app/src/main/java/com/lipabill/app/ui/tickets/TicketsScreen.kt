@@ -273,7 +273,25 @@ fun TicketsScreen(
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         context.takePersistableRead(uri)
-        readSmart { viewModel.readPassDocument(context, uri) }
+        if (smartBusy) return@rememberLauncherForActivityResult
+        smartBusy = true
+        scope.launch {
+            try {
+                when (val result = viewModel.importSmartDocument(context, uri)) {
+                    is TicketsViewModel.SmartDocument.Saved -> {
+                        AppMetrics.ticketImport("pkpass", TicketImportResult.Saved)
+                        result.id?.let(onOpenTicket)
+                    }
+                    is TicketsViewModel.SmartDocument.Review -> smartDraft = result.draft
+                }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                AppMetrics.ticketImportFailure("smart", t)
+                error = t.message?.takeIf { it.isNotBlank() } ?: "Couldn’t read that pass."
+            } finally {
+                smartBusy = false
+            }
+        }
     }
     val smartCameraPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
