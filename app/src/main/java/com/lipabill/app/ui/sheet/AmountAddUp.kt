@@ -194,85 +194,88 @@ fun AmountAddUpDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(vertical = 24.dp)
                 .shadow(12.dp, RoundedCornerShape(28.dp), spotColor = Ink.copy(alpha = 0.12f))
                 .clip(RoundedCornerShape(28.dp))
                 .background(CardWhite)
-                .padding(horizontal = 20.dp, vertical = 18.dp)
+                .padding(vertical = 20.dp)
         ) {
-            Text(
-                text = "Calculate",
-                style = HomeType.section,
-                color = Ink
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Use +, −, ×, or ÷, then pay the result.",
-                style = HomeType.caption,
-                color = Mute
-            )
+            val bodyPad = Modifier.padding(horizontal = 22.dp)
+            Column(modifier = Modifier.fillMaxWidth().then(bodyPad)) {
+                Text(
+                    text = "Calculate",
+                    style = HomeType.section,
+                    color = Ink
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Use +, −, ×, or ÷, then pay the result.",
+                    style = HomeType.caption,
+                    color = Mute
+                )
 
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = formatKesMoney(state.total),
-                style = SheetHeroAmountStyle,
-                color = Ink,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            val acc = state.acc
-            val pending = state.pending
-            Text(
-                text = when {
-                    acc == null && state.entry.isBlank() -> "No amount yet"
-                    pending != null && acc != null && state.entry.isNotBlank() ->
-                        "${moneyText(acc)} ${pending.symbol} ${formatMoneyInputDisplay(state.entry)}"
-                    pending != null && acc != null ->
-                        "${moneyText(acc)} ${pending.symbol}"
-                    state.entry.isNotBlank() && acc == null -> "Typing…"
-                    else -> "Running total"
-                },
-                style = HomeType.caption,
-                color = Mute,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center
-            )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = formatKesMoney(state.total),
+                    style = SheetHeroAmountStyle,
+                    color = Ink,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                val acc = state.acc
+                val pending = state.pending
+                Text(
+                    text = when {
+                        acc == null && state.entry.isBlank() -> "No amount yet"
+                        pending != null && acc != null && state.entry.isNotBlank() ->
+                            "${moneyText(acc)} ${pending.symbol} ${formatMoneyInputDisplay(state.entry)}"
+                        pending != null && acc != null ->
+                            "${moneyText(acc)} ${pending.symbol}"
+                        state.entry.isNotBlank() && acc == null -> "Typing…"
+                        else -> "Running total"
+                    },
+                    style = HomeType.caption,
+                    color = Mute,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
+                )
 
-            if (state.tape.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 88.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(SoftBlue)
-                        .verticalScroll(linesScroll)
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    state.tape.forEach { line ->
-                        Text(
-                            text = line,
-                            style = HomeType.caption,
-                            color = Ink
-                        )
+                if (state.tape.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 88.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(SoftBlue)
+                            .verticalScroll(linesScroll)
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        state.tape.forEach { line ->
+                            Text(
+                                text = line,
+                                style = HomeType.caption,
+                                color = Ink
+                            )
+                        }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(14.dp))
-            Text(
-                text = formatMoneyInputDisplay(state.entry),
-                style = SheetAmountStyle,
-                color = if (state.entry.isBlank()) Mute else Ink,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 36.dp),
-                textAlign = TextAlign.Center
-            )
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = formatMoneyInputDisplay(state.entry),
+                    style = SheetAmountStyle,
+                    color = if (state.entry.isBlank()) Mute else Ink,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 36.dp),
+                    textAlign = TextAlign.Center
+                )
+            }
 
             Spacer(modifier = Modifier.height(12.dp))
             AmountKeypad(
@@ -280,10 +283,15 @@ fun AmountAddUpDialog(
                 onBackspace = { state = state.withBackspace() },
                 onClear = { state = state.cleared() },
                 onOperator = { op -> state = state.withOperator(op) },
-                activeOperator = state.pending
+                activeOperator = state.pending,
+                modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(modifier = Modifier.height(14.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth().then(bodyPad),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
             Button(
                 onClick = {
                     val next = if (state.canAddEntry) state.withEntryAdded() else state
@@ -304,12 +312,11 @@ fun AmountAddUpDialog(
             }
             TextButton(
                 onClick = onDismiss,
-                modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .padding(top = 2.dp),
+                modifier = Modifier.padding(top = 2.dp),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 Text("Cancel", style = HomeType.label, color = Mute)
+            }
             }
         }
     }
