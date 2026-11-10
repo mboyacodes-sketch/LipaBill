@@ -134,7 +134,13 @@ data class AnalyticsSummary(
     val quietStreak: Int = 0,
     val busiestLabel: String? = null,
     val busiestTotal: Double = 0.0,
-    val pulse: List<PulseCell> = emptyList()
+    val pulse: List<PulseCell> = emptyList(),
+    val keptHeadline: String? = null,
+    val fees: FeeSummary = FeeSummary(),
+    val regulars: List<RegularPayee> = emptyList(),
+    val habit: SpendingHabit? = null,
+    /** Every row in the period, reversals included, for CSV export. */
+    val periodTransactions: List<MpesaTransaction> = emptyList()
 )
 
 data class TransactionListUiState(
@@ -271,8 +277,9 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             },
             hasSmsPermission,
             scan,
-            rangeState
-        ) { wallet, smsOk, s, range ->
+            rangeState,
+            app.essentialPayees
+        ) { wallet, smsOk, s, range, essentials ->
             val (scanning, message) = s
             TransactionListUiState(
                 grouped = groupByDay(wallet.visible),
@@ -282,7 +289,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                 latestBalance = wallet.mpesaBalance,
                 fulizaOutstanding = wallet.fulizaOutstanding,
                 account = wallet.account,
-                analytics = buildAnalytics(wallet.analytics, range, wallet.account),
+                analytics = buildAnalytics(wallet.analytics, range, wallet.account, essentials),
                 typeFilter = wallet.typeFilter,
                 availableTypes = wallet.availableTypes,
                 sourceFilter = wallet.sourceFilter,
@@ -395,13 +402,21 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         scanMessage.value = null
     }
 
+    fun setPayeeEssential(key: String, essential: Boolean) {
+        app.setPayeeEssential(key, essential)
+    }
+
     private fun buildAnalytics(
-        txs: List<MpesaTransaction>,
+        ledger: List<MpesaTransaction>,
         rangeState: AnalyticsRangeState,
-        account: WalletAccount
+        account: WalletAccount,
+        essentials: Set<String>
     ): AnalyticsSummary {
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
+        val mpesa = account == WalletAccount.MPESA
+        // A reversed payment and its reversal cancel out: neither is spend nor income.
+        val txs = if (mpesa) withoutReversals(ledger) else ledger
         val availableYears = txs
             .map { Instant.ofEpochMilli(it.timestampMillis).atZone(zone).year }
             .distinct()
@@ -475,6 +490,21 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             0
         }
         val busiest = busiestOutflow(outflowByDate, from, to)
+        val regulars = if (mpesa) detectRegulars(txs, zone, today, essentials) else emptyList()
+        val habit = if (mpesa) {
+            topHabit(filtered, exclude = regulars.mapTo(HashSet()) { it.key })
+        } else {
+            null
+        }
+        val kept = if (mpesa) {
+            keptHeadline(
+                net = income - expense,
+                previousNet = prevIncome - prevExpense,
+                hasPrior = prior != null && previousTxs.isNotEmpty()
+            )
+        } else {
+            null
+        }
         val top = counterparties.firstOrNull()
         val topShare = if (top != null && expense > 0.0) top.total / expense else null
         val story = moneyStory(
@@ -517,7 +547,22 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             quietStreak = quietStreak,
             busiestLabel = busiest?.let { busiestDayLabel(it.first) },
             busiestTotal = busiest?.second ?: 0.0,
-            pulse = pulseCalendar(from, to, today, inflowByDate, outflowByDate)
+            pulse = pulseCalendar(
+                from = from,
+                to = to,
+                today = today,
+                inflowByDate = inflowByDate,
+                outflowByDate = outflowByDate,
+                dueDates = regulars.mapTo(HashSet()) { it.nextDue }
+            ),
+            keptHeadline = kept,
+            fees = if (mpesa) feeSummary(filtered) else FeeSummary(),
+            regulars = regulars,
+            habit = habit,
+            periodTransactions = ledger.filter { tx ->
+                val date = Instant.ofEpochMilli(tx.timestampMillis).atZone(zone).toLocalDate()
+                !date.isBefore(from) && !date.isAfter(to)
+            }
         )
     }
 

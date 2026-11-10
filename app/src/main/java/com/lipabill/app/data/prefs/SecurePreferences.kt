@@ -173,6 +173,11 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_UNKNOWN_PARTY_REPAIR_DONE, false)
         set(value) = prefs.edit().putBoolean(KEY_UNKNOWN_PARTY_REPAIR_DONE, value).apply()
 
+    /** Regular payees the user marked essential (rent, school fees): kept out of cost nudges. */
+    var essentialPayees: Set<String>
+        get() = prefs.getStringSet(KEY_ESSENTIAL_PAYEES, null)?.toSet() ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_ESSENTIAL_PAYEES, HashSet(value)).apply()
+
     /** When true, screens use the navy night palette. Passes stay paper white. */
     var darkMode: Boolean
         get() = prefs.getBoolean(KEY_DARK_MODE, false)
@@ -317,6 +322,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_SAVINGS_CLASSIFY_REPAIR_DONE = "savings_classify_repair_v2"
         private const val KEY_UNKNOWN_PARTY_REPAIR_DONE = "unknown_party_repair_v1"
         private const val KEY_DARK_MODE = "dark_mode"
+        private const val KEY_ESSENTIAL_PAYEES = "essential_payees"
         private const val KEY_INBOX_HISTORY_IMPORTED = "inbox_history_imported_v1"
         private const val KEY_INBOX_HIGH_WATER = "inbox_high_water_millis"
         private const val KEY_WALLET_RAILS_INBOX_SCAN = "wallet_rails_inbox_scan_v1"

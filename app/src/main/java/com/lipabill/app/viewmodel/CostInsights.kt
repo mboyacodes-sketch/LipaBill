@@ -1,0 +1,210 @@
+package com.lipabill.app.viewmodel
+
+import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.ui.util.formatKes
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.max
+import kotlin.math.roundToLong
+
+/** "original transaction QK12ABC34D in favour of ... has been reversed". */
+private val REVERSED_ORIGINAL = Regex(
+    "original\\s+transaction\\s+([A-Z0-9]{8,12})",
+    RegexOption.IGNORE_CASE
+)
+
+/** Code of the payment a reversal undid. Null for anything that is not a reversal. */
+fun reversedOriginalCode(tx: MpesaTransaction): String? {
+    if (tx.type != TransactionType.REVERSED) return null
+    return REVERSED_ORIGINAL.find(tx.rawBody)?.groupValues?.get(1)?.uppercase(Locale.US)
+}
+
+/** Codes of payments that a reversal in [txs] undid. */
+fun reversedCodes(txs: Iterable<MpesaTransaction>): Set<String> =
+    txs.mapNotNullTo(HashSet()) { reversedOriginalCode(it) }
+
+/**
+ * Drops reversals and the payments they undid. Money that came back is neither
+ * spend nor income, so it must not inflate either side of the picture.
+ */
+fun withoutReversals(txs: List<MpesaTransaction>): List<MpesaTransaction> {
+    val undone = reversedCodes(txs)
+    return txs.filter { tx ->
+        tx.type != TransactionType.REVERSED && tx.code.uppercase(Locale.US) !in undone
+    }
+}
+
+data class FeeSummary(
+    val total: Double = 0.0,
+    val withdrawCount: Int = 0,
+    val withdrawFees: Double = 0.0
+)
+
+/** Transaction costs on money that went out. Fuliza access fees live on the Fuliza ledger. */
+fun feeSummary(txs: Iterable<MpesaTransaction>): FeeSummary {
+    var total = 0.0
+    var withdrawCount = 0
+    var withdrawFees = 0.0
+    for (tx in txs) {
+        if (!tx.type.isOutgoing()) continue
+        val cost = tx.cost?.takeIf { it > 0.0 } ?: 0.0
+        total += cost
+        if (tx.type == TransactionType.WITHDRAW) {
+            withdrawCount++
+            withdrawFees += cost
+        }
+    }
+    return FeeSummary(total, withdrawCount, withdrawFees)
+}
+
+/** Stable key for "the same payee": name when the SMS has one, else the phone digits. */
+fun payeeKey(tx: MpesaTransaction): String? {
+    val name = tx.counterpartyName?.trim()?.takeIf { it.isNotEmpty() }
+    if (name != null) return name.lowercase(Locale.US).replace(Regex("\\s+"), " ")
+    val digits = tx.counterpartyPhone?.filter { it.isDigit() }?.takeIf { it.isNotEmpty() }
+    return digits?.let { "tel:$it" }
+}
+
+private fun payeeName(tx: MpesaTransaction): String =
+    tx.counterpartyName?.trim()?.takeIf { it.isNotEmpty() }
+        ?: tx.counterpartyPhone?.trim()?.takeIf { it.isNotEmpty() }
+        ?: "Unknown"
+
+enum class Cadence(val days: Int, val label: String) {
+    WEEKLY(7, "Weekly"),
+    FORTNIGHTLY(14, "Every 2 weeks"),
+    MONTHLY(30, "Monthly")
+}
+
+data class RegularPayee(
+    val key: String,
+    val name: String,
+    val cadence: Cadence,
+    val typicalAmount: Double,
+    val monthlyCost: Double,
+    val lastPaid: LocalDate,
+    val nextDue: LocalDate,
+    val payments: Int,
+    val essential: Boolean = false
+)
+
+private val PAYEE_TYPES = setOf(
+    TransactionType.SENT,
+    TransactionType.PAYBILL,
+    TransactionType.BUY_GOODS,
+    TransactionType.POCHI,
+    TransactionType.AIRTIME
+)
+
+private fun cadenceFor(medianDays: Long): Cadence? = when (medianDays) {
+    in 5L..9L -> Cadence.WEEKLY
+    in 12L..17L -> Cadence.FORTNIGHTLY
+    in 26L..35L -> Cadence.MONTHLY
+    else -> null
+}
+
+private fun List<Double>.median(): Double {
+    val sorted = sorted()
+    val mid = sorted.size / 2
+    return if (sorted.size % 2 == 1) sorted[mid] else (sorted[mid - 1] + sorted[mid]) / 2.0
+}
+
+/**
+ * Payees paid on a steady rhythm (weekly, fortnightly or monthly) across the whole ledger.
+ * Needs [minPayments] separate days, most gaps close to the typical gap, and a payment
+ * recent enough that the habit has not stopped. Most expensive per month first.
+ */
+fun detectRegulars(
+    txs: Iterable<MpesaTransaction>,
+    zone: ZoneId,
+    today: LocalDate,
+    essentials: Set<String> = emptySet(),
+    minPayments: Int = 3
+): List<RegularPayee> {
+    val byPayee = txs
+        .filter { it.type in PAYEE_TYPES && (it.amount ?: 0.0) > 0.0 }
+        .groupBy { payeeKey(it) }
+    val regulars = mutableListOf<RegularPayee>()
+    for ((key, payments) in byPayee) {
+        if (key == null) continue
+        val ordered = payments.sortedBy { it.timestampMillis }
+        val dates = ordered
+            .map { Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDate() }
+            .distinct()
+        if (dates.size < minPayments) continue
+        val gaps = dates.zipWithNext { a, b -> ChronoUnit.DAYS.between(a, b) }
+        val typicalGap = gaps.map { it.toDouble() }.median().roundToLong()
+        val cadence = cadenceFor(typicalGap) ?: continue
+        val tolerance = max(2.0, typicalGap * 0.35)
+        val steady = gaps.count { abs(it - typicalGap) <= tolerance }
+        if (steady < ceil(gaps.size * 2.0 / 3.0)) continue
+        val lastPaid = dates.last()
+        if (ChronoUnit.DAYS.between(lastPaid, today) > typicalGap * 2 + 3) continue
+        val typical = ordered.mapNotNull { it.amount }.median()
+        regulars += RegularPayee(
+            key = key,
+            name = payeeName(ordered.last()),
+            cadence = cadence,
+            typicalAmount = typical,
+            monthlyCost = typical * (365.25 / 12.0) / cadence.days,
+            lastPaid = lastPaid,
+            nextDue = lastPaid.plusDays(typicalGap),
+            payments = dates.size,
+            essential = key in essentials
+        )
+    }
+    return regulars.sortedByDescending { it.monthlyCost }
+}
+
+fun regularCadenceCopy(regular: RegularPayee, today: LocalDate): String {
+    val due = regular.nextDue
+    val timing = when {
+        due.isBefore(today) -> "was due ${busiestDayLabel(due)}"
+        due == today -> "due today"
+        else -> "next ~${busiestDayLabel(due)}"
+    }
+    return "${regular.cadence.label} · $timing"
+}
+
+data class SpendingHabit(
+    val name: String,
+    val visits: Int,
+    val total: Double
+)
+
+/** The payee visited most often in the period, outside the regular bills. */
+fun topHabit(
+    txs: Iterable<MpesaTransaction>,
+    exclude: Set<String> = emptySet(),
+    minVisits: Int = 3
+): SpendingHabit? =
+    txs
+        .filter { it.type in PAYEE_TYPES && it.type != TransactionType.AIRTIME }
+        .groupBy { payeeKey(it) }
+        .filterKeys { it != null && it !in exclude }
+        .map { (_, list) ->
+            SpendingHabit(
+                name = payeeName(list.maxBy { it.timestampMillis }),
+                visits = list.size,
+                total = list.sumOf { it.amount ?: 0.0 }
+            )
+        }
+        .filter { it.visits >= minVisits }
+        .maxWithOrNull(compareBy<SpendingHabit> { it.visits }.thenBy { it.total })
+
+/** "You kept KES X more than the stretch before." Null when there is nothing to compare. */
+fun keptHeadline(net: Double, previousNet: Double, hasPrior: Boolean): String? {
+    if (!hasPrior) return null
+    val diff = net - previousNet
+    return when {
+        abs(diff) < 1.0 -> "You kept about the same as the stretch before."
+        diff > 0 -> "You kept ${formatKes(diff)} more than the stretch before."
+        else -> "You kept ${formatKes(-diff)} less than the stretch before."
+    }
+}

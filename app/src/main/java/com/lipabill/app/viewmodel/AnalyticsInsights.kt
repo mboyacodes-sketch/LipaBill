@@ -95,7 +95,9 @@ data class PulseCell(
     val inRange: Boolean,
     val isToday: Boolean,
     val inflow: Double,
-    val outflow: Double
+    val outflow: Double,
+    /** A regular payee is expected to be paid this day. */
+    val isDue: Boolean = false
 ) {
     val hasOutflow: Boolean get() = outflow > 0.005
     val hasInflow: Boolean get() = inflow > 0.005
@@ -158,7 +160,8 @@ fun pulseCalendar(
     to: LocalDate,
     today: LocalDate,
     inflowByDate: Map<LocalDate, Double>,
-    outflowByDate: Map<LocalDate, Double>
+    outflowByDate: Map<LocalDate, Double>,
+    dueDates: Set<LocalDate> = emptySet()
 ): List<PulseCell> {
     if (!shouldShowPulse(ChronoUnit.DAYS.between(from, to) + 1)) return emptyList()
     val start = from.with(DayOfWeek.MONDAY)
@@ -172,7 +175,8 @@ fun pulseCalendar(
             inRange = !date.isBefore(from) && !date.isAfter(to),
             isToday = date == today,
             inflow = inflowByDate[date] ?: 0.0,
-            outflow = outflowByDate[date] ?: 0.0
+            outflow = outflowByDate[date] ?: 0.0,
+            isDue = date in dueDates
         )
     }.toList()
 }

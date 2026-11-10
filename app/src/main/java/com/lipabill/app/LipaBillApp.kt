@@ -76,6 +76,9 @@ class LipaBillApp : Application() {
     private val _darkMode = MutableStateFlow(false)
     val darkMode: StateFlow<Boolean> = _darkMode.asStateFlow()
 
+    private val _essentialPayees = MutableStateFlow<Set<String>>(emptySet())
+    val essentialPayees: StateFlow<Set<String>> = _essentialPayees.asStateFlow()
+
     private val _appRegion = MutableStateFlow(AppRegion.DEFAULT)
     val appRegion: StateFlow<AppRegion> = _appRegion.asStateFlow()
     private val _enabledSources = MutableStateFlow(AppRegion.DEFAULT.sources)
@@ -135,6 +138,7 @@ class LipaBillApp : Application() {
         _favouritesSectionEnabled.value = securePreferences.favouritesSectionEnabled
         _recordingPrivacy.value = recordingCaptureEnabled()
         _darkMode.value = securePreferences.darkMode
+        _essentialPayees.value = securePreferences.essentialPayees
         _appRegion.value = securePreferences.appRegion
         _enabledSources.value = securePreferences.enabledLedgerSources(_appRegion.value)
         ActiveRegion.current = _appRegion.value
@@ -237,6 +241,12 @@ class LipaBillApp : Application() {
     fun setDarkMode(enabled: Boolean) {
         securePreferences.darkMode = enabled
         _darkMode.value = enabled
+    }
+
+    fun setPayeeEssential(key: String, essential: Boolean) {
+        val next = if (essential) _essentialPayees.value + key else _essentialPayees.value - key
+        securePreferences.essentialPayees = next
+        _essentialPayees.value = next
     }
 
     fun setAppRegion(region: AppRegion, rescan: Boolean = true) {

@@ -63,7 +63,7 @@ object LipaPalette {
         mute = Color(0xFF6B7280),
         hairline = Color(0xFFE5E7EB),
         card = Color(0xFFFFFFFF),
-        income = Color(0xFF16A34A),
+        income = Color(0xFF15803D), // 5:1 on white; #16A34A was 3.3:1
         expense = Color(0xFFDC2626),
         accent = Color(0xFF2F4A6E),
         labelBlue = Color(0xFF9BB0C9),
