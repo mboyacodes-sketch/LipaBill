@@ -226,7 +226,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$camera")
     implementation("androidx.camera:camera-view:$camera")
     implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
-    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     // Embedded text from airline e-ticket PDFs (more reliable than OCR alone)
@@ -234,7 +234,7 @@ dependencies {
 
     // Firebase Analytics + Crashlytics (no Messaging / Remote Config).
     // Active only when app/google-services.json is present.
-    implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
+    implementation(platform("com.google.firebase:firebase-bom:35.1.0"))
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-crashlytics")
     // Play → Play in-app updates. Internal → self-hosted OTA (HttpURLConnection + FileProvider).
