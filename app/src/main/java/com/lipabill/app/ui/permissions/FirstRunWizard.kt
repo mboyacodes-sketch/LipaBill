@@ -69,7 +69,7 @@ object FirstRunWizard {
 
     const val PROVIDERS_TITLE = "Who should be in the picture?"
     const val PROVIDERS_BODY =
-        "Wallets first, then banks. LipaBill keeps those confirmation SMS on this phone. " +
+        "Wallets first, then banks — up to 5 at a time. LipaBill keeps those confirmation SMS on this phone. " +
             "You can change this in Settings."
 
     const val PHONE_TITLE = "Phone for Send and Pay"

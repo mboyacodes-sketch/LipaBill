@@ -10,7 +10,11 @@ import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private val busiestDayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM")
+private val periodDayMonth: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM")
+private val periodDayMonthYear: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM yyyy")
+
+private fun orderedSpanEnds(from: LocalDate, to: LocalDate): Pair<LocalDate, LocalDate> =
+    if (from.isAfter(to)) to to from else from to to
 
 data class CounterpartySpend(
     val name: String,
@@ -154,7 +158,38 @@ fun busiestOutflow(
         .maxByOrNull { it.value }
         ?.toPair()
 
-fun busiestDayLabel(date: LocalDate): String = date.format(busiestDayFormat)
+fun busiestDayLabel(date: LocalDate): String = date.format(periodDayMonth)
+
+/**
+ * Inclusive calendar span with months named so Insights never relies on “this month”
+ * being obvious. Same month: `1–10 Nov 2026`. Across months: `12 Oct – 10 Nov 2026`.
+ */
+fun formatPeriodSpan(from: LocalDate, to: LocalDate): String {
+    val (start, end) = orderedSpanEnds(from, to)
+    return when {
+        start == end -> start.format(periodDayMonthYear)
+        start.year == end.year && start.month == end.month ->
+            "${start.dayOfMonth}–${end.format(periodDayMonthYear)}"
+        start.year == end.year ->
+            "${start.format(periodDayMonth)} – ${end.format(periodDayMonthYear)}"
+        else ->
+            "${start.format(periodDayMonthYear)} – ${end.format(periodDayMonthYear)}"
+    }
+}
+
+/** Compact span for the period pill when the full “Last N days · …” label is too long. */
+fun shortPeriodSpan(from: LocalDate, to: LocalDate): String {
+    val (start, end) = orderedSpanEnds(from, to)
+    return when {
+        start == end -> start.format(periodDayMonth)
+        start.year == end.year && start.month == end.month ->
+            "${start.dayOfMonth}–${end.format(periodDayMonth)}"
+        start.year == end.year ->
+            "${start.format(periodDayMonth)} – ${end.format(periodDayMonth)}"
+        else ->
+            "${start.format(periodDayMonthYear)} – ${end.format(periodDayMonthYear)}"
+    }
+}
 
 /** Compact fare-style figure for a calendar cell. Empty when nothing moved. */
 fun calendarAmountLabel(amount: Double): String {

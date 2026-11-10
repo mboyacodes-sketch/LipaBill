@@ -106,6 +106,26 @@ class AnalyticsInsightsTest {
     }
 
     @Test
+    fun period_span_names_the_months() {
+        assertEquals(
+            "1–10 Nov 2026",
+            formatPeriodSpan(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 10))
+        )
+        assertEquals(
+            "12 Oct – 10 Nov 2026",
+            formatPeriodSpan(LocalDate.of(2026, 10, 12), LocalDate.of(2026, 11, 10))
+        )
+        assertEquals(
+            "12 Dec 2025 – 10 Jan 2026",
+            formatPeriodSpan(LocalDate.of(2025, 12, 12), LocalDate.of(2026, 1, 10))
+        )
+        assertEquals(
+            "12 Oct – 10 Nov",
+            shortPeriodSpan(LocalDate.of(2026, 10, 12), LocalDate.of(2026, 11, 10))
+        )
+    }
+
+    @Test
     fun pulse_calendar_pads_monday_to_sunday() {
         val from = LocalDate.of(2026, 10, 28)
         val to = LocalDate.of(2026, 11, 3)

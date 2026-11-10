@@ -3,7 +3,6 @@ package com.lipabill.app.ui.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -60,7 +58,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -89,7 +86,6 @@ import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.OnAccent
-import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.util.formatActivityTime
 import com.lipabill.app.ui.util.formatKes
@@ -195,7 +191,7 @@ fun SettingsScreen(
                 SettingsDivider()
                 SettingsChoiceBlock(
                     title = "Ledger",
-                    hint = "Wallets and banks on this picture. Changing this refreshes the ledger."
+                    hint = "Up to 5 wallets and banks on this picture. Changing this refreshes the ledger."
                 ) {
                     ProviderPicker(
                         catalog = state.providerChoices,

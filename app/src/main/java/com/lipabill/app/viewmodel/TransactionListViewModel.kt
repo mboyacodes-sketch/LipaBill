@@ -132,6 +132,9 @@ data class AnalyticsSummary(
     val availableYears: List<Int> = emptyList(),
     val customStart: LocalDate? = null,
     val customEnd: LocalDate? = null,
+    /** Inclusive bounds for the selected period (named months for the UI). */
+    val periodFrom: LocalDate? = null,
+    val periodTo: LocalDate? = null,
     val rangeLabel: String = "Last 30 days",
     val hasLedger: Boolean = false,
     val storyHeadline: String = "",
@@ -145,9 +148,9 @@ data class AnalyticsSummary(
     val fees: FeeSummary = FeeSummary(),
     val regulars: List<RegularPayee> = emptyList(),
     val habit: SpendingHabit? = null,
-    /** Every row in the period, reversals included, for CSV export. */
+    /** Every row in the period, reversals included, for PDF statement export. */
     val periodTransactions: List<MpesaTransaction> = emptyList(),
-    /** "Last 30 days · 30 days", counting only days the ledger covers. */
+    /** "12 Oct – 10 Nov 2026 · 30 days", counting only days the ledger covers. */
     val heroLabel: String = "",
     val badges: List<InsightBadge> = emptyList(),
     /** Month or year bars for stretches longer than a month. */
@@ -371,6 +374,27 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         walletAccount.value = account
         typeFilter.value = null
         sourceFilter.value = null
+    }
+
+    /** Insights “All” chip: ledger picture with no source filter. */
+    fun selectAllLedgerRails() {
+        if (walletAccount.value != WalletAccount.MPESA) {
+            setWalletAccount(WalletAccount.MPESA)
+        } else {
+            sourceFilter.value = null
+        }
+    }
+
+    /** Insights source chip: stay on the ledger and filter to [source]. */
+    fun selectLedgerSource(source: MoneySource) {
+        if (walletAccount.value != WalletAccount.MPESA) {
+            setWalletAccount(WalletAccount.MPESA)
+        }
+        sourceFilter.value = source
+    }
+
+    fun selectFulizaLedger() {
+        setWalletAccount(WalletAccount.FULIZA)
     }
 
     fun setAnalyticsRange(range: AnalyticsRange) {
@@ -652,6 +676,8 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             availableYears = availableYears,
             customStart = rangeState.customStart,
             customEnd = rangeState.customEnd,
+            periodFrom = from,
+            periodTo = to,
             rangeLabel = label,
             hasLedger = txs.isNotEmpty(),
             storyHeadline = story.headline,
@@ -676,7 +702,12 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                 val date = Instant.ofEpochMilli(tx.timestampMillis).atZone(zone).toLocalDate()
                 !date.isBefore(from) && !date.isAfter(to)
             },
-            heroLabel = "$label · $coveredDays day${if (coveredDays == 1L) "" else "s"}",
+            heroLabel = buildString {
+                append(formatPeriodSpan(from, to))
+                append(" · ")
+                append(coveredDays)
+                append(if (coveredDays == 1L) " day" else " days")
+            },
             badges = if (mpesa) {
                 insightBadges(
                     fees = fees.total,
@@ -700,9 +731,18 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         customStart: LocalDate?,
         customEnd: LocalDate?
     ): Triple<LocalDate, LocalDate, String> = when (range) {
-        AnalyticsRange.DAYS_7 -> Triple(today.minusDays(6), today, "Last 7 days")
-        AnalyticsRange.DAYS_30 -> Triple(today.minusDays(29), today, "Last 30 days")
-        AnalyticsRange.DAYS_90 -> Triple(today.minusDays(89), today, "Last 90 days")
+        AnalyticsRange.DAYS_7 -> {
+            val from = today.minusDays(6)
+            Triple(from, today, "Last 7 days · ${formatPeriodSpan(from, today)}")
+        }
+        AnalyticsRange.DAYS_30 -> {
+            val from = today.minusDays(29)
+            Triple(from, today, "Last 30 days · ${formatPeriodSpan(from, today)}")
+        }
+        AnalyticsRange.DAYS_90 -> {
+            val from = today.minusDays(89)
+            Triple(from, today, "Last 90 days · ${formatPeriodSpan(from, today)}")
+        }
         AnalyticsRange.THIS_YEAR -> Triple(
             LocalDate.of(today.year, 1, 1),
             today,
@@ -716,8 +756,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         AnalyticsRange.CUSTOM -> {
             val start = customStart ?: today.minusDays(29)
             val end = customEnd ?: today
-            val fmt = DateTimeFormatter.ofPattern("d MMM yyyy")
-            Triple(start, end, "${start.format(fmt)} – ${end.format(fmt)}")
+            Triple(start, end, formatPeriodSpan(start, end))
         }
         AnalyticsRange.ALL -> Triple(LocalDate.of(2010, 1, 1), today, "All time")
     }

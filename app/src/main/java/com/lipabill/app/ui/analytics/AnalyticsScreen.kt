@@ -62,10 +62,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.lipabill.app.data.export.ledgerCsv
+import com.lipabill.app.R
+import com.lipabill.app.data.export.StatementTotals
+import com.lipabill.app.data.export.canExportStatementPdf
+import com.lipabill.app.data.export.statementSourceBadge
+import com.lipabill.app.data.export.writeLedgerStatementPdf
 import com.lipabill.app.data.model.TransactionType
-import com.lipabill.app.ui.SourceFilterRow
+import com.lipabill.app.ui.components.PaymentRailRow
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.ActionMetrics
@@ -101,7 +107,9 @@ import com.lipabill.app.viewmodel.TypeBreakdown
 import com.lipabill.app.viewmodel.WalletAccount
 import com.lipabill.app.viewmodel.busiestDayLabel
 import com.lipabill.app.viewmodel.calendarAmountLabel
+import com.lipabill.app.viewmodel.formatPeriodSpan
 import com.lipabill.app.viewmodel.regularCadenceCopy
+import com.lipabill.app.viewmodel.shortPeriodSpan
 import com.lipabill.app.viewmodel.spendShareOfIncome
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -164,22 +172,59 @@ fun MetricsScreen(
     }
 
     val exportRows = stats.periodTransactions
+    val canExportPdf = canExportStatementPdf(stats.dayCount) &&
+        stats.periodFrom != null &&
+        stats.periodTo != null &&
+        exportRows.isNotEmpty()
+    val statementSourceLabel = statementSourceBadge(
+        txs = exportRows,
+        sourceFilter = state.sourceFilter,
+        fuliza = account == WalletAccount.FULIZA
+    )
+    val statementLogo = remember(context) {
+        ContextCompat.getDrawable(context, R.mipmap.ic_launcher)
+            ?.toBitmap(width = 192, height = 192)
+    }
     val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("text/csv")
+        ActivityResultContracts.CreateDocument("application/pdf")
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
+        val from = stats.periodFrom ?: return@rememberLauncherForActivityResult
+        val to = stats.periodTo ?: return@rememberLauncherForActivityResult
         scope.launch {
             val written = withContext(Dispatchers.IO) {
                 runCatching {
-                    val csv = ledgerCsv(exportRows, ZoneId.systemDefault())
                     context.contentResolver.openOutputStream(uri)?.use { out ->
-                        out.write(csv.toByteArray(Charsets.UTF_8))
+                        writeLedgerStatementPdf(
+                            txs = exportRows,
+                            zone = ZoneId.systemDefault(),
+                            periodFrom = from,
+                            periodTo = to,
+                            totals = StatementTotals(
+                                income = stats.incomeTotal,
+                                expense = stats.expenseTotal,
+                                fees = stats.fees.total,
+                                incomeLabel = if (account == WalletAccount.FULIZA) {
+                                    "DRAWN"
+                                } else {
+                                    "CAME IN"
+                                },
+                                expenseLabel = if (account == WalletAccount.FULIZA) {
+                                    "ACCESS FEES"
+                                } else {
+                                    "WENT OUT"
+                                }
+                            ),
+                            output = out,
+                            logo = statementLogo,
+                            sourceLabel = statementSourceLabel
+                        )
                     } != null
                 }.getOrDefault(false)
             }
             Toast.makeText(
                 context,
-                if (written) "Exported ${exportRows.size} transactions" else "Export failed",
+                if (written) "Saved PDF statement" else "Export failed",
                 Toast.LENGTH_SHORT
             ).show()
         }
@@ -239,20 +284,15 @@ fun MetricsScreen(
                 }
             }
 
-            if (state.showFuliza || (mpesa && state.availableSources.size > 1)) {
-                Column(verticalArrangement = Arrangement.spacedBy(Space.block)) {
-                    if (state.showFuliza) {
-                        WalletToggle(account = account, onSelect = viewModel::setWalletAccount)
-                    }
-                    if (mpesa && state.availableSources.size > 1) {
-                        SourceFilterRow(
-                            sources = state.availableSources,
-                            selected = state.sourceFilter,
-                            onSelect = viewModel::setSourceFilter
-                        )
-                    }
-                }
-            }
+            PaymentRailRow(
+                account = account,
+                showFuliza = state.showFuliza,
+                sources = state.availableSources,
+                selectedSource = state.sourceFilter,
+                onSelectAll = viewModel::selectAllLedgerRails,
+                onSelectSource = viewModel::selectLedgerSource,
+                onSelectFuliza = viewModel::selectFulizaLedger
+            )
 
             HeroCard(stats = stats, account = account, showFigures = stats.hasLedger && !emptyPeriod)
 
@@ -317,10 +357,10 @@ fun MetricsScreen(
                 )
             }
 
-            if (exportRows.isNotEmpty()) {
+            if (canExportPdf) {
                 ExportBlock(
                     rangeLabel = stats.rangeLabel,
-                    onExport = { exportLauncher.launch(csvFileName(stats.rangeLabel)) }
+                    onExport = { exportLauncher.launch(pdfFileName(stats.periodFrom, stats.periodTo)) }
                 )
             }
             Spacer(modifier = Modifier.height(Space.section))
@@ -415,39 +455,18 @@ private fun PeriodPill(
     }
 }
 
-private fun shortRangeLabel(stats: AnalyticsSummary): String = when (stats.range) {
-    AnalyticsRange.DAYS_7 -> "7 days"
-    AnalyticsRange.DAYS_30 -> "30 days"
-    AnalyticsRange.DAYS_90 -> "90 days"
-    AnalyticsRange.THIS_YEAR -> "This year"
-    AnalyticsRange.YEAR -> stats.selectedYear?.toString() ?: "Year"
-    AnalyticsRange.ALL -> "All time"
-    AnalyticsRange.CUSTOM -> "Custom"
-}
-
-@Composable
-private fun WalletToggle(account: WalletAccount, onSelect: (WalletAccount) -> Unit) {
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(22.dp))
-            .background(SoftBlue)
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        WalletAccount.entries.forEach { option ->
-            val on = option == account
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .height(36.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(if (on) Accent else Color.Transparent)
-                    .clickable(role = Role.Tab) { onSelect(option) }
-                    .padding(horizontal = 16.dp)
-            ) {
-                Text(option.chipLabel, style = HomeType.label, color = if (on) OnAccent else Accent)
-            }
-        }
+private fun shortRangeLabel(stats: AnalyticsSummary): String {
+    val from = stats.periodFrom
+    val to = stats.periodTo
+    return when (stats.range) {
+        AnalyticsRange.DAYS_7,
+        AnalyticsRange.DAYS_30,
+        AnalyticsRange.DAYS_90,
+        AnalyticsRange.CUSTOM ->
+            if (from != null && to != null) shortPeriodSpan(from, to) else stats.rangeLabel
+        AnalyticsRange.THIS_YEAR -> "This year"
+        AnalyticsRange.YEAR -> stats.selectedYear?.toString() ?: "Year"
+        AnalyticsRange.ALL -> "All time"
     }
 }
 
@@ -1007,9 +1026,14 @@ private fun PrimaryAction(text: String, onClick: () -> Unit) {
 
 @Composable
 private fun RhythmCard(stats: AnalyticsSummary, fuliza: Boolean) {
+    val span = stats.periodFrom?.let { from ->
+        stats.periodTo?.let { to -> formatPeriodSpan(from, to) }
+    }
     val title = when {
-        stats.pulse.isNotEmpty() && stats.range == AnalyticsRange.DAYS_7 -> "Your week, day by day"
-        stats.pulse.isNotEmpty() -> "Your month, day by day"
+        stats.pulse.isNotEmpty() && stats.range == AnalyticsRange.DAYS_7 ->
+            span?.let { "Your week · $it" } ?: "Your week, day by day"
+        stats.pulse.isNotEmpty() ->
+            span?.let { "Day by day · $it" } ?: "Day by day"
         stats.periodBars.firstOrNull()?.label?.length == 4 -> "Year by year"
         else -> "Month by month"
     }
@@ -1491,13 +1515,13 @@ private fun ExportBlock(rangeLabel: String, onExport: () -> Unit) {
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                "Export ${rangeLabel.replaceFirstChar { it.lowercase() }} as CSV",
+                "Save ${rangeLabel.replaceFirstChar { it.lowercase() }} as PDF",
                 style = HomeType.label,
                 color = Accent
             )
         }
         Text(
-            "Saved on this phone. Opens in Excel or Google Sheets.",
+            "Statement for this stretch, saved on this phone. Up to 30 days.",
             style = HomeType.caption,
             color = Mute,
             textAlign = TextAlign.Center
@@ -1505,9 +1529,13 @@ private fun ExportBlock(rangeLabel: String, onExport: () -> Unit) {
     }
 }
 
-private fun csvFileName(rangeLabel: String): String {
-    val slug = rangeLabel.lowercase(Locale.US).replace(Regex("[^a-z0-9]+"), "-").trim('-')
-    return "lipabill-${slug.ifEmpty { "ledger" }}.csv"
+private fun pdfFileName(from: LocalDate?, to: LocalDate?): String {
+    if (from == null || to == null) return "lipabill-statement.pdf"
+    val slug = shortPeriodSpan(from, to)
+        .lowercase(Locale.US)
+        .replace(Regex("[^a-z0-9]+"), "-")
+        .trim('-')
+    return "lipabill-statement-${slug.ifEmpty { "period" }}.pdf"
 }
 
 // endregion
