@@ -137,6 +137,7 @@ object ETicketAnalyzer {
             }
 
             val combined = textParts.filter { it.isNotBlank() }.joinToString("\n")
+            // Lengths only — never log OCR body (names, PNRs, seats).
             Log.d(
                 TAG,
                 "barcodes=${barcodes.size} textChars=${combined.length} hints=${stationHints.size}"
