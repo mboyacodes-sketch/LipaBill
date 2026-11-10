@@ -157,6 +157,7 @@ class MainActivity : AppCompatActivity(),
         )
         super.onCreate(savedInstanceState)
         applyCaptureProtection()
+        hideOtherAppOverlays()
         acceptReceiptIntent(intent)
         acceptPayIntent(intent)
         captureIncomingDocument(intent)
@@ -191,6 +192,17 @@ class MainActivity : AppCompatActivity(),
             window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         } else {
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+    }
+
+    /**
+     * Android 12+: other apps' overlays are hidden while LipaBill is on screen, so
+     * nothing can draw over amounts, recipients, or confirm buttons. System and
+     * accessibility overlays (the USSD mask) are unaffected.
+     */
+    private fun hideOtherAppOverlays() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            window.setHideOverlayWindows(true)
         }
     }
 

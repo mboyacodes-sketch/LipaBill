@@ -27,9 +27,9 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
@@ -37,12 +37,12 @@ jobs:
         run: |
           pip install --disable-pip-version-check mobsfscan==1.1.0
           # Exit code reflects findings; the SARIF upload is the gate, not this step.
-          mobsfscan --sarif --output mobsfscan.sarif app/src || true
+          mobsfscan --config .mobsf --sarif --output mobsfscan.sarif app/src || true
 
       - name: Upload SARIF
         # Fork PRs get a read-only token and cannot upload.
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: mobsfscan.sarif
           category: mobsfscan

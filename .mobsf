@@ -1,0 +1,6 @@
+# mobsfscan config (passed with --config in .github/workflows/mobsfscan.yml).
+ignore-rules:
+  # False positive: targetSdk (36) lives in app/build.gradle.kts, not in a
+  # <uses-sdk> element, so mobsfscan assumes 26. StrandHogg 2.0 is fixed by the
+  # platform for targetSdk 29+, and the manifest sets taskAffinity="" anyway.
+  - android_task_hijacking2
