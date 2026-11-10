@@ -62,6 +62,7 @@ brag-output-*/
 # Markdown — keep README only
 *.md
 !README.md
+!SECURITY.md
 
 # R8 mapping (local only — never ship)
 /app/build/outputs/mapping/
