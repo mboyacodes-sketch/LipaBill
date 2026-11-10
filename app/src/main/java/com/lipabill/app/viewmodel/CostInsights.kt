@@ -2,7 +2,9 @@ package com.lipabill.app.viewmodel
 
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
-import com.lipabill.app.ui.util.formatKes
+import com.lipabill.app.ui.util.formatKsh
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -91,7 +93,8 @@ data class RegularPayee(
     val lastPaid: LocalDate,
     val nextDue: LocalDate,
     val payments: Int,
-    val essential: Boolean = false
+    val essential: Boolean = false,
+    val watched: Boolean = false
 )
 
 private val PAYEE_TYPES = setOf(
@@ -125,6 +128,7 @@ fun detectRegulars(
     zone: ZoneId,
     today: LocalDate,
     essentials: Set<String> = emptySet(),
+    watched: Set<String> = emptySet(),
     minPayments: Int = 3
 ): List<RegularPayee> {
     val byPayee = txs
@@ -156,7 +160,8 @@ fun detectRegulars(
             lastPaid = lastPaid,
             nextDue = lastPaid.plusDays(typicalGap),
             payments = dates.size,
-            essential = key in essentials
+            essential = key in essentials,
+            watched = key in watched
         )
     }
     return regulars.sortedByDescending { it.monthlyCost }
@@ -204,7 +209,112 @@ fun keptHeadline(net: Double, previousNet: Double, hasPrior: Boolean): String? {
     val diff = net - previousNet
     return when {
         abs(diff) < 1.0 -> "You kept about the same as the stretch before."
-        diff > 0 -> "You kept ${formatKes(diff)} more than the stretch before."
-        else -> "You kept ${formatKes(-diff)} less than the stretch before."
+        diff > 0 -> "You kept ${formatKsh(diff)} more than the stretch before."
+        else -> "You kept ${formatKsh(-diff)} less than the stretch before."
     }
+}
+
+data class InsightBadge(
+    val id: String,
+    val name: String,
+    val mark: String,
+    val earned: Boolean
+)
+
+const val BADGE_FEE_CUT = "fee_cut"
+const val BADGE_QUIET_30 = "quiet_30"
+const val BADGE_REGULARS_REVIEWED = "regulars_reviewed"
+
+/**
+ * Badges for things that actually help: paying less in fees than the stretch before,
+ * 30 days in a row with no money out, and deciding on every regular payee.
+ * Anything in [earned] stays earned.
+ */
+fun insightBadges(
+    fees: Double,
+    previousFees: Double,
+    hasPrior: Boolean,
+    quietStreak: Int,
+    regulars: List<RegularPayee>,
+    earned: Set<String>
+): List<InsightBadge> {
+    val feeCut = BADGE_FEE_CUT in earned || (hasPrior && previousFees > 0.0 && fees < previousFees)
+    val quiet = BADGE_QUIET_30 in earned || quietStreak >= 30
+    val decided = regulars.count { it.essential || it.watched }
+    val reviewed = BADGE_REGULARS_REVIEWED in earned ||
+        (regulars.isNotEmpty() && decided == regulars.size)
+    return listOf(
+        InsightBadge(BADGE_FEE_CUT, "First fee cut", if (feeCut) "1st" else "—", feeCut),
+        InsightBadge(BADGE_QUIET_30, "30 quiet days", if (quiet) "30" else "${quietStreak.coerceAtMost(30)}/30", quiet),
+        InsightBadge(
+            BADGE_REGULARS_REVIEWED,
+            "Reviewed all regulars",
+            when {
+                reviewed -> "All"
+                regulars.isEmpty() -> "—"
+                else -> "$decided/${regulars.size}"
+            },
+            reviewed
+        )
+    )
+}
+
+data class PeriodBar(
+    val label: String,
+    val inflow: Double,
+    val outflow: Double
+)
+
+private val monthLabel: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM", Locale.US)
+private val monthYearLabel: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM yy", Locale.US)
+
+/**
+ * Money in and out per month for stretches longer than a month, or per year when
+ * the stretch covers more than two years. Empty for short stretches (the day grid covers those).
+ */
+fun periodBars(
+    from: LocalDate,
+    to: LocalDate,
+    inflowByDate: Map<LocalDate, Double>,
+    outflowByDate: Map<LocalDate, Double>
+): List<PeriodBar> {
+    if (ChronoUnit.DAYS.between(from, to) + 1 <= 31) return emptyList()
+    val first = YearMonth.from(from)
+    val last = YearMonth.from(to)
+    val months = ChronoUnit.MONTHS.between(first, last) + 1
+    fun inRange(date: LocalDate) = !date.isBefore(from) && !date.isAfter(to)
+    if (months > 24) {
+        return (from.year..to.year).map { year ->
+            PeriodBar(
+                label = year.toString(),
+                inflow = inflowByDate.filterKeys { it.year == year && inRange(it) }.values.sum(),
+                outflow = outflowByDate.filterKeys { it.year == year && inRange(it) }.values.sum()
+            )
+        }
+    }
+    val spansYears = first.year != last.year
+    return generateSequence(first) { it.plusMonths(1) }
+        .takeWhile { !it.isAfter(last) }
+        .map { month ->
+            PeriodBar(
+                label = month.format(if (spansYears) monthYearLabel else monthLabel),
+                inflow = inflowByDate.filterKeys { YearMonth.from(it) == month && inRange(it) }.values.sum(),
+                outflow = outflowByDate.filterKeys { YearMonth.from(it) == month && inRange(it) }.values.sum()
+            )
+        }
+        .toList()
+}
+
+/** Average money out per day to payees [matches] picks, over the [days] before [beforeMillis]. */
+fun averageDailySpend(
+    txs: Iterable<MpesaTransaction>,
+    beforeMillis: Long,
+    days: Int = 28,
+    matches: (MpesaTransaction) -> Boolean
+): Double {
+    val since = beforeMillis - days * 24L * 60L * 60L * 1000L
+    val total = txs
+        .filter { it.timestampMillis in since until beforeMillis && it.type.isOutgoing() && matches(it) }
+        .sumOf { it.amount ?: 0.0 }
+    return total / days
 }

@@ -55,6 +55,8 @@
     <string name="challenge_completed_body">Three days with no food delivery.</string>
     <string name="challenge_ended_title">Pause ended</string>
     <string name="challenge_ended_body">A food delivery landed. Start again when you want.</string>
+    <string name="challenge_completed_body_payee">%1$d days without %2$s.</string>
+    <string name="challenge_ended_body_payee">A payment to %1$s landed. Start again when you want.</string>
     <string name="checkin_offer_title">Weekly check-in</string>
     <string name="checkin_offer_body">Three short questions from this week. About 30 seconds.</string>
     <string name="checkin_open">Start</string>

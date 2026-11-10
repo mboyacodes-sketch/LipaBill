@@ -40,6 +40,9 @@ class EngagementRepository(
     suspend fun startFoodDeliveryChallenge(now: Long = System.currentTimeMillis()): Long? =
         start(ChallengeTemplates.foodDelivery3Days, now)
 
+    suspend fun startSkipPayeeChallenge(payeeName: String, now: Long = System.currentTimeMillis()): Long? =
+        start(ChallengeTemplates.skipPayee(payeeName), now)
+
     private suspend fun start(template: ChallengeTemplate, now: Long): Long? = withContext(Dispatchers.IO) {
         val existing = challenges.listEvaluable(now, ChallengeEvaluator.GRACE_MILLIS)
             .firstOrNull { it.status == ChallengeStatus.ACTIVE.name }
@@ -55,7 +58,7 @@ class EngagementRepository(
                 status = ChallengeStatus.ACTIVE.name
             )
         )
-        AppMetrics.challengeStarted(template.id)
+        AppMetrics.challengeStarted(ChallengeTemplates.metricId(template.id))
         id
     }
 
@@ -182,7 +185,7 @@ class EngagementRepository(
                     grantedAt = row.completedAt ?: now
                 )
             )
-            if (inserted != -1L) AppMetrics.challengeCompleted(row.templateId)
+            if (inserted != -1L) AppMetrics.challengeCompleted(ChallengeTemplates.metricId(row.templateId))
         }
     }
 }

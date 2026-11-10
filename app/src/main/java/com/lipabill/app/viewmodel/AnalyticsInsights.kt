@@ -15,7 +15,8 @@ private val busiestDayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("d
 data class CounterpartySpend(
     val name: String,
     val count: Int,
-    val total: Double
+    val total: Double,
+    val lastMillis: Long = 0L
 )
 
 /** Same-length window immediately before [from]–[to], or the prior calendar year. */
@@ -79,7 +80,8 @@ fun topOutgoingCounterparties(
             CounterpartySpend(
                 name = name,
                 count = list.size,
-                total = list.sumOf { it.amount ?: 0.0 }
+                total = list.sumOf { it.amount ?: 0.0 },
+                lastMillis = list.maxOf { it.timestampMillis }
             )
         }
         .sortedByDescending { it.total }

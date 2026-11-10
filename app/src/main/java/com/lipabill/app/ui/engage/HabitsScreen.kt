@@ -125,6 +125,7 @@ fun HabitsScreen(
                     kind = card.kind,
                     day = card.day,
                     totalDays = card.totalDays,
+                    payee = card.payee,
                     onStart = viewModel::startChallenge,
                     onRestart = viewModel::restartChallenge
                 )
@@ -157,13 +158,14 @@ private fun ChallengeStage(
     kind: ChallengeCardKind,
     day: Int,
     totalDays: Int,
+    payee: String?,
     onStart: () -> Unit,
     onRestart: () -> Unit
 ) {
     var busy by remember { mutableStateOf(false) }
     LaunchedEffect(kind) { busy = false }
     val title = challengeTitle(kind, day, totalDays)
-    val body = challengeBody(kind, day, totalDays)
+    val body = challengeBody(kind, day, totalDays, payee)
     Column(
         modifier = Modifier
             .fillMaxWidth()

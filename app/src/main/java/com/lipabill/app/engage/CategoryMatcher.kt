@@ -25,7 +25,15 @@ object CategoryRules {
 
     val all = listOf(foodDelivery)
 
-    fun byId(categoryId: String): CategoryRule? = all.firstOrNull { it.categoryId == categoryId }
+    /** A one-payee rule: `payee:Java House` matches that name only. */
+    const val PAYEE_PREFIX = "payee:"
+
+    fun byId(categoryId: String): CategoryRule? =
+        all.firstOrNull { it.categoryId == categoryId }
+            ?: categoryId.takeIf { it.startsWith(PAYEE_PREFIX) }
+                ?.removePrefix(PAYEE_PREFIX)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { CategoryRule(categoryId = categoryId, nameContains = listOf(it)) }
 }
 
 object CategoryMatcher {

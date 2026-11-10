@@ -14,11 +14,24 @@ fun challengeTitle(kind: ChallengeCardKind, day: Int, totalDays: Int): String = 
 }
 
 @Composable
-fun challengeBody(kind: ChallengeCardKind, day: Int, totalDays: Int): String = when (kind) {
+fun challengeBody(
+    kind: ChallengeCardKind,
+    day: Int,
+    totalDays: Int,
+    payee: String? = null
+): String = when (kind) {
     ChallengeCardKind.OFFER -> stringResource(R.string.challenge_offer_body)
     ChallengeCardKind.ACTIVE -> challengeActiveBody(day, totalDays)
-    ChallengeCardKind.COMPLETED -> stringResource(R.string.challenge_completed_body)
-    ChallengeCardKind.BROKEN -> stringResource(R.string.challenge_ended_body)
+    ChallengeCardKind.COMPLETED -> if (payee != null) {
+        stringResource(R.string.challenge_completed_body_payee, totalDays, payee)
+    } else {
+        stringResource(R.string.challenge_completed_body)
+    }
+    ChallengeCardKind.BROKEN -> if (payee != null) {
+        stringResource(R.string.challenge_ended_body_payee, payee)
+    } else {
+        stringResource(R.string.challenge_ended_body)
+    }
 }
 
 @Composable

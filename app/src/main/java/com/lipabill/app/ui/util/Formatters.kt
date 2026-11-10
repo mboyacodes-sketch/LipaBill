@@ -14,6 +14,10 @@ import java.util.Locale
 private val dateTimeFormat: DateTimeFormatter =
     DateTimeFormatter.ofPattern("d MMM yyyy · HH:mm", Locale.UK)
 
+/** Whole-shilling money for Insights copy: "KSh 6,450". */
+fun formatKsh(amount: Double): String =
+    "KSh " + NumberFormat.getIntegerInstance(Locale.US).format(Math.round(amount))
+
 fun formatKes(amount: Double?): String {
     if (amount == null) return "—"
     // NumberFormat is not thread-safe — allocate per call (amounts are infrequent UI work).

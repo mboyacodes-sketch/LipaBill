@@ -116,11 +116,11 @@ class CostInsightsTest {
     @Test
     fun kept_headline_compares_net_with_the_prior_stretch() {
         assertEquals(
-            "You kept 4,820.00 more than the stretch before.",
+            "You kept KSh 4,820 more than the stretch before.",
             keptHeadline(net = 5_820.0, previousNet = 1_000.0, hasPrior = true)
         )
         assertEquals(
-            "You kept 200.00 less than the stretch before.",
+            "You kept KSh 200 less than the stretch before.",
             keptHeadline(net = 800.0, previousNet = 1_000.0, hasPrior = true)
         )
         assertNull(keptHeadline(net = 800.0, previousNet = 0.0, hasPrior = false))
@@ -139,6 +139,69 @@ class CostInsightsTest {
             dueDates = setOf(LocalDate.of(2026, 11, 14))
         )
         assertEquals(listOf(LocalDate.of(2026, 11, 14)), cells.filter { it.isDue }.map { it.date })
+    }
+
+    @Test
+    fun badges_track_fee_cuts_quiet_runs_and_reviewed_regulars() {
+        val today = LocalDate.of(2026, 11, 10)
+        val regulars = detectRegulars(
+            listOf(5, 12, 19, 26).map { tx(TransactionType.SENT, "Landlord", 5_000.0, LocalDate.of(2026, 10, it)) },
+            zone,
+            today,
+            essentials = setOf("landlord")
+        )
+        val badges = insightBadges(
+            fees = 80.0,
+            previousFees = 120.0,
+            hasPrior = true,
+            quietStreak = 12,
+            regulars = regulars,
+            earned = emptySet()
+        ).associateBy { it.id }
+
+        assertTrue(badges.getValue(BADGE_FEE_CUT).earned)
+        assertEquals("12/30", badges.getValue(BADGE_QUIET_30).mark)
+        assertTrue(badges.getValue(BADGE_REGULARS_REVIEWED).earned)
+    }
+
+    @Test
+    fun earned_badges_stay_earned() {
+        val badges = insightBadges(
+            fees = 500.0,
+            previousFees = 100.0,
+            hasPrior = true,
+            quietStreak = 0,
+            regulars = emptyList(),
+            earned = setOf(BADGE_QUIET_30)
+        ).associateBy { it.id }
+        assertTrue(badges.getValue(BADGE_QUIET_30).earned)
+        assertEquals(false, badges.getValue(BADGE_FEE_CUT).earned)
+    }
+
+    @Test
+    fun long_stretches_get_month_bars_and_short_ones_none() {
+        val out = mapOf(
+            LocalDate.of(2026, 9, 3) to 1_000.0,
+            LocalDate.of(2026, 10, 3) to 2_000.0,
+            LocalDate.of(2026, 10, 20) to 500.0
+        )
+        val bars = periodBars(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 11, 10), emptyMap(), out)
+        assertEquals(listOf("Sep", "Oct", "Nov"), bars.map { it.label })
+        assertEquals(2_500.0, bars[1].outflow, 0.001)
+        assertTrue(periodBars(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 10), emptyMap(), out).isEmpty())
+    }
+
+    @Test
+    fun average_daily_spend_looks_back_four_weeks_before_the_start() {
+        val start = LocalDate.of(2026, 11, 1).atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
+        val txs = listOf(
+            tx(TransactionType.BUY_GOODS, "Java House", 560.0, LocalDate.of(2026, 10, 20)),
+            tx(TransactionType.BUY_GOODS, "Java House", 560.0, LocalDate.of(2026, 10, 27)),
+            tx(TransactionType.BUY_GOODS, "Java House", 999.0, LocalDate.of(2026, 11, 2)),
+            tx(TransactionType.BUY_GOODS, "Naivas", 5_000.0, LocalDate.of(2026, 10, 25))
+        )
+        val daily = averageDailySpend(txs, beforeMillis = start) { it.counterpartyName == "Java House" }
+        assertEquals(40.0, daily, 0.001)
     }
 
     private fun tx(
