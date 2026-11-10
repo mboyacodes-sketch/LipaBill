@@ -1,16 +1,6 @@
 package com.lipabill.app.ui.tickets
 
 import android.Manifest
-import com.lipabill.app.data.model.TicketSource
-import com.lipabill.app.data.tickets.smart.PassValidator
-import com.lipabill.app.data.tickets.smart.PassInput
-import com.lipabill.app.data.tickets.smart.PasteRoute
-import com.lipabill.app.data.tickets.smart.pasteRoute
-import com.lipabill.app.data.tickets.smart.PassField
-import com.lipabill.app.data.tickets.smart.PassDraft
-import com.lipabill.app.data.tickets.ETicketTextParser
-import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.activity.result.contract.ActivityResultContracts
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Context
@@ -245,60 +235,6 @@ fun TicketsScreen(
         }
     }
 
-    // Smart add (on-device): reads, then the person reviews before anything is saved.
-    var smartMenu by remember { mutableStateOf(false) }
-    var smartPaste by remember { mutableStateOf(false) }
-    var smartScanner by remember { mutableStateOf(false) }
-    var smartDraft by remember { mutableStateOf<PassDraft?>(null) }
-    var smartBusy by remember { mutableStateOf(false) }
-    var holderName by remember { mutableStateOf(viewModel.ticketHolderName) }
-
-    fun readSmart(block: suspend () -> PassDraft) {
-        if (smartBusy) return
-        smartBusy = true
-        scope.launch {
-            try {
-                smartDraft = block()
-            } catch (t: Throwable) {
-                if (t is CancellationException) throw t
-                error = t.message?.takeIf { it.isNotBlank() } ?: "Couldn’t read that pass."
-            } finally {
-                smartBusy = false
-            }
-        }
-    }
-
-    val smartDocumentPicker = rememberLauncherForActivityResult(
-        OpenTicketDocumentContract()
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        context.takePersistableRead(uri)
-        if (smartBusy) return@rememberLauncherForActivityResult
-        smartBusy = true
-        scope.launch {
-            try {
-                when (val result = viewModel.importSmartDocument(context, uri)) {
-                    is TicketsViewModel.SmartDocument.Saved -> {
-                        AppMetrics.ticketImport("pkpass", TicketImportResult.Saved)
-                        result.id?.let(onOpenTicket)
-                    }
-                    is TicketsViewModel.SmartDocument.Review -> smartDraft = result.draft
-                }
-            } catch (t: Throwable) {
-                if (t is CancellationException) throw t
-                AppMetrics.ticketImportFailure("smart", t)
-                error = t.message?.takeIf { it.isNotBlank() } ?: "Couldn’t read that pass."
-            } finally {
-                smartBusy = false
-            }
-        }
-    }
-    val smartCameraPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) smartScanner = true else error = "Camera access is needed to scan a pass."
-    }
-
     BackHandler(enabled = addMenuOpen) { addMenuOpen = false }
 
     Scaffold(
@@ -342,13 +278,6 @@ fun TicketsScreen(
                     ) {
                         addMenuOpen = false
                         launchDocumentPicker(TicketDocumentKind.EVENT)
-                    },
-                    SpeedDialItem(
-                        label = "Add with on-device AI",
-                        icon = Icons.Outlined.AutoAwesome
-                    ) {
-                        addMenuOpen = false
-                        smartMenu = true
                     }
                 )
             )
@@ -464,114 +393,6 @@ fun TicketsScreen(
                 )
             }
         }
-    }
-
-    if (smartMenu) {
-        SmartAddSheet(
-            onDismiss = { smartMenu = false },
-            onScan = {
-                smartMenu = false
-                if (context.permissionGranted(Manifest.permission.CAMERA)) {
-                    smartScanner = true
-                } else {
-                    smartCameraPermission.launch(Manifest.permission.CAMERA)
-                }
-            },
-            onUpload = {
-                smartMenu = false
-                smartDocumentPicker.launch(Unit)
-            },
-            onPkPass = {
-                smartMenu = false
-                smartDocumentPicker.launch(Unit)
-            },
-            onPaste = {
-                smartMenu = false
-                smartPaste = true
-            }
-        )
-    }
-    if (smartPaste) {
-        PastePassDialog(
-            onDismiss = { smartPaste = false },
-            onRead = { text ->
-                smartPaste = false
-                if (pasteRoute(text) == PasteRoute.SGR_CONFIRMATION) {
-                    // Same as the SGR booking SMS button: save straight away, no review step.
-                    scope.launch {
-                        try {
-                            val id = viewModel.addFromConfirmation(text)
-                            if (id == null) error = "That booking ref is already saved." else onOpenTicket(id)
-                        } catch (t: Throwable) {
-                            if (t is CancellationException) throw t
-                            AppMetrics.ticketImportFailure("paste", t)
-                            error = t.message?.takeIf { it.isNotBlank() }
-                                ?: "Couldn’t parse that confirmation."
-                        }
-                    }
-                } else {
-                    readSmart { viewModel.readPass(PassInput(text = text, source = TicketSource.MANUAL_PASTE)) }
-                }
-            }
-        )
-    }
-    if (smartScanner) {
-        QrScannerScreen(
-            onResult = { contents ->
-                smartScanner = false
-                readSmart {
-                    viewModel.readPass(
-                        PassInput(
-                            barcodes = listOf(ETicketTextParser.FoundBarcode(contents, TicketBarcodeFormat.QR_CODE)),
-                            source = TicketSource.MANUAL_SCAN
-                        )
-                    )
-                }
-            },
-            onCancel = { smartScanner = false }
-        )
-    }
-    if (smartBusy) {
-        AlertDialog(
-            onDismissRequest = {},
-            confirmButton = {},
-            title = { Text("Reading the ticket…") },
-            text = { Text("On this phone. Nothing is uploaded.") }
-        )
-    }
-    smartDraft?.let { draft ->
-        var saving by remember(draft) { mutableStateOf(false) }
-        PassReviewScreen(
-            draft = draft,
-            holderName = holderName,
-            saving = saving,
-            onEdit = { field, value -> smartDraft = draft.withUserValue(field, value) },
-            onHolderName = { name ->
-                viewModel.ticketHolderName = name
-                holderName = name.trim()
-                smartDraft = draft.copy(
-                    nameCheck = PassValidator.nameCheck(draft[PassField.HOLDER], name)
-                )
-            },
-            onSave = {
-                saving = true
-                scope.launch {
-                    try {
-                        val id = viewModel.saveDraft(draft)
-                        AppMetrics.ticketImport("smart", TicketImportResult.Saved)
-                        smartDraft = null
-                        if (id != null) onOpenTicket(id)
-                    } catch (t: Throwable) {
-                        if (t is CancellationException) throw t
-                        AppMetrics.ticketImportFailure("smart", t)
-                        error = t.message?.takeIf { it.isNotBlank() } ?: "Couldn’t add that pass."
-                    } finally {
-                        saving = false
-                    }
-                }
-            },
-            onCancel = { smartDraft = null }
-        )
     }
 
     when (addMode) {
