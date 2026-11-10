@@ -55,6 +55,7 @@ android {
             buildConfigField("boolean", "SIDELOAD_DISTRIBUTION", "false")
             // Play in-app updates only — no self-hosted APK channel.
             buildConfigField("String", "OTA_MANIFEST_URL", "\"\"")
+            buildConfigField("String", "OTA_MANIFEST_PUBLIC_KEY", "\"\"")
         }
         create("internal") {
             dimension = "distribution"
@@ -65,6 +66,13 @@ android {
                 "String",
                 "OTA_MANIFEST_URL",
                 "\"https://lipabill.app/ota/latest.json\""
+            )
+            // ECDSA P-256 public key (base64 SPKI) for latest.json.sig. Private half:
+            // keystore/ota-manifest-signing.pem — scripts/publish-ota.sh signs with it.
+            buildConfigField(
+                "String",
+                "OTA_MANIFEST_PUBLIC_KEY",
+                "\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAECijJOVuyKNlExZxzLt6kqVPcSJpPvrcSZ3SVroVndP5Ozg+mQHYPq9pCSYjAnjaWWgsei5IrygClqRv3Z9EOOg==\""
             )
         }
     }

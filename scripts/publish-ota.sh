@@ -7,6 +7,14 @@ cd "$ROOT"
 
 export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home}"
 
+# Internal builds (2.2.0+) reject latest.json unless latest.json.sig verifies.
+# OTA_SIGNING_KEY overrides the path (CI writes the key to a temp file).
+SIGNING_KEY="${OTA_SIGNING_KEY:-keystore/ota-manifest-signing.pem}"
+if [[ ! -f "$SIGNING_KEY" ]]; then
+  echo "Missing OTA manifest signing key: $SIGNING_KEY" >&2
+  exit 1
+fi
+
 ./gradlew :app:assembleInternalRelease
 
 APK="$(ls -1t app/build/outputs/apk/internal/release/*.apk | head -1)"
@@ -43,12 +51,21 @@ cat > ota/dist/latest.json <<EOF
 }
 EOF
 
+openssl dgst -sha256 -sign "$SIGNING_KEY" -out ota/dist/latest.json.sig.der ota/dist/latest.json
+base64 < ota/dist/latest.json.sig.der | tr -d '\n' > ota/dist/latest.json.sig
+openssl pkey -in "$SIGNING_KEY" -pubout -out ota/dist/ota-manifest-public.pem
+openssl dgst -sha256 -verify ota/dist/ota-manifest-public.pem \
+  -signature ota/dist/latest.json.sig.der ota/dist/latest.json >/dev/null
+rm -f ota/dist/latest.json.sig.der ota/dist/ota-manifest-public.pem
+
 echo
 echo "Built: ota/dist/${OUT_NAME}"
-echo "Manifest: ota/dist/latest.json"
+echo "Manifest: ota/dist/latest.json (+ latest.json.sig)"
 echo
-echo "Upload both files to the lipabill.app Vercel project under /ota/:"
+echo "Upload all three files to the lipabill.app Vercel project under /ota/:"
 echo "  /ota/${OUT_NAME}"
 echo "  /ota/latest.json"
+echo "  /ota/latest.json.sig"
+echo "Upload the .sig whenever latest.json changes, or 2.2.0+ installs stop seeing updates."
 echo
 cat ota/dist/latest.json
