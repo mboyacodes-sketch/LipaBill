@@ -57,6 +57,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.intl.Locale as ComposeLocale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -115,6 +116,11 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private val CardShape = RoundedCornerShape(20.dp)
+
+/** Observable locale for Compose lint (NonObservableLocale). */
+@Composable
+private fun currentJavaLocale(): Locale =
+    Locale.forLanguageTag(ComposeLocale.current.toLanguageTag())
 
 /** Amber for days that ended down despite money coming in; differs from red in hue and lightness. */
 private val NetDown = Color(0xFFD97706)
@@ -462,7 +468,7 @@ private fun HeroCard(stats: AnalyticsSummary, account: WalletAccount, showFigure
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text(
-            text = stats.heroLabel.ifEmpty { stats.rangeLabel }.uppercase(Locale.getDefault()),
+            text = stats.heroLabel.ifEmpty { stats.rangeLabel }.uppercase(currentJavaLocale()),
             style = HomeType.caption,
             color = soft,
             letterSpacing = 0.6.sp,
@@ -703,7 +709,7 @@ private fun CostTile(
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Text(
-            title.uppercase(Locale.getDefault()),
+            title.uppercase(currentJavaLocale()),
             style = HomeType.caption,
             color = if (selected) Accent else Mute,
             fontWeight = FontWeight.SemiBold,
@@ -889,7 +895,7 @@ private fun ChallengeCard(
                 else -> "Cost cutter · 7 days"
             }
             Text(
-                label.uppercase(Locale.getDefault()),
+                label.uppercase(currentJavaLocale()),
                 style = HomeType.caption,
                 color = Accent,
                 fontWeight = FontWeight.Bold,
@@ -947,7 +953,7 @@ private fun ChallengeCard(
                         .then(if (today) Modifier.border(2.dp, Accent, RoundedCornerShape(10.dp)) else Modifier)
                 ) {
                     Text(
-                        date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()),
+                        date.dayOfWeek.getDisplayName(TextStyle.NARROW, currentJavaLocale()),
                         style = HomeType.caption,
                         fontWeight = FontWeight.Bold,
                         color = if (done) OnAccent else if (today) Accent else Mute
