@@ -183,6 +183,11 @@ class SecurePreferences(context: Context) {
         get() = prefs.getStringSet(KEY_WATCHED_PAYEES, null)?.toSet() ?: emptySet()
         set(value) = prefs.edit().putStringSet(KEY_WATCHED_PAYEES, HashSet(value)).apply()
 
+    /** The name printed on the person's own tickets; used to check scanned passes. */
+    var ticketHolderName: String?
+        get() = prefs.getString(KEY_TICKET_HOLDER_NAME, null)?.takeIf { it.isNotBlank() }
+        set(value) = prefs.edit().putString(KEY_TICKET_HOLDER_NAME, value?.trim()).apply()
+
     /** Insights badges already earned; once earned they stay. */
     var earnedBadges: Set<String>
         get() = prefs.getStringSet(KEY_EARNED_BADGES, null)?.toSet() ?: emptySet()
@@ -335,6 +340,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_ESSENTIAL_PAYEES = "essential_payees"
         private const val KEY_WATCHED_PAYEES = "watched_payees"
         private const val KEY_EARNED_BADGES = "earned_badges"
+        private const val KEY_TICKET_HOLDER_NAME = "ticket_holder_name"
         private const val KEY_INBOX_HISTORY_IMPORTED = "inbox_history_imported_v1"
         private const val KEY_INBOX_HIGH_WATER = "inbox_high_water_millis"
         private const val KEY_WALLET_RAILS_INBOX_SCAN = "wallet_rails_inbox_scan_v1"

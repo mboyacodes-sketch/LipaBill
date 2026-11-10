@@ -36,11 +36,39 @@ object ETicketAnalyzer {
 
     private const val TAG = "LipaBill.ETicket"
 
+    /** Text and barcodes read from a ticket file, before any parsing. */
+    data class ExtractedTicket(
+        val text: String,
+        val barcodes: List<ETicketTextParser.FoundBarcode>,
+        val stationHints: List<ETicketTextParser.StationHint>
+    )
+
     suspend fun analyze(
         context: Context,
         uri: Uri,
         kind: TicketDocumentKind = TicketDocumentKind.AUTO
-    ): TicketImport = withContext(Dispatchers.IO) {
+    ): TicketImport {
+        val read = extract(context, uri, kind)
+        try {
+            return ETicketTextParser.parse(read.text, read.barcodes, read.stationHints, kind)
+        } catch (t: IllegalArgumentException) {
+            val msg = t.message.orEmpty()
+            if (msg.contains("scannable code", ignoreCase = true) && read.text.length > 40) {
+                throw IllegalArgumentException(
+                    "Couldn’t find a booking Ref / PNR in that file. " +
+                        "If this is a boarding pass, choose “Boarding pass” when adding."
+                )
+            }
+            throw t
+        }
+    }
+
+    /** Reads a PDF or image into text and barcodes (OCR and rotation included), without parsing. */
+    suspend fun extract(
+        context: Context,
+        uri: Uri,
+        kind: TicketDocumentKind = TicketDocumentKind.AUTO
+    ): ExtractedTicket = withContext(Dispatchers.IO) {
         val mime = context.contentResolver.getType(uri)?.lowercase().orEmpty()
         val name = displayName(context, uri).orEmpty()
         val isPdf = mime == "application/pdf" ||
@@ -118,18 +146,7 @@ object ETicketAnalyzer {
                     "Couldn’t read text from that file. Try a clearer photo or PDF export."
                 )
             }
-            try {
-                ETicketTextParser.parse(combined, barcodes, stationHints, kind)
-            } catch (t: IllegalArgumentException) {
-                val msg = t.message.orEmpty()
-                if (msg.contains("scannable code", ignoreCase = true) && combined.length > 40) {
-                    throw IllegalArgumentException(
-                        "Couldn’t find a booking Ref / PNR in that file. " +
-                            "If this is a boarding pass, choose “Boarding pass” when adding."
-                    )
-                }
-                throw t
-            }
+            ExtractedTicket(combined, barcodes, stationHints)
         } finally {
             bitmaps.forEach { it.recycle() }
         }
