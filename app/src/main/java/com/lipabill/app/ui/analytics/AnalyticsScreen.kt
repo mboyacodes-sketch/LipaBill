@@ -619,11 +619,17 @@ private fun CostingYouCard(
         ) {
             CostTile(
                 title = "Regulars",
-                value = if (shown.isEmpty()) "—" else formatKsh(shown.sumOf { it.monthlyCost }),
-                caption = if (shown.isEmpty()) {
-                    "None yet"
-                } else {
-                    "a month · ${shown.size} payee${if (shown.size == 1) "" else "s"}"
+                value = when {
+                    shown.isNotEmpty() -> formatKsh(shown.sumOf { it.monthlyCost })
+                    essential.isNotEmpty() -> formatKsh(essential.sumOf { it.monthlyCost })
+                    else -> "—"
+                },
+                caption = when {
+                    shown.isNotEmpty() ->
+                        "a month · ${shown.size} payee${if (shown.size == 1) "" else "s"}"
+                    essential.isNotEmpty() ->
+                        "${essential.size} essential · all-time"
+                    else -> "None yet · all-time"
                 },
                 selected = tab == CostTab.REGULARS,
                 onClick = { tab = CostTab.REGULARS },
@@ -640,7 +646,7 @@ private fun CostingYouCard(
             CostTile(
                 title = "Habits",
                 value = habit?.let { "${it.visits} visits" } ?: "—",
-                caption = habit?.name ?: "None yet",
+                caption = habit?.name ?: "None yet · period",
                 selected = tab == CostTab.HABITS,
                 onClick = { tab = CostTab.HABITS },
                 modifier = Modifier.weight(1f)
@@ -650,8 +656,14 @@ private fun CostingYouCard(
             CostTab.REGULARS -> Column {
                 if (regulars.isEmpty()) {
                     Text(
-                        "Pay someone on a steady rhythm three times and they show up here. " +
+                        "Pay the same person or bill twice on a steady rhythm and they show up here. " +
                             "Regulars look across your whole history, not just this period.",
+                        style = HomeType.body,
+                        color = Mute
+                    )
+                } else if (shown.isEmpty() && essential.isNotEmpty() && !showEssential) {
+                    Text(
+                        "All regulars are marked essential. Tap below to review them.",
                         style = HomeType.body,
                         color = Mute
                     )
@@ -724,7 +736,7 @@ private fun CostingYouCard(
             CostTab.HABITS -> Text(
                 text = habit?.let {
                     "${it.name}: ${it.visits} times this period, ${formatKsh(it.total)} in all."
-                } ?: "No single place shows up three times or more this period.",
+                } ?: "No single place shows up often enough in this period.",
                 style = HomeType.body,
                 color = if (habit == null) Mute else Ink,
                 modifier = Modifier.recordingPrivacyCover()
