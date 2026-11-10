@@ -543,6 +543,8 @@ private fun HeroFigure(label: String, amount: Double, modifier: Modifier = Modif
 
 private enum class CostTab { REGULARS, FEES, HABITS }
 
+private const val REGULARS_SHOWN = 5
+
 @Composable
 private fun CostingYouCard(
     regulars: List<RegularPayee>,
@@ -554,6 +556,7 @@ private fun CostingYouCard(
 ) {
     var tab by remember { mutableStateOf(CostTab.REGULARS) }
     var showEssential by remember { mutableStateOf(false) }
+    var showAllRegulars by remember { mutableStateOf(false) }
     val today = remember { LocalDate.now() }
     val shown = regulars.filterNot { it.essential }
     val essential = regulars.filter { it.essential }
@@ -602,9 +605,21 @@ private fun CostingYouCard(
                         color = Mute
                     )
                 }
-                shown.forEach { regular ->
+                // Most expensive first; the top five keep the card short.
+                val listed = if (showAllRegulars) shown else shown.take(REGULARS_SHOWN)
+                listed.forEach { regular ->
                     HorizontalDivider(color = Hairline, thickness = 1.dp)
                     RegularRow(regular, today, onEssential, onWatch)
+                }
+                if (shown.size > REGULARS_SHOWN) {
+                    HorizontalDivider(color = Hairline, thickness = 1.dp)
+                    TextButton(onClick = { showAllRegulars = !showAllRegulars }) {
+                        Text(
+                            if (showAllRegulars) "Show top $REGULARS_SHOWN" else "Show all ${shown.size} regulars",
+                            style = HomeType.label,
+                            color = Accent
+                        )
+                    }
                 }
                 if (essential.isNotEmpty()) {
                     HorizontalDivider(color = Hairline, thickness = 1.dp)
