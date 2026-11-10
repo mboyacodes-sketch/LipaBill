@@ -19,13 +19,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # USSD, SMS parser and at-rest crypto sources are gitignored here and live in a
       # private companion repo (see scripts/sync-private-sources.sh). Overlay them so
       # the app compiles.
       - name: Check out private sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: mboyacodes-sketch/LipaBill-private
           ssh-key: ${{ secrets.PRIVATE_SRC_DEPLOY_KEY }}
@@ -37,20 +37,20 @@ jobs:
           rsync -a --exclude .git .private-src/ ./
           rm -rf .private-src
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
       # Also validates the Gradle wrapper jar checksum.
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Unit tests and lint
         run: ./gradlew --no-daemon testPlayDebugUnitTest lintPlayRelease
 
       - name: Upload reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports
           path: |
