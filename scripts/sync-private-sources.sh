@@ -31,11 +31,17 @@ for p in "${PATHS[@]}"; do
   rm -rf "${DEST:?}/$p"
   if [[ -e "$p" ]]; then
     mkdir -p "$DEST/$(dirname "$p")"
-    cp -R "$p" "$DEST/$p"
+    if [[ -d "$p" ]]; then
+      rsync -a --exclude '.DS_Store' "$p"/ "$DEST/$p"/
+    else
+      cp "$p" "$DEST/$p"
+    fi
   fi
 done
 
 cd "$DEST"
+# Drop Finder metadata that can sneak in from macOS copies.
+find . -name .DS_Store -not -path './.git/*' -delete 2>/dev/null || true
 git add -A
 if git diff --cached --quiet; then
   echo "Private sources already up to date"
