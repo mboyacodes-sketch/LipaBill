@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android 12+: hide other apps' overlays while LipaBill is visible (tapjacking). -->
+    <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS" />
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- Metrics only: do not declare the advertising ID even if Firebase merges it. -->
     <uses-permission
@@ -95,6 +97,8 @@
         </intent>
     </queries>
 
+    <!-- taskAffinity="": no other app can declare our affinity and slip its
+         activity into LipaBill's task (StrandHogg-style task hijacking). -->
     <application
         android:name=".LipaBillApp"
         android:allowBackup="false"
@@ -106,6 +110,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:resizeableActivity="true"
+        android:taskAffinity=""
         android:theme="@style/Theme.LipaBill">
 
         <!-- Metrics only: disable advertising ID collection -->
