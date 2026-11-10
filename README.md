@@ -29,10 +29,19 @@ Play review cannot be bypassed for Play installs. For people on the **internal**
 
 1. Bump `versionCode` / `versionName` in `app/build.gradle.kts`
 2. Run `./scripts/publish-ota.sh`
-3. Upload `ota/dist/LipaBill-…-internal.apk` and `ota/dist/latest.json` to the lipabill.app Vercel project under `/ota/`
+   (or run the **Release (internal OTA)** workflow, which builds the same files with provenance)
+3. Upload `ota/dist/LipaBill-…-internal.apk`, `ota/dist/latest.json` and `ota/dist/latest.json.sig` to the lipabill.app Vercel project under `/ota/`
 4. Open LipaBill → Settings → **Check for updates** (or relaunch — auto-check once per process)
 
-Manifest shape: see `ota/latest.example.json`. APK SHA-256 is verified before install.
+Manifest shape: see `ota/latest.example.json`. The app checks `latest.json.sig` (ECDSA P-256,
+key `keystore/ota-manifest-signing.pem`) before reading the manifest, then the APK SHA-256 and
+signing certificate before install.
+
+### Security scans
+
+- **mobsfscan** runs on every PR/push over the public sources (results in the Security tab).
+- `./scripts/mobsf-scan.sh [apk]` runs full MobSF in Docker against a release APK locally;
+  reports stay in `mobsf-reports/` because they cover the private modules.
 
 ### Pay-link web fallback
 
