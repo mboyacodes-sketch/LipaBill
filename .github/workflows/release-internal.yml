@@ -1,0 +1,95 @@
+name: Release (internal OTA)
+
+# Builds and signs the internal-flavor APK plus a signed latest.json, then attaches
+# a build-provenance attestation. Manual only, and gated by the "release"
+# environment (add yourself as a required reviewer and restrict it to main).
+#
+# Environment secrets:
+#   RELEASE_KEYSTORE_B64      base64 of keystore/lipabill-release.keystore
+#   RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD
+#   OTA_SIGNING_KEY_PEM       contents of keystore/ota-manifest-signing.pem
+# Repository secret (shared with ci.yml): PRIVATE_SRC_DEPLOY_KEY
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-internal
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build + sign internal APK
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out private sources
+        uses: actions/checkout@v4
+        with:
+          repository: mboyacodes-sketch/LipaBill-private
+          ssh-key: ${{ secrets.PRIVATE_SRC_DEPLOY_KEY }}
+          path: .private-src
+          persist-credentials: false
+
+      - name: Overlay private sources
+        run: |
+          rsync -a --exclude .git .private-src/ ./
+          rm -rf .private-src
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Write signing material
+        env:
+          KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          OTA_KEY_PEM: ${{ secrets.OTA_SIGNING_KEY_PEM }}
+        run: |
+          umask 077
+          mkdir -p keystore
+          printf '%s' "$KEYSTORE_B64" | base64 -d > keystore/lipabill-release.keystore
+          printf '%s\n' "$OTA_KEY_PEM" > "$RUNNER_TEMP/ota-manifest-signing.pem"
+          {
+            echo "storeFile=keystore/lipabill-release.keystore"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > keystore.properties
+
+      - name: Build, sign manifest
+        env:
+          OTA_SIGNING_KEY: ${{ runner.temp }}/ota-manifest-signing.pem
+        run: ./scripts/publish-ota.sh
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f keystore.properties keystore/lipabill-release.keystore "$RUNNER_TEMP/ota-manifest-signing.pem"
+
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: ota/dist/*.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ota-dist
+          path: |
+            ota/dist/*.apk
+            ota/dist/latest.json
+            ota/dist/latest.json.sig
+          retention-days: 14

@@ -1,0 +1,48 @@
+name: MobSF scan
+
+# Static scan of the public sources only. Results land in this public repo's
+# code scanning, so the private overlay (USSD, parser, at-rest crypto) is never
+# scanned here — run scripts/mobsf-scan.sh locally against a release APK for that.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobsfscan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mobsfscan:
+    name: mobsfscan (SAST)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run mobsfscan
+        run: |
+          pip install --disable-pip-version-check mobsfscan==1.1.0
+          # Exit code reflects findings; the SARIF upload is the gate, not this step.
+          mobsfscan --sarif --output mobsfscan.sarif app/src || true
+
+      - name: Upload SARIF
+        # Fork PRs get a read-only token and cannot upload.
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: mobsfscan.sarif
+          category: mobsfscan

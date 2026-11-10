@@ -14,7 +14,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Self-hosted OTA for sideload / Firebase-distributed installs.
- * Fetches [BuildConfig.OTA_MANIFEST_URL], downloads the APK, verifies SHA-256,
+ * Fetches [BuildConfig.OTA_MANIFEST_URL], verifies its signature against
+ * [BuildConfig.OTA_MANIFEST_PUBLIC_KEY], downloads the APK, verifies SHA-256,
  * then opens the system package installer.
  *
  * Play builds never use this path — they stay on Play in-app updates.
@@ -33,7 +34,10 @@ internal object DistributionUpdate {
         }
         io.execute {
             try {
-                val manifest = OtaDownloader.fetchManifest(manifestUrl)
+                val manifest = OtaDownloader.fetchManifest(
+                    manifestUrl,
+                    BuildConfig.OTA_MANIFEST_PUBLIC_KEY
+                )
                 main.post {
                     if (activity.isFinishing) return@post
                     onManifest(activity, manifest, manual)

@@ -81,3 +81,6 @@ brag-output-*/
 
 # Pay-link web mirror — production lives in lipabill_web
 /web/
+
+# Local MobSF reports (contain private-module findings)
+/mobsf-reports/
