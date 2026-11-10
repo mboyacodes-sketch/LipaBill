@@ -14,9 +14,6 @@ updates:
         patterns: ["org.jetbrains.kotlin*", "com.google.devtools.ksp*", "org.jetbrains.kotlinx*"]
       firebase-play:
         patterns: ["com.google.firebase*", "com.google.gms*", "com.google.android.gms*", "com.google.android.play*", "com.google.mlkit*"]
-    ignore:
-      # genai-prompt beta3+ needs Kotlin 2.3+; bump together with Kotlin by hand.
-      - dependency-name: com.google.mlkit:genai-prompt
 
   - package-ecosystem: github-actions
     directory: /
