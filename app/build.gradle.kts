@@ -215,7 +215,7 @@ dependencies {
     ksp("androidx.room:room-compiler:$room")
 
     // SQLCipher for Room encryption at rest
-    implementation("net.zetetic:sqlcipher-android:4.6.1")
+    implementation("net.zetetic:sqlcipher-android:4.20.0")
 
     // Offline QR encode (display) + CameraX/ML Kit scan + e-ticket OCR.
     // Unbundled ML Kit: Play Services delivers barcode + Latin OCR models after install
