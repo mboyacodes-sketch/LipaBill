@@ -162,7 +162,12 @@ tasks.configureEach {
     if (!name.startsWith("merge") || !name.endsWith("Assets")) return@configureEach
     doLast {
         outputs.files.files.forEach { out ->
-            file("${out.path}/com/tom_roush/fontbox/resources/cmap").deleteRecursively()
+            // Keep Identity-H / Identity-V (~10 KB): most PDFs, airline e-tickets included,
+            // use them, and without them PDF text extraction fails and falls back to OCR.
+            file("${out.path}/com/tom_roush/fontbox/resources/cmap")
+                .listFiles()
+                ?.filterNot { it.name == "Identity-H" || it.name == "Identity-V" }
+                ?.forEach { it.deleteRecursively() }
             file("${out.path}/com/tom_roush/pdfbox/resources/ttf").deleteRecursively()
         }
     }
@@ -227,10 +232,6 @@ dependencies {
     implementation("androidx.camera:camera-view:$camera")
     implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
-    // Gemini Nano via AICore — used only when FeatureStatus.AVAILABLE (no download gate).
-    // beta2 keeps Kotlin metadata compatible with this project's Kotlin 2.1.x;
-    // beta3+ require Kotlin 2.3+.
-    implementation("com.google.mlkit:genai-prompt:1.0.0-beta2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     // Embedded text from airline e-ticket PDFs (more reliable than OCR alone)
