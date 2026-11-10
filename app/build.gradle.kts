@@ -227,7 +227,7 @@ dependencies {
     implementation("androidx.camera:camera-view:$camera")
     implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.11.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     // Embedded text from airline e-ticket PDFs (more reliable than OCR alone)
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
