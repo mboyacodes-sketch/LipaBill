@@ -297,6 +297,23 @@ fun SendMoneySheetContent(
         feedbackMessage = feedback?.first,
         feedbackTone = feedback?.second ?: SheetFeedbackTone.Hint,
         fulizaCoversShortfall = true,
+        amountStage = { stageModifier ->
+            val phone = state.selected?.normalizedPhone
+                ?: UssdMenuBuilder.normalizePhoneNumber(state.query)
+            SendAmountStage(
+                balance = shownBalance,
+                recipientName = state.selected?.name ?: selectedName,
+                recipientPhone = phone,
+                sentThisMonth = state.sentThisMonth,
+                amountInput = state.amountInput,
+                amount = pendingAmount,
+                feeEstimate = state.feeEstimate,
+                onChangeRecipient = { goToRecipient() },
+                onQuickAmount = sendVm::setAmountInput,
+                modifier = stageModifier
+            )
+        },
+        footnote = if (onAmountStep) "You’ll enter your PIN on LipaBill’s secure keypad." else null,
         modifier = Modifier.fillMaxWidth()
     )
 

@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.ZoneId
 
 data class SendMoneyUiState(
     val contacts: List<SendContact> = emptyList(),
@@ -39,7 +41,11 @@ data class SendMoneyUiState(
     val dialStarted: Boolean = false,
     val statusMessage: String? = null,
     /** What the user should do next on the recipient step (null when ready). */
-    val guidanceMessage: String? = null
+    val guidanceMessage: String? = null,
+    /** Sends to the chosen person this calendar month. */
+    val sentThisMonth: Int = 0,
+    /** Fee on a past send of a similar size; null when unknown. */
+    val feeEstimate: Double? = null
 )
 
 class SendMoneyViewModel(application: Application) : AndroidViewModel(application) {
@@ -55,18 +61,24 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
     private val txContacts = app.repository.observeSendContacts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    private val history = app.repository.observeWallet(fuliza = false)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     val uiState: StateFlow<SendMoneyUiState> = combine(
         combine(txContacts, query, selected, amountInput) { tx, q, sel, amount ->
             RecipientDraft(tx, q, sel, amount)
         },
-        _gates
-    ) { draft, gates ->
+        _gates,
+        history
+    ) { draft, gates, past ->
         val trimmed = draft.query.trim()
         val filtered = filterRecipientSearch(draft.tx, trimmed)
         val amountOk = RepeatTransactionViewModel.parseAmount(draft.amount) != null
         val detailsOk = draft.selected != null ||
             UssdMenuBuilder.normalizePhoneNumber(trimmed) != null
         val probeOk = detailsOk && buildProbe(draft.selected, trimmed) != null
+        val phone = draft.selected?.normalizedPhone ?: UssdMenuBuilder.normalizePhoneNumber(trimmed)
+        val parsedAmount = RepeatTransactionViewModel.parseAmount(draft.amount)
         gates.copy(
             contacts = filtered,
             query = draft.query,
@@ -80,7 +92,11 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
                 selected = draft.selected,
                 contacts = filtered,
                 detailsOk = detailsOk
-            )
+            ),
+            sentThisMonth = phone?.let {
+                sendsThisMonth(past, it, LocalDate.now(), ZoneId.systemDefault())
+            } ?: 0,
+            feeEstimate = parsedAmount?.let { estimatedSendFee(past, it) }
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, SendMoneyUiState())
 
