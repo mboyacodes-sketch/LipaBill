@@ -983,13 +983,14 @@ private fun RhythmCard(stats: AnalyticsSummary, fuliza: Boolean) {
     InsightCard(title = title, caption = caption) {
         if (stats.pulse.isNotEmpty()) {
             PulseGrid(cells = stats.pulse, fuliza = fuliza)
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (!fuliza) LegendSwatch(fill = Income.copy(alpha = 0.14f), border = null, label = "Money in")
                 LegendSwatch(
                     fill = Expense.copy(alpha = 0.14f),
                     border = null,
                     label = if (fuliza) "Drawn" else "Money out"
                 )
-                if (!fuliza) LegendSwatch(fill = CardWhite, border = Accent, label = "Regular payment due")
+                if (!fuliza) LegendSwatch(fill = CardWhite, border = Accent, label = "Due")
             }
         } else if (stats.periodBars.isNotEmpty()) {
             PeriodBars(bars = stats.periodBars, fuliza = fuliza)
@@ -1093,7 +1094,9 @@ private fun PulseDayCell(
     val shape = RoundedCornerShape(10.dp)
     val fill = when {
         !cell.inRange -> Color.Transparent
+        cell.hasOutflow && cell.hasInflow -> CardWhite
         cell.hasOutflow -> Expense.copy(alpha = 0.14f)
+        cell.hasInflow -> Income.copy(alpha = 0.14f)
         cell.isDue || cell.isToday -> CardWhite
         else -> Canvas
     }
@@ -1101,11 +1104,12 @@ private fun PulseDayCell(
         !cell.inRange -> null
         selected || cell.isToday -> Ink
         cell.isDue -> Accent
+        cell.hasOutflow && cell.hasInflow -> Hairline
         else -> null
     }
     Column(
         modifier = modifier
-            .height(44.dp)
+            .height(56.dp)
             .clip(shape)
             .background(fill)
             .then(
@@ -1122,16 +1126,43 @@ private fun PulseDayCell(
             color = if (cell.inRange) Ink else Hairline
         )
         if (cell.inRange) {
+            val received = calendarAmountLabel(cell.inflow)
             val spent = calendarAmountLabel(cell.outflow)
-            Text(
-                text = spent.ifEmpty { if (cell.isDue) "due" else "" },
-                style = HomeType.caption,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = if (spent.isNotEmpty()) Expense else Accent,
-                maxLines = 1,
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.recordingPrivacyCover()
-            )
+            ) {
+                if (received.isNotEmpty()) {
+                    Text(
+                        text = "+$received",
+                        style = HomeType.caption,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Income,
+                        maxLines = 1
+                    )
+                }
+                if (spent.isNotEmpty()) {
+                    Text(
+                        text = "−$spent",
+                        style = HomeType.caption,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Expense,
+                        maxLines = 1
+                    )
+                }
+                if (received.isEmpty() && spent.isEmpty() && cell.isDue) {
+                    Text(
+                        text = "due",
+                        style = HomeType.caption,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Accent,
+                        maxLines = 1
+                    )
+                }
+            }
         }
     }
 }
