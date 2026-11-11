@@ -1,7 +1,7 @@
 package com.lipabill.app.engage
 
+import com.lipabill.app.data.foldPayeeName
 import com.lipabill.app.data.model.TransactionType
-import com.lipabill.app.viewmodel.foldPayeeName
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.YearMonth
@@ -21,7 +21,7 @@ sealed interface HabitPattern {
     }
 
     data class FrequentPayee(val payee: String, val count: Int, val cents: Long) : HabitPattern {
-        override val id = "regular:" + payee.lowercase()
+        override val id = "regular:" + foldPayeeName(payee)
     }
 
     data class AirtimeDrip(val count: Int, val averageCents: Long) : HabitPattern {
