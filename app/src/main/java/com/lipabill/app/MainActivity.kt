@@ -378,6 +378,7 @@ private fun AuthenticatedApp(
     app: LipaBillApp
 ) {
     val context = LocalContext.current
+    val payBlockedOtherAccessibility = stringResource(R.string.pay_blocked_other_accessibility)
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
     val host = activity as MainActivity
@@ -928,7 +929,7 @@ private fun AuthenticatedApp(
             if (UssdAccessibilityService.foreignServicesEnabled(context)) {
                 Toast.makeText(
                     context,
-                    context.getString(R.string.pay_blocked_other_accessibility),
+                    payBlockedOtherAccessibility,
                     Toast.LENGTH_LONG
                 ).show()
                 return
