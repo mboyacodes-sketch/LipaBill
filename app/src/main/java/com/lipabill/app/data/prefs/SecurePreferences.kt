@@ -84,11 +84,6 @@ class SecurePreferences(context: Context) {
         set(value) = prefs.edit().putInt(KEY_UI_FONT_SIZE_SP, value.coerceIn(8, 22)).apply()
 
 
-    /** When true, the home Favourites (Frequent) section is shown. */
-    var favouritesSectionEnabled: Boolean
-        get() = prefs.getBoolean(KEY_FAVOURITES_SECTION, true)
-        set(value) = prefs.edit().putBoolean(KEY_FAVOURITES_SECTION, value).apply()
-
     /**
      * Debug / internal builds only. When true, FLAG_SECURE is cleared and names,
      * numbers, references, and ticket codes are blurred in the framebuffer.
@@ -343,7 +338,6 @@ class SecurePreferences(context: Context) {
         private const val KEY_A11Y_PREFERRED_ON = "a11y_preferred_on"
         private const val KEY_PREFERRED_SIM_SUB_ID = "preferred_sim_subscription_id"
         private const val KEY_UI_FONT_SIZE_SP = "ui_font_size_sp_v2"
-        private const val KEY_FAVOURITES_SECTION = "favourites_section_enabled"
         private const val KEY_RECORDING_PRIVACY = "recording_privacy"
         private const val KEY_HIBERNATION_PROMPT_SHOWN = "hibernation_prompt_shown"
         private const val KEY_FIRST_RUN_SETUP_DONE = "first_run_setup_done"

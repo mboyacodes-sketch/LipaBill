@@ -14,17 +14,17 @@ object TicketDocumentImporter {
         uri: Uri,
         kind: TicketDocumentKind = TicketDocumentKind.AUTO
     ): TicketImport {
-        val mime = context.contentResolver.getType(uri)
-        val name = displayName(context, uri)
-        val isPkPass = kind == TicketDocumentKind.PKPASS ||
-            PkPassParser.isPkPassUri(uri, mime, name) ||
-            name?.endsWith(".pkpass", ignoreCase = true) == true
+        val isPkPass = kind == TicketDocumentKind.PKPASS || isPkPass(context, uri)
 
         return when {
             isPkPass -> PkPassParser.parse(context, uri).toTicketImport()
             else -> ETicketAnalyzer.analyze(context, uri, kind)
         }
     }
+
+    /** True for Wallet passes, by MIME type, path or the file's display name. */
+    fun isPkPass(context: Context, uri: Uri): Boolean =
+        PkPassParser.isPkPassUri(uri, context.contentResolver.getType(uri), displayName(context, uri))
 
     private fun displayName(context: Context, uri: Uri): String? {
         if (uri.scheme == "content") {

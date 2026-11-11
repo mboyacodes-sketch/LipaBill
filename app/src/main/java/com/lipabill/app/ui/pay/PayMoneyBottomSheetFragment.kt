@@ -5,70 +5,88 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.lipabill.app.R
-import com.lipabill.app.ui.LipaChoiceChip
+import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.data.parser.sanitizeAccountNumber
+import com.lipabill.app.data.repository.MerchantHit
 import com.lipabill.app.ui.permissions.paymentAccessDirective
 import com.lipabill.app.ui.sheet.EditableSheetField
-import com.lipabill.app.ui.sheet.HorizontalRecipient
-import com.lipabill.app.ui.sheet.HorizontalRecipientRow
-import com.lipabill.app.ui.sheet.rememberPhoneContactPicker
 import com.lipabill.app.ui.sheet.InAppKeyboard
-import com.lipabill.app.ui.sheet.SheetTextEditor
-import com.lipabill.app.ui.sheet.rememberSheetEditor
 import com.lipabill.app.ui.sheet.MoneyConfirmDialog
+import com.lipabill.app.ui.sheet.MoneyFlowSheetHeader
 import com.lipabill.app.ui.sheet.MoneySheetScaffold
+import com.lipabill.app.ui.sheet.SheetFeedbackTone
+import com.lipabill.app.ui.sheet.SheetTextEditor
+import com.lipabill.app.ui.sheet.amountExceedsBalance
+import com.lipabill.app.ui.sheet.amountStepGuidance
+import com.lipabill.app.ui.sheet.expandedSheetDialog
+import com.lipabill.app.ui.sheet.moneySheetFeedback
 import com.lipabill.app.ui.sheet.moneySheetPrimaryCta
 import com.lipabill.app.ui.sheet.rememberMoneySheetAccess
+import com.lipabill.app.ui.sheet.rememberPhoneContactPicker
+import com.lipabill.app.ui.sheet.rememberSheetEditor
 import com.lipabill.app.ui.sheet.runMoneySheetPrimaryCta
 import com.lipabill.app.ui.sheet.sameParty
 import com.lipabill.app.ui.sheet.sheetName
-import com.lipabill.app.ui.sheet.sheetSubtitle
-import com.lipabill.app.ui.sheet.SheetFeedbackTone
-import com.lipabill.app.ui.sheet.amountExceedsBalance
-import com.lipabill.app.ui.sheet.amountStepGuidance
-import com.lipabill.app.ui.util.formatMoneyInputLabel
-import com.lipabill.app.ui.sheet.moneySheetFeedback
-import com.lipabill.app.ui.sheet.expandedSheetDialog
 import com.lipabill.app.ui.sheet.themedComposeView
+import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Hairline
+import com.lipabill.app.ui.theme.HomeType
+import com.lipabill.app.ui.theme.Income
+import com.lipabill.app.ui.theme.Ink
+import com.lipabill.app.ui.theme.Mute
+import com.lipabill.app.ui.theme.OnAccent
+import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
-import com.lipabill.app.data.parser.sanitizeAccountNumber
-import com.lipabill.app.data.repository.MerchantHit
 import com.lipabill.app.ui.util.InterceptSystemIme
-import com.lipabill.app.ui.util.opensOnDigitKeys
+import com.lipabill.app.ui.util.formatMoneyInputLabel
 import com.lipabill.app.ui.util.hideKeyboard
+import com.lipabill.app.ui.util.opensOnDigitKeys
 import com.lipabill.app.ui.util.sanitizeSheetLine
 import com.lipabill.app.viewmodel.PayMethod
-import com.lipabill.app.viewmodel.WalletAccount
 import com.lipabill.app.viewmodel.PayMoneyViewModel
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
 import com.lipabill.app.viewmodel.TransactionListViewModel
-
-private enum class PaySheetStep {
-    Details,
-    Amount
-}
+import com.lipabill.app.viewmodel.WalletAccount
 
 private enum class PayFocusedField {
     Merchant,
@@ -126,13 +144,10 @@ fun PayMoneySheetContent(
 ) {
     val state by payVm.uiState.collectAsStateWithLifecycle()
     val listState by listVm.uiState.collectAsStateWithLifecycle()
-    var step by remember {
-        mutableStateOf(
-            if (payVm.consumeResumeOnAmountStep()) PaySheetStep.Amount else PaySheetStep.Details
-        )
-    }
     var showConfirm by remember { mutableStateOf(false) }
     var focusedField by remember { mutableStateOf<PayFocusedField?>(null) }
+    var amountFocused by remember { mutableStateOf(payVm.consumeResumeOnAmountStep()) }
+    var fillNote by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val sheetAccess = rememberMoneySheetAccess { payVm.refreshGates() }
     val paymentBlock = sheetAccess.block
@@ -147,12 +162,8 @@ fun PayMoneySheetContent(
 
     LaunchedEffect(Unit) {
         payVm.refreshGates()
-    }
-
-    LaunchedEffect(step) {
-        if (step == PaySheetStep.Amount) {
-            focusedField = null
-            hideKeyboard(focusManager, keyboard)
+        if (payVm.uiState.value.method == null) {
+            payVm.selectMethod(PayMethod.PAYBILL)
         }
     }
 
@@ -162,11 +173,15 @@ fun PayMoneySheetContent(
         hideKeyboard(focusManager, keyboard)
     }
 
+    fun focusAmount() {
+        dismissTextKeyboard()
+        amountFocused = true
+    }
+
     val pickPhoneContact = rememberPhoneContactPicker(
         onPicked = { contact ->
             payVm.selectPochiContact(contact)
-            dismissTextKeyboard()
-            step = PaySheetStep.Amount
+            focusAmount()
         },
         onRejected = { message ->
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
@@ -179,12 +194,23 @@ fun PayMoneySheetContent(
      */
     fun claimPaybillPaste(raw: String): Boolean {
         if (!payVm.applyPaybillPaste(raw)) return false
+        fillNote = "Paybill details filled from your paste"
         if (payVm.consumeResumeOnAmountStep()) {
-            step = PaySheetStep.Amount
+            focusAmount()
+        } else {
+            dismissTextKeyboard()
         }
-        dismissTextKeyboard()
-        Toast.makeText(context, "Paybill details filled", Toast.LENGTH_SHORT).show()
         return true
+    }
+
+    fun noteFromMerchant(hit: MerchantHit): String {
+        val name = hit.paybillChipName()
+        return when (hit.type) {
+            TransactionType.PAYBILL ->
+                "Paybill details filled from your last $name payment"
+            else ->
+                "Till details filled from your last $name payment"
+        }
     }
 
     fun pushField(field: PayFocusedField, text: String) {
@@ -206,25 +232,12 @@ fun PayMoneySheetContent(
         if (field == PayFocusedField.Account) ::sanitizeAccountNumber else ::sanitizeSheetLine
 
     fun onFieldFocus(field: PayFocusedField): (Boolean) -> Unit = { focused ->
-        focusedField = if (focused) {
-            field
+        if (focused) {
+            amountFocused = false
+            focusedField = field
         } else if (focusedField == field) {
-            null
-        } else {
-            focusedField
+            focusedField = null
         }
-    }
-
-    fun goToAmount() {
-        if (!state.detailsValid) return
-        dismissTextKeyboard()
-        step = PaySheetStep.Amount
-    }
-
-    fun goToDetails() {
-        showConfirm = false
-        payVm.setAmountInput("")
-        step = PaySheetStep.Details
     }
 
     val paybillNumber = state.businessNumber.takeIf { it.isNotBlank() }
@@ -254,23 +267,23 @@ fun PayMoneySheetContent(
         null -> null
     }
 
-    val onAmountStep = step == PaySheetStep.Amount
     val shownBalance = listState.latestBalance
     val exceedsBalance = amountExceedsBalance(shownBalance, pendingAmount)
+    val amountGuidance = amountStepGuidance(
+        onAmountStep = true,
+        exceedsBalance = exceedsBalance,
+        amountInput = state.amountInput,
+        amountValid = state.amountValid,
+        detailsGuidance = null,
+        fulizaCoversShortfall = true
+    )
     val feedback = moneySheetFeedback(
         blockedDirective = paymentBlock?.let { paymentAccessDirective(sheetAccess.missing) },
         status = state.statusMessage,
-        guidance = amountStepGuidance(
-            onAmountStep = onAmountStep,
-            exceedsBalance = exceedsBalance,
-            amountInput = state.amountInput,
-            amountValid = state.amountValid,
-            detailsGuidance = state.guidanceMessage,
-            fulizaCoversShortfall = true
-        )
+        guidance = if (!state.detailsValid) state.guidanceMessage else amountGuidance
     )
     val primaryCta = moneySheetPrimaryCta(
-        onAmountStep = onAmountStep,
+        onAmountStep = true,
         canConfirm = state.canPay,
         dialStarted = state.dialStarted,
         detailsValid = state.detailsValid,
@@ -288,51 +301,45 @@ fun PayMoneySheetContent(
         amountDisplay = formatMoneyInputLabel(state.amountInput),
         amountInput = state.amountInput,
         selectedSelected = state.detailsValid,
-        recipientsHeader = if (onAmountStep) "Change payment" else "Payment",
-        onRecipientsHeaderClick = if (onAmountStep) {
-            { goToDetails() }
-        } else {
-            null
-        },
-        showKeypad = onAmountStep,
-        showRecipients = !onAmountStep,
+        recipientsHeader = "Payment",
+        showKeypad = false,
+        showRecipients = true,
+        showRecipientsHeader = false,
+        showAmountKeypad = amountFocused,
+        detailsHeader = { MoneyFlowSheetHeader(title = "Pay", balance = shownBalance) },
         recipientsContent = {
-            Column {
-                MethodChipRow(
+            Column(verticalArrangement = Arrangement.spacedBy(Space.section)) {
+                MethodSegmentedRow(
                     selected = state.method,
                     onSelect = {
                         dismissTextKeyboard()
+                        amountFocused = false
+                        fillNote = null
                         payVm.selectMethod(it)
-                        step = PaySheetStep.Details
                     }
                 )
-                Spacer(modifier = Modifier.height(Space.block))
                 when (state.method) {
                     PayMethod.PAYBILL, PayMethod.TILL -> {
                         if (state.merchantHits.isNotEmpty()) {
-                            HorizontalRecipientRow {
+                            RecentChipSection(label = "Recent businesses") {
                                 state.merchantHits.take(6).forEach { hit ->
-                                    HorizontalRecipient(
-                                        name = if (state.method == PayMethod.PAYBILL) {
+                                    val selected = when (state.method) {
+                                        PayMethod.PAYBILL -> hit.identifier == state.businessNumber
+                                        PayMethod.TILL -> hit.identifier == state.tillNumber
+                                        else -> false
+                                    }
+                                    PayRecentChip(
+                                        label = if (state.method == PayMethod.PAYBILL) {
                                             hit.paybillChipName()
                                         } else {
                                             hit.displayName
                                         },
-                                        subtitle = if (state.method == PayMethod.PAYBILL) {
-                                            hit.paybillChipSubtitle()
-                                        } else {
-                                            hit.identifier
-                                        },
-                                        selected = when (state.method) {
-                                            PayMethod.PAYBILL -> hit.identifier == state.businessNumber
-                                            PayMethod.TILL -> hit.identifier == state.tillNumber
-                                            else -> false
-                                        },
+                                        selected = selected,
                                         onClick = {
                                             payVm.selectMerchant(hit)
+                                            fillNote = noteFromMerchant(hit)
                                             if (state.method == PayMethod.TILL) {
-                                                dismissTextKeyboard()
-                                                step = PaySheetStep.Amount
+                                                focusAmount()
                                             }
                                         }
                                     )
@@ -341,25 +348,23 @@ fun PayMoneySheetContent(
                         }
                     }
                     PayMethod.POCHI -> {
-                        HorizontalRecipientRow {
-                            HorizontalRecipient(
-                                name = "Contacts",
-                                subtitle = "Phone",
+                        RecentChipSection(label = "Recent") {
+                            PayRecentChip(
+                                label = "Contacts",
                                 selected = state.selectedPochi?.fromPhoneBook == true,
                                 onClick = {
-                                    dismissTextKeyboard()
+                                    fillNote = null
                                     pickPhoneContact()
                                 }
                             )
                             state.pochiContacts.take(6).forEach { contact ->
-                                HorizontalRecipient(
-                                    name = contact.sheetName(),
-                                    subtitle = contact.sheetSubtitle(),
+                                PayRecentChip(
+                                    label = contact.sheetName(),
                                     selected = contact.sameParty(state.selectedPochi),
                                     onClick = {
                                         payVm.selectPochiContact(contact)
-                                        dismissTextKeyboard()
-                                        step = PaySheetStep.Amount
+                                        fillNote = null
+                                        focusAmount()
                                     }
                                 )
                             }
@@ -369,53 +374,80 @@ fun PayMoneySheetContent(
                 }
             }
         },
-        extraAboveKeypad = if (onAmountStep) {
-            null
-        } else {
-            {
-                InterceptSystemIme {
+        extraAboveKeypad = {
+            InterceptSystemIme {
+                Column(verticalArrangement = Arrangement.spacedBy(Space.section)) {
                     when (state.method) {
                         PayMethod.PAYBILL -> {
-                            EditableSheetField(
-                                editor = merchantEditor,
-                                onText = payVm::setMerchantQuery,
-                                placeholder = "Business name or number",
-                                onBulkText = ::claimPaybillPaste,
-                                onFocused = onFieldFocus(PayFocusedField.Merchant)
-                            )
-                            Spacer(modifier = Modifier.height(Space.gap))
-                            EditableSheetField(
-                                editor = accountEditor,
-                                onText = payVm::setAccountNumber,
-                                placeholder = "Account / shop code",
-                                enabled = state.businessNumber.length >= 5,
-                                sanitize = ::sanitizeAccountNumber,
-                                onBulkText = ::claimPaybillPaste,
-                                onFocused = onFieldFocus(PayFocusedField.Account)
-                            )
+                            PayLabeledField(label = "Business name or number") {
+                                EditableSheetField(
+                                    editor = merchantEditor,
+                                    onText = {
+                                        fillNote = null
+                                        payVm.setMerchantQuery(it)
+                                    },
+                                    placeholder = "Business name or number",
+                                    onBulkText = ::claimPaybillPaste,
+                                    onFocused = onFieldFocus(PayFocusedField.Merchant)
+                                )
+                            }
+                            PayLabeledField(label = "Account number") {
+                                EditableSheetField(
+                                    editor = accountEditor,
+                                    onText = {
+                                        fillNote = null
+                                        payVm.setAccountNumber(it)
+                                    },
+                                    placeholder = "Account number",
+                                    enabled = state.businessNumber.length >= 5,
+                                    sanitize = ::sanitizeAccountNumber,
+                                    onBulkText = ::claimPaybillPaste,
+                                    onFocused = onFieldFocus(PayFocusedField.Account)
+                                )
+                            }
                         }
                         PayMethod.TILL -> {
-                            EditableSheetField(
-                                editor = merchantEditor,
-                                onText = payVm::setMerchantQuery,
-                                placeholder = "Business name or till number",
-                                onFocused = onFieldFocus(PayFocusedField.Merchant)
-                            )
+                            PayLabeledField(label = "Business name or till number") {
+                                EditableSheetField(
+                                    editor = merchantEditor,
+                                    onText = {
+                                        fillNote = null
+                                        payVm.setMerchantQuery(it)
+                                    },
+                                    placeholder = "Business name or till number",
+                                    onFocused = onFieldFocus(PayFocusedField.Merchant)
+                                )
+                            }
                         }
                         PayMethod.POCHI -> {
-                            EditableSheetField(
-                                editor = pochiEditor,
-                                onText = payVm::setPochiQuery,
-                                placeholder = "Name or phone number",
-                                onFocused = onFieldFocus(PayFocusedField.Pochi)
-                            )
+                            PayLabeledField(label = "Name or phone number") {
+                                EditableSheetField(
+                                    editor = pochiEditor,
+                                    onText = {
+                                        fillNote = null
+                                        payVm.setPochiQuery(it)
+                                    },
+                                    placeholder = "Name or phone number",
+                                    onFocused = onFieldFocus(PayFocusedField.Pochi)
+                                )
+                            }
                         }
                         null -> Unit
                     }
+                    fillNote?.let { note ->
+                        PayFillNote(text = note)
+                    }
+                    PayAmountEntry(
+                        amountInput = state.amountInput,
+                        amount = pendingAmount,
+                        balance = shownBalance,
+                        focused = amountFocused,
+                        onFocus = { focusAmount() }
+                    )
                 }
             }
         },
-        inAppTextKeyboard = if (!onAmountStep && focusedField != null) {
+        inAppTextKeyboard = if (!amountFocused && focusedField != null) {
             {
                 val field = focusedField
                 val editor = editorFor(field)
@@ -424,15 +456,20 @@ fun PayMoneySheetContent(
                     startOnDigits = (editor?.text ?: "").opensOnDigitKeys(),
                     onChar = { ch ->
                         if (editor != null && field != null) {
+                            fillNote = null
                             pushField(field, editor.insert(ch, sanitize))
                         }
                     },
                     onBackspace = {
                         if (editor != null && field != null) {
+                            fillNote = null
                             pushField(field, editor.backspace(sanitize))
                         }
                     },
-                    onDone = { dismissTextKeyboard() }
+                    onDone = {
+                        dismissTextKeyboard()
+                        if (state.detailsValid) focusAmount()
+                    }
                 )
             }
         } else {
@@ -442,12 +479,12 @@ fun PayMoneySheetContent(
         ctaEnabled = primaryCta.enabled,
         onCta = {
             runMoneySheetPrimaryCta(
-                onAmountStep = onAmountStep,
+                onAmountStep = true,
                 canConfirm = state.canPay,
                 paymentBlock = paymentBlock,
                 onConfirm = { showConfirm = true },
                 onAllow = sheetAccess.allow,
-                onContinue = { goToAmount() }
+                onContinue = { focusAmount() }
             )
         },
         onKey = payVm::appendAmountKey,
@@ -457,6 +494,7 @@ fun PayMoneySheetContent(
         feedbackMessage = feedback?.first,
         feedbackTone = feedback?.second ?: SheetFeedbackTone.Hint,
         fulizaCoversShortfall = true,
+        footnote = "You’ll enter your PIN on LipaBill’s secure keypad.",
         modifier = Modifier.fillMaxWidth()
     )
 
@@ -480,25 +518,134 @@ fun PayMoneySheetContent(
     }
 }
 
+private val MethodTabs = listOf(PayMethod.TILL, PayMethod.PAYBILL, PayMethod.POCHI)
+
+private val FillNoteFill = Color(0xFFE7F6EC)
+private val FillNoteInk = Color(0xFF14532D)
+
 @Composable
-private fun MethodChipRow(
+private fun MethodSegmentedRow(
     selected: PayMethod?,
     onSelect: (PayMethod) -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .background(SoftBlue)
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        MethodTabs.forEach { method ->
+            val on = method == selected
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 40.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(if (on) Accent else Color.Transparent)
+                    .clickable(role = Role.Tab) { onSelect(method) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = method.shortLabel(),
+                    style = HomeType.label,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (on) OnAccent else Accent
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RecentChipSection(
+    label: String,
+    content: @Composable () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            label,
+            style = HomeType.caption,
+            fontWeight = FontWeight.SemiBold,
+            color = Mute
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun PayRecentChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Text(
+        text = label,
+        style = HomeType.label,
+        fontWeight = FontWeight.SemiBold,
+        color = if (selected) Accent else Ink,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .heightIn(min = 36.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(if (selected) SoftBlue else CardWhite)
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) Accent else Hairline,
+                shape = RoundedCornerShape(18.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    )
+}
+
+@Composable
+private fun PayLabeledField(
+    label: String,
+    content: @Composable () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            label,
+            style = HomeType.caption,
+            fontWeight = FontWeight.SemiBold,
+            color = Mute
+        )
+        content()
+    }
+}
+
+@Composable
+private fun PayFillNote(text: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(FillNoteFill)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        PayMethod.entries.forEach { method ->
-            LipaChoiceChip(
-                label = method.shortLabel(),
-                selected = method == selected,
-                onClick = { onSelect(method) },
-                modifier = Modifier.weight(1f),
-                unselectedContainer = CardWhite,
-                unselectedBorder = Hairline
-            )
-        }
+        Icon(
+            Icons.Outlined.Check,
+            contentDescription = null,
+            tint = Income,
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            text = text,
+            style = HomeType.caption,
+            color = FillNoteInk,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
@@ -510,17 +657,6 @@ private fun PayMethod.shortLabel(): String = when (this) {
 
 private fun MerchantHit.paybillChipName(): String =
     if (displayName.isPaybillPlaceholder(identifier)) identifier else displayName
-
-private fun MerchantHit.paybillChipSubtitle(): String {
-    val account = accountHint?.trim().orEmpty()
-    return if (displayName.isPaybillPlaceholder(identifier)) {
-        account
-    } else if (account.isNotEmpty()) {
-        "$identifier · $account"
-    } else {
-        identifier
-    }
-}
 
 /** Saved rows named only “Paybill 123456” should show the number, not the word twice. */
 private fun String.isPaybillPlaceholder(identifier: String): Boolean {

@@ -44,17 +44,6 @@ fun monthlySendCounts(
         .eachCount()
 }
 
-/** Sends to [phone] in the current calendar month. */
-fun sendsThisMonth(
-    history: List<MpesaTransaction>,
-    phone: String,
-    today: LocalDate,
-    zone: ZoneId
-): Int {
-    val key = phoneKey(phone) ?: return 0
-    return monthlySendCounts(history, today, zone)[key] ?: 0
-}
-
 fun sentThisMonthCopy(count: Int): String = when (count) {
     0 -> "first send this month"
     1 -> "sent once this month"

@@ -39,7 +39,7 @@ class SendInsightsTest {
             send(800.0, phone = "0712345678", date = LocalDate.of(2026, 10, 30)),
             send(900.0, phone = "0799999999", date = LocalDate.of(2026, 11, 9))
         )
-        assertEquals(2, sendsThisMonth(history, "+254712345678", today, zone))
+        assertEquals(2, monthlySendCounts(history, today, zone)["712345678"])
     }
 
     @Test

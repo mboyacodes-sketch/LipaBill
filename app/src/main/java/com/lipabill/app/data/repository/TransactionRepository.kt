@@ -95,10 +95,6 @@ class TransactionRepository(
             .map { rows -> consolidateSendContacts(rows) }
             .flowOn(Dispatchers.Default)
 
-    /** Top frequent send counterparts for the home strip. */
-    fun observeFrequentContacts(limit: Int = FREQUENT_LIMIT): Flow<List<SendContact>> =
-        observeSendContacts().map { it.take(limit) }
-
     fun observeMerchantSearch(
         type: TransactionType,
         query: String,
@@ -575,7 +571,6 @@ class TransactionRepository(
     companion object {
         const val LIST_LIMIT = 80
         const val SEND_SCAN_LIMIT = 250
-        const val FREQUENT_LIMIT = 12
         const val NAME_LINK_SCAN_LIMIT = 500
 
         internal fun consolidateSendContacts(rows: List<TransactionEntity>): List<SendContact> {

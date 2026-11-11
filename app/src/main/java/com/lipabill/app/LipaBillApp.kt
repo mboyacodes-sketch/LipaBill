@@ -67,9 +67,6 @@ class LipaBillApp : Application() {
     private val _fontSizeSp = MutableStateFlow(12)
     val fontSizeSp: StateFlow<Int> = _fontSizeSp.asStateFlow()
 
-    private val _favouritesSectionEnabled = MutableStateFlow(true)
-    val favouritesSectionEnabled: StateFlow<Boolean> = _favouritesSectionEnabled.asStateFlow()
-
     private val _recordingPrivacy = MutableStateFlow(false)
     val recordingPrivacy: StateFlow<Boolean> = _recordingPrivacy.asStateFlow()
 
@@ -141,7 +138,6 @@ class LipaBillApp : Application() {
         securePreferences = SecurePreferences(this)
         securePreferences.seedDemoSocialHandles()
         _fontSizeSp.value = securePreferences.uiFontSizeSp
-        _favouritesSectionEnabled.value = securePreferences.favouritesSectionEnabled
         _recordingPrivacy.value = recordingCaptureEnabled()
         _darkMode.value = securePreferences.darkMode
         _essentialPayees.value = securePreferences.essentialPayees
@@ -239,11 +235,6 @@ class LipaBillApp : Application() {
     fun setFontSizeSp(size: Int) {
         securePreferences.uiFontSizeSp = size
         _fontSizeSp.value = securePreferences.uiFontSizeSp
-    }
-
-    fun setFavouritesSectionEnabled(enabled: Boolean) {
-        securePreferences.favouritesSectionEnabled = enabled
-        _favouritesSectionEnabled.value = enabled
     }
 
     fun setDarkMode(enabled: Boolean) {

@@ -46,6 +46,15 @@ class MpesaSmsParserTest {
     }
 
     @Test
+    fun transaction_cost_with_colon_is_parsed() {
+        val body =
+            "THX7K2LM9P Confirmed. Ksh1,500.00 sent to JOHN KAMAU 254712345678 on 15/3/24 at 2:15 PM. " +
+                "New M-PESA balance is Ksh12,450.50. Transaction cost: Ksh23.00."
+        val tx = MpesaSmsParser.parse(body, ts)
+        assertEquals(23.0, tx.cost!!, 0.001)
+    }
+
+    @Test
     fun received_from_person() {
         val body =
             "QWE12ABCDE Confirmed. You have received Ksh5,000.00 from PETER OCHIENG 254722334455 " +

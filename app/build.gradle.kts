@@ -162,7 +162,12 @@ tasks.configureEach {
     if (!name.startsWith("merge") || !name.endsWith("Assets")) return@configureEach
     doLast {
         outputs.files.files.forEach { out ->
-            file("${out.path}/com/tom_roush/fontbox/resources/cmap").deleteRecursively()
+            // Keep Identity-H / Identity-V (~10 KB): most PDFs, airline e-tickets included,
+            // use them, and without them PDF text extraction fails and falls back to OCR.
+            file("${out.path}/com/tom_roush/fontbox/resources/cmap")
+                .listFiles()
+                ?.filterNot { it.name == "Identity-H" || it.name == "Identity-V" }
+                ?.forEach { it.deleteRecursively() }
             file("${out.path}/com/tom_roush/pdfbox/resources/ttf").deleteRecursively()
         }
     }
