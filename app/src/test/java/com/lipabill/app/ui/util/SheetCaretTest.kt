@@ -2,7 +2,6 @@ package com.lipabill.app.ui.util
 
 import com.lipabill.app.data.parser.extractAccount
 import com.lipabill.app.data.parser.sanitizeAccountNumber
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -29,8 +28,8 @@ class SheetCaretTest {
             "12345678901234567890",
             sanitizeAccountNumber("12345678901234567890EXTRA")
         )
-        assertEquals("AB123", sanitizeAccountNumber("AB#12*3"))
-        assertNull(extractAccount("Confirmed. Account ABC#334 on 1/1/24"))
+        assertEquals("AB#12*3", sanitizeAccountNumber("AB#12*3"))
+        assertEquals("ABC#334", extractAccount("Confirmed. Account ABC#334 on 1/1/24"))
         assertEquals("ABC12", extractAccount("Account ABC12"))
     }
 

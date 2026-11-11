@@ -42,9 +42,12 @@ object PkPassParser {
 
     fun isPkPassUri(uri: Uri?, mimeType: String? = null, displayName: String? = null): Boolean {
         if (uri == null) return false
-        val path = listOfNotNull(uri.path, uri.lastPathSegment, displayName)
-            .joinToString(" ")
-            .lowercase(Locale.US)
+        return looksLikePkPass(listOfNotNull(uri.path, uri.lastPathSegment, displayName), mimeType)
+    }
+
+    /** A .pkpass by any of its names, or by the Wallet MIME types. No Android types: unit-testable. */
+    fun looksLikePkPass(names: List<String>, mimeType: String?): Boolean {
+        val path = names.joinToString(" ").lowercase(Locale.US)
         val mime = (mimeType ?: "").lowercase(Locale.US)
         return path.contains(".pkpass") ||
             mime == "application/vnd.apple.pkpass" ||

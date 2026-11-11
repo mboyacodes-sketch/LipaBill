@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -33,8 +34,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lipabill.app.ui.adapt.LocalWindowForm
+import com.lipabill.app.ui.adapt.WindowHeight
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
@@ -56,10 +60,16 @@ private val KeyboardCanvas: Color
     get() = Canvas
 
 /** Large type on compact keys — keep overall keyboard height tight. */
-private val KeyHeight = 42.dp
 private val KeyIconSize = 22.dp
 private val KeyGap = 4.dp
 private val RowGap = 6.dp
+
+@Composable
+private fun preferredInAppKeyHeight(): Dp = when (LocalWindowForm.current.height) {
+    WindowHeight.Compact -> 34.dp
+    WindowHeight.Medium -> 40.dp
+    WindowHeight.Expanded -> 42.dp
+}
 
 /** Hold delete: wait then auto-repeat, like a system keyboard. */
 private const val BackspaceHoldDelayMs = 400L
@@ -122,94 +132,111 @@ fun InAppKeyboard(
     val letterStyle = keyLetterStyle()
     val labelStyle = keyLabelStyle()
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(KeyboardCanvas)
-            .padding(Space.gap),
-        verticalArrangement = Arrangement.spacedBy(RowGap)
-    ) {
-        rows.forEachIndexed { rowIndex, row ->
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val rowCount = rows.size + 1 // letter/digit rows + space bar
+        val chrome = Space.gap * 2 + RowGap * (rowCount - 1).coerceAtLeast(0)
+        val preferred = preferredInAppKeyHeight()
+        val keyHeight = if (maxHeight.value.isFinite() && maxHeight > chrome) {
+            ((maxHeight - chrome) / rowCount).coerceIn(28.dp, preferred)
+        } else {
+            preferred
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(KeyboardCanvas)
+                .padding(horizontal = KeyGap, vertical = Space.gap),
+            verticalArrangement = Arrangement.spacedBy(RowGap)
+        ) {
+            rows.forEachIndexed { rowIndex, row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(KeyGap),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (!digitsMode && rowIndex == 2) {
+                        InAppKey(
+                            weight = 1.35f,
+                            keyHeight = keyHeight,
+                            accent = shift,
+                            onClick = { shift = !shift }
+                        ) {
+                            Icon(
+                                Icons.Outlined.KeyboardCapslock,
+                                contentDescription = "Shift",
+                                tint = if (shift) Accent else Ink,
+                                modifier = Modifier.size(KeyIconSize)
+                            )
+                        }
+                    }
+                    row.forEach { key ->
+                        val shown = when {
+                            digitsMode -> key
+                            shift -> key
+                            else -> key.lowercase()
+                        }
+                        InAppKey(
+                            weight = 1f,
+                            keyHeight = keyHeight,
+                            onClick = {
+                                onChar(shown)
+                                if (shift && !digitsMode) shift = false
+                            }
+                        ) {
+                            Text(
+                                text = shown,
+                                style = letterStyle,
+                                color = Ink,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                    // Delete beside M (letters) / last symbol key (digits)
+                    if (rowIndex == 2) {
+                        InAppKey(
+                            weight = 1.35f,
+                            keyHeight = keyHeight,
+                            onClick = onBackspace,
+                            repeatOnHold = true
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Outlined.Backspace,
+                                contentDescription = "Delete",
+                                tint = Ink,
+                                modifier = Modifier.size(KeyIconSize)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Bottom row stretches full width — no delete here
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(KeyGap),
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.spacedBy(KeyGap)
             ) {
-                if (!digitsMode && rowIndex == 2) {
-                    InAppKey(
-                        weight = 1.35f,
-                        accent = shift,
-                        onClick = { shift = !shift }
-                    ) {
-                        Icon(
-                            Icons.Outlined.KeyboardCapslock,
-                            contentDescription = "Shift",
-                            tint = if (shift) Accent else Ink,
-                            modifier = Modifier.size(KeyIconSize)
-                        )
+                InAppKey(
+                    weight = 1.35f,
+                    keyHeight = keyHeight,
+                    accent = true,
+                    onClick = {
+                        digitsMode = !digitsMode
+                        shift = false
                     }
+                ) {
+                    Text(
+                        text = if (digitsMode) "ABC" else "123",
+                        style = labelStyle,
+                        color = Accent
+                    )
                 }
-                row.forEach { key ->
-                    val shown = when {
-                        digitsMode -> key
-                        shift -> key
-                        else -> key.lowercase()
-                    }
-                    InAppKey(
-                        weight = 1f,
-                        onClick = {
-                            onChar(shown)
-                            if (shift && !digitsMode) shift = false
-                        }
-                    ) {
-                        Text(
-                            text = shown,
-                            style = letterStyle,
-                            color = Ink,
-                            textAlign = TextAlign.Center,
-                            maxLines = 1
-                        )
-                    }
+                InAppKey(weight = 4f, keyHeight = keyHeight, onClick = { onChar(" ") }) {
+                    Text("space", style = labelStyle, color = Mute)
                 }
-                // Delete beside M (letters) / last symbol key (digits)
-                if (rowIndex == 2) {
-                    InAppKey(weight = 1.35f, onClick = onBackspace, repeatOnHold = true) {
-                        Icon(
-                            Icons.AutoMirrored.Outlined.Backspace,
-                            contentDescription = "Delete",
-                            tint = Ink,
-                            modifier = Modifier.size(KeyIconSize)
-                        )
-                    }
+                InAppKey(weight = 1.6f, keyHeight = keyHeight, accent = true, onClick = onDone) {
+                    Text("Done", style = labelStyle, color = Accent)
                 }
-            }
-        }
-
-        // Bottom row stretches full width — no delete here
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(KeyGap)
-        ) {
-            InAppKey(
-                weight = 1.35f,
-                accent = true,
-                onClick = {
-                    digitsMode = !digitsMode
-                    shift = false
-                }
-            ) {
-                Text(
-                    text = if (digitsMode) "ABC" else "123",
-                    style = labelStyle,
-                    color = Accent
-                )
-            }
-            InAppKey(weight = 4f, onClick = { onChar(" ") }) {
-                Text("space", style = labelStyle, color = Mute)
-            }
-            InAppKey(weight = 1.6f, accent = true, onClick = onDone) {
-                Text("Done", style = labelStyle, color = Accent)
             }
         }
     }
@@ -219,6 +246,7 @@ fun InAppKeyboard(
 private fun RowScope.InAppKey(
     weight: Float,
     onClick: () -> Unit,
+    keyHeight: Dp = 42.dp,
     accent: Boolean = false,
     /** Press once, then auto-fire while held (backspace). */
     repeatOnHold: Boolean = false,
@@ -257,7 +285,7 @@ private fun RowScope.InAppKey(
     Box(
         modifier = Modifier
             .weight(weight)
-            .height(KeyHeight)
+            .height(keyHeight)
             .shadow(1.dp, RoundedCornerShape(10.dp), spotColor = Color.Black.copy(alpha = 0.05f))
             .clip(RoundedCornerShape(10.dp))
             .background(if (accent) SoftBlue else CardWhite)

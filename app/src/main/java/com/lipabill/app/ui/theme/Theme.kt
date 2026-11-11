@@ -125,7 +125,7 @@ val BrandNavy = Color(0xFF2F4A6E)
 val ActionPay = Color(0xFFD6E4F2)
 val ActionMetrics = Color(0xFFF3E9C8)
 val ActionTickets = Color(0xFFDCE8F5)
-/** Deterministic avatar backgrounds (home, sheets, frequent). */
+/** Deterministic avatar backgrounds (home, sheets). */
 val AvatarPastels = listOf(
     Color(0xFFDCE8F5),
     Color(0xFFE8DCF5),

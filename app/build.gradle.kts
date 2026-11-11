@@ -31,8 +31,8 @@ android {
         applicationId = "com.lipabill.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 34
-        versionName = "2.2.0"
+        versionCode = 37
+        versionName = "3.0.0"
         // Real devices are arm64; drop x86/x86_64 emulator ABIs from shipped APKs.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -158,7 +158,12 @@ tasks.configureEach {
     if (!name.startsWith("merge") || !name.endsWith("Assets")) return@configureEach
     doLast {
         outputs.files.files.forEach { out ->
-            file("${out.path}/com/tom_roush/fontbox/resources/cmap").deleteRecursively()
+            // Keep Identity-H / Identity-V (~10 KB): most PDFs, airline e-tickets included,
+            // use them, and without them PDF text extraction fails and falls back to OCR.
+            file("${out.path}/com/tom_roush/fontbox/resources/cmap")
+                .listFiles()
+                ?.filterNot { it.name == "Identity-H" || it.name == "Identity-V" }
+                ?.forEach { it.deleteRecursively() }
             file("${out.path}/com/tom_roush/pdfbox/resources/ttf").deleteRecursively()
         }
     }
