@@ -79,6 +79,7 @@ import com.lipabill.app.ui.theme.Income
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.theme.asPillLabel
 import com.lipabill.app.ui.util.displayLabel
 import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.ui.util.formatTimestamp
@@ -482,11 +483,15 @@ private fun StatusTagChip(tag: ReceiptTag) {
     Text(
         text = tag.label.uppercase(),
         color = fg,
-        fontSize = 10.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 0.5.sp,
+        style = androidx.compose.ui.text.TextStyle(
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.5.sp,
+            lineHeight = 10.sp
+        ).asPillLabel(),
+        maxLines = 1,
         modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(percent = 50))
             .background(bg)
             .padding(horizontal = 8.dp, vertical = 3.dp)
     )
