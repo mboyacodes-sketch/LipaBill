@@ -11,8 +11,10 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -31,11 +33,13 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.lipabill.app.ui.LipaChipHeight
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.OnAccent
+import com.lipabill.app.ui.theme.asPillLabel
 
 data class SpeedDialItem(
     val label: String,
@@ -99,18 +103,25 @@ private fun SpeedDialActionRow(action: SpeedDialItem) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.padding(end = 8.dp)
     ) {
-        Text(
-            text = action.label,
-            style = HomeType.caption,
-            color = Ink,
-            fontWeight = FontWeight.SemiBold,
+        val chipShape = RoundedCornerShape(percent = 50)
+        Box(
             modifier = Modifier
-                .shadow(6.dp, RoundedCornerShape(20.dp), clip = false)
-                .clip(RoundedCornerShape(20.dp))
+                .height(LipaChipHeight)
+                .shadow(6.dp, chipShape, clip = false)
+                .clip(chipShape)
                 .background(CardWhite)
                 .clickable(onClick = action.onClick)
-                .padding(horizontal = 14.dp, vertical = 8.dp)
-        )
+                .padding(horizontal = 14.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = action.label,
+                style = HomeType.caption.asPillLabel(),
+                color = Ink,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+        }
         SmallFloatingActionButton(
             onClick = action.onClick,
             containerColor = CardWhite,
