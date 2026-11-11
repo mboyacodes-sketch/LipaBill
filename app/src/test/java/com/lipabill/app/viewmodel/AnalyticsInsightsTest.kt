@@ -48,6 +48,78 @@ class AnalyticsInsightsTest {
     }
 
     @Test
+    fun percent_change_and_pulse_bounds() {
+        assertEquals(18, percentChange(118.0, 100.0))
+        assertNull(percentChange(40.0, 0.0))
+        assertTrue(shouldShowPulse(1))
+        assertTrue(shouldShowPulse(31))
+        assertFalse(shouldShowPulse(32))
+        assertFalse(shouldShowPulse(0))
+    }
+
+    @Test
+    fun busiest_outflow_picks_the_largest_day_in_range() {
+        val from = LocalDate.of(2026, 11, 1)
+        val to = LocalDate.of(2026, 11, 10)
+        val busiest = busiestOutflow(
+            mapOf(
+                LocalDate.of(2026, 11, 3) to 400.0,
+                LocalDate.of(2026, 11, 7) to 900.0,
+                LocalDate.of(2026, 10, 31) to 5_000.0
+            ),
+            from,
+            to
+        )
+        assertEquals(LocalDate.of(2026, 11, 7) to 900.0, busiest)
+        assertNull(busiestOutflow(emptyMap(), from, to))
+    }
+
+    @Test
+    fun due_copy_and_spend_share_edges() {
+        val today = LocalDate.of(2026, 11, 11)
+        assertEquals("Due today", dueCopy(today, today))
+        assertTrue(dueCopy(today.plusDays(5), today).startsWith("Due "))
+        assertEquals(0.5, spendShareOfIncome(500.0, 1_000.0)!!, 0.0)
+        assertNull(spendShareOfIncome(500.0, 0.0))
+        assertEquals(0.0, dailyAverage(100.0, 0), 0.0)
+        assertEquals(10.0, dailyAverage(100.0, 10), 0.0)
+    }
+
+    @Test
+    fun pulse_calendar_empty_past_31_days_and_marks_due() {
+        val today = LocalDate.of(2026, 11, 11)
+        assertTrue(
+            pulseCalendar(
+                from = today.minusDays(40),
+                to = today,
+                today = today,
+                inflowByDate = emptyMap(),
+                outflowByDate = emptyMap()
+            ).isEmpty()
+        )
+        val regular = RegularPayee(
+            key = "bill:1",
+            name = "Fibre",
+            cadence = Cadence.MONTHLY,
+            typicalAmount = 100.0,
+            monthlyCost = 100.0,
+            lastPaid = today.minusDays(30),
+            nextDue = today,
+            payments = 3
+        )
+        val cells = pulseCalendar(
+            from = today.minusDays(6),
+            to = today,
+            today = today,
+            inflowByDate = mapOf(today to 200.0),
+            outflowByDate = mapOf(today.minusDays(1) to 50.0),
+            regulars = listOf(regular)
+        )
+        assertTrue(cells.isNotEmpty())
+        assertTrue(cells.any { it.isToday && it.due.single().name == "Fibre" })
+    }
+
+    @Test
     fun daily_average_divides_by_inclusive_day_count() {
         assertEquals(10.0, dailyAverage(300.0, 30), 0.0)
         assertEquals(0.0, dailyAverage(50.0, 0), 0.0)
@@ -247,6 +319,26 @@ class AnalyticsInsightsTest {
         )
         assertEquals(600.0, ranked[0].total, 0.0)
         assertEquals(3, ranked[0].count)
+        assertTrue(!ranked[0].business)
+        assertTrue(ranked[1].business)
+        assertTrue(ranked[2].business)
+    }
+
+    @Test
+    fun outgoing_payee_split_separates_people_and_businesses() {
+        val split = outgoingPayeeSplit(
+            listOf(
+                sample(TransactionType.SENT, "Mary Wanjiku", 500.0, phone = "0711000111"),
+                sample(TransactionType.SENT, "JOHN KAMAU", 300.0, phone = "0712345678", code = "B"),
+                sample(TransactionType.PAYBILL, "Safaricom Limited", 200.0, code = "C"),
+                sample(TransactionType.BUY_GOODS, "Java House", 150.0, code = "D"),
+                sample(TransactionType.AIRTIME, "Airtime", 50.0, code = "E")
+            )
+        )
+        assertEquals(listOf("Mary Wanjiku", "JOHN KAMAU"), split.people.map { it.name })
+        assertEquals(800.0, split.peopleTotal, 0.0)
+        assertEquals(listOf("Safaricom Limited", "Java House", "Airtime"), split.businesses.map { it.name })
+        assertEquals(400.0, split.businessTotal, 0.0)
     }
 
     private fun sample(
