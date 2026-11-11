@@ -4,13 +4,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -20,13 +23,13 @@ import androidx.compose.ui.unit.dp
 import com.lipabill.app.data.model.MAX_ENABLED_LEDGER_SOURCES
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.visibleLedgerSources
-import com.lipabill.app.ui.theme.Accent
+import com.lipabill.app.ui.LipaFilterChip
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
-import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.SoftBlue
+import com.lipabill.app.ui.theme.asPillLabel
 import com.lipabill.app.viewmodel.WalletAccount
 
 /**
@@ -119,23 +122,33 @@ fun PaymentRailChip(
     /** Ink-on-white for the home balance pill; accent wash everywhere else. */
     onBalancePill: Boolean = false
 ) {
-    val selectedBg = if (onBalancePill) Ink else Accent
-    val selectedFg = if (onBalancePill) CardWhite else OnAccent
-    val idleBg = if (onBalancePill) Color.Transparent else SoftBlue
-    val idleFg = if (onBalancePill) Mute else Ink
-    Text(
-        text = label,
-        style = HomeType.caption,
-        color = if (selected) selectedFg else idleFg,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
+    if (!onBalancePill) {
+        LipaFilterChip(
+            label = label,
+            selected = selected,
+            onClick = onClick,
+            modifier = modifier,
+            unselectedContainer = SoftBlue,
+            unselectedBorder = Color.Transparent
+        )
+        return
+    }
+    val shape = RoundedCornerShape(percent = 50)
+    Box(
         modifier = modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(if (selected) selectedBg else idleBg)
+            .height(28.dp)
+            .clip(shape)
+            .background(if (selected) Ink else Color.Transparent)
             .clickable(role = Role.RadioButton, onClick = onClick)
-            .padding(
-                horizontal = 10.dp,
-                vertical = if (onBalancePill) 4.dp else 5.dp
-            )
-    )
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            style = HomeType.caption.asPillLabel(),
+            color = if (selected) CardWhite else Mute,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
 }
