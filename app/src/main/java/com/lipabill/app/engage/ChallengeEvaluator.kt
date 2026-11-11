@@ -43,7 +43,9 @@ data class ChallengeEvaluation(
 data class ChallengeTemplate(
     val id: String,
     val categoryId: String,
-    val durationDays: Int
+    val durationDays: Int,
+    /** When > 0, matching spend may accumulate up to this amount before the challenge breaks. */
+    val capCents: Long = 0L
 )
 
 object ChallengeTemplates {
@@ -95,11 +97,15 @@ object ChallengeTemplates {
         durationDays = durationDays.coerceAtLeast(1)
     )
 
-    /** User-built pause: `diy:{categoryId}:{days}:{capCents}`. Cap is stored for UI; evaluator is duration-only. */
+    /**
+     * User-built pause: `diy:{categoryId}:{days}:{capCents}`.
+     * Cap 0 = any matching payment breaks; cap > 0 = break once matching spend exceeds the cap.
+     */
     fun diy(categoryId: String, days: Int, capCents: Long) = ChallengeTemplate(
         id = "$DIY_PREFIX$categoryId:${days.coerceAtLeast(1)}:${capCents.coerceAtLeast(0L)}",
         categoryId = categoryId,
-        durationDays = days.coerceAtLeast(1)
+        durationDays = days.coerceAtLeast(1),
+        capCents = capCents.coerceAtLeast(0L)
     )
 
     /** The payee a skip challenge is about, or null for category challenges. */
@@ -123,8 +129,10 @@ object ChallengeTemplates {
         if (CategoryRules.byId(categoryId) == null && !categoryId.startsWith(CategoryRules.PAYEE_PREFIX)) {
             return null
         }
-        return ChallengeTemplate(id = id, categoryId = categoryId, durationDays = days)
+        return ChallengeTemplate(id = id, categoryId = categoryId, durationDays = days, capCents = cap)
     }
+
+    fun capCentsOf(id: String): Long = diyOf(id)?.capCents ?: 0L
 
     /** Template id safe for analytics: payee names never leave the device. */
     fun metricId(id: String): String = when {
@@ -165,7 +173,8 @@ object ChallengeEvaluator {
         challenge: ChallengeSnapshot,
         transactions: List<ChallengeTransaction>,
         now: Long,
-        rule: CategoryRule
+        rule: CategoryRule,
+        capCents: Long = ChallengeTemplates.capCentsOf(challenge.templateId)
     ): ChallengeEvaluation {
         if (challenge.status == ChallengeStatus.CANCELLED) {
             return ChallengeEvaluation(
@@ -174,11 +183,20 @@ object ChallengeEvaluator {
                 grantAchievement = false
             )
         }
-        val breaker = transactions
+        val inWindow = transactions
             .asSequence()
             .filter { it.timestampMillis >= challenge.startAt && it.timestampMillis < challenge.endAt }
             .filter { CategoryMatcher.matches(rule, it) }
-            .minWithOrNull(compareBy<ChallengeTransaction> { it.timestampMillis }.thenBy { it.id })
+            .sortedWith(compareBy<ChallengeTransaction> { it.timestampMillis }.thenBy { it.id })
+        val breaker = if (capCents > 0L) {
+            var spent = 0L
+            inWindow.firstOrNull { tx ->
+                spent += tx.amountCents
+                spent > capCents
+            }
+        } else {
+            inWindow.firstOrNull()
+        }
         if (breaker != null) {
             val graceOpen = now < challenge.endAt + GRACE_MILLIS
             val stickCompleted = challenge.status == ChallengeStatus.COMPLETED && !graceOpen
