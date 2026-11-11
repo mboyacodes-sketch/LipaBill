@@ -20,8 +20,19 @@ data class CounterpartySpend(
     val name: String,
     val count: Int,
     val total: Double,
-    val lastMillis: Long = 0L
+    val lastMillis: Long = 0L,
+    /** True for shops, bills and companies; false for people. */
+    val business: Boolean = false
 )
+
+data class OutgoingPayeeSplit(
+    val people: List<CounterpartySpend>,
+    val businesses: List<CounterpartySpend>,
+    val peopleTotal: Double,
+    val businessTotal: Double
+) {
+    val isEmpty: Boolean get() = people.isEmpty() && businesses.isEmpty()
+}
 
 /** Same-length window immediately before [from]–[to], or the prior calendar year. */
 fun previousAnalyticsBounds(
@@ -67,14 +78,7 @@ fun spendShareOfIncome(expense: Double, income: Double): Double? {
     return expense / income
 }
 
-/**
- * Who got the most money out of the wallet. Cash withdrawals and moves into savings are
- * the user's own money and left out, as are rows with no name or number to show.
- */
-fun topOutgoingCounterparties(
-    txs: Iterable<MpesaTransaction>,
-    limit: Int = 5
-): List<CounterpartySpend> =
+private fun outgoingPayeeRows(txs: Iterable<MpesaTransaction>): List<CounterpartySpend> =
     txs
         .filter { tx ->
             tx.type.isOutgoing() &&
@@ -91,11 +95,40 @@ fun topOutgoingCounterparties(
                     ?: latest.counterpartyPhone?.trim().orEmpty(),
                 count = list.size,
                 total = list.sumOf { it.amount ?: 0.0 },
-                lastMillis = latest.timestampMillis
+                lastMillis = latest.timestampMillis,
+                business = isBusinessPayee(latest)
             )
         }
         .sortedByDescending { it.total }
-        .take(limit)
+
+/**
+ * Who got the most money out of the wallet. Cash withdrawals and moves into savings are
+ * the user's own money and left out, as are rows with no name or number to show.
+ * Prefer [outgoingPayeeSplit] when the UI needs people and businesses side by side.
+ */
+fun topOutgoingCounterparties(
+    txs: Iterable<MpesaTransaction>,
+    limit: Int = 5
+): List<CounterpartySpend> = outgoingPayeeRows(txs).take(limit)
+
+/**
+ * Top people and top businesses separately, plus period totals for each side.
+ * Airtime counts as business (bundle sellers); Send Money uses the name/phone heuristic.
+ */
+fun outgoingPayeeSplit(
+    txs: Iterable<MpesaTransaction>,
+    limitPerKind: Int = 5
+): OutgoingPayeeSplit {
+    val rows = outgoingPayeeRows(txs)
+    val people = rows.filter { !it.business }
+    val businesses = rows.filter { it.business }
+    return OutgoingPayeeSplit(
+        people = people.take(limitPerKind),
+        businesses = businesses.take(limitPerKind),
+        peopleTotal = people.sumOf { it.total },
+        businessTotal = businesses.sumOf { it.total }
+    )
+}
 
 data class MoneyStory(
     val headline: String,
