@@ -52,6 +52,16 @@ fun Modifier.systemBarsAndCutoutPadding(): Modifier = composed {
     windowInsetsPadding(WindowInsets.safeDrawing)
 }
 
+/**
+ * Bottom sheet content sits under the status bar gap already — only keep
+ * horizontal cutout and navigation-bar padding so the keypad stays on screen.
+ */
+fun Modifier.moneySheetWindowPadding(): Modifier = composed {
+    windowInsetsPadding(
+        WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
+    )
+}
+
 /** Status bar and horizontal cutout. Canvas behind can still draw under the nav bar. */
 fun Modifier.safeDrawingTopPadding(): Modifier = composed {
     windowInsetsPadding(

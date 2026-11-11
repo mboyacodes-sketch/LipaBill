@@ -261,15 +261,6 @@ fun SettingsScreen(
             }
 
             SettingsSection("Home", Icons.Outlined.Home) {
-                if (state.region.canSendPay) {
-                    SettingsSwitchRow(
-                        title = "Favourites",
-                        subtitle = "Frequent contacts on the home screen.",
-                        checked = state.favouritesSectionEnabled,
-                        onCheckedChange = viewModel::setFavouritesSectionEnabled
-                    )
-                    SettingsDivider()
-                }
                 SettingsSwitchRow(
                     title = "Dark mode",
                     subtitle = "Navy screens at night. Passes stay paper white.",

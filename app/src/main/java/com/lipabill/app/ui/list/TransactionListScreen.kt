@@ -3,7 +3,6 @@ package com.lipabill.app.ui.list
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,7 +33,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.BarChart
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ConfirmationNumber
 import androidx.compose.material.icons.outlined.NorthEast
@@ -93,7 +91,6 @@ import kotlinx.coroutines.delay
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
-import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.data.sms.ReceiptOpenRequest
 import com.lipabill.app.ui.adapt.LocalWindowForm
 import com.lipabill.app.ui.adapt.WindowWidth
@@ -114,6 +111,8 @@ import com.lipabill.app.ui.theme.ActionPay
 import com.lipabill.app.ui.theme.ActionTickets
 import com.lipabill.app.ui.theme.BrandNavy
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.LipaPalette
+import com.lipabill.app.ui.theme.LocalLipaColors
 import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.OnPastel
 import com.lipabill.app.ui.theme.Canvas as CreamCanvas
@@ -151,7 +150,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 /**
- * Off-white + route-blue home: balance pill, actions, frequent, transactions.
+ * Off-white + route-blue home: balance pill, actions, transactions.
  * Layout tokens measured from the home mock (≈390dp frame).
  */
 private object HomeMock {
@@ -174,10 +173,6 @@ private object HomeMock {
     val ActionIcon = 24.dp
     val ActionLabelGap = 8.dp
 
-    val FrequentAvatar = 52.dp
-    val FrequentGap = 12.dp
-    val FrequentLabelGap = 6.dp
-
     val SearchRadius = 24.dp
     val SearchMinHeight = 44.dp
 
@@ -186,7 +181,7 @@ private object HomeMock {
 }
 
 /**
- * Off-white + route-blue home: balance pill, actions, frequent, transactions.
+ * Off-white + route-blue home: balance pill, actions, transactions.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalCoroutinesApi::class)
 @Composable
@@ -197,7 +192,6 @@ fun TransactionListScreen(
     onReceiptOpened: () -> Unit = {},
     onRepeatTransaction: (Long) -> Unit = {},
     onSend: () -> Unit = {},
-    onSendTo: (SendContact) -> Unit = {},
     onReceive: () -> Unit = {},
     onExchange: () -> Unit = {},
     onTickets: () -> Unit = {},
@@ -222,7 +216,6 @@ fun TransactionListScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    val favouritesSectionEnabled by app.favouritesSectionEnabled.collectAsStateWithLifecycle()
     val engageVm: EngagementViewModel = viewModel()
     val engage by engageVm.uiState.collectAsStateWithLifecycle()
     var receiptTxId by remember { mutableStateOf<Long?>(null) }
@@ -243,10 +236,6 @@ fun TransactionListScreen(
         viewModel.clearScanMessage()
     }
 
-    val frequent = state.frequentContacts
-    val showFrequent = favouritesSectionEnabled && frequent.isNotEmpty() &&
-        state.account == WalletAccount.MPESA &&
-        state.showSendPay
     val shownBalance = state.shownBalance()
     val canSendPay = state.canFundPayment()
     // Full row (incl. rawBody) so share can send truncated original SMS.
@@ -265,8 +254,8 @@ fun TransactionListScreen(
     val scope = rememberCoroutineScope()
     val suppressSearchDismiss = remember { intArrayOf(0) }
     var homeEpoch by remember { mutableIntStateOf(0) }
-    // Header search icon reveals the transactions search field (index after hero+actions[+frequent]).
-    val txHeaderIndex = if (showFrequent) 3 else 2
+    // Header search icon reveals the transactions search field (index after hero+actions).
+    val txHeaderIndex = 2
 
     fun closeSearch() {
         searchOpen = false
@@ -419,8 +408,6 @@ fun TransactionListScreen(
                 listState = listState,
                 balance = shownBalance,
                 fulizaDue = state.fulizaDue,
-                frequent = frequent,
-                showFrequent = showFrequent,
                 account = state.account,
                 showFuliza = state.showFuliza,
                 showSendPay = state.showSendPay,
@@ -448,8 +435,6 @@ fun TransactionListScreen(
                 onTickets = onTickets,
                 onRequestSms = onRequestSms,
                 sendPayEnabled = canSendPay,
-                onAddFrequent = onSend,
-                onSelectFrequent = onSendTo,
                 onOpenTransaction = { id ->
                     hideKeyboard()
                     closeSearch()
@@ -562,27 +547,11 @@ fun TransactionListScreen(
                     Spacer(modifier = Modifier.height(HomeMock.SectionGap))
                 }
                 item(key = "engage") {
-                    EngageHomeSection(
-                        state = engage,
-                        onOpen = onOpenHabits,
-                        modifier = Modifier.padding(horizontal = pageMargin)
-                    )
-                }
-                if (showFrequent) {
-                    item(key = "frequent") {
-                        Column(modifier = Modifier.padding(horizontal = pageMargin)) {
-                            SectionHeader(
-                                title = "Frequent",
-                                trailing = null,
-                                onOpen = onSend
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            FrequentContactsRow(
-                                contacts = frequent,
-                                onAdd = onSend,
-                                onSelect = onSendTo
-                            )
-                        }
+                    Column(modifier = Modifier.padding(horizontal = pageMargin)) {
+                        EngageHomeSection(
+                            state = engage,
+                            onOpen = onOpenHabits
+                        )
                         Spacer(modifier = Modifier.height(HomeMock.SectionGap))
                     }
                 }
@@ -669,8 +638,6 @@ private fun HomeExpandedPane(
     listState: LazyListState,
     balance: Double?,
     fulizaDue: LocalDate?,
-    frequent: List<SendContact>,
-    showFrequent: Boolean,
     account: WalletAccount,
     showFuliza: Boolean,
     showSendPay: Boolean,
@@ -698,8 +665,6 @@ private fun HomeExpandedPane(
     onTickets: () -> Unit,
     onRequestSms: () -> Unit,
     sendPayEnabled: Boolean,
-    onAddFrequent: () -> Unit,
-    onSelectFrequent: (SendContact) -> Unit,
     onOpenTransaction: (Long) -> Unit,
     onKey: (String) -> Unit,
     onBackspace: () -> Unit,
@@ -749,22 +714,6 @@ private fun HomeExpandedPane(
                 modifier = Modifier.padding(horizontal = pageMargin)
             )
             engageSection()
-            if (showFrequent) {
-                Spacer(modifier = Modifier.height(HomeMock.SectionGap))
-                Column(modifier = Modifier.padding(horizontal = pageMargin)) {
-                    SectionHeader(
-                        title = "Frequent",
-                        trailing = null,
-                        onOpen = onSend
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    FrequentContactsRow(
-                        contacts = frequent,
-                        onAdd = onAddFrequent,
-                        onSelect = onSelectFrequent
-                    )
-                }
-            }
         }
         Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
             PullToRefreshBox(
@@ -1017,7 +966,11 @@ private fun BalanceSection(
             Icon(
                 imageVector = Icons.Outlined.QrCode2,
                 contentDescription = "Request",
-                tint = BrandNavy,
+                tint = if (LocalLipaColors.current.canvas == LipaPalette.Dark.canvas) {
+                    Color.White
+                } else {
+                    Accent
+                },
                 modifier = Modifier.size(26.dp)
             )
         }
@@ -1320,75 +1273,6 @@ private fun TransactionSearchField(
                 }
             }
         )
-    }
-}
-
-@Composable
-private fun FrequentContactsRow(
-    contacts: List<SendContact>,
-    onAdd: () -> Unit,
-    onSelect: (SendContact) -> Unit
-) {
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(HomeMock.FrequentGap)) {
-        item {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .width(HomeMock.FrequentAvatar + 8.dp)
-                    .clickable(onClick = onAdd)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(HomeMock.FrequentAvatar)
-                        .border(1.5.dp, Mute.copy(alpha = 0.45f), CircleShape)
-                        .clip(CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Outlined.Add,
-                        contentDescription = "Add",
-                        tint = Mute,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.height(HomeMock.FrequentLabelGap))
-                Text("Add", style = HomeType.caption, color = Mute)
-            }
-        }
-        items(contacts, key = { it.normalizedPhone }) { contact ->
-            val name = contact.name ?: contact.normalizedPhone
-            val seed = name.hashCode()
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .width(HomeMock.FrequentAvatar + 8.dp)
-                    .clickable { onSelect(contact) }
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(HomeMock.FrequentAvatar)
-                        .clip(CircleShape)
-                        .background(avatarPastel(seed)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = name.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
-                        style = HomeType.rowTitle,
-                        color = OnPastel,
-                        modifier = Modifier.recordingPrivacyCover()
-                    )
-                }
-                Spacer(modifier = Modifier.height(HomeMock.FrequentLabelGap))
-                Text(
-                    text = name,
-                    style = HomeType.caption,
-                    color = Ink,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.recordingPrivacyCover()
-                )
-            }
-        }
     }
 }
 

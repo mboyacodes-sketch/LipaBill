@@ -1,6 +1,7 @@
 package com.lipabill.app.engage
 
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.viewmodel.foldPayeeName
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.YearMonth
@@ -54,7 +55,7 @@ object HabitPatterns {
     private const val PAYDAY_SPEND_FLOOR_CENTS = 1_500_00L
 
     /** Same shape as Insights' payee key, so payees marked essential there match here. */
-    fun payeeKey(name: String): String = name.trim().lowercase().replace(Regex("\\s+"), " ")
+    fun payeeKey(name: String): String = foldPayeeName(name)
 
     /**
      * [transactions] should cover the last [WINDOW_DAYS]; older rows are ignored.

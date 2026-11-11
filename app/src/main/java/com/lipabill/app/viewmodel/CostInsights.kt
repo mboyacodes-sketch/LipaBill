@@ -1,5 +1,6 @@
 package com.lipabill.app.viewmodel
 
+import com.lipabill.app.data.foldMerchantName
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.engage.CategoryMatcher
@@ -21,6 +22,14 @@ import kotlin.math.roundToLong
 private val REVERSED_ORIGINAL = Regex(
     "original\\s+transaction\\s+([A-Z0-9]{8,12})",
     RegexOption.IGNORE_CASE
+)
+
+private val PLACEHOLDER_PAYBILL = Regex("""^paybill\s+(\d+)$""")
+private val PLACEHOLDER_TILL = Regex("""^till\s+(\d+)$""")
+private val PLACEHOLDER_POCHI = Regex("""^pochi(?:\s+la\s+biashara)?\s+(\S+)$""")
+/** Branch / suburb suffixes only — avoid bare "town" so names like "China Town" stay intact. */
+private val TRAILING_AREA = Regex(
+    """\s+(westlands|kilimani|lavington|karen|cbd|branch|mall|centre|center|plaza|junction|stage)$"""
 )
 
 /** Code of the payment a reversal undid. Null for anything that is not a reversal. */
@@ -77,13 +86,52 @@ fun feeSummary(txs: Iterable<MpesaTransaction>): FeeSummary {
     return FeeSummary(total, withdrawCount, withdrawFees)
 }
 
-/** Stable key for "the same payee": name when the SMS has one, else the phone digits. */
+/**
+ * Stable key for the same payee across SMS wording.
+ * Prefers a canonical phone so named and phone-only sends collapse; otherwise a folded
+ * merchant name (placeholders and branch suffixes stripped).
+ */
 fun payeeKey(tx: MpesaTransaction): String? {
-    val name = tx.counterpartyName?.trim()?.takeIf { it.isNotEmpty() }
-    if (name != null) return name.lowercase(Locale.US).replace(Regex("\\s+"), " ")
-    val digits = tx.counterpartyPhone?.filter { it.isDigit() }?.takeIf { it.isNotEmpty() }
-    return digits?.let { "tel:$it" }
+    phoneKey(tx.counterpartyPhone)?.let { return "tel:$it" }
+    val name = tx.counterpartyName?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    phoneKey(name)?.let { return "tel:$it" }
+    return foldPayeeName(name)
 }
+
+/** Fold dial placeholders and branch suffixes into a comparable merchant key. */
+fun foldPayeeName(raw: String): String {
+    val folded = foldMerchantName(raw) ?: return raw.trim().lowercase(Locale.US)
+    PLACEHOLDER_PAYBILL.matchEntire(folded)?.let { return "bill:${it.groupValues[1]}" }
+    PLACEHOLDER_TILL.matchEntire(folded)?.let { return "till:${it.groupValues[1]}" }
+    PLACEHOLDER_POCHI.matchEntire(folded)?.let { return "pochi:${it.groupValues[1]}" }
+    return stripTrailingArea(folded)
+}
+
+private fun stripTrailingArea(name: String): String {
+    var s = name
+    while (true) {
+        val next = TRAILING_AREA.replace(s, "").trim()
+        if (next == s || next.isEmpty()) return s
+        s = next
+    }
+}
+
+/**
+ * Keys that may have been stored for essentials/watched before phone-first identity.
+ * Lets an older "landlord" mark still match a now phone-keyed regular.
+ */
+fun payeeMarkCandidates(tx: MpesaTransaction, key: String = payeeKey(tx).orEmpty()): Set<String> {
+    val out = linkedSetOf<String>()
+    if (key.isNotEmpty()) out += key
+    foldMerchantName(tx.counterpartyName)?.let { out += it }
+    foldMerchantName(tx.counterpartyName)?.let { out += stripTrailingArea(it) }
+    phoneKey(tx.counterpartyPhone)?.let { out += "tel:$it" }
+    tx.counterpartyPhone?.filter { it.isDigit() }?.takeIf { it.isNotEmpty() }?.let { out += "tel:$it" }
+    return out
+}
+
+private fun marked(candidates: Set<String>, marks: Set<String>): Boolean =
+    marks.isNotEmpty() && candidates.any { it in marks }
 
 private fun payeeName(tx: MpesaTransaction): String =
     tx.counterpartyName?.trim()?.takeIf { it.isNotEmpty() }
@@ -93,7 +141,8 @@ private fun payeeName(tx: MpesaTransaction): String =
 enum class Cadence(val days: Int, val label: String) {
     WEEKLY(7, "Weekly"),
     FORTNIGHTLY(14, "Every 2 weeks"),
-    MONTHLY(30, "Monthly")
+    MONTHLY(30, "Monthly"),
+    QUARTERLY(91, "Every 3 months")
 }
 
 data class RegularPayee(
@@ -109,18 +158,20 @@ data class RegularPayee(
     val watched: Boolean = false
 )
 
-private val PAYEE_TYPES = setOf(
+/** Payees that can be regular bills. Airtime is habit noise, not a bill. */
+private val REGULAR_TYPES = setOf(
     TransactionType.SENT,
     TransactionType.PAYBILL,
     TransactionType.BUY_GOODS,
-    TransactionType.POCHI,
-    TransactionType.AIRTIME
+    TransactionType.POCHI
 )
 
+
 private fun cadenceFor(medianDays: Long): Cadence? = when (medianDays) {
-    in 5L..9L -> Cadence.WEEKLY
-    in 12L..17L -> Cadence.FORTNIGHTLY
-    in 26L..35L -> Cadence.MONTHLY
+    in 4L..10L -> Cadence.WEEKLY
+    in 11L..20L -> Cadence.FORTNIGHTLY
+    in 21L..45L -> Cadence.MONTHLY
+    in 75L..105L -> Cadence.QUARTERLY
     else -> null
 }
 
@@ -130,13 +181,19 @@ private fun List<Double>.median(): Double {
     return if (sorted.size % 2 == 1) sorted[mid] else (sorted[mid - 1] + sorted[mid]) / 2.0
 }
 
+private fun amountsStable(amounts: List<Double>, typical: Double): Boolean {
+    if (amounts.isEmpty() || typical <= 0.0) return false
+    val slack = max(typical * 0.15, 50.0)
+    return amounts.all { abs(it - typical) <= slack }
+}
+
 /**
  * Bills and standing payments: the same payee, a similar amount, on a steady rhythm
- * (weekly, fortnightly or monthly) across the whole ledger. Several payments on one day
- * count as one. Needs [minPayments] separate days, most gaps close to the typical gap,
- * most amounts close to the typical amount (a shop with changing baskets is a habit,
- * not a regular), and a payment recent enough that the rhythm has not stopped.
- * Most expensive per month first.
+ * across the whole ledger. Several payments on one day count as one. Three+ distinct days
+ * is the normal path: most gaps close to the typical gap and most amounts close to the
+ * typical amount (a shop with changing baskets is a habit, not a regular). Two days still
+ * qualify when the gap maps to a cadence and the amounts stay close (short SMS history).
+ * Needs a payment recent enough that the rhythm has not stopped. Most expensive per month first.
  */
 fun detectRegulars(
     txs: Iterable<MpesaTransaction>,
@@ -147,7 +204,7 @@ fun detectRegulars(
     minPayments: Int = 3
 ): List<RegularPayee> {
     val byPayee = txs
-        .filter { it.type in PAYEE_TYPES && (it.amount ?: 0.0) > 0.0 }
+        .filter { it.type in REGULAR_TYPES && (it.amount ?: 0.0) > 0.0 }
         .groupBy { payeeKey(it) }
     val regulars = mutableListOf<RegularPayee>()
     for ((key, payments) in byPayee) {
@@ -158,31 +215,40 @@ fun detectRegulars(
             .mapValues { (_, list) -> list.sumOf { it.amount ?: 0.0 } }
             .toSortedMap()
         val dates = byDay.keys.toList()
-        if (dates.size < minPayments) continue
+        if (dates.size < 2) continue
+        val amounts = byDay.values.toList()
+        val typical = amounts.median()
         val gaps = dates.zipWithNext { a, b -> ChronoUnit.DAYS.between(a, b) }
         val typicalGap = gaps.map { it.toDouble() }.median().roundToLong()
         val cadence = cadenceFor(typicalGap) ?: continue
-        val tolerance = max(2.0, typicalGap * 0.35)
-        val steady = gaps.count { abs(it - typicalGap) <= tolerance }
-        if (steady < ceil(gaps.size * 2.0 / 3.0)) continue
-        val amounts = byDay.values.toList()
-        val typical = amounts.median()
-        val amountTolerance = max(50.0, typical * 0.4)
-        val similar = amounts.count { abs(it - typical) <= amountTolerance }
-        if (similar < ceil(amounts.size * 2.0 / 3.0)) continue
+        val shortHistory = dates.size < minPayments
+        if (shortHistory) {
+            // Two similar pays on a known rhythm still count when history is thin.
+            if (dates.size != 2 || !amountsStable(amounts, typical)) continue
+        } else {
+            val tolerance = max(2.0, typicalGap * 0.35)
+            val steady = gaps.count { abs(it - typicalGap) <= tolerance }
+            if (steady < ceil(gaps.size * 2.0 / 3.0)) continue
+            val amountTolerance = max(50.0, typical * 0.4)
+            val similar = amounts.count { abs(it - typical) <= amountTolerance }
+            if (similar < ceil(amounts.size * 2.0 / 3.0)) continue
+        }
         val lastPaid = dates.last()
         if (ChronoUnit.DAYS.between(lastPaid, today) > typicalGap * 2 + 3) continue
+        // Prefer a named SMS over a later phone-only row for display + legacy marks.
+        val named = ordered.lastOrNull { !it.counterpartyName.isNullOrBlank() } ?: ordered.last()
+        val markKeys = ordered.flatMapTo(linkedSetOf()) { payeeMarkCandidates(it, key) }
         regulars += RegularPayee(
             key = key,
-            name = payeeName(ordered.last()),
+            name = payeeName(named),
             cadence = cadence,
             typicalAmount = typical,
             monthlyCost = typical * (365.25 / 12.0) / cadence.days,
             lastPaid = lastPaid,
             nextDue = lastPaid.plusDays(typicalGap),
             payments = dates.size,
-            essential = key in essentials,
-            watched = key in watched
+            essential = marked(markKeys, essentials),
+            watched = marked(markKeys, watched)
         )
     }
     return regulars.sortedByDescending { it.monthlyCost }
@@ -211,6 +277,12 @@ private val HABIT_TYPES = setOf(
     TransactionType.POCHI,
     TransactionType.PAYBILL
 )
+
+/** Fewer visits still count as a habit on short analytics ranges. */
+fun habitMinVisits(dayCount: Long): Int = when {
+    dayCount <= 14L -> 2
+    else -> 3
+}
 
 /**
  * The shop visited on the most separate days in the period, outside the regular bills,

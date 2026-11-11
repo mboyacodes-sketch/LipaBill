@@ -26,7 +26,6 @@ data class SettingsUiState(
     val providerChoices: List<MoneySource> = providerCatalog(AppRegion.DEFAULT),
     val timeoutMinutes: Int = 2,
     val fontSizeSp: Int = 12,
-    val favouritesSectionEnabled: Boolean = true,
     val recordingPrivacy: Boolean = false,
     val darkMode: Boolean = false,
     val repeatEnabled: Boolean = true,
@@ -82,11 +81,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         refresh()
     }
 
-
-    fun setFavouritesSectionEnabled(enabled: Boolean) {
-        app.setFavouritesSectionEnabled(enabled)
-        refresh()
-    }
 
     fun setDarkMode(enabled: Boolean) {
         app.setDarkMode(enabled)
@@ -153,7 +147,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             providerChoices = providerCatalog(region),
             timeoutMinutes = auth.timeoutMinutes(),
             fontSizeSp = app.securePreferences.uiFontSizeSp,
-            favouritesSectionEnabled = app.securePreferences.favouritesSectionEnabled,
             recordingPrivacy = app.securePreferences.recordingPrivacy,
             darkMode = app.securePreferences.darkMode,
             repeatEnabled = app.securePreferences.repeatFeatureEnabled,

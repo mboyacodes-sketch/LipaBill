@@ -55,7 +55,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.lipabill.app.auth.AuthUiState
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.sms.ReceiptOpenRequest
@@ -81,6 +80,8 @@ import com.lipabill.app.ui.permissions.toConsentRoute
 import com.lipabill.app.ui.permissions.RouteConsent
 import com.lipabill.app.ui.permissions.SmsRestrictedSettings
 import com.lipabill.app.ui.pay.PayMoneyBottomSheetFragment
+import com.lipabill.app.ui.payment.MoneySheets
+import com.lipabill.app.ui.payment.PaymentDialCoordinator
 import com.lipabill.app.ui.receipt.ProcessingReceiptScreen
 import com.lipabill.app.ui.demo.DemoPaymentWalkthrough
 import com.lipabill.app.ui.repeat.ManualRepeatScreen
@@ -103,10 +104,7 @@ import com.lipabill.app.pay.PayLink
 import com.lipabill.app.ui.paylink.PayProfileScreen
 import com.lipabill.app.ussd.AccessibilityHelper
 import com.lipabill.app.ussd.PendingPaymentReceipt
-import com.lipabill.app.ussd.RepeatOutcome
-import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import com.lipabill.app.ussd.UssdAccessibilityService
-import com.lipabill.app.ussd.UssdAutomationMask
 import com.lipabill.app.viewmodel.PayMoneyViewModel
 import com.lipabill.app.viewmodel.PayMethod
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
@@ -534,11 +532,7 @@ private fun AuthenticatedApp(
     var accessibilityNote by remember { mutableStateOf<String?>(null) }
 
     fun dismissMoneySheets() {
-        val fm = activity.supportFragmentManager
-        listOf(SendMoneyBottomSheetFragment.TAG, PayMoneyBottomSheetFragment.TAG).forEach { tag ->
-            (fm.findFragmentByTag(tag) as? BottomSheetDialogFragment)
-                ?.dismissAllowingStateLoss()
-        }
+        MoneySheets.dismiss(activity.supportFragmentManager)
     }
 
     fun openConsent(
@@ -548,19 +542,13 @@ private fun AuthenticatedApp(
     ) {
         if (!app.securePreferences.firstRunSetupDone) return
         val fm = activity.supportFragmentManager
-        val reopenSend = fm.findFragmentByTag(SendMoneyBottomSheetFragment.TAG) != null
-        val reopenPay = fm.findFragmentByTag(PayMoneyBottomSheetFragment.TAG) != null
+        val reopenSend = MoneySheets.isSendShowing(fm)
+        val reopenPay = MoneySheets.isPayShowing(fm)
         dismissMoneySheets()
         pendingConsentComplete = {
             onComplete?.invoke()
-            if (reopenSend && fm.findFragmentByTag(SendMoneyBottomSheetFragment.TAG) == null) {
-                SendMoneyBottomSheetFragment.newInstance()
-                    .show(fm, SendMoneyBottomSheetFragment.TAG)
-            }
-            if (reopenPay && fm.findFragmentByTag(PayMoneyBottomSheetFragment.TAG) == null) {
-                PayMoneyBottomSheetFragment.newInstance()
-                    .show(fm, PayMoneyBottomSheetFragment.TAG)
-            }
+            if (reopenSend) MoneySheets.showSend(fm)
+            if (reopenPay) MoneySheets.showPay(fm)
         }
         accessibilityNote = note
         navController.navigate(Route.Consent.of(page.toConsentRoute())) {
@@ -669,11 +657,7 @@ private fun AuthenticatedApp(
                     sendVm.select(preselect)
                 }
             }
-            val existing = activity.supportFragmentManager.findFragmentByTag(SendMoneyBottomSheetFragment.TAG)
-            if (existing == null) {
-                SendMoneyBottomSheetFragment.newInstance()
-                    .show(activity.supportFragmentManager, SendMoneyBottomSheetFragment.TAG)
-            }
+            MoneySheets.showSend(activity.supportFragmentManager)
         }
     }
 
@@ -683,11 +667,7 @@ private fun AuthenticatedApp(
                 payVm.clearMethod()
                 payVm.selectMethod(PayMethod.PAYBILL)
             }
-            val existing = activity.supportFragmentManager.findFragmentByTag(PayMoneyBottomSheetFragment.TAG)
-            if (existing == null) {
-                PayMoneyBottomSheetFragment.newInstance()
-                    .show(activity.supportFragmentManager, PayMoneyBottomSheetFragment.TAG)
-            }
+            MoneySheets.showPay(activity.supportFragmentManager)
         }
     }
 
@@ -726,25 +706,16 @@ private fun AuthenticatedApp(
             val fm = activity.supportFragmentManager
             when (target.kind) {
                 PayLink.Kind.PHONE -> {
-                    listOf(SendMoneyBottomSheetFragment.TAG, PayMoneyBottomSheetFragment.TAG)
-                        .forEach { tag ->
-                            (fm.findFragmentByTag(tag) as? BottomSheetDialogFragment)
-                                ?.dismissAllowingStateLoss()
-                        }
+                    MoneySheets.dismiss(fm)
                     sendVm.restoreAmountEntry(
                         phone = target.identifier,
                         name = null,
                         amountInput = amount
                     )
-                    SendMoneyBottomSheetFragment.newInstance()
-                        .show(fm, SendMoneyBottomSheetFragment.TAG)
+                    MoneySheets.showSend(fm)
                 }
                 PayLink.Kind.TILL -> {
-                    listOf(SendMoneyBottomSheetFragment.TAG, PayMoneyBottomSheetFragment.TAG)
-                        .forEach { tag ->
-                            (fm.findFragmentByTag(tag) as? BottomSheetDialogFragment)
-                                ?.dismissAllowingStateLoss()
-                        }
+                    MoneySheets.dismiss(fm)
                     payVm.restoreAmountEntry(
                         method = PayMethod.TILL,
                         amountInput = amount,
@@ -753,11 +724,7 @@ private fun AuthenticatedApp(
                     showPaySheet(preserveState = true)
                 }
                 PayLink.Kind.PAYBILL -> {
-                    listOf(SendMoneyBottomSheetFragment.TAG, PayMoneyBottomSheetFragment.TAG)
-                        .forEach { tag ->
-                            (fm.findFragmentByTag(tag) as? BottomSheetDialogFragment)
-                                ?.dismissAllowingStateLoss()
-                        }
+                    MoneySheets.dismiss(fm)
                     payVm.restoreAmountEntry(
                         method = PayMethod.PAYBILL,
                         amountInput = amount,
@@ -885,177 +852,35 @@ private fun AuthenticatedApp(
         }
     }
 
-    fun runStepUpAndDial(
-        flow: String,
-        prepare: suspend () -> RepeatTransactionCoordinator.PreparedRepeat?,
-        startDial: (RepeatTransactionCoordinator.PreparedRepeat) -> Boolean,
-        pendingId: Long? = null
-    ) {
-        val needCall = !hasCallPermission()
-        val needState = !hasPhoneStatePermission()
-        if (needCall || needState) {
-            pendingDialTxId = pendingId
+    val paymentDial = PaymentDialCoordinator(
+        context = context,
+        scope = scope,
+        navController = navController,
+        hasCallPermission = { hasCallPermission() },
+        hasPhoneStatePermission = { hasPhoneStatePermission() },
+        requestPhoneConsent = { onReady ->
             openConsent(FirstRunPage.Phone) {
-                if (hasCallPermission() && hasPhoneStatePermission()) {
-                    runStepUpAndDial(flow, prepare, startDial, pendingId)
-                }
+                if (hasCallPermission() && hasPhoneStatePermission()) onReady()
             }
-            return
+        },
+        onPendingDialTxId = { pendingDialTxId = it },
+        dismissMoneySheets = { dismissMoneySheets() },
+        navigateHome = { navigateHome() },
+        finishAudit = { auditId, outcome, detail ->
+            app.repeatRepository.finish(auditId, outcome, detail)
         }
-        scope.launch {
-            val prepared = prepare()
-            if (prepared == null) {
-                AppMetrics.paymentAborted(flow, "prepare_failed")
-                Toast.makeText(
-                    context,
-                    "Couldn’t start payment — check amount and recipient",
-                    Toast.LENGTH_LONG
-                ).show()
-                return@launch
-            }
-            AppMetrics.paymentStarted(flow)
-            if (!startDial(prepared)) {
-                Toast.makeText(
-                    context,
-                    "Payment didn’t start. Turn off other accessibility services, then try again.",
-                    Toast.LENGTH_LONG
-                ).show()
-                return@launch
-            }
-            PendingPaymentReceipt.capture(prepared)
-            dismissMoneySheets()
-            navController.navigate(Route.Processing(prepared.auditId).path) {
-                popUpTo(Route.List.path) { inclusive = false }
-                launchSingleTop = true
-            }
-        }
-    }
-
-    suspend fun finishDemoWalkthrough(auditId: Long, cancelled: Boolean) {
-        if (cancelled) {
-            app.repeatRepository.finish(
-                auditId,
-                RepeatOutcome.USER_CANCELLED,
-                "demo_cancelled"
-            )
-            PendingPaymentReceipt.clear()
-            navigateHome()
-            return
-        }
-        val snap = PendingPaymentReceipt.peek(auditId)
-        if (snap != null) {
-            PendingPaymentReceipt.queueDemoHomeReveal(snap)
-        }
-        app.repeatRepository.finish(
-            auditId,
-            RepeatOutcome.COMPLETED_TO_PIN,
-            "demo_walkthrough"
-        )
-        navController.navigate(Route.Processing(auditId).path) {
-            popUpTo(Route.List.path) { inclusive = false }
-            launchSingleTop = true
-        }
-    }
-
-    /**
-     * Debug / Maestro only. Prefers the real USSD mask (progress → Yes/No → PIN)
-     * when Accessibility is on; otherwise the Compose fallback. Never dials *334#
-     * and never stores PIN digits.
-     */
-    fun runDemoPaymentWalkthrough(
-        flow: String,
-        prepare: suspend () -> RepeatTransactionCoordinator.PreparedRepeat?,
-        summary: () -> Triple<String, String, String>?
-    ) {
-        scope.launch {
-            val prepared = prepare()
-            if (prepared == null) {
-                AppMetrics.paymentAborted(flow, "prepare_failed")
-                Toast.makeText(
-                    context,
-                    "Couldn’t start payment — check amount and recipient",
-                    Toast.LENGTH_LONG
-                ).show()
-                return@launch
-            }
-            AppMetrics.paymentStarted(flow)
-            PendingPaymentReceipt.capture(prepared)
-            dismissMoneySheets()
-            val labels = summary()
-            val amountLabel = labels?.third ?: formatKesMoney(prepared.amount)
-            val detail = labels?.let { "${it.first} · ${it.second}" }
-                ?: listOfNotNull(
-                    prepared.transaction.counterpartyName,
-                    prepared.transaction.counterpartyPhone
-                ).joinToString(" · ").ifBlank { "Demo payment" }
-            val auditId = prepared.auditId
-            val maskSummary = "$amountLabel\n$detail\nDemo walkthrough — no USSD dial"
-            val usedMask = UssdAutomationMask.startDebugWalkthrough(
-                totalSteps = prepared.plan.actions.size.coerceAtLeast(1),
-                summary = maskSummary,
-                onComplete = {
-                    scope.launch { finishDemoWalkthrough(auditId, cancelled = false) }
-                },
-                onCancel = {
-                    scope.launch { finishDemoWalkthrough(auditId, cancelled = true) }
-                }
-            )
-            if (!usedMask) {
-                navController.navigate(
-                    Route.DemoPayment(
-                        auditId = auditId,
-                        amountLabel = amountLabel,
-                        detail = detail
-                    ).path
-                ) {
-                    popUpTo(Route.List.path) { inclusive = false }
-                    launchSingleTop = true
-                }
-            }
-        }
-    }
+    )
 
     fun runStepUpAndDial(repeatVm: RepeatTransactionViewModel) {
-        runStepUpAndDial(
-            flow = "repeat",
-            prepare = { repeatVm.prepare() },
-            startDial = { repeatVm.startDial(it) },
-            pendingId = repeatVm.uiState.value.transaction?.id
-        )
+        paymentDial.runRepeat(repeatVm)
     }
 
     fun runStepUpAndDial(sendVm: SendMoneyViewModel) {
-        if (BuildConfig.DEBUG) {
-            runDemoPaymentWalkthrough(
-                flow = "send",
-                prepare = { sendVm.prepare() },
-                summary = { sendVm.confirmSummary() }
-            )
-            return
-        }
-        runStepUpAndDial(
-            flow = "send",
-            prepare = { sendVm.prepare() },
-            startDial = { sendVm.startDial(it) },
-            pendingId = null
-        )
+        paymentDial.runSend(sendVm)
     }
 
     fun runStepUpAndDial(payVm: PayMoneyViewModel) {
-        if (BuildConfig.DEBUG) {
-            runDemoPaymentWalkthrough(
-                flow = "pay",
-                prepare = { payVm.prepare() },
-                summary = { payVm.confirmSummary() }
-            )
-            return
-        }
-        runStepUpAndDial(
-            flow = "pay",
-            prepare = { payVm.prepare() },
-            startDial = { payVm.startDial(it) },
-            pendingId = null
-        )
+        paymentDial.runPay(payVm)
     }
 
     fun runFulizaOptIn() {
@@ -1336,7 +1161,6 @@ private fun AuthenticatedApp(
                 },
                 onRepeatTransaction = { id -> navigateRepeat(id) },
                 onOpenSend = { attemptPayment { showSendSheet() } },
-                onOpenSendTo = { contact -> attemptPayment { showSendSheet(preselect = contact) } },
                 onOpenPay = { attemptPayment { showPaySheet() } },
                 onOpenMetrics = {
                     navController.navigate(Route.Metrics.path)
@@ -1550,10 +1374,10 @@ private fun AuthenticatedApp(
                     amountLabel = amountLabel,
                     detail = detail,
                     onCancel = {
-                        scope.launch { finishDemoWalkthrough(auditId, cancelled = true) }
+                        scope.launch { paymentDial.finishDemoWalkthrough(auditId, cancelled = true) }
                     },
                     onComplete = {
-                        scope.launch { finishDemoWalkthrough(auditId, cancelled = false) }
+                        scope.launch { paymentDial.finishDemoWalkthrough(auditId, cancelled = false) }
                     }
                 )
             }

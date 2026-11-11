@@ -15,4 +15,21 @@ class WindowAdaptTest {
         assertEquals(WindowWidth.Expanded, windowFormFor(840).width)
         assertEquals(WindowWidth.Expanded, windowFormFor(1280).width)
     }
+
+    @Test
+    fun height_classes_match_short_phone_and_tall_tablet() {
+        assertEquals(WindowHeight.Compact, windowFormFor(360, 600).height)
+        assertEquals(WindowHeight.Compact, windowFormFor(360, 639).height)
+        assertEquals(WindowHeight.Medium, windowFormFor(360, 640).height)
+        assertEquals(WindowHeight.Medium, windowFormFor(360, 800).height)
+        assertEquals(WindowHeight.Expanded, windowFormFor(840, 840).height)
+        assertEquals(WindowHeight.Expanded, windowFormFor(1280, 1024).height)
+    }
+
+    @Test
+    fun money_sheet_uses_more_height_on_short_windows() {
+        assertEquals(0.94f, moneySheetHeightFraction(600), 0.001f)
+        assertEquals(0.90f, moneySheetHeightFraction(720), 0.001f)
+        assertEquals(0.88f, moneySheetHeightFraction(1000), 0.001f)
+    }
 }
