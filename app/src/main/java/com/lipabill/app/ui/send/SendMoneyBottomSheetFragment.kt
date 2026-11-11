@@ -33,14 +33,10 @@ import com.lipabill.app.R
 import com.lipabill.app.ui.permissions.paymentAccessDirective
 import com.lipabill.app.ui.sheet.EditableSheetField
 import com.lipabill.app.ui.sheet.InAppKeyboard
-import com.lipabill.app.ui.sheet.MoneyConfirmDialog
+import com.lipabill.app.ui.sheet.MoneyFlowConfirmDialog
 import com.lipabill.app.ui.sheet.MoneySheetScaffold
-import com.lipabill.app.ui.sheet.SheetFeedbackTone
-import com.lipabill.app.ui.sheet.amountExceedsBalance
-import com.lipabill.app.ui.sheet.amountStepGuidance
 import com.lipabill.app.ui.sheet.expandedSheetDialog
-import com.lipabill.app.ui.sheet.moneySheetFeedback
-import com.lipabill.app.ui.sheet.moneySheetPrimaryCta
+import com.lipabill.app.ui.sheet.rememberMoneyFlowChrome
 import com.lipabill.app.ui.sheet.rememberMoneySheetAccess
 import com.lipabill.app.ui.sheet.rememberPhoneContactPicker
 import com.lipabill.app.ui.sheet.rememberSheetEditor
@@ -57,7 +53,6 @@ import com.lipabill.app.ui.util.opensOnDigitKeys
 import com.lipabill.app.ui.util.sanitizeSheetLine
 import com.lipabill.app.ussd.UssdMenuBuilder
 import com.lipabill.app.data.repository.SendContact
-import com.lipabill.app.viewmodel.RepeatTransactionViewModel
 import com.lipabill.app.viewmodel.SendMoneyViewModel
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import com.lipabill.app.viewmodel.WalletAccount
@@ -112,7 +107,7 @@ fun SendMoneySheetContent(
     onConfirm: () -> Unit
 ) {
     val state by sendVm.uiState.collectAsStateWithLifecycle()
-    val listState by listVm.uiState.collectAsStateWithLifecycle()
+    val shownBalance by listVm.latestBalance.collectAsStateWithLifecycle()
     var showConfirm by remember { mutableStateOf(false) }
     var queryFocused by remember { mutableStateOf(false) }
     var editingRecipient by remember {
@@ -123,9 +118,6 @@ fun SendMoneySheetContent(
     }
     val sheetAccess = rememberMoneySheetAccess { sendVm.refreshGates() }
     val paymentBlock = sheetAccess.block
-    val pendingAmount = remember(state.amountInput) {
-        RepeatTransactionViewModel.parseAmount(state.amountInput)
-    }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
@@ -184,44 +176,38 @@ fun SendMoneySheetContent(
     val phone = state.selected?.normalizedPhone
         ?: UssdMenuBuilder.normalizePhoneNumber(state.query)
 
-    val shownBalance = listState.latestBalance
-    val exceedsBalance = amountExceedsBalance(shownBalance, pendingAmount)
-    val amountGuidance = amountStepGuidance(
-        onAmountStep = true,
-        exceedsBalance = exceedsBalance,
+    val chrome = rememberMoneyFlowChrome(
         amountInput = state.amountInput,
         amountValid = state.amountValid,
-        detailsGuidance = null,
-        fulizaCoversShortfall = true
-    )
-    val feedback = moneySheetFeedback(
-        blockedDirective = paymentBlock?.let { paymentAccessDirective(sheetAccess.missing) },
-        status = state.statusMessage,
-        guidance = if (!state.detailsValid) state.guidanceMessage else amountGuidance
-    )
-    val primaryCta = moneySheetPrimaryCta(
-        onAmountStep = true,
+        detailsValid = state.detailsValid,
         canConfirm = state.canSend,
         dialStarted = state.dialStarted,
-        detailsValid = state.detailsValid,
+        statusMessage = state.statusMessage,
+        detailsGuidance = state.guidanceMessage,
+        balance = shownBalance,
         paymentBlock = paymentBlock,
+        blockedDirective = paymentBlock?.let { paymentAccessDirective(sheetAccess.missing) },
         confirmLabel = "Send Now"
     )
+    val pendingAmount = chrome.pendingAmount
     val showRecipientEditor = editingRecipient || !state.detailsValid
-    val matchContacts: List<SendContact> =
+    val matchContacts = remember(state.query, state.contacts, showRecipientEditor) {
         if (showRecipientEditor && state.query.isNotBlank()) {
             state.contacts.filterNot { it.fromPhoneBook }.take(5)
         } else {
             emptyList()
         }
-    val searchMatches = matchContacts.map { contact ->
-        SendSearchMatch(
-            id = contact.transactionId,
-            name = contact.sheetName(),
-            phone = contact.normalizedPhone,
-            sentThisMonth = phoneKey(contact.normalizedPhone)
-                ?.let { state.monthlyCounts[it] } ?: 0
-        )
+    }
+    val searchMatches = remember(matchContacts, state.monthlyCounts) {
+        matchContacts.map { contact ->
+            SendSearchMatch(
+                id = contact.transactionId,
+                name = contact.sheetName(),
+                phone = contact.normalizedPhone,
+                sentThisMonth = phoneKey(contact.normalizedPhone)
+                    ?.let { state.monthlyCounts[it] } ?: 0
+            )
+        }
     }
     val density = LocalDensity.current
     var searchFieldHeightPx by remember { mutableIntStateOf(0) }
@@ -302,8 +288,7 @@ fun SendMoneySheetContent(
                         SendSearchResultsOverlay(
                             matches = searchMatches,
                             onSelect = { match ->
-                                val index = searchMatches.indexOf(match)
-                                matchContacts.getOrNull(index)?.let { contact ->
+                                matchContacts.firstOrNull { it.transactionId == match.id }?.let { contact ->
                                     sendVm.select(contact)
                                     focusAmount()
                                 }
@@ -335,8 +320,8 @@ fun SendMoneySheetContent(
         } else {
             null
         },
-        ctaLabel = primaryCta.label,
-        ctaEnabled = primaryCta.enabled,
+        ctaLabel = chrome.primaryCta.label,
+        ctaEnabled = chrome.primaryCta.enabled,
         onCta = {
             runMoneySheetPrimaryCta(
                 onAmountStep = true,
@@ -351,8 +336,8 @@ fun SendMoneySheetContent(
         onBackspace = sendVm::deleteAmountKey,
         onApplyAddUpAmount = sendVm::setAmountInput,
         onClearAmount = { sendVm.setAmountInput("") },
-        feedbackMessage = feedback?.first,
-        feedbackTone = feedback?.second ?: SheetFeedbackTone.Hint,
+        feedbackMessage = chrome.feedbackMessage,
+        feedbackTone = chrome.feedbackTone,
         fulizaCoversShortfall = true,
         footnote = "You’ll enter your PIN on LipaBill’s secure keypad.",
         modifier = Modifier.fillMaxWidth()
@@ -360,20 +345,15 @@ fun SendMoneySheetContent(
 
     sheetAccess.Dialog()
 
-    if (showConfirm && state.canSend) {
-        val summary = sendVm.confirmSummary()
-        if (summary != null) {
-            val (_, detail, amountLabel) = summary
-            MoneyConfirmDialog(
-                amountLabel = amountLabel,
-                detail = detail,
-                confirmLabel = "Send Now",
-                onDismiss = { showConfirm = false },
-                onConfirm = {
-                    showConfirm = false
-                    onConfirm()
-                }
-            )
+    MoneyFlowConfirmDialog(
+        visible = showConfirm,
+        canConfirm = state.canSend,
+        confirmLabel = "Send Now",
+        summary = sendVm.confirmSummary(),
+        onDismiss = { showConfirm = false },
+        onConfirm = {
+            showConfirm = false
+            onConfirm()
         }
-    }
+    )
 }
