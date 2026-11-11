@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -42,7 +43,7 @@ internal fun challengeCardKind(status: ChallengeStatus): ChallengeCardKind = whe
     ChallengeStatus.CANCELLED -> ChallengeCardKind.OFFER
 }
 
-enum class ChallengeSubject { FOOD_DELIVERY, PAYEE, FULIZA, QUIET, FEE, PAYDAY, DIY }
+enum class ChallengeSubject { FOOD_DELIVERY, PAYEE, FULIZA, QUIET, FEE, PAYDAY, DIY, OTHER }
 
 internal fun challengeSubject(templateId: String): ChallengeSubject = when {
     templateId == ChallengeTemplates.fulizaFree7Days.id ||
@@ -53,7 +54,7 @@ internal fun challengeSubject(templateId: String): ChallengeSubject = when {
     ChallengeTemplates.diyOf(templateId) != null -> ChallengeSubject.DIY
     ChallengeTemplates.payeeOf(templateId) != null -> ChallengeSubject.PAYEE
     templateId == ChallengeTemplates.foodDelivery3Days.id -> ChallengeSubject.FOOD_DELIVERY
-    else -> ChallengeSubject.FOOD_DELIVERY
+    else -> ChallengeSubject.OTHER
 }
 
 data class ChallengeCardState(
@@ -241,7 +242,6 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
             feesDodgedCents = fees,
             duoPending = duo
         ).filterNot { it.badge == HabitBadge.DUO_PENDING }
-        rememberEarned(badges)
         val patterns = core.read.patterns.filterNot { it.id in core.dismissed }
         HabitsUiState(
             points = points,
@@ -261,7 +261,9 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
                 .map { it.payee }
                 .firstOrNull { payee -> taught.none { it.startsWith(HabitPatterns.payeeKey(payee) + "=") } }
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HabitsUiState())
+    }
+        .onEach { state -> rememberEarned(state.badges) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HabitsUiState())
 
     init {
         refresh()

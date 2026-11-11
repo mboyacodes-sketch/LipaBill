@@ -56,6 +56,8 @@ import androidx.compose.ui.unit.sp
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.ui.components.CounterpartyAvatar
+import com.lipabill.app.ui.components.txAmountLook
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.CardWhite
@@ -67,6 +69,7 @@ import com.lipabill.app.ui.theme.Income
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
+import com.lipabill.app.ui.theme.asPillLabel
 import com.lipabill.app.ui.util.copyPlainText
 import com.lipabill.app.ui.util.displayLabel
 import com.lipabill.app.ui.util.formatKes
@@ -85,9 +88,7 @@ private val LabelGrey: Color
     get() = Mute
 
 /**
- * Floating ticket-style receipt. Host must blur the content underneath
- * (same composition) — see TransactionListScreen — so the backdrop reads
- * as bokeh, not a dim overlay.
+ * Floating ticket-style receipt over a light frost scrim.
  * Tap the backdrop (or X / back) to dismiss.
  */
 @Composable
@@ -97,16 +98,14 @@ fun TransactionReceiptPopup(
     onRepeat: ((Long) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val amount = txAmountLook(tx)
     val fuliza = tx.type == TransactionType.FULIZA
     val outgoing = tx.type.isOutgoing()
-    val amountColor = if (outgoing || fuliza) Expense else Income
-    val amountPrefix = when {
-        fuliza -> ""
-        outgoing -> "−"
-        else -> "+"
-    }
+    val amountColor = if (amount.outgoingStyle) Expense else Income
+    val amountPrefix = amount.prefix
     val canPay = UssdMenuBuilder.canRepeat(tx)
     val typeLabel = tx.type.displayLabel()
+    val avatarName = tx.counterpartyName?.takeIf { it.isNotBlank() } ?: tx.source.label
 
     BackHandler(onBack = onDismiss)
 
@@ -160,25 +159,15 @@ fun TransactionReceiptPopup(
                             .padding(top = 16.dp, bottom = 12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .border(1.5.dp, Accent, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = (tx.counterpartyName?.takeIf { it.isNotBlank() }
-                                    ?: tx.source.label)
-                                    .trim()
-                                    .firstOrNull()
-                                    ?.uppercaseChar()
-                                    ?.toString()
-                                    ?: "?",
-                                color = Accent,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
+                        CounterpartyAvatar(
+                            name = avatarName,
+                            fill = Color.Transparent,
+                            contentColor = Accent,
+                            size = 44.dp,
+                            border = Accent,
+                            textStyle = HomeType.section.copy(fontSize = 18.sp),
+                            fontWeight = FontWeight.Medium
+                        )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = tx.counterpartyName?.takeIf { it.isNotBlank() } ?: tx.source.label,
@@ -339,15 +328,16 @@ fun TransactionReceiptPopup(
 private fun StatusPill(text: String, filled: Boolean) {
     Text(
         text = text,
-        style = HomeType.label,
+        style = HomeType.label.asPillLabel(),
         color = if (filled) OnAccent else Ink,
+        maxLines = 1,
         modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(percent = 50))
             .background(if (filled) Accent else DetailFill)
             .border(
                 width = if (filled) 0.dp else 1.dp,
                 color = if (filled) Color.Transparent else Hairline,
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(percent = 50)
             )
             .padding(horizontal = 10.dp, vertical = 4.dp)
     )

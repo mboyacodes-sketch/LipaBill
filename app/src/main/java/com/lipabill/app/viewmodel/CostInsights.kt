@@ -1,6 +1,7 @@
 package com.lipabill.app.viewmodel
 
 import com.lipabill.app.data.foldMerchantName
+import com.lipabill.app.data.foldPayeeName as foldPayeeKey
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.engage.CategoryMatcher
@@ -22,14 +23,6 @@ import kotlin.math.roundToLong
 private val REVERSED_ORIGINAL = Regex(
     "original\\s+transaction\\s+([A-Z0-9]{8,12})",
     RegexOption.IGNORE_CASE
-)
-
-private val PLACEHOLDER_PAYBILL = Regex("""^paybill\s+(\d+)$""")
-private val PLACEHOLDER_TILL = Regex("""^till\s+(\d+)$""")
-private val PLACEHOLDER_POCHI = Regex("""^pochi(?:\s+la\s+biashara)?\s+(\S+)$""")
-/** Branch / suburb suffixes only — avoid bare "town" so names like "China Town" stay intact. */
-private val TRAILING_AREA = Regex(
-    """\s+(westlands|kilimani|lavington|karen|cbd|branch|mall|centre|center|plaza|junction|stage)$"""
 )
 
 /** Code of the payment a reversal undid. Null for anything that is not a reversal. */
@@ -98,23 +91,8 @@ fun payeeKey(tx: MpesaTransaction): String? {
     return foldPayeeName(name)
 }
 
-/** Fold dial placeholders and branch suffixes into a comparable merchant key. */
-fun foldPayeeName(raw: String): String {
-    val folded = foldMerchantName(raw) ?: return raw.trim().lowercase(Locale.US)
-    PLACEHOLDER_PAYBILL.matchEntire(folded)?.let { return "bill:${it.groupValues[1]}" }
-    PLACEHOLDER_TILL.matchEntire(folded)?.let { return "till:${it.groupValues[1]}" }
-    PLACEHOLDER_POCHI.matchEntire(folded)?.let { return "pochi:${it.groupValues[1]}" }
-    return stripTrailingArea(folded)
-}
-
-private fun stripTrailingArea(name: String): String {
-    var s = name
-    while (true) {
-        val next = TRAILING_AREA.replace(s, "").trim()
-        if (next == s || next.isEmpty()) return s
-        s = next
-    }
-}
+/** Stable merchant key; lives in data, re-exported so Insights tests keep calling this package. */
+fun foldPayeeName(raw: String): String = foldPayeeKey(raw)
 
 /**
  * Keys that may have been stored for essentials/watched before phone-first identity.
@@ -124,7 +102,7 @@ fun payeeMarkCandidates(tx: MpesaTransaction, key: String = payeeKey(tx).orEmpty
     val out = linkedSetOf<String>()
     if (key.isNotEmpty()) out += key
     foldMerchantName(tx.counterpartyName)?.let { out += it }
-    foldMerchantName(tx.counterpartyName)?.let { out += stripTrailingArea(it) }
+    tx.counterpartyName?.let { out += foldPayeeName(it) }
     phoneKey(tx.counterpartyPhone)?.let { out += "tel:$it" }
     tx.counterpartyPhone?.filter { it.isDigit() }?.takeIf { it.isNotEmpty() }?.let { out += "tel:$it" }
     return out
@@ -133,10 +111,21 @@ fun payeeMarkCandidates(tx: MpesaTransaction, key: String = payeeKey(tx).orEmpty
 private fun marked(candidates: Set<String>, marks: Set<String>): Boolean =
     marks.isNotEmpty() && candidates.any { it in marks }
 
-private fun payeeName(tx: MpesaTransaction): String =
+internal fun payeeName(tx: MpesaTransaction): String =
     tx.counterpartyName?.trim()?.takeIf { it.isNotEmpty() }
         ?: tx.counterpartyPhone?.trim()?.takeIf { it.isNotEmpty() }
         ?: "Unknown"
+
+/**
+ * Shop, bill or company — not a person you Send Money to.
+ * Same rules as Coming Up regulars; Insights uses this to split people vs business spend.
+ */
+fun isBusinessPayee(tx: MpesaTransaction): Boolean {
+    if (tx.type == TransactionType.AIRTIME) return true
+    val key = payeeKey(tx) ?: return tx.type == TransactionType.PAYBILL ||
+        tx.type == TransactionType.BUY_GOODS
+    return isBusinessLikeRegular(payeeName(tx), key, tx.type)
+}
 
 enum class Cadence(val days: Int, val label: String) {
     WEEKLY(7, "Weekly"),
@@ -166,6 +155,55 @@ private val REGULAR_TYPES = setOf(
     TransactionType.POCHI
 )
 
+/** Whole tokens that mark a company, utility or role — not a person you send money to. */
+private val BUSINESS_TOKENS = setOf(
+    "ltd", "limited", "plc", "llc", "inc", "corp", "company", "co", "holdings",
+    "bank", "insurance", "assurance", "sacco", "cooperative", "co-operative",
+    "kenya", "nairobi", "safaricom", "airtel", "telkom",
+    "kplc", "nwasco", "sewerage", "water", "power",
+    "dstv", "gotv", "showmax", "netflix", "zuku", "jamii", "faiba", "liquid",
+    "paybill", "till", "supermarket", "mall", "hotel", "hospital", "clinic",
+    "school", "academy", "university", "college", "church", "ministry",
+    "landlord", "rent", "estate", "apartments", "housing", "homes", "properties"
+)
+
+/** Phrases matched anywhere in the folded name. */
+private val BUSINESS_PHRASES = listOf(
+    "kenya power", "nairobi water", "co-operative", "real estate"
+)
+
+/** Single-token brands that look like a name otherwise. */
+private val BUSINESS_BRANDS = setOf(
+    "netflix", "showmax", "dstv", "gotv", "zuku", "faiba", "jumia", "glovo",
+    "uber", "bolt", "little", "startimes", "azam", "canal", "youtube", "spotify",
+    "google", "apple", "microsoft", "amazon", "paypal", "m-pesa", "mpesa"
+)
+
+/**
+ * Coming-up / regulars should surface bills and subscriptions (usually month to month),
+ * not family and friends. Till and Paybill are businesses; Send Money / Pochi need a
+ * business-like name. Phone-keyed sends are people unless the SMS name looks corporate.
+ */
+fun isBusinessLikeRegular(
+    name: String,
+    key: String,
+    type: TransactionType
+): Boolean {
+    if (type == TransactionType.PAYBILL || type == TransactionType.BUY_GOODS) return true
+    if (key.startsWith("bill:") || key.startsWith("till:")) return true
+    val folded = foldMerchantName(name) ?: name.trim().lowercase(Locale.US)
+    if (folded.isEmpty()) return false
+    if (BUSINESS_BRANDS.any { folded == it || folded.startsWith("$it ") }) return true
+    if (BUSINESS_PHRASES.any { folded.contains(it) }) return true
+    val tokens = folded.split(Regex("[\\s./\\-_]+")).filter { it.isNotBlank() }
+    if (tokens.any { it in BUSINESS_TOKENS }) return true
+    if (folded.any { it.isDigit() }) return true
+    // Human-like: one to four alphabetic name tokens, no business cues (JOHN KAMAU, Mary).
+    if (key.startsWith("tel:")) return false
+    if (tokens.isEmpty() || tokens.size > 4) return false
+    val personLike = tokens.all { part -> part.all { it.isLetter() || it == '\'' } }
+    return !personLike
+}
 
 private fun cadenceFor(medianDays: Long): Cadence? = when (medianDays) {
     in 4L..10L -> Cadence.WEEKLY
@@ -188,12 +226,14 @@ private fun amountsStable(amounts: List<Double>, typical: Double): Boolean {
 }
 
 /**
- * Bills and standing payments: the same payee, a similar amount, on a steady rhythm
- * across the whole ledger. Several payments on one day count as one. Three+ distinct days
- * is the normal path: most gaps close to the typical gap and most amounts close to the
- * typical amount (a shop with changing baskets is a habit, not a regular). Two days still
- * qualify when the gap maps to a cadence and the amounts stay close (short SMS history).
- * Needs a payment recent enough that the rhythm has not stopped. Most expensive per month first.
+ * Bills and standing payments: the same business payee, a similar amount, on a steady rhythm
+ * across the whole ledger. People you send money to are left out — Coming up is for
+ * subscriptions and scheduled business payments (usually month to month). Several payments
+ * on one day count as one. Three+ distinct days is the normal path: most gaps close to the
+ * typical gap and most amounts close to the typical amount (a shop with changing baskets is
+ * a habit, not a regular). Two days still qualify when the gap maps to a cadence and the
+ * amounts stay close (short SMS history). Needs a payment recent enough that the rhythm has
+ * not stopped. Most expensive per month first.
  */
 fun detectRegulars(
     txs: Iterable<MpesaTransaction>,
@@ -210,6 +250,10 @@ fun detectRegulars(
     for ((key, payments) in byPayee) {
         if (key == null) continue
         val ordered = payments.sortedBy { it.timestampMillis }
+        // Prefer a named SMS over a later phone-only row for display + legacy marks.
+        val named = ordered.lastOrNull { !it.counterpartyName.isNullOrBlank() } ?: ordered.last()
+        val displayName = payeeName(named)
+        if (!isBusinessLikeRegular(displayName, key, named.type)) continue
         val byDay = ordered
             .groupBy { Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDate() }
             .mapValues { (_, list) -> list.sumOf { it.amount ?: 0.0 } }
@@ -235,12 +279,10 @@ fun detectRegulars(
         }
         val lastPaid = dates.last()
         if (ChronoUnit.DAYS.between(lastPaid, today) > typicalGap * 2 + 3) continue
-        // Prefer a named SMS over a later phone-only row for display + legacy marks.
-        val named = ordered.lastOrNull { !it.counterpartyName.isNullOrBlank() } ?: ordered.last()
         val markKeys = ordered.flatMapTo(linkedSetOf()) { payeeMarkCandidates(it, key) }
         regulars += RegularPayee(
             key = key,
-            name = payeeName(named),
+            name = displayName,
             cadence = cadence,
             typicalAmount = typical,
             monthlyCost = typical * (365.25 / 12.0) / cadence.days,

@@ -40,6 +40,23 @@ class CostInsightsTest {
     }
 
     @Test
+    fun multiple_reversals_drop_each_matched_original() {
+        val a = tx(TransactionType.SENT, "Jane", 100.0, LocalDate.of(2026, 11, 1), code = "QKAAA11111")
+        val b = tx(TransactionType.SENT, "Bob", 200.0, LocalDate.of(2026, 11, 2), code = "QKBBB22222")
+        val keep = tx(TransactionType.SENT, "Sam", 50.0, LocalDate.of(2026, 11, 3), code = "QKCCC33333")
+        val revA = tx(
+            TransactionType.REVERSED, null, 100.0, LocalDate.of(2026, 11, 4), code = "RK1",
+            raw = "original transaction QKAAA11111 in favour of Jane has been reversed"
+        )
+        val revB = tx(
+            TransactionType.REVERSED, null, 200.0, LocalDate.of(2026, 11, 5), code = "RK2",
+            raw = "original transaction QKBBB22222 in favour of Bob has been reversed"
+        )
+        assertEquals(setOf("QKAAA11111", "QKBBB22222"), reversedCodes(listOf(a, b, keep, revA, revB)))
+        assertEquals(listOf(keep), withoutReversals(listOf(a, b, keep, revA, revB)))
+    }
+
+    @Test
     fun fees_count_outgoing_costs_and_withdrawals_separately() {
         val fees = feeSummary(
             listOf(
@@ -52,6 +69,19 @@ class CostInsightsTest {
         assertEquals(65.0, fees.total, 0.001)
         assertEquals(2, fees.withdrawCount)
         assertEquals(58.0, fees.withdrawFees, 0.001)
+    }
+
+    @Test
+    fun fee_summary_ignores_received_and_fuliza_costs() {
+        val fees = feeSummary(
+            listOf(
+                tx(TransactionType.RECEIVED, "Boss", 9_000.0, LocalDate.of(2026, 11, 1), cost = 50.0),
+                tx(TransactionType.FULIZA, "Due", 500.0, LocalDate.of(2026, 11, 2), cost = 12.0),
+                tx(TransactionType.SENT, "Jane", 100.0, LocalDate.of(2026, 11, 3), cost = 7.0)
+            )
+        )
+        assertEquals(7.0, fees.total, 0.001)
+        assertEquals(0, fees.withdrawCount)
     }
 
     @Test
@@ -102,7 +132,7 @@ class CostInsightsTest {
     }
 
     @Test
-    fun named_and_phone_only_sends_collapse_to_one_payee() {
+    fun named_and_phone_only_sends_collapse_to_one_key_but_people_are_not_regulars() {
         val today = LocalDate.of(2026, 11, 10)
         val phone = "254712345678"
         val pays = listOf(
@@ -110,10 +140,35 @@ class CostInsightsTest {
             tx(TransactionType.SENT, null, 500.0, LocalDate.of(2026, 10, 27), phone = "0712345678"),
             tx(TransactionType.SENT, "John Kamau", 520.0, LocalDate.of(2026, 11, 3), phone = phone)
         )
-        val regular = detectRegulars(pays, zone, today).single()
-        assertEquals("tel:712345678", regular.key)
-        assertEquals(Cadence.WEEKLY, regular.cadence)
-        assertEquals(3, regular.payments)
+        assertEquals("tel:712345678", payeeKey(pays.first()))
+        // Coming up is for bills and subscriptions, not family and friends.
+        assertTrue(detectRegulars(pays, zone, today).isEmpty())
+        assertTrue(!isBusinessLikeRegular("JOHN KAMAU", "tel:712345678", TransactionType.SENT))
+    }
+
+    @Test
+    fun monthly_subscription_and_paybill_count_as_business_regulars() {
+        val today = LocalDate.of(2026, 11, 10)
+        val dstv = listOf(
+            LocalDate.of(2026, 8, 5),
+            LocalDate.of(2026, 9, 5),
+            LocalDate.of(2026, 10, 5)
+        ).map { tx(TransactionType.PAYBILL, "DSTV Kenya", 2_450.0, it) }
+        val person = listOf(
+            LocalDate.of(2026, 8, 5),
+            LocalDate.of(2026, 9, 5),
+            LocalDate.of(2026, 10, 5)
+        ).map { tx(TransactionType.SENT, "Mary Wanjiku", 2_000.0, it, phone = "254711000111") }
+
+        val regulars = detectRegulars(dstv + person, zone, today)
+        assertEquals(1, regulars.size)
+        assertEquals("DSTV Kenya", regulars.single().name)
+        assertEquals(Cadence.MONTHLY, regulars.single().cadence)
+        assertTrue(isBusinessLikeRegular("Safaricom Limited", "safaricom limited", TransactionType.SENT))
+        assertTrue(isBusinessLikeRegular("Landlord", "landlord", TransactionType.SENT))
+        assertTrue(!isBusinessLikeRegular("Mary Wanjiku", "tel:711000111", TransactionType.SENT))
+        assertTrue(isBusinessPayee(dstv.first()))
+        assertTrue(!isBusinessPayee(person.first()))
     }
 
     @Test
@@ -409,6 +464,58 @@ class CostInsightsTest {
         )
         val daily = averageDailySpend(txs, beforeMillis = start) { it.counterpartyName == "Java House" }
         assertEquals(40.0, daily, 0.001)
+    }
+
+    @Test
+    fun business_payee_edges_brands_digits_long_names_and_airtime() {
+        assertTrue(isBusinessLikeRegular("Netflix", "netflix", TransactionType.SENT))
+        assertTrue(isBusinessLikeRegular("Shop 123", "shop 123", TransactionType.SENT))
+        assertTrue(isBusinessLikeRegular("Kenya Power", "kenya power", TransactionType.POCHI))
+        assertTrue(
+            !isBusinessLikeRegular(
+                "A B C D E",
+                "a b c d e",
+                TransactionType.SENT
+            )
+        )
+        assertTrue(isBusinessPayee(tx(TransactionType.AIRTIME, "Airtime", 50.0, LocalDate.of(2026, 11, 1))))
+        assertTrue(isBusinessPayee(tx(TransactionType.BUY_GOODS, null, 100.0, LocalDate.of(2026, 11, 1), phone = "0700111222")))
+        assertTrue(isOwnMoneyMove(tx(TransactionType.SAVINGS, "M-Shwari", 100.0, LocalDate.of(2026, 11, 1))))
+        assertTrue(isOwnMoneyMove(tx(TransactionType.DEPOSIT, "M-Shwari", 100.0, LocalDate.of(2026, 11, 1))))
+        assertTrue(!isOwnMoneyMove(tx(TransactionType.DEPOSIT, "Agent", 100.0, LocalDate.of(2026, 11, 1))))
+    }
+
+    @Test
+    fun cadence_copy_covers_overdue_today_and_upcoming() {
+        val today = LocalDate.of(2026, 11, 11)
+        fun regular(due: LocalDate) = RegularPayee(
+            key = "bill:1",
+            name = "Fibre",
+            cadence = Cadence.MONTHLY,
+            typicalAmount = 2_999.0,
+            monthlyCost = 2_999.0,
+            lastPaid = due.minusDays(30),
+            nextDue = due,
+            payments = 3
+        )
+        assertTrue(regularCadenceCopy(regular(today.minusDays(2)), today).contains("was due"))
+        assertTrue(regularCadenceCopy(regular(today), today).contains("due today"))
+        assertTrue(regularCadenceCopy(regular(today.plusDays(5)), today).startsWith("Monthly · next"))
+    }
+
+    @Test
+    fun payee_mark_candidates_include_name_and_phone_aliases() {
+        val tx = tx(
+            TransactionType.SENT,
+            "JOHN KAMAU",
+            500.0,
+            LocalDate.of(2026, 11, 1),
+            phone = "254712345678"
+        )
+        val marks = payeeMarkCandidates(tx)
+        assertTrue(marks.contains("tel:712345678"))
+        assertTrue(marks.contains("john kamau"))
+        assertTrue(marks.contains("tel:254712345678") || marks.any { it.startsWith("tel:") })
     }
 
     @Test

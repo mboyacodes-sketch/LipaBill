@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.map
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -108,6 +109,12 @@ data class AnalyticsSummary(
     val dayCount: Long = 1L,
     val byType: List<TypeBreakdown> = emptyList(),
     val topCounterparties: List<CounterpartySpend> = emptyList(),
+    /** Top people (Send Money / person-like), separate from [topBusinesses]. */
+    val topPeople: List<CounterpartySpend> = emptyList(),
+    /** Top shops, bills and companies in the period. */
+    val topBusinesses: List<CounterpartySpend> = emptyList(),
+    val peopleSpendTotal: Double = 0.0,
+    val businessSpendTotal: Double = 0.0,
     val txnCount: Int = 0,
     val range: AnalyticsRange = AnalyticsRange.DAYS_30,
     val selectedYear: Int? = null,
@@ -208,9 +215,6 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     private val searchQuery = MutableStateFlow("")
     private val typeFilter = MutableStateFlow<TransactionType?>(null)
     private val sourceFilter = MutableStateFlow<MoneySource?>(null)
-    private val queryTypeSource = combine(searchQuery, typeFilter, sourceFilter) { query, type, source ->
-        Triple(query, type, source)
-    }
     private val walletAccount = MutableStateFlow(WalletAccount.MPESA)
     private val analyticsRange = MutableStateFlow(AnalyticsRange.DAYS_30)
     private val analyticsYear = MutableStateFlow<Int?>(null)
@@ -240,96 +244,111 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         region to enabled.ifEmpty { region.sources }
     }
 
-    private val listCore: StateFlow<TransactionListUiState> = combine(
-        combine(
-            combine(
-                mpesaLedger,
-                fulizaLedger,
-                walletAccount,
-                queryTypeSource,
-                regionAndSources
-            ) { mpesa, fuliza, account, queryType, regionSources ->
-                val (query, requestedType, requestedSource) = queryType
-                val (region, sources) = regionSources
-                val regional = mpesa.filter { it.source in sources }
-                val regionalFuliza = if (region.hasFuliza) fuliza else emptyList()
-                val selected =
-                    if (account == WalletAccount.FULIZA && region.hasFuliza) {
-                        WalletAccount.FULIZA
-                    } else {
-                        WalletAccount.MPESA
-                    }
-                val ledger = if (selected == WalletAccount.FULIZA) regionalFuliza else regional
-                val availableSources = availableMoneySources(
-                    txs = ledger,
-                    primary = region.primaryWallet,
-                    catalog = sources
-                )
-                val activeSource = requestedSource?.takeIf { it in availableSources }
-                val sourced = if (activeSource == null) {
-                    ledger
-                } else {
-                    ledger.filter { it.source == activeSource }
-                }
-                val balanceSource = activeSource ?: region.primaryWallet
-                val available = sourced.map { it.type }.inCategoryOrder()
-                val activeType = requestedType?.takeIf { it in available }
-                WalletSlice(
-                    visible = sourced.filter { tx ->
-                        tx.matchesLedgerQuery(query) &&
-                            (activeType == null || tx.type == activeType)
-                    },
-                    analytics = sourced,
-                    mpesaBalance = regional.firstOrNull {
-                        it.source == balanceSource && it.balance != null
-                    }?.balance,
-                    fulizaStatus = latestFulizaStatus(regionalFuliza),
-                    account = selected,
-                    typeFilter = activeType,
-                    availableTypes = available,
-                    sourceFilter = activeSource,
-                    availableSources = availableSources,
-                    showSendPay = region.canSendPay,
-                    showFuliza = region.hasFuliza
-                )
-            },
-            hasSmsPermission,
-            scan,
-            rangeState,
-            insightMarks
-        ) { wallet, smsOk, s, range, marks ->
-            val (scanning, message) = s
-            TransactionListUiState(
-                grouped = groupByDay(wallet.visible),
-                isScanning = scanning,
-                scanMessage = message,
-                hasSmsPermission = smsOk,
-                latestBalance = wallet.mpesaBalance,
-                fulizaOutstanding = wallet.fulizaStatus?.outstanding,
-                fulizaDue = wallet.fulizaStatus?.dueDate,
-                account = wallet.account,
-                analytics = buildAnalyticsSummary(wallet.analytics, range, wallet.account, marks),
-                typeFilter = wallet.typeFilter,
-                availableTypes = wallet.availableTypes,
-                sourceFilter = wallet.sourceFilter,
-                availableSources = wallet.availableSources,
-                showSendPay = wallet.showSendPay,
-                showFuliza = wallet.showFuliza
-            )
-        },
-        searchQuery
-    ) { core, query ->
-        core.copy(searchQuery = query)
+    /**
+     * Source-filtered ledger + balance — shared by home list and Insights.
+     * Search/type stay off this pipe so typing does not rebuild analytics.
+     */
+    private val walletBase: StateFlow<WalletBase> = combine(
+        mpesaLedger,
+        fulizaLedger,
+        walletAccount,
+        sourceFilter,
+        regionAndSources
+    ) { mpesa, fuliza, account, requestedSource, regionSources ->
+        val (region, sources) = regionSources
+        val regional = mpesa.filter { it.source in sources }
+        val regionalFuliza = if (region.hasFuliza) fuliza else emptyList()
+        val selected =
+            if (account == WalletAccount.FULIZA && region.hasFuliza) {
+                WalletAccount.FULIZA
+            } else {
+                WalletAccount.MPESA
+            }
+        val ledger = if (selected == WalletAccount.FULIZA) regionalFuliza else regional
+        val availableSources = availableMoneySources(
+            txs = ledger,
+            primary = region.primaryWallet,
+            catalog = sources
+        )
+        val activeSource = requestedSource?.takeIf { it in availableSources }
+        val sourced = if (activeSource == null) {
+            ledger
+        } else {
+            ledger.filter { it.source == activeSource }
+        }
+        val balanceSource = activeSource ?: region.primaryWallet
+        WalletBase(
+            sourced = sourced,
+            mpesaBalance = regional.firstOrNull {
+                it.source == balanceSource && it.balance != null
+            }?.balance,
+            fulizaStatus = latestFulizaStatus(regionalFuliza),
+            account = selected,
+            sourceFilter = activeSource,
+            availableSources = availableSources,
+            showSendPay = region.canSendPay,
+            showFuliza = region.hasFuliza
+        )
     }
         .flowOn(Dispatchers.Default)
         // Eager so enabling a rail in Settings updates home chips before you return.
-        .stateIn(
-            viewModelScope,
-            SharingStarted.Eagerly,
-            TransactionListUiState()
-        )
+        .stateIn(viewModelScope, SharingStarted.Eagerly, WalletBase())
 
-    val uiState: StateFlow<TransactionListUiState> = listCore
+    /** Home list grouping — ignores analytics range / insight marks. */
+    private val listBody: StateFlow<TransactionListUiState> = combine(
+        walletBase,
+        searchQuery,
+        typeFilter,
+        hasSmsPermission,
+        scan
+    ) { wallet, query, requestedType, smsOk, s ->
+        val available = wallet.sourced.map { it.type }.inCategoryOrder()
+        val activeType = requestedType?.takeIf { it in available }
+        val visible = wallet.sourced.filter { tx ->
+            tx.matchesLedgerQuery(query) &&
+                (activeType == null || tx.type == activeType)
+        }
+        val (scanning, message) = s
+        TransactionListUiState(
+            grouped = groupByDay(visible),
+            isScanning = scanning,
+            scanMessage = message,
+            hasSmsPermission = smsOk,
+            latestBalance = wallet.mpesaBalance,
+            fulizaOutstanding = wallet.fulizaStatus?.outstanding,
+            fulizaDue = wallet.fulizaStatus?.dueDate,
+            account = wallet.account,
+            searchQuery = query,
+            typeFilter = activeType,
+            availableTypes = available,
+            sourceFilter = wallet.sourceFilter,
+            availableSources = wallet.availableSources,
+            showSendPay = wallet.showSendPay,
+            showFuliza = wallet.showFuliza
+        )
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, TransactionListUiState())
+
+    /** Insights summary — ignores search / type filter / day grouping. */
+    private val analyticsSummary: StateFlow<AnalyticsSummary> = combine(
+        walletBase,
+        rangeState,
+        insightMarks
+    ) { wallet, range, marks ->
+        buildAnalyticsSummary(wallet.sourced, range, wallet.account, marks)
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AnalyticsSummary())
+
+    val uiState: StateFlow<TransactionListUiState> = combine(listBody, analyticsSummary) { list, analytics ->
+        list.copy(analytics = analytics)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, TransactionListUiState())
+
+    /** Balance-only for money sheets — avoids recomposing on list/search churn. */
+    val latestBalance: StateFlow<Double?> = listBody
+        .map { it.latestBalance }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     fun setSearchQuery(query: String) {
         searchQuery.value = query
@@ -547,14 +566,11 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         const val RECENT_CHALLENGE_MILLIS = 3L * 24L * 60L * 60L * 1000L
     }
 
-    private data class WalletSlice(
-        val visible: List<MpesaTransaction>,
-        val analytics: List<MpesaTransaction>,
-        val mpesaBalance: Double?,
-        val fulizaStatus: FulizaStatus?,
-        val account: WalletAccount,
-        val typeFilter: TransactionType? = null,
-        val availableTypes: List<TransactionType> = emptyList(),
+    private data class WalletBase(
+        val sourced: List<MpesaTransaction> = emptyList(),
+        val mpesaBalance: Double? = null,
+        val fulizaStatus: FulizaStatus? = null,
+        val account: WalletAccount = WalletAccount.MPESA,
         val sourceFilter: MoneySource? = null,
         val availableSources: List<MoneySource> = emptyList(),
         val showSendPay: Boolean = true,

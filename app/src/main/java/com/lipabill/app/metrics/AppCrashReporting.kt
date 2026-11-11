@@ -70,6 +70,12 @@ object AppCrashReporting {
         val cx = crashlytics ?: return
         runCatching { cx.recordException(scrubThrowableForReporting(error)) }
     }
+
+    /**
+     * Non-fatal product issue (e.g. [UssdMenuMismatch]) — same scrubbing as
+     * [recordCaught], kept separate so call sites read as intentional alerts.
+     */
+    fun recordIssue(error: Throwable) = recordCaught(error)
 }
 
 /**

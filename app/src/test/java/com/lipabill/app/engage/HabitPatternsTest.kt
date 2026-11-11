@@ -113,6 +113,34 @@ class HabitPatternsTest {
     }
 
     @Test
+    fun payday_spend_under_floor_or_small_credit_is_ignored() {
+        val credit = on(LocalDate.of(2026, 10, 28))
+        val smallSpend = listOf(
+            tx(credit, "Payroll", TransactionType.RECEIVED, 50_000_00L),
+            tx(credit + 2_600_000L, "Glovo", TransactionType.BUY_GOODS, 1_000_00L)
+        )
+        assertTrue(HabitPatterns.detect(smallSpend, now, zone).none { it is HabitPattern.PaydayRush })
+        val smallCredit = listOf(
+            tx(credit, "Payroll", TransactionType.RECEIVED, 4_000_00L),
+            tx(credit + 2_600_000L, "Glovo", TransactionType.BUY_GOODS, 2_000_00L)
+        )
+        assertTrue(HabitPatterns.detect(smallCredit, now, zone).none { it is HabitPattern.PaydayRush })
+    }
+
+    @Test
+    fun detect_ignores_rows_older_than_window() {
+        val old = now - (HabitPatterns.WINDOW_DAYS + 5) * day
+        val rows = listOf(
+            tx(old, "GLOVO KE", TransactionType.BUY_GOODS, 60_000),
+            tx(old - day, "GLOVO KE", TransactionType.BUY_GOODS, 60_000),
+            tx(old - 2 * day, "GLOVO KE", TransactionType.BUY_GOODS, 60_000),
+            tx(old - 3 * day, "GLOVO KE", TransactionType.BUY_GOODS, 60_000),
+            tx(old - 4 * day, "GLOVO KE", TransactionType.BUY_GOODS, 60_000)
+        )
+        assertTrue(HabitPatterns.detect(rows, now, zone).none { it is HabitPattern.FoodPeakDay })
+    }
+
+    @Test
     fun catch_up_needs_a_previous_visit_three_days_back() {
         val rows = listOf(
             tx(now - 2 * day, "Naivas", TransactionType.BUY_GOODS, 30_000),

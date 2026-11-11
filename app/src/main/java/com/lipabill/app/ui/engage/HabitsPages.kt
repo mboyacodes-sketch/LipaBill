@@ -68,6 +68,9 @@ import com.lipabill.app.engage.HabitLevels
 import com.lipabill.app.engage.HabitPattern
 import com.lipabill.app.engage.HabitPoints
 import com.lipabill.app.engage.centsToKes
+import com.lipabill.app.ui.LipaFilterChip
+import com.lipabill.app.ui.LipaPillButton
+import com.lipabill.app.ui.LipaSoftChip
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.ActionMetrics
 import com.lipabill.app.ui.theme.CardWhite
@@ -78,6 +81,7 @@ import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.OnPastel
+import com.lipabill.app.ui.theme.asPillLabel
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.util.formatKsh
 import com.lipabill.app.viewmodel.ChallengeOption
@@ -288,17 +292,14 @@ internal fun CatchUpCard(catchUp: CatchUp, onDismiss: () -> Unit) {
         Spacer(modifier = Modifier.height(10.dp))
         Text(stringResource(R.string.habits_catchup_safe), style = HomeType.body, color = SoftBlue)
         Spacer(modifier = Modifier.height(12.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(22.dp))
-                .background(CardWhite)
-                .clickable(onClick = onDismiss)
-                .padding(vertical = 12.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(stringResource(R.string.habits_catchup_ok), style = HomeType.rowTitle, color = Accent, fontWeight = FontWeight.Bold)
-        }
+        LipaPillButton(
+            label = stringResource(R.string.habits_catchup_ok),
+            onClick = onDismiss,
+            modifier = Modifier.fillMaxWidth(),
+            filled = false,
+            accentOutline = true,
+            maxLines = 1
+        )
     }
 }
 
@@ -381,18 +382,25 @@ internal fun PatternCard(
         Spacer(modifier = Modifier.height(12.dp))
         when (pattern) {
             is HabitPattern.PaydayRush -> {
-                val templateId = patternChallenge(pattern)
-                if (templateId != null && canStart) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val templateId = patternChallenge(pattern)
+                    if (templateId != null && canStart) {
+                        PillButton(
+                            label = stringResource(R.string.pattern_payday_cta),
+                            filled = false,
+                            accentOutline = true,
+                            onClick = { onStart(templateId) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                     PillButton(
-                        label = stringResource(R.string.pattern_payday_cta),
+                        label = stringResource(R.string.habits_not_me),
                         filled = false,
-                        accentOutline = true,
-                        onClick = { onStart(templateId) },
+                        onClick = onNotMe,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
-            is HabitPattern.AirtimeDrip -> Unit
             else -> {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val templateId = patternChallenge(pattern)
@@ -407,7 +415,12 @@ internal fun PatternCard(
                             modifier = Modifier.weight(1f)
                         )
                     }
-                    PillButton(label = stringResource(R.string.habits_not_me), filled = false, onClick = onNotMe)
+                    PillButton(
+                        label = stringResource(R.string.habits_not_me),
+                        filled = false,
+                        onClick = onNotMe,
+                        modifier = if (templateId == null || !canStart) Modifier.fillMaxWidth() else Modifier.weight(1f)
+                    )
                 }
             }
         }
@@ -522,35 +535,14 @@ internal fun PillButton(
     enabled: Boolean = true,
     accentOutline: Boolean = false
 ) {
-    val shape = RoundedCornerShape(22.dp)
-    Box(
-        modifier = modifier
-            .heightIn(min = 44.dp)
-            .clip(shape)
-            .then(
-                if (filled) {
-                    Modifier.background(if (enabled) Accent else Accent.copy(alpha = 0.35f))
-                } else {
-                    Modifier
-                        .background(CardWhite)
-                        .border(1.dp, if (accentOutline) Accent else Hairline, shape)
-                }
-            )
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            label,
-            style = HomeType.rowTitle,
-            color = when {
-                filled -> OnAccent
-                accentOutline -> Accent
-                else -> Ink
-            },
-            textAlign = TextAlign.Center
-        )
-    }
+    LipaPillButton(
+        label = label,
+        onClick = onClick,
+        modifier = modifier,
+        filled = filled,
+        enabled = enabled,
+        accentOutline = accentOutline
+    )
 }
 
 @Composable
@@ -724,19 +716,7 @@ internal fun ChallengesPage(
 
 @Composable
 private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(18.dp)
-    Text(
-        label,
-        style = HomeType.body,
-        color = if (selected) OnAccent else Ink,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier
-            .heightIn(min = 36.dp)
-            .clip(shape)
-            .then(if (selected) Modifier.background(Accent) else Modifier.background(CardWhite).border(1.dp, Hairline, shape))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp)
-    )
+    LipaFilterChip(label = label, selected = selected, onClick = onClick)
 }
 
 @Composable
@@ -788,13 +768,14 @@ private fun FlowRowChips(option: ChallengeOption, difficulty: String) {
 private fun MetaChip(label: String, hard: Boolean = false, cream: Boolean = false) {
     Text(
         label,
-        style = HomeType.caption,
+        style = HomeType.caption.asPillLabel(),
         color = when {
             hard -> ColorHard
             cream -> OnPastel
             else -> Ink
         },
         fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
             .background(
@@ -804,7 +785,7 @@ private fun MetaChip(label: String, hard: Boolean = false, cream: Boolean = fals
                     else -> SoftBlue.copy(alpha = 0.55f)
                 }
             )
-            .padding(horizontal = 10.dp, vertical = 5.dp)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
     )
 }
 
@@ -984,20 +965,7 @@ private fun DiyCard(
 
 @Composable
 private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(12.dp)
-    Text(
-        label,
-        style = HomeType.body,
-        color = if (selected) OnAccent else Ink,
-        fontWeight = FontWeight.SemiBold,
-        maxLines = 1,
-        modifier = Modifier
-            .heightIn(min = 40.dp)
-            .clip(shape)
-            .then(if (selected) Modifier.background(Accent) else Modifier.background(SoftBlue.copy(alpha = 0.45f)))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-    )
+    LipaSoftChip(label = label, selected = selected, onClick = onClick)
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -1039,6 +1007,7 @@ internal fun challengeOptionTitle(option: ChallengeOption): String = when (optio
     ChallengeSubject.QUIET -> stringResource(R.string.challenge_option_quiet, option.days)
     ChallengeSubject.FEE -> stringResource(R.string.challenge_option_fee, option.days)
     ChallengeSubject.PAYDAY -> stringResource(R.string.challenge_option_payday, option.days)
+    ChallengeSubject.OTHER -> stringResource(R.string.challenge_option_diy_body)
     ChallengeSubject.DIY -> {
         val category = ChallengeTemplates.diyOf(option.templateId)?.categoryId.orEmpty()
         when {
@@ -1062,7 +1031,7 @@ private fun challengeOptionBody(option: ChallengeOption): String = when (option.
     ChallengeSubject.QUIET -> stringResource(R.string.challenge_option_quiet_body)
     ChallengeSubject.FEE -> stringResource(R.string.challenge_option_fee_body)
     ChallengeSubject.PAYDAY -> stringResource(R.string.challenge_option_payday_body)
-    ChallengeSubject.DIY -> stringResource(R.string.challenge_option_diy_body)
+    ChallengeSubject.DIY, ChallengeSubject.OTHER -> stringResource(R.string.challenge_option_diy_body)
 }
 
 private fun challengeOptionIcon(subject: ChallengeSubject): ImageVector = when (subject) {
@@ -1071,7 +1040,7 @@ private fun challengeOptionIcon(subject: ChallengeSubject): ImageVector = when (
     ChallengeSubject.PAYEE -> Icons.Outlined.Storefront
     ChallengeSubject.QUIET -> Icons.Outlined.WbSunny
     ChallengeSubject.PAYDAY -> Icons.Outlined.Payments
-    ChallengeSubject.DIY -> Icons.Outlined.Tune
+    ChallengeSubject.DIY, ChallengeSubject.OTHER -> Icons.Outlined.Tune
 }
 
 @Composable

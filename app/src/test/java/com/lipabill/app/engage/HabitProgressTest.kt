@@ -186,4 +186,69 @@ class HabitProgressTest {
         val save = ChallengeTransaction(1, start + 1_000, "M-Shwari", TransactionType.SAVINGS, 200_000)
         assertEquals(ChallengeStatus.COMPLETED, ChallengeEvaluator.evaluate(challenge, listOf(save), end, rule).status)
     }
+
+    @Test
+    fun payday_pause_skips_essentials_but_breaks_on_other_tills() {
+        val zone = ZoneId.of("Africa/Nairobi")
+        val start = LocalDate.of(2026, 10, 5).atStartOfDay(zone).toInstant().toEpochMilli()
+        val end = LocalDate.of(2026, 10, 7).atStartOfDay(zone).toInstant().toEpochMilli()
+        val rule = CategoryRules.byId(ChallengeTemplates.paydayPause2Days.categoryId)!!
+        val challenge = ChallengeSnapshot(1, ChallengeTemplates.paydayPause2Days.id, start, end, ChallengeStatus.ACTIVE)
+        val naivas = ChallengeTransaction(1, start + 1_000, "Naivas Westlands", TransactionType.BUY_GOODS, 80_000)
+        val java = ChallengeTransaction(2, start + 2_000, "Java House", TransactionType.BUY_GOODS, 45_000)
+        assertEquals(ChallengeStatus.COMPLETED, ChallengeEvaluator.evaluate(challenge, listOf(naivas), end, rule).status)
+        val broken = ChallengeEvaluator.evaluate(challenge, listOf(naivas, java), start + 3_000, rule)
+        assertEquals(ChallengeStatus.BROKEN, broken.status)
+        assertEquals(2L, broken.breakingTransactionId)
+    }
+
+    @Test
+    fun diy_cap_breaks_only_after_spend_exceeds_cap() {
+        val zone = ZoneId.of("Africa/Nairobi")
+        val start = LocalDate.of(2026, 10, 5).atStartOfDay(zone).toInstant().toEpochMilli()
+        val end = LocalDate.of(2026, 10, 9).atStartOfDay(zone).toInstant().toEpochMilli()
+        val template = ChallengeTemplates.diy(CategoryRules.foodDelivery.categoryId, 4, 100_000)
+        val rule = CategoryRules.byId(template.categoryId)!!
+        val challenge = ChallengeSnapshot(1, template.id, start, end, ChallengeStatus.ACTIVE)
+        val small = ChallengeTransaction(1, start + 1_000, "Glovo", TransactionType.BUY_GOODS, 60_000)
+        val over = ChallengeTransaction(2, start + 2_000, "Uber Eats", TransactionType.BUY_GOODS, 50_000)
+        assertEquals(
+            ChallengeStatus.ACTIVE,
+            ChallengeEvaluator.evaluate(challenge, listOf(small), start + 1_500, rule, capCents = template.capCents).status
+        )
+        val broken = ChallengeEvaluator.evaluate(
+            challenge,
+            listOf(small, over),
+            start + 3_000,
+            rule,
+            capCents = template.capCents
+        )
+        assertEquals(ChallengeStatus.BROKEN, broken.status)
+        assertEquals(2L, broken.breakingTransactionId)
+    }
+
+    @Test
+    fun diy_spend_exactly_at_cap_stays_active() {
+        val zone = ZoneId.of("Africa/Nairobi")
+        val start = LocalDate.of(2026, 10, 5).atStartOfDay(zone).toInstant().toEpochMilli()
+        val end = LocalDate.of(2026, 10, 9).atStartOfDay(zone).toInstant().toEpochMilli()
+        val template = ChallengeTemplates.diy(CategoryRules.foodDelivery.categoryId, 4, 100_000)
+        val rule = CategoryRules.byId(template.categoryId)!!
+        val challenge = ChallengeSnapshot(1, template.id, start, end, ChallengeStatus.ACTIVE)
+        val exact = ChallengeTransaction(1, start + 1_000, "Glovo", TransactionType.BUY_GOODS, 100_000)
+        assertEquals(
+            ChallengeStatus.ACTIVE,
+            ChallengeEvaluator.evaluate(challenge, listOf(exact), start + 1_500, rule, capCents = 100_000).status
+        )
+    }
+
+    @Test
+    fun diy_of_rejects_malformed_ids() {
+        assertNull(ChallengeTemplates.diyOf("diy:food_delivery:3"))
+        assertNull(ChallengeTemplates.diyOf("diy:food_delivery:0:100"))
+        assertNull(ChallengeTemplates.diyOf("diy::3:100"))
+        assertNull(ChallengeTemplates.diyOf("diy:not_a_category:3:100"))
+        assertEquals(0L, ChallengeTemplates.capCentsOf(ChallengeTemplates.foodDelivery3Days.id))
+        assertEquals(100_000L, ChallengeTemplates.capCentsOf("diy:food_delivery:4:100000"))
+    }
 }

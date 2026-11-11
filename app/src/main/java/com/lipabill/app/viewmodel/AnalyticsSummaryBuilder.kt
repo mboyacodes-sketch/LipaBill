@@ -43,9 +43,12 @@ internal fun buildAnalyticsSummary(
         customEnd = rangeState.customEnd
     )
 
-    val filtered = txs.filter { tx ->
-        val date = Instant.ofEpochMilli(tx.timestampMillis).atZone(zone).toLocalDate()
-        !date.isBefore(from) && !date.isAfter(to)
+    // Date once per row — filtered + prior period share this walk.
+    val datedTxs = txs.map { tx ->
+        tx to Instant.ofEpochMilli(tx.timestampMillis).atZone(zone).toLocalDate()
+    }
+    val filtered = datedTxs.mapNotNull { (tx, date) ->
+        tx.takeIf { !date.isBefore(from) && !date.isAfter(to) }
     }
 
     val (income, expense) = flowTotals(filtered, account)
@@ -54,9 +57,8 @@ internal fun buildAnalyticsSummary(
         emptyList()
     } else {
         val (prevFrom, prevTo) = prior
-        txs.filter { tx ->
-            val date = Instant.ofEpochMilli(tx.timestampMillis).atZone(zone).toLocalDate()
-            !date.isBefore(prevFrom) && !date.isAfter(prevTo)
+        datedTxs.mapNotNull { (tx, date) ->
+            tx.takeIf { !date.isBefore(prevFrom) && !date.isAfter(prevTo) }
         }
     }
     val ledgerStart = txs.minOfOrNull {
@@ -83,11 +85,14 @@ internal fun buildAnalyticsSummary(
         }
         .sortedByDescending { it.total }
 
-    val counterparties = if (account == WalletAccount.MPESA) {
-        topOutgoingCounterparties(filtered)
+    val payeeSplit = if (account == WalletAccount.MPESA) {
+        outgoingPayeeSplit(filtered)
     } else {
-        emptyList()
+        OutgoingPayeeSplit(emptyList(), emptyList(), 0.0, 0.0)
     }
+    val counterparties = (payeeSplit.people + payeeSplit.businesses)
+        .sortedByDescending { it.total }
+        .take(5)
     val (inflowByDate, outflowByDate) = flowByDate(txs, zone, account)
     val outflowDates = outflowByDate.filter { it.value > 0.005 }.keys
     val dayCount = ChronoUnit.DAYS.between(from, to) + 1
@@ -133,8 +138,12 @@ internal fun buildAnalyticsSummary(
     } else {
         null
     }
-    val top = counterparties.firstOrNull()
-    val topShare = if (top != null && expense > 0.0) top.total / expense else null
+    // Prefer a business that dominated spend; otherwise the largest person share.
+    val storyLead = listOfNotNull(
+        payeeSplit.businesses.firstOrNull(),
+        payeeSplit.people.firstOrNull()
+    ).maxByOrNull { it.total }
+    val topShare = if (storyLead != null && expense > 0.0) storyLead.total / expense else null
     val story = moneyStory(
         fuliza = account == WalletAccount.FULIZA,
         hasLedger = txs.isNotEmpty(),
@@ -145,7 +154,7 @@ internal fun buildAnalyticsSummary(
         income = income,
         previousExpense = prevExpense,
         comparable = comparable,
-        topName = top?.name,
+        topName = storyLead?.name,
         topShare = topShare,
         busiestLabel = busiest?.let { busiestDayLabel(it.first) },
         endsToday = to == today
@@ -157,6 +166,10 @@ internal fun buildAnalyticsSummary(
         dayCount = dayCount,
         byType = byType,
         topCounterparties = counterparties,
+        topPeople = payeeSplit.people,
+        topBusinesses = payeeSplit.businesses,
+        peopleSpendTotal = payeeSplit.peopleTotal,
+        businessSpendTotal = payeeSplit.businessTotal,
         txnCount = filtered.size,
         range = rangeState.range,
         selectedYear = if (rangeState.range == AnalyticsRange.YEAR) selectedYear else rangeState.year,

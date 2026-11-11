@@ -42,7 +42,7 @@ fun challengePlayingName(
     ChallengeSubject.QUIET -> stringResource(R.string.challenge_playing_quiet)
     ChallengeSubject.FEE -> stringResource(R.string.challenge_playing_fee)
     ChallengeSubject.PAYDAY -> stringResource(R.string.challenge_playing_payday)
-    ChallengeSubject.DIY -> stringResource(R.string.challenge_playing_diy)
+    ChallengeSubject.DIY, ChallengeSubject.OTHER -> stringResource(R.string.challenge_playing_diy)
 }
 
 @Composable

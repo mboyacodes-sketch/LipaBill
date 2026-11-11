@@ -13,7 +13,12 @@ data class CategoryRule(
     val nameContains: List<String>,
     val types: Set<TransactionType> = emptySet(),
     /** Any outgoing payment that carried a transaction cost matches. */
-    val breaksOnFee: Boolean = false
+    val breaksOnFee: Boolean = false,
+    /**
+     * When true, type matches still skip shops in [CategoryRules.everydayEssentials]
+     * (Naivas, KPLC, pharmacy, school, …).
+     */
+    val excludeEssentials: Boolean = false
 )
 
 object CategoryRules {
@@ -63,12 +68,14 @@ object CategoryRules {
     )
 
     /**
-     * Discretionary spend after payday: Buy Goods plus known food delivery names.
+     * Discretionary spend after payday: Buy Goods that are not everyday essentials,
+     * plus known food delivery names on other types.
      */
     val discretionary = CategoryRule(
         categoryId = "discretionary",
         nameContains = foodDelivery.nameContains,
-        types = setOf(TransactionType.BUY_GOODS)
+        types = setOf(TransactionType.BUY_GOODS),
+        excludeEssentials = true
     )
 
     /** A week with no transaction costs: any payment with a fee, or a Fuliza draw, ends it. */
@@ -97,6 +104,7 @@ object CategoryMatcher {
     /** Type rules match any amount of that type; name rules match outgoing payments only. */
     fun matches(rule: CategoryRule, tx: ChallengeTransaction): Boolean = when {
         tx.amountCents <= 0L -> false
+        rule.excludeEssentials && matches(CategoryRules.everydayEssentials, tx.counterpartyName) -> false
         tx.type in rule.types -> true
         rule.breaksOnFee && tx.feeCents > 0L && tx.type.isOutgoing() -> true
         else -> tx.type.isOutgoing() && matches(rule, tx.counterpartyName)

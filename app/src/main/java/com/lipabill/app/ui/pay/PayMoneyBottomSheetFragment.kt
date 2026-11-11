@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -50,16 +51,12 @@ import com.lipabill.app.data.repository.MerchantHit
 import com.lipabill.app.ui.permissions.paymentAccessDirective
 import com.lipabill.app.ui.sheet.EditableSheetField
 import com.lipabill.app.ui.sheet.InAppKeyboard
-import com.lipabill.app.ui.sheet.MoneyConfirmDialog
+import com.lipabill.app.ui.sheet.MoneyFlowConfirmDialog
 import com.lipabill.app.ui.sheet.MoneyFlowSheetHeader
 import com.lipabill.app.ui.sheet.MoneySheetScaffold
-import com.lipabill.app.ui.sheet.SheetFeedbackTone
 import com.lipabill.app.ui.sheet.SheetTextEditor
-import com.lipabill.app.ui.sheet.amountExceedsBalance
-import com.lipabill.app.ui.sheet.amountStepGuidance
 import com.lipabill.app.ui.sheet.expandedSheetDialog
-import com.lipabill.app.ui.sheet.moneySheetFeedback
-import com.lipabill.app.ui.sheet.moneySheetPrimaryCta
+import com.lipabill.app.ui.sheet.rememberMoneyFlowChrome
 import com.lipabill.app.ui.sheet.rememberMoneySheetAccess
 import com.lipabill.app.ui.sheet.rememberPhoneContactPicker
 import com.lipabill.app.ui.sheet.rememberSheetEditor
@@ -77,6 +74,8 @@ import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ui.theme.asPillLabel
+import com.lipabill.app.ui.LipaChipHeight
 import com.lipabill.app.ui.util.InterceptSystemIme
 import com.lipabill.app.ui.util.formatMoneyInputLabel
 import com.lipabill.app.ui.util.hideKeyboard
@@ -84,7 +83,6 @@ import com.lipabill.app.ui.util.opensOnDigitKeys
 import com.lipabill.app.ui.util.sanitizeSheetLine
 import com.lipabill.app.viewmodel.PayMethod
 import com.lipabill.app.viewmodel.PayMoneyViewModel
-import com.lipabill.app.viewmodel.RepeatTransactionViewModel
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import com.lipabill.app.viewmodel.WalletAccount
 
@@ -143,7 +141,7 @@ fun PayMoneySheetContent(
     onConfirm: () -> Unit
 ) {
     val state by payVm.uiState.collectAsStateWithLifecycle()
-    val listState by listVm.uiState.collectAsStateWithLifecycle()
+    val shownBalance by listVm.latestBalance.collectAsStateWithLifecycle()
     var showConfirm by remember { mutableStateOf(false) }
     var focusedField by remember { mutableStateOf<PayFocusedField?>(null) }
     var amountFocused by remember { mutableStateOf(payVm.consumeResumeOnAmountStep()) }
@@ -151,9 +149,6 @@ fun PayMoneySheetContent(
     val context = LocalContext.current
     val sheetAccess = rememberMoneySheetAccess { payVm.refreshGates() }
     val paymentBlock = sheetAccess.block
-    val pendingAmount = remember(state.amountInput) {
-        RepeatTransactionViewModel.parseAmount(state.amountInput)
-    }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val merchantEditor = rememberSheetEditor(state.merchantQuery)
@@ -267,29 +262,20 @@ fun PayMoneySheetContent(
         null -> null
     }
 
-    val shownBalance = listState.latestBalance
-    val exceedsBalance = amountExceedsBalance(shownBalance, pendingAmount)
-    val amountGuidance = amountStepGuidance(
-        onAmountStep = true,
-        exceedsBalance = exceedsBalance,
+    val chrome = rememberMoneyFlowChrome(
         amountInput = state.amountInput,
         amountValid = state.amountValid,
-        detailsGuidance = null,
-        fulizaCoversShortfall = true
-    )
-    val feedback = moneySheetFeedback(
-        blockedDirective = paymentBlock?.let { paymentAccessDirective(sheetAccess.missing) },
-        status = state.statusMessage,
-        guidance = if (!state.detailsValid) state.guidanceMessage else amountGuidance
-    )
-    val primaryCta = moneySheetPrimaryCta(
-        onAmountStep = true,
+        detailsValid = state.detailsValid,
         canConfirm = state.canPay,
         dialStarted = state.dialStarted,
-        detailsValid = state.detailsValid,
+        statusMessage = state.statusMessage,
+        detailsGuidance = state.guidanceMessage,
+        balance = shownBalance,
         paymentBlock = paymentBlock,
+        blockedDirective = paymentBlock?.let { paymentAccessDirective(sheetAccess.missing) },
         confirmLabel = "Pay Now"
     )
+    val pendingAmount = chrome.pendingAmount
 
     MoneySheetScaffold(
         balance = shownBalance,
@@ -475,8 +461,8 @@ fun PayMoneySheetContent(
         } else {
             null
         },
-        ctaLabel = primaryCta.label,
-        ctaEnabled = primaryCta.enabled,
+        ctaLabel = chrome.primaryCta.label,
+        ctaEnabled = chrome.primaryCta.enabled,
         onCta = {
             runMoneySheetPrimaryCta(
                 onAmountStep = true,
@@ -491,8 +477,8 @@ fun PayMoneySheetContent(
         onBackspace = payVm::deleteAmountKey,
         onApplyAddUpAmount = payVm::setAmountInput,
         onClearAmount = { payVm.setAmountInput("") },
-        feedbackMessage = feedback?.first,
-        feedbackTone = feedback?.second ?: SheetFeedbackTone.Hint,
+        feedbackMessage = chrome.feedbackMessage,
+        feedbackTone = chrome.feedbackTone,
         fulizaCoversShortfall = true,
         footnote = "You’ll enter your PIN on LipaBill’s secure keypad.",
         modifier = Modifier.fillMaxWidth()
@@ -500,22 +486,17 @@ fun PayMoneySheetContent(
 
     sheetAccess.Dialog()
 
-    if (showConfirm && state.canPay) {
-        val summary = payVm.confirmSummary()
-        if (summary != null) {
-            val (_, detail, amountLabel) = summary
-            MoneyConfirmDialog(
-                amountLabel = amountLabel,
-                detail = detail,
-                confirmLabel = "Pay Now",
-                onDismiss = { showConfirm = false },
-                onConfirm = {
-                    showConfirm = false
-                    onConfirm()
-                }
-            )
+    MoneyFlowConfirmDialog(
+        visible = showConfirm,
+        canConfirm = state.canPay,
+        confirmLabel = "Pay Now",
+        summary = payVm.confirmSummary(),
+        onDismiss = { showConfirm = false },
+        onConfirm = {
+            showConfirm = false
+            onConfirm()
         }
-    }
+    )
 }
 
 private val MethodTabs = listOf(PayMethod.TILL, PayMethod.PAYBILL, PayMethod.POCHI)
@@ -586,25 +567,30 @@ private fun PayRecentChip(
     selected: Boolean,
     onClick: () -> Unit
 ) {
-    Text(
-        text = label,
-        style = HomeType.label,
-        fontWeight = FontWeight.SemiBold,
-        color = if (selected) Accent else Ink,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
+    val shape = RoundedCornerShape(percent = 50)
+    Box(
         modifier = Modifier
-            .heightIn(min = 36.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .height(LipaChipHeight)
+            .clip(shape)
             .background(if (selected) SoftBlue else CardWhite)
             .border(
                 width = if (selected) 2.dp else 1.dp,
                 color = if (selected) Accent else Hairline,
-                shape = RoundedCornerShape(18.dp)
+                shape = shape
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-    )
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            style = HomeType.label.asPillLabel(),
+            fontWeight = FontWeight.SemiBold,
+            color = if (selected) Accent else Ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
 }
 
 @Composable

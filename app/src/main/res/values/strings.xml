@@ -249,7 +249,7 @@
     <string name="checkin_guess_label">Guess · this week</string>
     <string name="checkin_points_chip">+%1$d pts</string>
     <string name="checkin_tap_hint">Tap your guess. Amounts appear after you pick.</string>
-    <string name="checkin_scoring_footer">Right guess +20 · close guess +10 · any answer keeps the streak</string>
+    <string name="checkin_scoring_footer">Guesses are for fun · finish for +60 points · any answer keeps the streak</string>
     <string name="checkin_spot_on">Spot on. +20 points</string>
     <string name="checkin_close_guess">Close. %1$s was second. +10 points</string>
     <string name="checkin_not_quite">Not quite. It was %1$s.</string>
@@ -292,6 +292,7 @@
     <string name="recap_personality_starter_body">You are just getting into the rhythm. One quiet week changes the story.</string>
     <string name="recap_quiet">quiet days</string>
     <string name="recap_bills">bills on time</string>
+    <string name="recap_badges">badges earned</string>
     <string name="recap_kept">challenges kept</string>
     <string name="recap_fees">fees vs last month</string>
     <string name="recap_next">Next month: one quiet Saturday gets you further.</string>

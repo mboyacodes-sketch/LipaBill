@@ -91,6 +91,7 @@ import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Debit
 import com.lipabill.app.ui.theme.Expense
+import com.lipabill.app.ui.LipaFilterChip
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
@@ -1139,22 +1140,13 @@ internal fun RequestChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Text(
-        text = label,
-        style = HomeType.caption.copy(fontWeight = FontWeight.SemiBold),
-        color = if (selected) OnAccent else Ink,
-        textAlign = TextAlign.Center,
-        maxLines = 1,
-        modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (selected) Accent else CardWhite)
-            .border(
-                width = 1.dp,
-                color = if (selected) Accent else SoftBlue,
-                shape = RoundedCornerShape(14.dp)
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp)
+    LipaFilterChip(
+        label = label,
+        selected = selected,
+        onClick = onClick,
+        modifier = modifier,
+        unselectedContainer = CardWhite,
+        unselectedBorder = SoftBlue
     )
 }
 

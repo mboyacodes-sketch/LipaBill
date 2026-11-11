@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -61,12 +62,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.R
+import com.lipabill.app.engage.CheckInScoring
+import com.lipabill.app.engage.HabitLevels
 import com.lipabill.app.engage.HabitPoints
 import com.lipabill.app.engage.QuizKind
 import com.lipabill.app.engage.QuizQuestion
 import com.lipabill.app.engage.SpendCompare
-import com.lipabill.app.engage.CheckInScoring
 import com.lipabill.app.engage.centsToKes
+import com.lipabill.app.ui.LipaPillButton
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.ActionMetrics
 import com.lipabill.app.ui.theme.Canvas
@@ -80,6 +83,7 @@ import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.OnPastel
 import com.lipabill.app.ui.theme.SoftBlue
+import com.lipabill.app.ui.theme.asPillLabel
 import com.lipabill.app.ui.util.formatKsh
 import com.lipabill.app.viewmodel.ChallengeCardState
 import com.lipabill.app.viewmodel.EngageUiState
@@ -139,7 +143,6 @@ internal fun QuizFlow(
     var pickedId by remember { mutableStateOf<String?>(null) }
     var showSummary by remember { mutableStateOf(false) }
     var answers by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var score by remember { mutableIntStateOf(HabitPoints.CHECK_IN) }
     var streakTarget by remember { mutableIntStateOf(0) }
     val streak by animateIntAsState(streakTarget, tween(350), label = "streak")
     LaunchedEffect(showSummary) {
@@ -164,7 +167,7 @@ internal fun QuizFlow(
                 SegmentBars(count = questions.size, index = index)
                 Spacer(modifier = Modifier.weight(1f))
                 Text(
-                    stringResource(R.string.checkin_points_chip, score),
+                    stringResource(R.string.checkin_points_chip, HabitPoints.CHECK_IN),
                     style = HomeType.caption,
                     color = OnPastel,
                     fontWeight = FontWeight.Bold,
@@ -247,7 +250,6 @@ internal fun QuizFlow(
                                 answers = answers + (question.id to optionId)
                                 pickedId = optionId
                                 revealed = true
-                                score += CheckInScoring.guessBonus(question, optionId)
                             }
                         }
                     )
@@ -486,6 +488,8 @@ internal fun ChallengeCompletePage(
     val resources = LocalResources.current
     val name = challengePlayingName(card.subject, card.payee, card.totalDays)
     val earned = habits.badges.count { it.earned }
+    val pointsBefore = (habits.points - card.points).coerceAtLeast(0)
+    val levelUnlocked = habits.level.number > HabitLevels.of(pointsBefore).number
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -546,7 +550,7 @@ internal fun ChallengeCompletePage(
         ) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(stringResource(R.string.complete_points, card.points), style = HomeType.rowTitle, color = OnAccent)
-                if (habits.level.number > 1) {
+                if (levelUnlocked) {
                     Text(
                         stringResource(R.string.complete_level_unlocked, habits.level.number),
                         style = HomeType.rowTitle,
@@ -590,39 +594,32 @@ internal fun ChallengeCompletePage(
             Text(stringResource(R.string.complete_lock_copy), style = HomeType.body, color = Ink, modifier = Modifier.weight(1f))
         }
         Spacer(modifier = Modifier.height(24.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(26.dp))
-                .background(CardWhite)
-                .clickable {
-                    val note = if (stayedCents > 0L) {
-                        resources.getString(
-                            R.string.complete_savings_note,
-                            formatKsh(centsToKes(stayedCents)),
-                            name
-                        )
-                    } else {
-                        resources.getString(R.string.complete_share_text, name)
-                    }
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_SUBJECT, resources.getString(R.string.complete_move_savings))
-                        putExtra(Intent.EXTRA_TEXT, note)
-                    }
-                    context.startActivity(Intent.createChooser(send, resources.getString(R.string.complete_move_savings)))
-                    onDone()
+        LipaPillButton(
+            label = stringResource(R.string.complete_move_savings),
+            onClick = {
+                val note = if (stayedCents > 0L) {
+                    resources.getString(
+                        R.string.complete_savings_note,
+                        formatKsh(centsToKes(stayedCents)),
+                        name
+                    )
+                } else {
+                    resources.getString(R.string.complete_share_text, name)
                 }
-                .padding(vertical = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                stringResource(R.string.complete_move_savings),
-                style = HomeType.rowTitle,
-                color = Accent,
-                fontWeight = FontWeight.Bold
-            )
-        }
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, resources.getString(R.string.complete_move_savings))
+                    putExtra(Intent.EXTRA_TEXT, note)
+                }
+                context.startActivity(Intent.createChooser(send, resources.getString(R.string.complete_move_savings)))
+                onDone()
+            },
+            modifier = Modifier.fillMaxWidth(),
+            filled = false,
+            accentOutline = true,
+            minHeight = 48.dp,
+            maxLines = 1
+        )
         Spacer(modifier = Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             OutlineAccentButton(
@@ -649,13 +646,20 @@ internal fun ChallengeCompletePage(
 private fun OutlineAccentButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(24.dp))
-            .border(1.dp, OnAccent.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
+            .defaultMinSize(minHeight = 44.dp)
+            .clip(RoundedCornerShape(percent = 50))
+            .border(1.dp, OnAccent.copy(alpha = 0.5f), RoundedCornerShape(percent = 50))
             .clickable(onClick = onClick)
-            .padding(vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(label, style = HomeType.rowTitle, color = OnAccent)
+        Text(
+            label,
+            style = HomeType.rowTitle.asPillLabel(),
+            color = OnAccent,
+            textAlign = TextAlign.Center,
+            maxLines = 1
+        )
     }
 }
 
@@ -726,10 +730,10 @@ internal fun MonthlyRecapPage(
                 RecapStat(
                     stringResource(
                         R.string.habits_badges_count,
-                        habits.kept,
-                        habits.kept.coerceAtLeast(1)
+                        habits.badges.count { it.earned },
+                        habits.badges.size.coerceAtLeast(1)
                     ),
-                    stringResource(R.string.recap_bills),
+                    stringResource(R.string.recap_badges),
                     Modifier.weight(1f)
                 )
             }
@@ -779,7 +783,8 @@ internal fun MonthlyRecapPage(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(26.dp))
+                    .defaultMinSize(minHeight = 48.dp)
+                    .clip(RoundedCornerShape(percent = 50))
                     .background(ActionMetrics)
                     .clickable {
                         val text = resources.getString(
@@ -794,16 +799,24 @@ internal fun MonthlyRecapPage(
                         }
                         context.startActivity(Intent.createChooser(send, null))
                     }
-                    .padding(vertical = 16.dp),
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(stringResource(R.string.recap_share), style = HomeType.rowTitle, color = OnPastel, fontWeight = FontWeight.Bold)
+                Text(
+                    stringResource(R.string.recap_share),
+                    style = HomeType.rowTitle.asPillLabel(),
+                    color = OnPastel,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1
+                )
             }
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(26.dp))
-                    .border(1.dp, SoftBlue.copy(alpha = 0.4f), RoundedCornerShape(26.dp))
+                    .defaultMinSize(minHeight = 48.dp)
+                    .clip(RoundedCornerShape(percent = 50))
+                    .border(1.dp, SoftBlue.copy(alpha = 0.4f), RoundedCornerShape(percent = 50))
                     .clickable {
                         val text = buildString {
                             append(resources.getString(R.string.recap_title, month))
@@ -828,10 +841,16 @@ internal fun MonthlyRecapPage(
                         }
                         context.startActivity(Intent.createChooser(send, resources.getString(R.string.recap_save)))
                     }
-                    .padding(vertical = 16.dp),
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(stringResource(R.string.recap_save), style = HomeType.rowTitle, color = CardWhite)
+                Text(
+                    stringResource(R.string.recap_save),
+                    style = HomeType.rowTitle.asPillLabel(),
+                    color = CardWhite,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1
+                )
             }
         }
     }
@@ -857,17 +876,15 @@ private fun RecapStat(
 
 @Composable
 internal fun HabitsAccentButton(label: String, onClick: () -> Unit, enabled: Boolean = true) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(26.dp))
-            .background(if (enabled) Accent else Accent.copy(alpha = 0.35f))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(label, style = HomeType.rowTitle, color = OnAccent, fontWeight = FontWeight.Bold)
-    }
+    LipaPillButton(
+        label = label,
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        filled = true,
+        enabled = enabled,
+        minHeight = 48.dp,
+        maxLines = 1
+    )
 }
 
 @Composable

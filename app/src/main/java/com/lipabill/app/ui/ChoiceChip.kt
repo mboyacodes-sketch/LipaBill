@@ -1,25 +1,17 @@
 package com.lipabill.app.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.ui.components.LedgerSourceChips
@@ -41,22 +33,17 @@ fun LipaChoiceChip(
     unselectedBorder: Color = SoftBlue,
     selectedContainer: Color = Accent,
     selectedContent: Color = OnAccent,
-    role: Role = Role.RadioButton
+    @Suppress("UNUSED_PARAMETER") role: Role = Role.RadioButton
 ) {
-    val shape = RoundedCornerShape(20.dp)
-    Text(
-        text = label,
-        style = HomeType.label,
-        color = if (selected) selectedContent else Ink,
-        textAlign = TextAlign.Center,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = modifier
-            .clip(shape)
-            .background(if (selected) selectedContainer else unselectedContainer)
-            .border(1.dp, if (selected) selectedContainer else unselectedBorder, shape)
-            .clickable(role = role, onClick = onClick)
-            .padding(horizontal = Space.card, vertical = Space.gap)
+    LipaFilterChip(
+        label = label,
+        selected = selected,
+        onClick = onClick,
+        modifier = modifier,
+        selectedContainer = selectedContainer,
+        selectedContent = selectedContent,
+        unselectedContainer = unselectedContainer,
+        unselectedBorder = unselectedBorder
     )
 }
 
@@ -126,4 +113,3 @@ fun ProviderPicker(
         }
     }
 }
-

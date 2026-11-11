@@ -3,6 +3,7 @@ package com.lipabill.app.metrics
 import com.lipabill.app.ussd.RepeatOutcome
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppMetricsTest {
@@ -31,5 +32,22 @@ class AppMetricsTest {
         assertEquals("call_permission", paymentReasonCode("CALL_PHONE denied"))
         assertEquals("inject_failed", paymentReasonCode("Could not type into USSD field"))
         assertEquals("other", paymentReasonCode("paid 0712345678 KES 500"))
+    }
+
+    @Test
+    fun ussd_action_kind_is_a_closed_set() {
+        assertEquals("choose", ussdActionKindCode("choose"))
+        assertEquals("type", ussdActionKindCode("TYPE"))
+        assertEquals("unexpected", ussdActionKindCode("unexpected"))
+        assertEquals("other", ussdActionKindCode("Send Money"))
+    }
+
+    @Test
+    fun ussd_step_token_has_no_digits() {
+        assertEquals("step_a", ussdStepToken(0))
+        assertEquals("step_b", ussdStepToken(1))
+        assertEquals("step_z", ussdStepToken(25))
+        assertEquals("step_za", ussdStepToken(26))
+        assertTrue(ussdStepToken(3).none { it.isDigit() })
     }
 }
