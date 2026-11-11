@@ -17,10 +17,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -280,6 +282,20 @@ private fun scaledStyle(
     fontSize = (size * scale).sp,
     lineHeight = (line * scale).sp,
     letterSpacing = tracking.sp
+)
+
+/**
+ * Tight single-line metrics for chips and pill buttons.
+ * Drops Android font padding and extra line box so labels sit optically centered
+ * instead of looking bottom-heavy inside the pill.
+ */
+fun TextStyle.asPillLabel(): TextStyle = copy(
+    lineHeight = fontSize,
+    platformStyle = PlatformTextStyle(includeFontPadding = false),
+    lineHeightStyle = LineHeightStyle(
+        alignment = LineHeightStyle.Alignment.Center,
+        trim = LineHeightStyle.Trim.Both
+    )
 )
 
 fun appTypeScale(baseSp: Int): AppTypeScale {
