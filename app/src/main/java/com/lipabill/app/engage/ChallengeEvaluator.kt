@@ -28,7 +28,9 @@ data class ChallengeTransaction(
     val timestampMillis: Long,
     val counterpartyName: String?,
     val type: TransactionType,
-    val amountCents: Long
+    val amountCents: Long,
+    /** M-Pesa transaction cost charged on this payment. */
+    val feeCents: Long = 0L
 )
 
 data class ChallengeEvaluation(
@@ -51,7 +53,33 @@ object ChallengeTemplates {
         durationDays = 3
     )
 
+    val fulizaFree7Days = ChallengeTemplate(
+        id = "fuliza_free_7d",
+        categoryId = CategoryRules.fuliza.categoryId,
+        durationDays = 7
+    )
+
+    val quietDays7 = ChallengeTemplate(
+        id = "quiet_days_7d",
+        categoryId = CategoryRules.anyOutgoing.categoryId,
+        durationDays = 7
+    )
+
+    val zeroFee7Days = ChallengeTemplate(
+        id = "zero_fee_7d",
+        categoryId = CategoryRules.feeLike.categoryId,
+        durationDays = 7
+    )
+
+    val paydayPause2Days = ChallengeTemplate(
+        id = "payday_pause_2d",
+        categoryId = CategoryRules.discretionary.categoryId,
+        durationDays = 2
+    )
+
     private const val SKIP_PAYEE_PREFIX = "skip_payee_7d:"
+    private const val FULIZA_UNTIL_PREFIX = "fuliza_until_payday:"
+    private const val DIY_PREFIX = "diy:"
 
     /** Seven days without paying one payee, named as it appears in their SMS. */
     fun skipPayee(payeeName: String) = ChallengeTemplate(
@@ -60,16 +88,61 @@ object ChallengeTemplates {
         durationDays = 7
     )
 
+    /** No Fuliza until payday; [durationDays] is days left until salary. */
+    fun fulizaUntilPayday(durationDays: Int) = ChallengeTemplate(
+        id = FULIZA_UNTIL_PREFIX + durationDays.coerceAtLeast(1),
+        categoryId = CategoryRules.fuliza.categoryId,
+        durationDays = durationDays.coerceAtLeast(1)
+    )
+
+    /** User-built pause: `diy:{categoryId}:{days}:{capCents}`. Cap is stored for UI; evaluator is duration-only. */
+    fun diy(categoryId: String, days: Int, capCents: Long) = ChallengeTemplate(
+        id = "$DIY_PREFIX$categoryId:${days.coerceAtLeast(1)}:${capCents.coerceAtLeast(0L)}",
+        categoryId = categoryId,
+        durationDays = days.coerceAtLeast(1)
+    )
+
     /** The payee a skip challenge is about, or null for category challenges. */
     fun payeeOf(id: String): String? =
         id.takeIf { it.startsWith(SKIP_PAYEE_PREFIX) }?.removePrefix(SKIP_PAYEE_PREFIX)
 
+    fun fulizaUntilPaydayDays(id: String): Int? =
+        id.takeIf { it.startsWith(FULIZA_UNTIL_PREFIX) }
+            ?.removePrefix(FULIZA_UNTIL_PREFIX)
+            ?.toIntOrNull()
+            ?.takeIf { it > 0 }
+
+    fun diyOf(id: String): ChallengeTemplate? {
+        if (!id.startsWith(DIY_PREFIX)) return null
+        val body = id.removePrefix(DIY_PREFIX)
+        val parts = body.split(':')
+        if (parts.size < 3) return null
+        val cap = parts.last().toLongOrNull() ?: return null
+        val days = parts[parts.lastIndex - 1].toIntOrNull()?.takeIf { it > 0 } ?: return null
+        val categoryId = parts.dropLast(2).joinToString(":").takeIf { it.isNotBlank() } ?: return null
+        if (CategoryRules.byId(categoryId) == null && !categoryId.startsWith(CategoryRules.PAYEE_PREFIX)) {
+            return null
+        }
+        return ChallengeTemplate(id = id, categoryId = categoryId, durationDays = days)
+    }
+
     /** Template id safe for analytics: payee names never leave the device. */
-    fun metricId(id: String): String = if (payeeOf(id) != null) SKIP_PAYEE_PREFIX.trimEnd(':') else id
+    fun metricId(id: String): String = when {
+        payeeOf(id) != null -> SKIP_PAYEE_PREFIX.trimEnd(':')
+        id.startsWith(DIY_PREFIX) -> DIY_PREFIX.trimEnd(':')
+        fulizaUntilPaydayDays(id) != null -> FULIZA_UNTIL_PREFIX.trimEnd(':')
+        else -> id
+    }
 
     fun byId(id: String): ChallengeTemplate? = when (id) {
         foodDelivery3Days.id -> foodDelivery3Days
-        else -> payeeOf(id)?.takeIf { it.isNotBlank() }?.let { skipPayee(it) }
+        fulizaFree7Days.id -> fulizaFree7Days
+        quietDays7.id -> quietDays7
+        zeroFee7Days.id -> zeroFee7Days
+        paydayPause2Days.id -> paydayPause2Days
+        else -> fulizaUntilPaydayDays(id)?.let { fulizaUntilPayday(it) }
+            ?: diyOf(id)
+            ?: payeeOf(id)?.takeIf { it.isNotBlank() }?.let { skipPayee(it) }
     }
 }
 
@@ -104,8 +177,7 @@ object ChallengeEvaluator {
         val breaker = transactions
             .asSequence()
             .filter { it.timestampMillis >= challenge.startAt && it.timestampMillis < challenge.endAt }
-            .filter { it.type.isOutgoing() && it.amountCents > 0L }
-            .filter { CategoryMatcher.matches(rule, it.counterpartyName) }
+            .filter { CategoryMatcher.matches(rule, it) }
             .minWithOrNull(compareBy<ChallengeTransaction> { it.timestampMillis }.thenBy { it.id })
         if (breaker != null) {
             val graceOpen = now < challenge.endAt + GRACE_MILLIS

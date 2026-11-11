@@ -108,6 +108,8 @@ import com.lipabill.app.viewmodel.WalletAccount
 import com.lipabill.app.viewmodel.busiestDayLabel
 import com.lipabill.app.viewmodel.calendarAmountLabel
 import com.lipabill.app.viewmodel.fulizaDueCopy
+import com.lipabill.app.viewmodel.dueCopy
+import com.lipabill.app.viewmodel.upcomingDue
 import com.lipabill.app.viewmodel.formatPeriodSpan
 import com.lipabill.app.viewmodel.regularCadenceCopy
 import com.lipabill.app.viewmodel.shortPeriodSpan
@@ -1021,13 +1023,18 @@ private fun ChallengeCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    if (challenge.kind == ChallengeCardKind.BROKEN) "A payment landed" else "Kept so far",
+                    when {
+                        challenge.kind == ChallengeCardKind.BROKEN -> "A payment landed"
+                        challenge.kept == null -> "Still clear"
+                        else -> "Kept so far"
+                    },
                     style = HomeType.caption,
                     color = Mute
                 )
-                if (challenge.kind != ChallengeCardKind.BROKEN) {
+                val kept = challenge.kept
+                if (challenge.kind != ChallengeCardKind.BROKEN && kept != null) {
                     Text(
-                        formatKsh(challenge.kept),
+                        formatKsh(kept),
                         style = HomeType.rowTitle,
                         color = Income,
                         fontWeight = FontWeight.Bold,
@@ -1078,9 +1085,26 @@ private fun RhythmCard(stats: AnalyticsSummary, fuliza: Boolean) {
     val caption = stats.busiestLabel?.let {
         "Busiest: $it, ${formatKsh(stats.busiestTotal)} ${if (fuliza) "drawn" else "out"}"
     } ?: "${stats.quietDays} days with no money out"
+    val cells = stats.pulse
+    var selectedDate by remember(cells) {
+        mutableStateOf(
+            (
+                cells.firstOrNull { it.isToday && it.inRange }
+                    ?: cells.lastOrNull { it.inRange && it.hasOutflow }
+                    ?: cells.lastOrNull { it.inRange }
+                )?.date
+        )
+    }
+    val today = LocalDate.now()
+    val comingUp = if (fuliza) emptyList() else upcomingDue(stats.regulars, today)
     InsightCard(title = title, caption = caption) {
-        if (stats.pulse.isNotEmpty()) {
-            PulseGrid(cells = stats.pulse, fuliza = fuliza)
+        if (cells.isNotEmpty()) {
+            PulseGrid(
+                cells = cells,
+                fuliza = fuliza,
+                selectedDate = selectedDate,
+                onSelect = { selectedDate = it }
+            )
             if (fuliza) {
                 LegendSwatch(fill = DayFlow.OUT_ONLY.fill(), border = null, label = "Drawn")
             } else {
@@ -1098,6 +1122,68 @@ private fun RhythmCard(stats: AnalyticsSummary, fuliza: Boolean) {
             }
         } else if (stats.periodBars.isNotEmpty()) {
             PeriodBars(bars = stats.periodBars, fuliza = fuliza)
+        }
+        if (comingUp.isNotEmpty()) {
+            ComingUp(
+                regulars = comingUp,
+                today = today,
+                onSelect = { date ->
+                    if (cells.any { it.date == date && it.inRange }) selectedDate = date
+                }
+            )
+        }
+    }
+}
+
+/** Regular payments due soon or overdue, so the "due" marks on the calendar say what they are. */
+@Composable
+private fun ComingUp(
+    regulars: List<RegularPayee>,
+    today: LocalDate,
+    onSelect: (LocalDate) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        HorizontalDivider(color = Hairline, thickness = 1.dp)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("Coming up", style = HomeType.rowTitle, color = Ink)
+        Text(
+            "Regular payments, from how often you have paid them.",
+            style = HomeType.caption,
+            color = Mute
+        )
+        regulars.forEach { regular ->
+            val overdue = regular.nextDue.isBefore(today)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(onClickLabel = "Show on calendar") { onSelect(regular.nextDue) }
+                    .padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                InitialDisc(name = regular.name, fill = SoftBlue, tint = Ink)
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        regular.name,
+                        style = HomeType.rowTitle,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.recordingPrivacyCover()
+                    )
+                    Text(
+                        dueCopy(regular.nextDue, today) + (if (regular.essential) " · Essential" else ""),
+                        style = HomeType.caption,
+                        color = if (overdue) Expense else Mute
+                    )
+                }
+                Text(
+                    "~" + formatKsh(regular.typicalAmount),
+                    style = HomeType.rowTitle,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.recordingPrivacyCover()
+                )
+            }
         }
     }
 }
@@ -1118,14 +1204,13 @@ private fun LegendSwatch(fill: Color, border: Color?, label: String) {
 }
 
 @Composable
-private fun PulseGrid(cells: List<PulseCell>, fuliza: Boolean) {
-    var selected by remember(cells) {
-        mutableStateOf(
-            cells.firstOrNull { it.isToday && it.inRange }
-                ?: cells.lastOrNull { it.inRange && it.hasOutflow }
-                ?: cells.lastOrNull { it.inRange }
-        )
-    }
+private fun PulseGrid(
+    cells: List<PulseCell>,
+    fuliza: Boolean,
+    selectedDate: LocalDate?,
+    onSelect: (LocalDate) -> Unit
+) {
+    val selected = cells.firstOrNull { it.date == selectedDate }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             listOf("M", "T", "W", "T", "F", "S", "S").forEach { day ->
@@ -1145,7 +1230,7 @@ private fun PulseGrid(cells: List<PulseCell>, fuliza: Boolean) {
                     PulseDayCell(
                         cell = cell,
                         selected = cell.date == selected?.date,
-                        onSelect = { if (cell.inRange) selected = cell },
+                        onSelect = { if (cell.inRange) onSelect(cell.date) },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -1187,11 +1272,17 @@ private fun PulseGrid(cells: List<PulseCell>, fuliza: Boolean) {
                     modifier = Modifier.recordingPrivacyCover()
                 )
             }
-            if (!day.hasInflow && !day.hasOutflow) {
+            if (!day.hasInflow && !day.hasOutflow && !day.isDue) {
+                Text("Nothing moved this day", style = HomeType.body, color = Mute)
+            }
+            day.due.forEach { regular ->
                 Text(
-                    if (day.isDue) "A regular payment is due" else "Nothing moved this day",
+                    "Due: ${regular.name} · ~${formatKsh(regular.typicalAmount)} " +
+                        regular.cadence.label.lowercase(Locale.UK),
                     style = HomeType.body,
-                    color = if (day.isDue) Accent else Mute
+                    color = Accent,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.recordingPrivacyCover()
                 )
             }
         }
@@ -1397,7 +1488,7 @@ private fun plainTypeLabel(type: TransactionType, fallback: String): String = wh
 
 @Composable
 private fun PeopleCard(rows: List<CounterpartySpend>) {
-    InsightCard(title = "People you send to most") {
+    InsightCard(title = "Who got the most") {
         Column {
             rows.forEachIndexed { index, row ->
                 if (index > 0) HorizontalDivider(color = Hairline, thickness = 1.dp)

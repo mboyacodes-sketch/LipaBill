@@ -183,6 +183,38 @@ class SecurePreferences(context: Context) {
         get() = prefs.getStringSet(KEY_EARNED_BADGES, null)?.toSet() ?: emptySet()
         set(value) = prefs.edit().putStringSet(KEY_EARNED_BADGES, HashSet(value)).apply()
 
+    /** Habits badges already earned; once earned they stay. */
+    var earnedHabitBadges: Set<String>
+        get() = prefs.getStringSet(KEY_EARNED_HABIT_BADGES, null)?.toSet() ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_EARNED_HABIT_BADGES, HashSet(value)).apply()
+
+    /** Habit patterns the user answered "Not me" to. */
+    var dismissedHabitPatterns: Set<String>
+        get() = prefs.getStringSet(KEY_DISMISSED_HABIT_PATTERNS, null)?.toSet() ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_DISMISSED_HABIT_PATTERNS, HashSet(value)).apply()
+
+    /** Last time Habits was opened, for the catch-up card. 0 before the first visit. */
+    var habitsLastVisit: Long
+        get() = prefs.getLong(KEY_HABITS_LAST_VISIT, 0L)
+        set(value) = prefs.edit().putLong(KEY_HABITS_LAST_VISIT, value).apply()
+
+    /**
+     * Payees the user taught Habits a category for. Encoded as `payeeKey=categoryId`.
+     */
+    var taughtPayeeCategories: Set<String>
+        get() = prefs.getStringSet(KEY_TAUGHT_PAYEE_CATEGORIES, null)?.toSet() ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_TAUGHT_PAYEE_CATEGORIES, HashSet(value)).apply()
+
+    /** True while a duo / accountability invite is waiting. */
+    var pendingDuoInvite: Boolean
+        get() = prefs.getBoolean(KEY_PENDING_DUO_INVITE, false)
+        set(value) = prefs.edit().putBoolean(KEY_PENDING_DUO_INVITE, value).apply()
+
+    /** DIY challenge template ids the user built (`diy:{categoryId}:{days}:{capCents}`). */
+    var customDiyChallenges: Set<String>
+        get() = prefs.getStringSet(KEY_CUSTOM_DIY_CHALLENGES, null)?.toSet() ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_CUSTOM_DIY_CHALLENGES, HashSet(value)).apply()
+
     /** When true, screens use the navy night palette. Passes stay paper white. */
     var darkMode: Boolean
         get() = prefs.getBoolean(KEY_DARK_MODE, false)
@@ -330,6 +362,12 @@ class SecurePreferences(context: Context) {
         private const val KEY_ESSENTIAL_PAYEES = "essential_payees"
         private const val KEY_WATCHED_PAYEES = "watched_payees"
         private const val KEY_EARNED_BADGES = "earned_badges"
+        private const val KEY_EARNED_HABIT_BADGES = "earned_habit_badges"
+        private const val KEY_DISMISSED_HABIT_PATTERNS = "dismissed_habit_patterns"
+        private const val KEY_HABITS_LAST_VISIT = "habits_last_visit"
+        private const val KEY_TAUGHT_PAYEE_CATEGORIES = "taught_payee_categories"
+        private const val KEY_PENDING_DUO_INVITE = "pending_duo_invite"
+        private const val KEY_CUSTOM_DIY_CHALLENGES = "custom_diy_challenges"
         private const val KEY_INBOX_HISTORY_IMPORTED = "inbox_history_imported_v1"
         private const val KEY_INBOX_HIGH_WATER = "inbox_high_water_millis"
         private const val KEY_WALLET_RAILS_INBOX_SCAN = "wallet_rails_inbox_scan_v1"

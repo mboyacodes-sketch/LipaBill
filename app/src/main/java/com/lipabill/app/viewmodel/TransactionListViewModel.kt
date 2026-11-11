@@ -152,7 +152,8 @@ data class InsightChallenge(
     val kind: ChallengeCardKind,
     val day: Int,
     val totalDays: Int,
-    val kept: Double,
+    /** Usual spend avoided so far. Null when the challenge is not about spending. */
+    val kept: Double?,
     val startDate: LocalDate
 )
 
@@ -498,12 +499,18 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             else -> 0
         }
         val payee = ChallengeTemplates.payeeOf(latest.templateId)
+        val fuliza = latest.templateId == ChallengeTemplates.fulizaFree7Days.id
         return InsightChallenge(
-            title = payee?.let { "Skip $it this week" } ?: "No food delivery for $total days",
+            title = when {
+                fuliza -> "No Fuliza for $total days"
+                payee != null -> "Skip $payee this week"
+                else -> "No food delivery for $total days"
+            },
             kind = kind,
             day = day,
             totalDays = total,
-            kept = baseline * cleanDays.coerceAtLeast(0),
+            // A skipped Fuliza draw is borrowing avoided, not money kept, so it shows no "kept" figure.
+            kept = if (fuliza) null else baseline * cleanDays.coerceAtLeast(0),
             startDate = ChallengeClock.localDate(latest.startAt, zone)
         )
     }

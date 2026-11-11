@@ -49,6 +49,19 @@ interface ChallengeDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAchievement(entity: ChallengeAchievementEntity): Long
 
+    /** Template of every kept challenge, oldest first. One row per achievement. */
+    @Query(
+        """
+        SELECT c.templateId FROM challenge_achievements a
+        JOIN challenges c ON c.id = a.challengeId
+        ORDER BY a.grantedAt
+        """
+    )
+    fun observeKeptTemplateIds(): Flow<List<String>>
+
+    @Query("SELECT COUNT(*) FROM weekly_checkins")
+    fun observeCheckInCount(): Flow<Int>
+
     @Query("SELECT * FROM weekly_checkins WHERE weekId = :weekId LIMIT 1")
     suspend fun checkIn(weekId: String): WeeklyCheckInEntity?
 

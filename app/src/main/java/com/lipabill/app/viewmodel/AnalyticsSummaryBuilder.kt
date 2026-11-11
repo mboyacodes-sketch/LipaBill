@@ -59,6 +59,12 @@ internal fun buildAnalyticsSummary(
             !date.isBefore(prevFrom) && !date.isAfter(prevTo)
         }
     }
+    val ledgerStart = txs.minOfOrNull {
+        Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDate()
+    }
+    // Compare only when the ledger covers the whole stretch before; a half-recorded
+    // prior period makes every "+300% vs prior" and "kept more" wrong.
+    val comparable = prior != null && ledgerStart != null && !ledgerStart.isAfter(prior.first)
     val (prevIncome, prevExpense) = if (prior == null) {
         0.0 to 0.0
     } else {
@@ -84,12 +90,15 @@ internal fun buildAnalyticsSummary(
     }
     val (inflowByDate, outflowByDate) = flowByDate(txs, zone, account)
     val outflowDates = outflowByDate.filter { it.value > 0.005 }.keys
-    val ledgerStart = txs.minOfOrNull {
-        Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDate()
-    }
     val dayCount = ChronoUnit.DAYS.between(from, to) + 1
-    val quietDays = quietDaysInRange(from, to, outflowDates)
-    val priorQuietDays = prior?.let { (prevFrom, prevTo) ->
+    // Days before the first text are unknown, not quiet.
+    val coveredFrom = if (ledgerStart != null && ledgerStart.isAfter(from)) ledgerStart else from
+    val quietDays = if (ledgerStart == null || ledgerStart.isAfter(to)) {
+        0
+    } else {
+        quietDaysInRange(coveredFrom, to, outflowDates)
+    }
+    val priorQuietDays = prior?.takeIf { comparable }?.let { (prevFrom, prevTo) ->
         quietDaysInRange(prevFrom, prevTo, outflowDates)
     }
     val quietStreak = if (txs.isNotEmpty()) {
@@ -99,7 +108,6 @@ internal fun buildAnalyticsSummary(
     }
     val busiest = busiestOutflow(outflowByDate, from, to)
     val fees = if (mpesa) feeSummary(filtered) else FeeSummary()
-    val coveredFrom = if (ledgerStart != null && ledgerStart.isAfter(from)) ledgerStart else from
     val coveredDays = (ChronoUnit.DAYS.between(coveredFrom, to) + 1).coerceAtLeast(1)
     val regulars = if (mpesa) {
         detectRegulars(txs, zone, today, marks.essential, marks.watched)
@@ -109,7 +117,8 @@ internal fun buildAnalyticsSummary(
     val habit = if (mpesa) {
         topHabit(
             filtered,
-            exclude = regulars.mapTo(HashSet()) { it.key },
+            zone,
+            exclude = regulars.mapTo(HashSet()) { it.key } + marks.essential,
             minVisits = habitMinVisits(dayCount)
         )
     } else {
@@ -119,7 +128,7 @@ internal fun buildAnalyticsSummary(
         keptHeadline(
             net = income - expense,
             previousNet = prevIncome - prevExpense,
-            hasPrior = prior != null && previousTxs.isNotEmpty()
+            hasPrior = comparable
         )
     } else {
         null
@@ -135,7 +144,7 @@ internal fun buildAnalyticsSummary(
         expense = expense,
         income = income,
         previousExpense = prevExpense,
-        comparable = prior != null,
+        comparable = comparable,
         topName = top?.name,
         topShare = topShare,
         busiestLabel = busiest?.let { busiestDayLabel(it.first) },
@@ -170,7 +179,7 @@ internal fun buildAnalyticsSummary(
             today = today,
             inflowByDate = inflowByDate,
             outflowByDate = outflowByDate,
-            dueDates = regulars.mapTo(HashSet()) { it.nextDue }
+            regulars = regulars
         ),
         keptHeadline = kept,
         fees = fees,
@@ -190,7 +199,7 @@ internal fun buildAnalyticsSummary(
             insightBadges(
                 fees = fees.total,
                 previousFees = feeSummary(previousTxs).total,
-                hasPrior = prior != null && previousTxs.isNotEmpty(),
+                hasPrior = comparable,
                 quietStreak = quietStreak,
                 regulars = regulars,
                 earned = marks.earnedBadges
@@ -253,6 +262,8 @@ private fun flowByDate(
             continue
         }
         val amount = tx.amount ?: continue
+        // Same rule as flowTotals, so the calendar, quiet days and month bars match the totals.
+        if (isOwnMoneyMove(tx)) continue
         if (tx.type.isOutgoing()) {
             outflow[date] = (outflow[date] ?: 0.0) + amount + (tx.cost ?: 0.0)
         } else {
@@ -283,7 +294,8 @@ private fun flowTotals(
     var expense = 0.0
     for (tx in txs) {
         val amount = tx.amount ?: continue
-        if (tx.type == TransactionType.SAVINGS) continue
+        // Savings in and out, and Fuliza draws, are the user's own money moving.
+        if (isOwnMoneyMove(tx)) continue
         // Fees left the wallet too, so they count as money out.
         if (tx.type.isOutgoing()) expense += amount + (tx.cost ?: 0.0) else income += amount
     }

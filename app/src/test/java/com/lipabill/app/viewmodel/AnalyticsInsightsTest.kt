@@ -235,15 +235,18 @@ class AnalyticsInsightsTest {
                 sample(TransactionType.PAYBILL, "KPLC", 200.0, code = "C"),
                 sample(TransactionType.RECEIVED, "Jane", 900.0, code = "D"),
                 sample(TransactionType.SAVINGS, "M-Shwari", 700.0, code = "E"),
-                sample(TransactionType.BUY_GOODS, null, 50.0, phone = "0700111222", code = "F")
+                sample(TransactionType.BUY_GOODS, null, 50.0, phone = "0700111222", code = "F"),
+                sample(TransactionType.SENT, "JANE ", 100.0, code = "G"),
+                sample(TransactionType.WITHDRAW, "Agent", 5_000.0, code = "H"),
+                sample(TransactionType.AIRTIME, null, 80.0, code = "I")
             )
         )
         assertEquals(
             listOf("Jane", "KPLC", "0700111222"),
             ranked.map { it.name }
         )
-        assertEquals(500.0, ranked[0].total, 0.0)
-        assertEquals(2, ranked[0].count)
+        assertEquals(600.0, ranked[0].total, 0.0)
+        assertEquals(3, ranked[0].count)
     }
 
     private fun sample(

@@ -67,25 +67,31 @@ fun spendShareOfIncome(expense: Double, income: Double): Double? {
     return expense / income
 }
 
+/**
+ * Who got the most money out of the wallet. Cash withdrawals and moves into savings are
+ * the user's own money and left out, as are rows with no name or number to show.
+ */
 fun topOutgoingCounterparties(
     txs: Iterable<MpesaTransaction>,
     limit: Int = 5
 ): List<CounterpartySpend> =
     txs
         .filter { tx ->
-            tx.type.isOutgoing() && tx.type != TransactionType.SAVINGS
+            tx.type.isOutgoing() &&
+                tx.type != TransactionType.SAVINGS &&
+                tx.type != TransactionType.WITHDRAW &&
+                (tx.amount ?: 0.0) > 0.0
         }
-        .groupBy { tx ->
-            tx.counterpartyName?.trim()?.takeIf { it.isNotEmpty() }
-                ?: tx.counterpartyPhone?.trim()?.takeIf { it.isNotEmpty() }
-                ?: "Unknown"
-        }
-        .map { (name, list) ->
+        .groupBy { payeeKey(it) }
+        .filterKeys { it != null }
+        .map { (_, list) ->
+            val latest = list.maxBy { it.timestampMillis }
             CounterpartySpend(
-                name = name,
+                name = latest.counterpartyName?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: latest.counterpartyPhone?.trim().orEmpty(),
                 count = list.size,
                 total = list.sumOf { it.amount ?: 0.0 },
-                lastMillis = list.maxOf { it.timestampMillis }
+                lastMillis = latest.timestampMillis
             )
         }
         .sortedByDescending { it.total }
@@ -102,9 +108,10 @@ data class PulseCell(
     val isToday: Boolean,
     val inflow: Double,
     val outflow: Double,
-    /** A regular payee is expected to be paid this day. */
-    val isDue: Boolean = false
+    /** Regular payees expected to be paid this day. */
+    val due: List<RegularPayee> = emptyList()
 ) {
+    val isDue: Boolean get() = due.isNotEmpty()
     val hasOutflow: Boolean get() = outflow > 0.005
     val hasInflow: Boolean get() = inflow > 0.005
     val net: Double get() = inflow - outflow
@@ -201,6 +208,26 @@ fun calendarAmountLabel(amount: Double): String {
     }
 }
 
+/**
+ * Regular payments expected from today to [days] ahead, plus ones already past their usual
+ * date and not seen yet (a regular that stopped altogether drops out of [regulars] on its own).
+ * Soonest first.
+ */
+fun upcomingDue(regulars: List<RegularPayee>, today: LocalDate, days: Long = 14): List<RegularPayee> =
+    regulars
+        .filter { !it.nextDue.isAfter(today.plusDays(days)) }
+        .sortedWith(compareBy<RegularPayee> { it.nextDue }.thenByDescending { it.typicalAmount })
+
+private val dueDayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK)
+
+/** "Due today", "Due tomorrow", "Due Fri 14 Nov", or "Was due 8 Nov, not paid yet". */
+fun dueCopy(due: LocalDate, today: LocalDate): String = when {
+    due.isBefore(today) -> "Was due ${busiestDayLabel(due)}, not paid yet"
+    due == today -> "Due today"
+    due == today.plusDays(1) -> "Due tomorrow"
+    else -> "Due ${due.format(dueDayFormat)}"
+}
+
 fun shouldShowPulse(dayCount: Long): Boolean = dayCount in 1L..31L
 
 fun pulseCalendar(
@@ -209,9 +236,10 @@ fun pulseCalendar(
     today: LocalDate,
     inflowByDate: Map<LocalDate, Double>,
     outflowByDate: Map<LocalDate, Double>,
-    dueDates: Set<LocalDate> = emptySet()
+    regulars: List<RegularPayee> = emptyList()
 ): List<PulseCell> {
     if (!shouldShowPulse(ChronoUnit.DAYS.between(from, to) + 1)) return emptyList()
+    val dueByDate = regulars.groupBy { it.nextDue }
     val start = from.with(DayOfWeek.MONDAY)
     val end = to.with(DayOfWeek.SUNDAY)
     return generateSequence(start) { date ->
@@ -224,7 +252,7 @@ fun pulseCalendar(
             isToday = date == today,
             inflow = inflowByDate[date] ?: 0.0,
             outflow = outflowByDate[date] ?: 0.0,
-            isDue = date in dueDates
+            due = dueByDate[date].orEmpty()
         )
     }.toList()
 }

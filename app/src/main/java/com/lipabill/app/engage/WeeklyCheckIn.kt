@@ -178,6 +178,23 @@ object QuizGenerator {
     }
 }
 
+/** Per-guess points shown in the check-in UI. Completing still grants [HabitPoints.CHECK_IN]. */
+object CheckInScoring {
+    const val SPOT_ON = 20
+    const val CLOSE = 10
+
+    fun guessBonus(question: QuizQuestion, pickedId: String): Int {
+        if (pickedId == question.correctOptionId) return SPOT_ON
+        val correctIndex = question.options.indexOfFirst { it.id == question.correctOptionId }
+        val pickedIndex = question.options.indexOfFirst { it.id == pickedId }
+        return if (correctIndex >= 0 && pickedIndex >= 0 && kotlin.math.abs(correctIndex - pickedIndex) == 1) {
+            CLOSE
+        } else {
+            0
+        }
+    }
+}
+
 object CheckInStreaks {
 
     /** How many ISO weeks separate [last] from [current]. 0 is the same week, 1 is the next week. */
