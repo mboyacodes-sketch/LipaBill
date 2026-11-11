@@ -51,6 +51,15 @@ import com.lipabill.app.viewmodel.RepeatTransactionViewModel
 import com.lipabill.app.viewmodel.WalletAccount
 import com.lipabill.app.viewmodel.SendMoneyViewModel
 import com.lipabill.app.viewmodel.TransactionListViewModel
+import com.lipabill.app.viewmodel.phoneKey
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.Text
+import com.lipabill.app.ui.theme.HomeType
+import com.lipabill.app.ui.theme.Ink
+import com.lipabill.app.ui.theme.Space
+
+private const val RECENT_SHOWN = 5
 
 private enum class SendSheetStep {
     Recipient,
@@ -216,32 +225,57 @@ fun SendMoneySheetContent(
         showKeypad = onAmountStep,
         showRecipients = !onAmountStep,
         recipientsContent = {
-            HorizontalRecipientRow {
-                HorizontalRecipient(
-                    name = "Contacts",
-                    subtitle = "Phone",
-                    selected = state.selected?.fromPhoneBook == true,
-                    onClick = {
-                        queryFocused = false
-                        hideKeyboard(focusManager, keyboard)
-                        pickPhoneContact()
-                    }
-                )
-                state.contacts.take(12).forEach { contact ->
+            Column(verticalArrangement = Arrangement.spacedBy(Space.block)) {
+                HorizontalRecipientRow {
                     HorizontalRecipient(
-                        name = contact.sheetName(),
-                        subtitle = contact.sheetSubtitle(),
-                        selected = contact.sameParty(state.selected),
+                        name = "Contacts",
+                        subtitle = "Phone",
+                        selected = state.selected?.fromPhoneBook == true,
                         onClick = {
-                            sendVm.select(contact)
                             queryFocused = false
                             hideKeyboard(focusManager, keyboard)
-                            step = SendSheetStep.Amount
+                            pickPhoneContact()
                         }
                     )
+                    state.contacts.take(12).forEach { contact ->
+                        HorizontalRecipient(
+                            name = contact.sheetName(),
+                            subtitle = contact.sheetSubtitle(),
+                            selected = contact.sameParty(state.selected),
+                            onClick = {
+                                sendVm.select(contact)
+                                queryFocused = false
+                                hideKeyboard(focusManager, keyboard)
+                                step = SendSheetStep.Amount
+                            }
+                        )
+                    }
+                }
+                val recent = state.contacts.filterNot { it.fromPhoneBook }.take(RECENT_SHOWN)
+                if (recent.isNotEmpty()) {
+                    Text(
+                        if (state.query.isBlank()) "Recent" else "Matches",
+                        style = HomeType.section,
+                        color = Ink
+                    )
+                    recent.forEach { contact ->
+                        SendRecipientRow(
+                            name = contact.sheetName(),
+                            phone = contact.normalizedPhone,
+                            sentThisMonth = phoneKey(contact.normalizedPhone)?.let { state.monthlyCounts[it] } ?: 0,
+                            selected = contact.sameParty(state.selected),
+                            onClick = {
+                                sendVm.select(contact)
+                                queryFocused = false
+                                hideKeyboard(focusManager, keyboard)
+                                step = SendSheetStep.Amount
+                            }
+                        )
+                    }
                 }
             }
         },
+        detailsHeader = { SendSheetHeader(shownBalance) },
         extraAboveKeypad = if (onAmountStep) {
             null
         } else {
@@ -297,6 +331,23 @@ fun SendMoneySheetContent(
         feedbackMessage = feedback?.first,
         feedbackTone = feedback?.second ?: SheetFeedbackTone.Hint,
         fulizaCoversShortfall = true,
+        amountStage = { stageModifier ->
+            val phone = state.selected?.normalizedPhone
+                ?: UssdMenuBuilder.normalizePhoneNumber(state.query)
+            SendAmountStage(
+                balance = shownBalance,
+                recipientName = state.selected?.name ?: selectedName,
+                recipientPhone = phone,
+                sentThisMonth = state.sentThisMonth,
+                amountInput = state.amountInput,
+                amount = pendingAmount,
+                feeEstimate = state.feeEstimate,
+                onChangeRecipient = { goToRecipient() },
+                onQuickAmount = sendVm::setAmountInput,
+                modifier = stageModifier
+            )
+        },
+        footnote = if (onAmountStep) "You’ll enter your PIN on LipaBill’s secure keypad." else null,
         modifier = Modifier.fillMaxWidth()
     )
 

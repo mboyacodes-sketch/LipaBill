@@ -135,6 +135,12 @@ fun MoneySheetScaffold(
     feedbackTone: SheetFeedbackTone = SheetFeedbackTone.Hint,
     /** An amount above the M-PESA balance can still be paid. Fuliza covers the rest. */
     fulizaCoversShortfall: Boolean = false,
+    /** Replaces the default amount stage above the keypad (Send uses its own layout). */
+    amountStage: (@Composable (Modifier) -> Unit)? = null,
+    /** Small note under the primary button, e.g. where the PIN is entered. */
+    footnote: String? = null,
+    /** Replaces the balance card at the top of the details step. */
+    detailsHeader: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val amountValue = pendingDeduction
@@ -174,7 +180,14 @@ fun MoneySheetScaffold(
         )
         Spacer(modifier = Modifier.height(Space.gap))
 
-        if (showKeypad) {
+        if (showKeypad && amountStage != null) {
+            amountStage(
+                Modifier
+                    .weight(1f, fill = true)
+                    .fillMaxWidth()
+            )
+        }
+        if (showKeypad && amountStage == null) {
             AmountStage(
                 balance = balance,
                 balancePrefix = balancePrefix,
@@ -197,6 +210,8 @@ fun MoneySheetScaffold(
                     .weight(1f, fill = true)
                     .fillMaxWidth()
             )
+        }
+        if (showKeypad) {
             AmountKeypad(
                 onKey = onKey,
                 onBackspace = onBackspace,
@@ -227,11 +242,15 @@ fun MoneySheetScaffold(
                     .verticalScroll(detailsScroll)
             ) {
                 Spacer(modifier = Modifier.height(Space.block))
-                BalanceCard(
-                    balance = balance,
-                    pendingDeduction = null,
-                    caption = balanceCaption
-                )
+                if (detailsHeader != null) {
+                    detailsHeader()
+                } else {
+                    BalanceCard(
+                        balance = balance,
+                        pendingDeduction = null,
+                        caption = balanceCaption
+                    )
+                }
                 if (showRecipients) {
                     Spacer(modifier = Modifier.height(Space.block))
                     Row(
@@ -300,6 +319,16 @@ fun MoneySheetScaffold(
             )
         ) {
             Text(ctaLabel, style = HomeType.rowTitle)
+        }
+        if (footnote != null) {
+            Spacer(modifier = Modifier.height(Space.gap))
+            Text(
+                text = footnote,
+                style = HomeType.caption,
+                color = Mute,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
         if (secondaryCtaLabel != null && onSecondaryCta != null) {
             TextButton(
