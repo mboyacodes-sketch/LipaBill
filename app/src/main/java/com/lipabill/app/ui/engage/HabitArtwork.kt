@@ -64,29 +64,41 @@ fun HabitMark(
     kind: ChallengeCardKind,
     day: Int,
     totalDays: Int,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Home teaser stays static; Habits detail keeps the pulse. */
+    animated: Boolean = true
 ) {
     val motion = motionEnabled()
     val alive = kind == ChallengeCardKind.OFFER || kind == ChallengeCardKind.ACTIVE
-    val transition = rememberInfiniteTransition(label = "habit-mark")
-    val dash by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = if (motion && alive) 28f else 0f,
-        animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing)),
-        label = "dash"
-    )
-    val pulse by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (motion && kind == ChallengeCardKind.ACTIVE) 1.16f else 1f,
-        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
-        label = "pulse"
-    )
-    val bob by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = if (motion && alive) 1f else 0f,
-        animationSpec = infiniteRepeatable(tween(1800), RepeatMode.Reverse),
-        label = "bob"
-    )
+    val runMotion = animated && motion && alive
+    val dash: Float
+    val pulse: Float
+    val bob: Float
+    if (runMotion) {
+        val transition = rememberInfiniteTransition(label = "habit-mark")
+        dash = transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 28f,
+            animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing)),
+            label = "dash"
+        ).value
+        pulse = transition.animateFloat(
+            initialValue = 1f,
+            targetValue = if (kind == ChallengeCardKind.ACTIVE) 1.16f else 1f,
+            animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+            label = "pulse"
+        ).value
+        bob = transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(1800), RepeatMode.Reverse),
+            label = "bob"
+        ).value
+    } else {
+        dash = 0f
+        pulse = 1f
+        bob = 0f
+    }
     val days = totalDays.coerceAtLeast(1)
     val done = when (kind) {
         ChallengeCardKind.COMPLETED -> days
@@ -254,16 +266,23 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBag(
 
 /** Seven day marks for the week, with today a little larger. */
 @Composable
-fun WeekGlyph(modifier: Modifier = Modifier) {
+fun WeekGlyph(
+    modifier: Modifier = Modifier,
+    animated: Boolean = true
+) {
     val motion = motionEnabled()
     val today = remember { java.time.LocalDate.now().dayOfWeek.value }
-    val transition = rememberInfiniteTransition(label = "week-glyph")
-    val pulse by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (motion) 1.2f else 1f,
-        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
-        label = "today"
-    )
+    val pulse = if (animated && motion) {
+        val transition = rememberInfiniteTransition(label = "week-glyph")
+        transition.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.2f,
+            animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+            label = "today"
+        ).value
+    } else {
+        1f
+    }
     val accent = Accent
     val track = Hairline
     val card = CardWhite
