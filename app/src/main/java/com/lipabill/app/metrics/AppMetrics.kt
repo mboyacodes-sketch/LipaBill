@@ -212,6 +212,70 @@ object AppMetrics {
         )
     }
 
+    /**
+     * Safaricom menu text/structure no longer matches our label plan.
+     * Closed params only — never dialog text. Call before [paymentFinished]
+     * so [activePaymentFlow] is still set.
+     *
+     * @param actionKind choose | type | unexpected
+     */
+    fun ussdMenuMismatch(
+        stepIndex: Int,
+        actionKind: String,
+        totalSteps: Int
+    ) {
+        val flow = activePaymentFlow ?: "unknown"
+        val kind = ussdActionKindCode(actionKind)
+        val step = stepIndex.coerceIn(0, 32)
+        val total = totalSteps.coerceIn(0, 32)
+        AppCrashReporting.setKey("ussd_action", kind)
+        AppCrashReporting.setKey("ussd_at", ussdStepToken(step))
+        AppCrashReporting.setKey("ussd_of", ussdStepToken(total))
+        AppCrashReporting.breadcrumb("ussd:mismatch:$kind:${ussdStepToken(step)}")
+        AppCrashReporting.recordIssue(UssdMenuMismatch())
+        log(
+            "ussd_menu_mismatch",
+            bundleOf(
+                "flow" to flow,
+                "step" to step,
+                "total" to total,
+                "action" to kind
+            )
+        )
+    }
+
+    /**
+     * Automation could not type the next USSD field / driver blew up.
+     * Call before [paymentFinished] while [activePaymentFlow] is still set.
+     */
+    fun ussdStepFailed(
+        reason: String,
+        stepIndex: Int?,
+        actionKind: String?,
+        totalSteps: Int?
+    ) {
+        val flow = activePaymentFlow ?: "unknown"
+        val safeReason = paymentReasonCode(reason)
+        val kind = actionKind?.let { ussdActionKindCode(it) }
+        val step = stepIndex?.coerceIn(0, 32)
+        val total = totalSteps?.coerceIn(0, 32)
+        AppCrashReporting.setKey("ussd_action", kind ?: "none")
+        if (step != null) AppCrashReporting.setKey("ussd_at", ussdStepToken(step))
+        if (total != null) AppCrashReporting.setKey("ussd_of", ussdStepToken(total))
+        AppCrashReporting.breadcrumb("ussd:fail:$safeReason:${kind ?: "none"}")
+        AppCrashReporting.recordIssue(UssdStepFailed())
+        log(
+            "ussd_step_failed",
+            bundleOf(
+                "flow" to flow,
+                "reason" to safeReason,
+                "step" to step,
+                "total" to total,
+                "action" to kind
+            )
+        )
+    }
+
     fun log(event: String, params: Bundle = Bundle()) {
         val fa = analytics ?: return
         runCatching { fa.logEvent(event.take(40), params) }
@@ -248,6 +312,33 @@ internal fun paymentFinishResult(outcome: RepeatOutcome): String? = when (outcom
 
 internal fun ledgerRefreshResult(inserted: Int): String =
     if (inserted > 0) "added" else "unchanged"
+
+/** Marker for Crashlytics grouping when a *334# menu no longer matches. */
+class UssdMenuMismatch : Exception()
+
+/** Marker for Crashlytics grouping when USSD inject / driver fails mid-script. */
+class UssdStepFailed : Exception()
+
+/** choose | type | unexpected | other — never labels or typed values. */
+internal fun ussdActionKindCode(raw: String): String = when (raw.trim().lowercase()) {
+    "choose" -> "choose"
+    "type" -> "type"
+    "unexpected" -> "unexpected"
+    else -> "other"
+}
+
+/**
+ * Crashlytics [AppCrashReporting.sanitizeToken] strips digits (phones/amounts).
+ * Map step indexes to letter tokens: 0 → step_a … 25 → step_z, then step_za…
+ */
+internal fun ussdStepToken(index: Int): String {
+    val i = index.coerceIn(0, 51)
+    return if (i < 26) {
+        "step_${('a' + i)}"
+    } else {
+        "step_z${('a' + (i - 26))}"
+    }
+}
 
 /** Collapse free text to a closed analytics token. Unknown → other. */
 internal fun paymentReasonCode(raw: String): String {
