@@ -4,6 +4,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+    jacoco
 }
 
 // Firebase Analytics + Crashlytics — apply when Console config is present
@@ -92,6 +93,7 @@ android {
         debug {
             isMinifyEnabled = false
             isDebuggable = true
+            enableUnitTestCoverage = true
         }
         release {
             isMinifyEnabled = true
@@ -149,6 +151,116 @@ android {
     androidResources {
         // English UI. Library translations (Play Services, AppCompat) stay out of the AAB.
         localeFilters += listOf("en")
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+}
+
+jacoco {
+    toolVersion = "0.8.13"
+}
+
+/**
+ * Unit-test coverage for JVM-testable logic. Compose screens, Android services,
+ * Room DAOs/entities, and WorkManager are excluded — those need instrumented tests.
+ * Target: 90% line coverage of the included set.
+ */
+val jacocoExcludes = listOf(
+    "**/R.class",
+    "**/R$*.class",
+    "**/BuildConfig.*",
+    "**/Manifest*.*",
+    "**/databinding/**",
+    "**/ui/**",
+    "**/LipaBillApp*",
+    "**/MainActivity*",
+    "**/data/local/**",
+    "**/data/repository/**",
+    "**/data/prefs/**",
+    "**/data/export/**",
+    "**/data/sms/*Receiver*",
+    "**/data/sms/*Watcher*",
+    "**/data/sms/SmsInboxReader*",
+    "**/data/sms/SmsPermission*",
+    "**/data/sms/LedgerNotifier*",
+    "**/data/tickets/ETicketAnalyzer*",
+    "**/data/tickets/PkPassParser*",
+    "**/data/tickets/PkPassIntents*",
+    "**/data/tickets/TicketDocumentImporter*",
+    "**/ussd/*Service*",
+    "**/ussd/*Helper*",
+    "**/ussd/*Coordinator*",
+    "**/ussd/*Driver*",
+    "**/ussd/*Mask*",
+    "**/ussd/*Session*",
+    "**/ussd/dialer/**",
+    "**/ussd/PendingPaymentReceipt*",
+    "**/auth/**",
+    "**/notify/**",
+    "**/metrics/**",
+    "**/tickets/**",
+    "**/engage/EngagementScheduler*",
+    "**/engage/CheckInNotifier*",
+    "**/update/AppUpdates*",
+    "**/update/DistributionUpdate*",
+    "**/viewmodel/*ViewModel*",
+    "**/viewmodel/*UiState*",
+    "**/viewmodel/ViewModelFactory*",
+    "**/viewmodel/PaymentSession*",
+    "**/DemoLedger*",
+    // Android Intent / Context paths — unit tests stay JVM-only.
+    "**/social/SocialLink*",
+    "**/data/contacts/ContactPicker*",
+    "**/security/AppAtRestCrypto*",
+    "**/data/model/Ticket*"
+)
+
+tasks.register<JacocoReport>("jacocoPlayDebugUnitTestReport") {
+    group = "verification"
+    description = "Jacoco report for playDebug unit tests (logic sources only)."
+    dependsOn("testPlayDebugUnitTest")
+
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        csv.required.set(false)
+    }
+
+    // AGP 9 built-in Kotlin writes playDebug classes here; tmp/kotlin-classes can drift.
+    val kotlinClasses = fileTree(
+        layout.buildDirectory.dir("intermediates/built_in_kotlinc/playDebug/compilePlayDebugKotlin/classes")
+    ) {
+        exclude(jacocoExcludes)
+    }
+    val javaClasses = fileTree(
+        layout.buildDirectory.dir("intermediates/javac/playDebug/compilePlayDebugJavaWithJavac/classes")
+    ) {
+        exclude(jacocoExcludes)
+    }
+    classDirectories.setFrom(files(kotlinClasses, javaClasses).filter { it.exists() })
+    sourceDirectories.setFrom(files("src/main/java"))
+    executionData.setFrom(
+        layout.buildDirectory.file("outputs/unit_test_code_coverage/playDebugUnitTest/testPlayDebugUnitTest.exec")
+    )
+}
+
+tasks.register<JacocoCoverageVerification>("jacocoPlayDebugCoverageVerification") {
+    group = "verification"
+    description = "Fails if included logic sources are under 90% line coverage."
+    dependsOn("jacocoPlayDebugUnitTestReport")
+    classDirectories.setFrom(tasks.named<JacocoReport>("jacocoPlayDebugUnitTestReport").map { it.classDirectories })
+    sourceDirectories.setFrom(tasks.named<JacocoReport>("jacocoPlayDebugUnitTestReport").map { it.sourceDirectories })
+    executionData.setFrom(tasks.named<JacocoReport>("jacocoPlayDebugUnitTestReport").map { it.executionData })
+    violationRules {
+        rule {
+            limit {
+                counter = "LINE"
+                value = "COVEREDRATIO"
+                minimum = "0.90".toBigDecimal()
+            }
+        }
     }
 }
 
@@ -242,4 +354,6 @@ dependencies {
     add("playImplementation", "com.google.android.play:app-update:2.1.0")
 
     testImplementation("junit:junit:4.13.2")
+    // Real org.json for JVM unit tests (Android stubs return defaults).
+    testImplementation("org.json:json:20250517")
 }
