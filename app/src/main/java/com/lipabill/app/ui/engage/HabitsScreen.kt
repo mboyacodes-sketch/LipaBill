@@ -57,6 +57,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lipabill.app.R
 import com.lipabill.app.engage.HabitPattern
 import com.lipabill.app.engage.centsToKes
+import com.lipabill.app.ui.LipaPillButton
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.ActionMetrics
 import com.lipabill.app.ui.theme.Canvas
@@ -250,7 +251,8 @@ private val GENERIC_SUBJECTS = setOf(
     ChallengeSubject.QUIET,
     ChallengeSubject.FEE,
     ChallengeSubject.PAYDAY,
-    ChallengeSubject.DIY
+    ChallengeSubject.DIY,
+    ChallengeSubject.OTHER
 )
 
 private fun stayedEstimateCents(habits: HabitsUiState): Long =
@@ -620,14 +622,10 @@ private fun CheckInRow(onPlay: () -> Unit) {
             Text(stringResource(R.string.checkin_offer_title), style = HomeType.rowTitle, color = Ink)
             Text(stringResource(R.string.checkin_offer_body), style = HomeType.body, color = Mute)
         }
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(22.dp))
-                .background(Accent)
-                .clickable(onClick = onPlay)
-                .padding(horizontal = 18.dp, vertical = 12.dp)
-        ) {
-            Text(stringResource(R.string.checkin_play), style = HomeType.rowTitle, color = OnAccent, fontWeight = FontWeight.SemiBold)
-        }
+        LipaPillButton(
+            label = stringResource(R.string.checkin_play),
+            onClick = onPlay,
+            maxLines = 1
+        )
     }
 }
