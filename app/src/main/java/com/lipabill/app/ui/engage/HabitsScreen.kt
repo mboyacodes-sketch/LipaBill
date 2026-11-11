@@ -1,9 +1,7 @@
 package com.lipabill.app.ui.engage
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateIntAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -23,12 +21,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Quiz
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,9 +40,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,29 +51,33 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lipabill.app.R
-import com.lipabill.app.engage.QuizKind
-import com.lipabill.app.engage.QuizQuestion
-import com.lipabill.app.engage.SpendCompare
+import com.lipabill.app.engage.HabitPattern
 import com.lipabill.app.engage.centsToKes
 import com.lipabill.app.ui.theme.Accent
+import com.lipabill.app.ui.theme.ActionMetrics
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
-import com.lipabill.app.ui.theme.Expense
-import com.lipabill.app.ui.theme.GeometricSansFamily
 import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.HomeType
+import com.lipabill.app.ui.theme.Income
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.OnAccent
+import com.lipabill.app.ui.theme.OnPastel
 import com.lipabill.app.ui.theme.SoftBlue
-import com.lipabill.app.ui.theme.Space
-import com.lipabill.app.ui.util.formatKes
+import com.lipabill.app.ui.util.formatKsh
 import com.lipabill.app.viewmodel.ChallengeCardKind
+import com.lipabill.app.viewmodel.ChallengeCardState
+import com.lipabill.app.viewmodel.ChallengeSubject
 import com.lipabill.app.viewmodel.EngageUiState
 import com.lipabill.app.viewmodel.EngagementViewModel
+import com.lipabill.app.viewmodel.HabitsUiState
+import java.time.format.TextStyle
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,71 +89,436 @@ fun HabitsScreen(
     viewModel: EngagementViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var quizOpen by remember { mutableStateOf(false) }
+    val habits by viewModel.habits.collectAsStateWithLifecycle()
+    var page by rememberSaveable { mutableStateOf(HabitsPage.HOME) }
+    var autoCompleteShown by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) { viewModel.openHabits() }
     LaunchedEffect(startQuiz) {
         if (startQuiz) {
-            quizOpen = true
+            page = HabitsPage.CHECK_IN
             onQuizOpened()
         }
     }
+    LaunchedEffect(state.card?.kind) {
+        if (state.card?.kind == ChallengeCardKind.COMPLETED && !autoCompleteShown) {
+            autoCompleteShown = true
+            page = HabitsPage.COMPLETE
+        }
+    }
+    BackHandler {
+        when (page) {
+            HabitsPage.HOME -> onBack()
+            else -> page = HabitsPage.HOME
+        }
+    }
+    val canStart = state.card?.kind != ChallengeCardKind.ACTIVE
+    val startFromPage: (String) -> Unit = { templateId ->
+        viewModel.startChallenge(templateId)
+        page = HabitsPage.HOME
+    }
+    val showTopBar = page in setOf(
+        HabitsPage.CHALLENGES,
+        HabitsPage.NOTICED,
+        HabitsPage.BADGES,
+        HabitsPage.SETTINGS
+    )
     Scaffold(
         modifier = modifier,
         containerColor = Canvas,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.habits_title), style = HomeType.greeting) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Canvas)
-            )
+            if (showTopBar) {
+                TopAppBar(
+                    title = {
+                        Text(
+                            stringResource(
+                                when (page) {
+                                    HabitsPage.CHALLENGES -> R.string.challenges_title
+                                    HabitsPage.NOTICED -> R.string.habits_noticed
+                                    HabitsPage.BADGES -> R.string.badges_title
+                                    HabitsPage.SETTINGS -> R.string.habits_settings_title
+                                    else -> R.string.habits_title
+                                }
+                            ),
+                            style = HomeType.greeting.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { page = HabitsPage.HOME }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Canvas)
+                )
+            }
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = Space.page, vertical = Space.gap)
-        ) {
-            Text(
-                stringResource(R.string.habits_subtitle),
-                style = HomeType.body,
-                color = Mute
-            )
-            Spacer(modifier = Modifier.height(Space.section))
-            val card = state.card
-            if (card != null) {
-                ChallengeStage(
-                    kind = card.kind,
-                    day = card.day,
-                    totalDays = card.totalDays,
-                    payee = card.payee,
-                    onStart = viewModel::startChallenge,
-                    onRestart = viewModel::restartChallenge
-                )
-                Spacer(modifier = Modifier.height(Space.section))
-            }
-            Text(stringResource(R.string.habits_this_week), style = HomeType.section, color = Ink)
-            Spacer(modifier = Modifier.height(Space.gap))
-            if (state.checkInDone && !quizOpen) {
-                CheckInDoneStrip(
-                    streakCount = maxOf(state.streakCount, state.nextStreakCount)
-                )
-            } else {
-                CheckInStage(
+        AnimatedContent(
+            targetState = page,
+            transitionSpec = {
+                if (targetState != HabitsPage.HOME) {
+                    (slideInHorizontally { it / 4 } + fadeIn()) togetherWith fadeOut()
+                } else {
+                    fadeIn() togetherWith (slideOutHorizontally { it / 4 } + fadeOut())
+                }
+            },
+            label = "habitsPage",
+            modifier = Modifier.padding(padding)
+        ) { current ->
+            when (current) {
+                HabitsPage.CHECK_IN -> CheckInPage(
                     state = state,
-                    expanded = quizOpen,
-                    onOpen = { quizOpen = true },
-                    onDismiss = { quizOpen = false },
+                    onClose = { page = HabitsPage.HOME },
                     onComplete = { answers ->
                         viewModel.completeCheckIn(answers)
-                        quizOpen = false
+                        page = HabitsPage.HOME
                     }
                 )
+                HabitsPage.COMPLETE -> {
+                    val card = state.card
+                    if (card == null) {
+                        LaunchedEffect(Unit) { page = HabitsPage.HOME }
+                        Box(Modifier.fillMaxSize())
+                    } else {
+                        ChallengeCompletePage(
+                            card = card,
+                            habits = habits,
+                            stayedCents = stayedEstimateCents(habits),
+                            onNextChallenge = { page = HabitsPage.CHALLENGES },
+                            onDone = { page = HabitsPage.HOME }
+                        )
+                    }
+                }
+                HabitsPage.RECAP -> MonthlyRecapPage(
+                    habits = habits,
+                    quietDays = state.summary?.quietDays ?: 0
+                )
+                else -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .widthIn(max = HabitsMaxWidth)
+                            .fillMaxWidth()
+                            .padding(horizontal = HabitsTokens.pagePad, vertical = 12.dp)
+                    ) {
+                        when (current) {
+                            HabitsPage.HOME -> HabitsHome(
+                                state = state,
+                                habits = habits,
+                                canStart = canStart,
+                                onOpen = { page = it },
+                                viewModel = viewModel
+                            )
+                            HabitsPage.CHALLENGES -> ChallengesPage(
+                                habits = habits,
+                                canStart = canStart,
+                                onStart = startFromPage,
+                                onStartDiy = { categoryId, days, capCents ->
+                                    viewModel.startDiy(categoryId, days, capCents)
+                                    page = HabitsPage.HOME
+                                },
+                                onDuoInvite = { viewModel.setDuoPending(true) }
+                            )
+                            HabitsPage.NOTICED -> NoticedPage(
+                                habits = habits,
+                                canStart = canStart,
+                                onStart = startFromPage,
+                                onNotMe = viewModel::dismissPattern,
+                                onDismissCatchUp = viewModel::dismissCatchUp,
+                                onTeach = viewModel::teachPayee
+                            )
+                            HabitsPage.BADGES -> BadgesPage(habits = habits)
+                            HabitsPage.SETTINGS -> SettingsPage(
+                                onOpenRecap = { page = HabitsPage.RECAP }
+                            )
+                            HabitsPage.CHECK_IN, HabitsPage.COMPLETE, HabitsPage.RECAP -> Unit
+                        }
+                        Spacer(modifier = Modifier.height(HabitsTokens.sectionGap))
+                    }
+                }
             }
+        }
+    }
+}
+
+private val HabitsMaxWidth = 560.dp
+
+private val GENERIC_SUBJECTS = setOf(
+    ChallengeSubject.QUIET,
+    ChallengeSubject.FEE,
+    ChallengeSubject.PAYDAY,
+    ChallengeSubject.DIY
+)
+
+private fun stayedEstimateCents(habits: HabitsUiState): Long =
+    habits.patterns.filterIsInstance<HabitPattern.FoodPeakDay>().firstOrNull()?.weeklyCents
+        ?: habits.patterns.filterIsInstance<HabitPattern.FrequentPayee>().firstOrNull()?.let { it.cents / 4 }
+        ?: 0L
+
+@Composable
+private fun HabitsHome(
+    state: EngageUiState,
+    habits: HabitsUiState,
+    canStart: Boolean,
+    onOpen: (HabitsPage) -> Unit,
+    viewModel: EngagementViewModel
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                stringResource(R.string.habits_title),
+                style = HomeType.greeting.copy(fontSize = 26.sp, fontWeight = FontWeight.Bold),
+                color = Ink
+            )
+            Text(stringResource(R.string.habits_subtitle), style = HomeType.body, color = Mute)
+        }
+        IconButton(
+            onClick = { onOpen(HabitsPage.SETTINGS) },
+            modifier = Modifier
+                .size(44.dp)
+                .border(1.dp, Hairline, CircleShape)
+                .clip(CircleShape)
+                .background(CardWhite)
+        ) {
+            Icon(
+                Icons.Outlined.Tune,
+                contentDescription = stringResource(R.string.habits_settings),
+                tint = Ink
+            )
+        }
+    }
+    Spacer(modifier = Modifier.height(HabitsTokens.sectionGap))
+    LevelCard(
+        habits = habits,
+        streak = state.streakCount,
+        quietDays = state.summary?.quietDays ?: 0,
+        feesDodgedCents = habits.feesDodgedCents,
+        onClick = { onOpen(HabitsPage.BADGES) }
+    )
+    Spacer(modifier = Modifier.height(HabitsTokens.sectionGap))
+    val card = state.card
+    if (card != null) {
+        SectionHeader(
+            title = stringResource(R.string.habits_now_playing),
+            action = stringResource(R.string.habits_all_challenges),
+            onAction = { onOpen(HabitsPage.CHALLENGES) }
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        when (card.kind) {
+            ChallengeCardKind.ACTIVE -> ActiveNowPlaying(
+                card = card,
+                tipDay = habits.patterns.filterIsInstance<HabitPattern.FoodPeakDay>().firstOrNull(),
+                usualCents = stayedEstimateCents(habits)
+            )
+            ChallengeCardKind.COMPLETED -> CompletedTeaser(
+                card = card,
+                onOpen = { onOpen(HabitsPage.COMPLETE) }
+            )
+            else -> ChallengeStage(
+                kind = card.kind,
+                day = card.day,
+                totalDays = card.totalDays,
+                payee = card.payee,
+                fuliza = card.subject == ChallengeSubject.FULIZA,
+                generic = card.subject in GENERIC_SUBJECTS,
+                onStart = { viewModel.startChallenge() },
+                onRestart = viewModel::restartChallenge
+            )
+        }
+        Spacer(modifier = Modifier.height(HabitsTokens.sectionGap))
+    }
+    habits.patterns.firstOrNull()?.let { pattern ->
+        val more = (habits.patterns.size - 1).coerceAtLeast(0) +
+            (if (habits.catchUp != null) 1 else 0) +
+            (if (habits.teachCandidate != null) 1 else 0)
+        SectionHeader(
+            title = stringResource(R.string.habits_noticed),
+            action = if (more > 0) {
+                stringResource(R.string.habits_see_more, more.coerceAtLeast(1))
+            } else {
+                stringResource(R.string.habits_see_all)
+            },
+            onAction = { onOpen(HabitsPage.NOTICED) }
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        PatternCard(
+            pattern = pattern,
+            canStart = canStart,
+            onStart = { viewModel.startChallenge(it) },
+            onNotMe = { viewModel.dismissPattern(pattern.id) },
+            foodBars = habits.foodDayBars,
+            compact = true
+        )
+        Spacer(modifier = Modifier.height(HabitsTokens.sectionGap))
+    }
+    if (state.checkInDone) {
+        CheckInDoneStrip(streakCount = maxOf(state.streakCount, state.nextStreakCount))
+    } else {
+        CheckInRow(onPlay = { onOpen(HabitsPage.CHECK_IN) })
+    }
+    if (habits.badges.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(HabitsTokens.sectionGap))
+        SectionHeader(
+            title = stringResource(R.string.habits_badges),
+            action = stringResource(
+                R.string.habits_badges_count,
+                habits.badges.count { it.earned },
+                habits.badges.size
+            ),
+            onAction = { onOpen(HabitsPage.BADGES) }
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        BadgeStrip(habits.badges, onClick = { onOpen(HabitsPage.BADGES) })
+    }
+}
+
+@Composable
+private fun ActiveNowPlaying(
+    card: ChallengeCardState,
+    tipDay: HabitPattern.FoodPeakDay?,
+    usualCents: Long
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(HabitsTokens.CardShape)
+            .background(CardWhite)
+            .border(1.dp, Hairline, HabitsTokens.CardShape)
+            .padding(18.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CompactDayRing(day = card.day, totalDays = card.totalDays)
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    challengeActiveBody(card.day, card.totalDays),
+                    style = HomeType.caption,
+                    color = Income,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    challengePlayingName(card.subject, card.payee, card.totalDays),
+                    style = HomeType.rowTitle.copy(fontSize = 17.sp, fontWeight = FontWeight.Bold),
+                    color = Ink
+                )
+                if (usualCents > 0L) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        stringResource(R.string.challenge_playing_usual, formatKsh(centsToKes(usualCents))),
+                        style = HomeType.body,
+                        color = Mute
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(14.dp))
+        WeekdayLetterStrip(kind = card.kind, day = card.day, totalDays = card.totalDays)
+        tipDay?.let { peak ->
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(ActionMetrics)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(
+                        R.string.challenge_tip_peak_day,
+                        peak.day.getDisplayName(TextStyle.FULL, Locale.UK)
+                    ),
+                    style = HomeType.body,
+                    color = OnPastel,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WeekdayLetterStrip(kind: ChallengeCardKind, day: Int, totalDays: Int) {
+    val letters = listOf("M", "T", "W", "T", "F", "S", "S")
+    val days = totalDays.coerceIn(1, 7)
+    val done = when (kind) {
+        ChallengeCardKind.COMPLETED -> days
+        ChallengeCardKind.ACTIVE -> (day - 1).coerceIn(0, days)
+        else -> 0
+    }
+    val todayIndex = if (kind == ChallengeCardKind.ACTIVE) (day - 1).coerceIn(0, days - 1) else -1
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        repeat(days) { i ->
+            val filled = i < done
+            val isToday = i == todayIndex
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(34.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .then(
+                        when {
+                            filled -> Modifier.background(Income)
+                            isToday -> Modifier
+                                .background(CardWhite)
+                                .border(2.dp, Income, RoundedCornerShape(10.dp))
+                            else -> Modifier.background(Canvas)
+                        }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    letters.getOrElse(i) { (i + 1).toString() },
+                    style = HomeType.caption,
+                    color = when {
+                        filled -> OnAccent
+                        isToday -> Income
+                        else -> Mute
+                    },
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompletedTeaser(card: ChallengeCardState, onOpen: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(HabitsTokens.CardShape)
+            .background(CardWhite)
+            .border(1.dp, Hairline, HabitsTokens.CardShape)
+            .clickable(onClick = onOpen)
+            .padding(18.dp)
+    ) {
+        Text(stringResource(R.string.complete_kept_label), style = HomeType.caption, color = Income, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            challengePlayingName(card.subject, card.payee, card.totalDays),
+            style = HomeType.rowTitle.copy(fontSize = 17.sp, fontWeight = FontWeight.Bold),
+            color = Ink
+        )
+        if (card.points > 0) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.challenge_points_earned, card.points),
+                style = HomeType.rowTitle,
+                color = Income
+            )
         }
     }
 }
@@ -159,101 +529,47 @@ private fun ChallengeStage(
     day: Int,
     totalDays: Int,
     payee: String?,
+    fuliza: Boolean,
+    generic: Boolean,
     onStart: () -> Unit,
     onRestart: () -> Unit
 ) {
     var busy by remember { mutableStateOf(false) }
     LaunchedEffect(kind) { busy = false }
     val title = challengeTitle(kind, day, totalDays)
-    val body = challengeBody(kind, day, totalDays, payee)
+    val body = challengeBody(kind, day, totalDays, payee, fuliza, generic)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
+            .clip(HabitsTokens.CardShape)
             .background(CardWhite)
-            .padding(horizontal = Space.card, vertical = Space.cardH),
+            .border(1.dp, Hairline, HabitsTokens.CardShape)
+            .padding(horizontal = 18.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         HabitMark(
             kind = kind,
             day = day,
             totalDays = totalDays,
-            modifier = Modifier.size(148.dp)
+            modifier = Modifier.size(96.dp)
         )
-        if (kind == ChallengeCardKind.ACTIVE || kind == ChallengeCardKind.COMPLETED) {
-            Spacer(modifier = Modifier.height(Space.gap))
-            ChallengeDayStrip(kind = kind, day = day, totalDays = totalDays)
-        }
-        Spacer(modifier = Modifier.height(Space.gap))
-        Text(title, style = HomeType.greeting, color = Ink, textAlign = TextAlign.Center)
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(title, style = HomeType.rowTitle, color = Ink, textAlign = TextAlign.Center)
+        Spacer(modifier = Modifier.height(4.dp))
         Text(body, style = HomeType.body, color = Mute, textAlign = TextAlign.Center)
-        if (kind != ChallengeCardKind.ACTIVE) {
-            Spacer(modifier = Modifier.height(Space.block))
-            AccentButton(
-                label = stringResource(
-                    if (kind == ChallengeCardKind.OFFER) R.string.challenge_start else R.string.challenge_restart
-                ),
-                enabled = !busy,
-                onClick = {
-                    busy = true
-                    if (kind == ChallengeCardKind.OFFER) onStart() else onRestart()
-                }
-            )
-        }
-    }
-}
-
-@Composable
-private fun ChallengeDayStrip(
-    kind: ChallengeCardKind,
-    day: Int,
-    totalDays: Int
-) {
-    val days = totalDays.coerceAtLeast(1)
-    val done = when (kind) {
-        ChallengeCardKind.COMPLETED -> days
-        ChallengeCardKind.ACTIVE -> (day - 1).coerceIn(0, days)
-        else -> 0
-    }
-    val todayIndex = if (kind == ChallengeCardKind.ACTIVE) (day - 1).coerceIn(0, days - 1) else -1
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        repeat(days) { i ->
-            if (i > 0) Spacer(modifier = Modifier.width(10.dp))
-            val filled = i < done
-            val isToday = i == todayIndex
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(
-                    modifier = Modifier
-                        .size(if (isToday) 14.dp else 12.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                filled || isToday -> Accent
-                                else -> CardWhite
-                            }
-                        )
-                        .then(
-                            if (!filled && !isToday) {
-                                Modifier.border(1.6.dp, Hairline, CircleShape)
-                            } else {
-                                Modifier
-                            }
-                        )
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = (i + 1).toString(),
-                    style = HomeType.caption,
-                    color = if (filled || isToday) Ink else Mute,
-                    fontWeight = if (isToday) FontWeight.SemiBold else FontWeight.Normal
-                )
-            }
-        }
+        Spacer(modifier = Modifier.height(12.dp))
+        PillButton(
+            label = stringResource(
+                if (kind == ChallengeCardKind.OFFER) R.string.challenge_start else R.string.challenge_restart
+            ),
+            filled = true,
+            enabled = !busy,
+            onClick = {
+                busy = true
+                if (kind == ChallengeCardKind.OFFER) onStart() else onRestart()
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
@@ -262,9 +578,10 @@ private fun CheckInDoneStrip(streakCount: Int) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
+            .clip(HabitsTokens.CardShape)
             .background(CardWhite)
-            .padding(horizontal = Space.card, vertical = 14.dp),
+            .border(1.dp, Hairline, HabitsTokens.CardShape)
+            .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         WeekGlyph(modifier = Modifier.width(96.dp).height(22.dp))
@@ -279,290 +596,38 @@ private fun CheckInDoneStrip(streakCount: Int) {
 }
 
 @Composable
-private fun CheckInStage(
-    state: EngageUiState,
-    expanded: Boolean,
-    onOpen: () -> Unit,
-    onDismiss: () -> Unit,
-    onComplete: (Map<String, String>) -> Unit
-) {
-    Column(
+private fun CheckInRow(onPlay: () -> Unit) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
+            .clip(HabitsTokens.CardShape)
             .background(CardWhite)
-            .padding(Space.card)
+            .border(1.dp, Hairline, HabitsTokens.CardShape)
+            .padding(18.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        if (!expanded) {
-            WeekGlyph(modifier = Modifier.fillMaxWidth().height(28.dp))
-            Spacer(modifier = Modifier.height(Space.gap))
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(SoftBlue),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Outlined.Quiz, contentDescription = null, tint = Ink)
+        }
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
             Text(stringResource(R.string.checkin_offer_title), style = HomeType.rowTitle, color = Ink)
-            Spacer(modifier = Modifier.height(4.dp))
             Text(stringResource(R.string.checkin_offer_body), style = HomeType.body, color = Mute)
-            Spacer(modifier = Modifier.height(Space.block))
-            AccentButton(label = stringResource(R.string.checkin_open), onClick = onOpen)
-        } else if (state.questions.isEmpty()) {
-            Text(stringResource(R.string.checkin_empty_title), style = HomeType.rowTitle, color = Ink)
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(stringResource(R.string.checkin_empty_body), style = HomeType.body, color = Mute)
-            Spacer(modifier = Modifier.height(Space.block))
-            Text(
-                stringResource(R.string.checkin_skip),
-                style = HomeType.caption,
-                color = Mute,
-                modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .clickable(onClick = onDismiss)
-                    .padding(8.dp)
-            )
-        } else {
-            QuizFlow(state = state, onDismiss = onDismiss, onComplete = onComplete)
         }
-    }
-}
-
-@Composable
-private fun QuizFlow(
-    state: EngageUiState,
-    onDismiss: () -> Unit,
-    onComplete: (Map<String, String>) -> Unit
-) {
-    val questions = state.questions
-    var index by remember { mutableIntStateOf(0) }
-    var revealed by remember { mutableStateOf(false) }
-    var pickedId by remember { mutableStateOf<String?>(null) }
-    var showSummary by remember { mutableStateOf(false) }
-    var answers by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var streakTarget by remember { mutableIntStateOf(0) }
-    val streak by animateIntAsState(streakTarget, tween(350), label = "streak")
-    LaunchedEffect(showSummary) {
-        if (showSummary) streakTarget = state.nextStreakCount
-    }
-    val step = if (showSummary) -1 else index
-    Column(modifier = Modifier.fillMaxWidth()) {
-        AnimatedContent(
-            targetState = step,
-            transitionSpec = {
-                if (targetState >= initialState) {
-                    (slideInHorizontally { it / 3 } + fadeIn()) togetherWith
-                        (slideOutHorizontally { -it / 3 } + fadeOut())
-                } else {
-                    fadeIn() togetherWith fadeOut()
-                }
-            },
-            label = "quiz"
-        ) { current ->
-            if (current < 0) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = streak.toString(),
-                        color = Accent,
-                        style = HomeType.greeting.copy(
-                            fontFamily = GeometricSansFamily,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = HomeType.greeting.fontSize * 2.4f
-                        )
-                    )
-                    Text(
-                        stringResource(R.string.checkin_done_title, state.nextStreakCount),
-                        style = HomeType.rowTitle,
-                        color = Ink,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        stringResource(R.string.checkin_done_body),
-                        style = HomeType.body,
-                        color = Mute,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            } else {
-                val question = questions[current]
-                Column {
-                    QuestionDots(count = questions.size, index = current)
-                    Spacer(modifier = Modifier.height(Space.gap))
-                    Text(
-                        stringResource(R.string.checkin_question_progress, current + 1, questions.size),
-                        style = HomeType.caption,
-                        color = Mute
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    QuestionBody(
-                        question = question,
-                        revealed = revealed && current == index,
-                        pickedId = pickedId.takeIf { revealed && current == index },
-                        categoryCents = state.summary?.byCategory
-                            ?.firstOrNull { it.type.name == question.correctOptionId }
-                            ?.cents ?: 0L,
-                        summarySpend = state.summary?.spendCents ?: 0L,
-                        previousSpend = state.summary?.previousSpendCents ?: 0L,
-                        quietDays = state.summary?.quietDays ?: 0,
-                        onPick = { optionId ->
-                            if (!revealed) {
-                                answers = answers + (question.id to optionId)
-                                pickedId = optionId
-                                revealed = true
-                            }
-                        }
-                    )
-                }
-            }
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(22.dp))
+                .background(Accent)
+                .clickable(onClick = onPlay)
+                .padding(horizontal = 18.dp, vertical = 12.dp)
+        ) {
+            Text(stringResource(R.string.checkin_play), style = HomeType.rowTitle, color = OnAccent, fontWeight = FontWeight.SemiBold)
         }
-        Spacer(modifier = Modifier.height(Space.block))
-        val onLast = index == questions.lastIndex
-        AccentButton(
-            label = stringResource(
-                if (showSummary || (revealed && onLast)) R.string.checkin_finish else R.string.checkin_next
-            ),
-            enabled = showSummary || revealed,
-            onClick = {
-                when {
-                    showSummary -> onComplete(answers)
-                    revealed && onLast -> showSummary = true
-                    revealed -> {
-                        revealed = false
-                        pickedId = null
-                        index++
-                    }
-                }
-            }
-        )
-        if (!showSummary) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                stringResource(R.string.checkin_skip),
-                style = HomeType.caption,
-                color = Mute,
-                modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .clickable(onClick = onDismiss)
-                    .padding(8.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun QuestionDots(count: Int, index: Int) {
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        repeat(count) { i ->
-            Box(
-                modifier = Modifier
-                    .size(if (i == index) 10.dp else 8.dp)
-                    .clip(CircleShape)
-                    .background(if (i <= index) Accent else Hairline)
-            )
-        }
-    }
-}
-
-@Composable
-private fun AccentButton(label: String, onClick: () -> Unit, enabled: Boolean = true) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (enabled) Accent else Accent.copy(alpha = 0.35f))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 14.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(label, style = HomeType.rowTitle, color = OnAccent)
-    }
-}
-
-@Composable
-private fun QuestionBody(
-    question: QuizQuestion,
-    revealed: Boolean,
-    pickedId: String?,
-    categoryCents: Long,
-    summarySpend: Long,
-    previousSpend: Long,
-    quietDays: Int,
-    onPick: (String) -> Unit
-) {
-    Column {
-        Text(promptFor(question.kind), style = HomeType.rowTitle, color = Ink)
-        Spacer(modifier = Modifier.height(10.dp))
-        question.options.forEach { option ->
-            val isCorrect = option.id == question.correctOptionId
-            val isPicked = option.id == pickedId
-            val background = when {
-                revealed && isCorrect -> Accent
-                revealed && isPicked && !isCorrect -> Expense.copy(alpha = 0.14f)
-                else -> SoftBlue
-            }
-            val color = when {
-                revealed && isCorrect -> OnAccent
-                revealed && isPicked && !isCorrect -> Expense
-                else -> Ink
-            }
-            Text(
-                text = optionLabel(question, option.id, option.label),
-                style = HomeType.body,
-                color = color,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(background)
-                    .clickable(enabled = !revealed) { onPick(option.id) }
-                    .padding(horizontal = 14.dp, vertical = 12.dp)
-            )
-        }
-        AnimatedVisibility(visible = revealed) {
-            Text(
-                insightFor(question, categoryCents, summarySpend, previousSpend, quietDays),
-                style = HomeType.caption,
-                color = Mute,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun promptFor(kind: QuizKind): String = when (kind) {
-    QuizKind.TOP_CATEGORY -> stringResource(R.string.quiz_top_category)
-    QuizKind.WEEK_COMPARE -> stringResource(R.string.quiz_compare)
-    QuizKind.QUIET_DAYS -> stringResource(R.string.quiz_quiet_days)
-}
-
-@Composable
-private fun optionLabel(question: QuizQuestion, id: String, fallback: String): String {
-    if (question.kind != QuizKind.WEEK_COMPARE) return fallback
-    return when (id) {
-        SpendCompare.MORE.name -> stringResource(R.string.quiz_more)
-        SpendCompare.LESS.name -> stringResource(R.string.quiz_less)
-        else -> stringResource(R.string.quiz_same)
-    }
-}
-
-@Composable
-private fun insightFor(
-    question: QuizQuestion,
-    categoryCents: Long,
-    summarySpend: Long,
-    previousSpend: Long,
-    quietDays: Int
-): String {
-    val correct = question.options.firstOrNull { it.id == question.correctOptionId }?.label.orEmpty()
-    return when (question.kind) {
-        QuizKind.TOP_CATEGORY -> stringResource(
-            R.string.quiz_insight_top,
-            correct,
-            formatKes(centsToKes(categoryCents))
-        )
-        QuizKind.WEEK_COMPARE -> stringResource(
-            R.string.quiz_insight_compare,
-            formatKes(centsToKes(summarySpend)),
-            formatKes(centsToKes(previousSpend))
-        )
-        QuizKind.QUIET_DAYS -> stringResource(R.string.quiz_insight_quiet, quietDays)
     }
 }

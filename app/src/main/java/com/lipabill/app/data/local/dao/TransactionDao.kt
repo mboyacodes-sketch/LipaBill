@@ -37,7 +37,7 @@ interface TransactionDao {
      */
     @Query(
         """
-        SELECT id, counterpartyName, type, amount, timestampMillis
+        SELECT id, counterpartyName, type, amount, cost, timestampMillis
         FROM transactions
         WHERE timestampMillis >= :startInclusive AND timestampMillis < :endExclusive
         ORDER BY timestampMillis ASC, id ASC
@@ -216,6 +216,7 @@ data class WindowTransactionRow(
     val counterpartyName: String?,
     val type: TransactionType,
     val amount: Double?,
+    val cost: Double? = null,
     val timestampMillis: Long
 )
 

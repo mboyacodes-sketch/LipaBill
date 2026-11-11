@@ -107,6 +107,25 @@ class WeeklyCheckInTest {
         assertEquals(1, CheckInStreaks.weekGap("2025-W52", "2026-W01"))
     }
 
+    @Test
+    fun check_in_guess_scores_spot_on_and_close() {
+        val question = QuizQuestion(
+            id = "top",
+            kind = QuizKind.TOP_CATEGORY,
+            options = listOf(
+                QuizOption("a", "Food"),
+                QuizOption("b", "Transport"),
+                QuizOption("c", "Groceries"),
+                QuizOption("d", "Airtime")
+            ),
+            correctOptionId = "c"
+        )
+        assertEquals(CheckInScoring.SPOT_ON, CheckInScoring.guessBonus(question, "c"))
+        assertEquals(CheckInScoring.CLOSE, CheckInScoring.guessBonus(question, "b"))
+        assertEquals(CheckInScoring.CLOSE, CheckInScoring.guessBonus(question, "d"))
+        assertEquals(0, CheckInScoring.guessBonus(question, "a"))
+    }
+
     private fun build(
         transactions: List<ChallengeTransaction>,
         previous: Long,

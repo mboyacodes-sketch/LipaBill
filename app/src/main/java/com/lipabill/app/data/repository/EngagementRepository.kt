@@ -33,15 +33,27 @@ class EngagementRepository(
 
     fun observeStreak() = challenges.observeStreak()
 
+    fun observeKeptTemplateIds() = challenges.observeKeptTemplateIds()
+
+    fun observeCheckInCount() = challenges.observeCheckInCount()
+
+    suspend fun transactionsSince(since: Long, now: Long = System.currentTimeMillis()): List<ChallengeTransaction> =
+        withContext(Dispatchers.IO) {
+            transactions.listBetween(since, now + 1).map { it.toChallengeTransaction() }
+        }
+
     suspend fun hasCheckIn(weekId: String): Boolean = withContext(Dispatchers.IO) {
         challenges.checkIn(weekId) != null
     }
 
-    suspend fun startFoodDeliveryChallenge(now: Long = System.currentTimeMillis()): Long? =
-        start(ChallengeTemplates.foodDelivery3Days, now)
-
     suspend fun startSkipPayeeChallenge(payeeName: String, now: Long = System.currentTimeMillis()): Long? =
         start(ChallengeTemplates.skipPayee(payeeName), now)
+
+    /** Starts a known template. Unknown ids do nothing. */
+    suspend fun startChallenge(templateId: String, now: Long = System.currentTimeMillis()): Long? {
+        val template = ChallengeTemplates.byId(templateId) ?: return null
+        return start(template, now)
+    }
 
     private suspend fun start(template: ChallengeTemplate, now: Long): Long? = withContext(Dispatchers.IO) {
         val existing = challenges.listEvaluable(now, ChallengeEvaluator.GRACE_MILLIS)
@@ -204,5 +216,6 @@ private fun WindowTransactionRow.toChallengeTransaction() = ChallengeTransaction
     timestampMillis = timestampMillis,
     counterpartyName = counterpartyName,
     type = type,
-    amountCents = kesToCents(amount) ?: 0L
+    amountCents = kesToCents(amount) ?: 0L,
+    feeCents = cost?.let { kesToCents(it) } ?: 0L
 )
