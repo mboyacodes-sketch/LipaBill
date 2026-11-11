@@ -28,6 +28,7 @@ import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.viewmodel.ChallengeSubject
 import com.lipabill.app.viewmodel.EngageUiState
 
 @Composable
@@ -44,7 +45,20 @@ fun EngageHomeSection(
         stringResource(R.string.checkin_offer_title)
     }
     val body = if (showChallenge) {
-        challengeBody(card.kind, card.day, card.totalDays)
+        challengeBody(
+            kind = card.kind,
+            day = card.day,
+            totalDays = card.totalDays,
+            payee = card.payee,
+            fuliza = card.subject == ChallengeSubject.FULIZA,
+            generic = card.subject in setOf(
+                ChallengeSubject.QUIET,
+                ChallengeSubject.FEE,
+                ChallengeSubject.PAYDAY,
+                ChallengeSubject.DIY,
+                ChallengeSubject.OTHER
+            )
+        )
     } else {
         stringResource(R.string.checkin_offer_body)
     }
@@ -63,10 +77,14 @@ fun EngageHomeSection(
                 kind = card.kind,
                 day = card.day,
                 totalDays = card.totalDays,
-                modifier = Modifier.size(72.dp)
+                modifier = Modifier.size(72.dp),
+                animated = false
             )
         } else {
-            WeekGlyph(modifier = Modifier.width(96.dp).height(22.dp))
+            WeekGlyph(
+                modifier = Modifier.width(96.dp).height(22.dp),
+                animated = false
+            )
         }
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
