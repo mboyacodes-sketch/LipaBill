@@ -33,7 +33,9 @@ internal fun challengeCardKind(status: ChallengeStatus): ChallengeCardKind = whe
 data class ChallengeCardState(
     val kind: ChallengeCardKind,
     val day: Int = 1,
-    val totalDays: Int = 3
+    val totalDays: Int = 3,
+    /** Set for skip-a-payee challenges started from Insights. */
+    val payee: String? = null
 )
 
 data class EngageUiState(
@@ -130,14 +132,16 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
         }
         val template = ChallengeTemplates.byId(latest.templateId)
         val total = template?.durationDays ?: 3
+        val payee = ChallengeTemplates.payeeOf(latest.templateId)
         val zone = ChallengeClock.zoneOf(latest.zoneId)
         return when (val kind = challengeCardKind(ChallengeStatus.fromStored(latest.status))) {
             ChallengeCardKind.ACTIVE -> ChallengeCardState(
                 kind = kind,
                 day = ChallengeClock.dayNumber(latest.startAt, latest.endAt, System.currentTimeMillis(), zone),
-                totalDays = total
+                totalDays = total,
+                payee = payee
             )
-            else -> ChallengeCardState(kind = kind, totalDays = total)
+            else -> ChallengeCardState(kind = kind, totalDays = total, payee = payee)
         }
     }
 }

@@ -9,6 +9,12 @@ import com.lipabill.app.metrics.SetupBlocker
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.data.local.entity.ChallengeEntity
+import com.lipabill.app.engage.CategoryMatcher
+import com.lipabill.app.engage.CategoryRules
+import com.lipabill.app.engage.ChallengeClock
+import com.lipabill.app.engage.ChallengeStatus
+import com.lipabill.app.engage.ChallengeTemplates
 import com.lipabill.app.ui.util.inCategoryOrder
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.ui.util.displayLabel
@@ -126,6 +132,9 @@ data class AnalyticsSummary(
     val availableYears: List<Int> = emptyList(),
     val customStart: LocalDate? = null,
     val customEnd: LocalDate? = null,
+    /** Inclusive bounds for the selected period (named months for the UI). */
+    val periodFrom: LocalDate? = null,
+    val periodTo: LocalDate? = null,
     val rangeLabel: String = "Last 30 days",
     val hasLedger: Boolean = false,
     val storyHeadline: String = "",
@@ -134,7 +143,35 @@ data class AnalyticsSummary(
     val quietStreak: Int = 0,
     val busiestLabel: String? = null,
     val busiestTotal: Double = 0.0,
-    val pulse: List<PulseCell> = emptyList()
+    val pulse: List<PulseCell> = emptyList(),
+    val keptHeadline: String? = null,
+    val fees: FeeSummary = FeeSummary(),
+    val regulars: List<RegularPayee> = emptyList(),
+    val habit: SpendingHabit? = null,
+    /** Every row in the period, reversals included, for PDF statement export. */
+    val periodTransactions: List<MpesaTransaction> = emptyList(),
+    /** "12 Oct – 10 Nov 2026 · 30 days", counting only days the ledger covers. */
+    val heroLabel: String = "",
+    val badges: List<InsightBadge> = emptyList(),
+    /** Month or year bars for stretches longer than a month. */
+    val periodBars: List<PeriodBar> = emptyList()
+)
+
+/** Choices the user made about payees and badges, kept in secure prefs. */
+data class InsightMarks(
+    val essential: Set<String> = emptySet(),
+    val watched: Set<String> = emptySet(),
+    val earnedBadges: Set<String> = emptySet()
+)
+
+/** The challenge Insights shows: active, or ended in the last few days. */
+data class InsightChallenge(
+    val title: String,
+    val kind: ChallengeCardKind,
+    val day: Int,
+    val totalDays: Int,
+    val kept: Double,
+    val startDate: LocalDate
 )
 
 data class TransactionListUiState(
@@ -144,6 +181,8 @@ data class TransactionListUiState(
     val hasSmsPermission: Boolean = false,
     val latestBalance: Double? = null,
     val fulizaOutstanding: Double? = null,
+    /** Due date from the latest Fuliza draw text. */
+    val fulizaDue: LocalDate? = null,
     val account: WalletAccount = WalletAccount.MPESA,
     val analytics: AnalyticsSummary = AnalyticsSummary(),
     val frequentContacts: List<SendContact> = emptyList(),
@@ -212,6 +251,12 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     private val frequentContacts = repo.observeFrequentContacts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    private val insightMarks = combine(
+        app.essentialPayees,
+        app.watchedPayees,
+        app.earnedBadges
+    ) { essential, watched, badges -> InsightMarks(essential, watched, badges) }
+
     private val regionAndSources = combine(app.appRegion, app.enabledSources) { region, enabled ->
         region to enabled.ifEmpty { region.sources }
     }
@@ -259,7 +304,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                     mpesaBalance = regional.firstOrNull {
                         it.source == balanceSource && it.balance != null
                     }?.balance,
-                    fulizaOutstanding = regionalFuliza.firstOrNull { it.balance != null }?.balance,
+                    fulizaStatus = latestFulizaStatus(regionalFuliza),
                     account = selected,
                     typeFilter = activeType,
                     availableTypes = available,
@@ -271,8 +316,9 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             },
             hasSmsPermission,
             scan,
-            rangeState
-        ) { wallet, smsOk, s, range ->
+            rangeState,
+            insightMarks
+        ) { wallet, smsOk, s, range, marks ->
             val (scanning, message) = s
             TransactionListUiState(
                 grouped = groupByDay(wallet.visible),
@@ -280,9 +326,10 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                 scanMessage = message,
                 hasSmsPermission = smsOk,
                 latestBalance = wallet.mpesaBalance,
-                fulizaOutstanding = wallet.fulizaOutstanding,
+                fulizaOutstanding = wallet.fulizaStatus?.outstanding,
+                fulizaDue = wallet.fulizaStatus?.dueDate,
                 account = wallet.account,
-                analytics = buildAnalytics(wallet.analytics, range, wallet.account),
+                analytics = buildAnalytics(wallet.analytics, range, wallet.account, marks),
                 typeFilter = wallet.typeFilter,
                 availableTypes = wallet.availableTypes,
                 sourceFilter = wallet.sourceFilter,
@@ -330,6 +377,27 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         walletAccount.value = account
         typeFilter.value = null
         sourceFilter.value = null
+    }
+
+    /** Insights “All” chip: ledger picture with no source filter. */
+    fun selectAllLedgerRails() {
+        if (walletAccount.value != WalletAccount.MPESA) {
+            setWalletAccount(WalletAccount.MPESA)
+        } else {
+            sourceFilter.value = null
+        }
+    }
+
+    /** Insights source chip: stay on the ledger and filter to [source]. */
+    fun selectLedgerSource(source: MoneySource) {
+        if (walletAccount.value != WalletAccount.MPESA) {
+            setWalletAccount(WalletAccount.MPESA)
+        }
+        sourceFilter.value = source
+    }
+
+    fun selectFulizaLedger() {
+        setWalletAccount(WalletAccount.FULIZA)
     }
 
     fun setAnalyticsRange(range: AnalyticsRange) {
@@ -395,13 +463,93 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         scanMessage.value = null
     }
 
+    fun setPayeeEssential(key: String, essential: Boolean) {
+        app.setPayeeEssential(key, essential)
+    }
+
+    fun setPayeeWatched(key: String, watched: Boolean) {
+        app.setPayeeWatched(key, watched)
+    }
+
+    fun recordBadges(ids: Set<String>) {
+        app.recordBadges(ids)
+    }
+
+    val challenge: StateFlow<InsightChallenge?> = combine(
+        mpesaLedger,
+        app.engagement.observeLatest()
+    ) { ledger, latest ->
+        insightChallenge(ledger, latest, System.currentTimeMillis())
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Re-checks challenge status against new texts; Insights calls this when it opens. */
+    fun refreshChallenge() {
+        viewModelScope.launch {
+            val end = app.engagement.evaluate()
+            if (end != null) app.engagementScheduler.scheduleChallengeEnd(end)
+        }
+    }
+
+    fun startSkipChallenge(payeeName: String) {
+        viewModelScope.launch {
+            app.engagement.startSkipPayeeChallenge(payeeName) ?: return@launch
+            val end = app.engagement.evaluate()
+            if (end != null) app.engagementScheduler.scheduleChallengeEnd(end)
+            else app.engagementScheduler.scheduleChallengeSweep()
+        }
+    }
+
+    private fun insightChallenge(
+        ledger: List<MpesaTransaction>,
+        latest: ChallengeEntity?,
+        now: Long
+    ): InsightChallenge? {
+        if (latest == null) return null
+        val status = ChallengeStatus.fromStored(latest.status)
+        if (status == ChallengeStatus.CANCELLED) return null
+        val template = ChallengeTemplates.byId(latest.templateId) ?: return null
+        val rule = CategoryRules.byId(template.categoryId) ?: return null
+        val kind = challengeCardKind(status)
+        if (kind != ChallengeCardKind.ACTIVE && now - latest.endAt > RECENT_CHALLENGE_MILLIS) return null
+        val zone = ChallengeClock.zoneOf(latest.zoneId)
+        val total = template.durationDays
+        val day = if (kind == ChallengeCardKind.ACTIVE) {
+            ChallengeClock.dayNumber(latest.startAt, latest.endAt, now, zone)
+        } else {
+            total
+        }
+        val baseline = averageDailySpend(ledger, beforeMillis = latest.startAt) { tx ->
+            CategoryMatcher.matches(rule, tx.counterpartyName)
+        }
+        val cleanDays = when (kind) {
+            ChallengeCardKind.ACTIVE -> day - 1
+            ChallengeCardKind.COMPLETED -> total
+            else -> 0
+        }
+        val payee = ChallengeTemplates.payeeOf(latest.templateId)
+        return InsightChallenge(
+            title = payee?.let { "Skip $it this week" } ?: "No food delivery for $total days",
+            kind = kind,
+            day = day,
+            totalDays = total,
+            kept = baseline * cleanDays.coerceAtLeast(0),
+            startDate = ChallengeClock.localDate(latest.startAt, zone)
+        )
+    }
+
     private fun buildAnalytics(
-        txs: List<MpesaTransaction>,
+        ledger: List<MpesaTransaction>,
         rangeState: AnalyticsRangeState,
-        account: WalletAccount
+        account: WalletAccount,
+        marks: InsightMarks
     ): AnalyticsSummary {
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
+        val mpesa = account == WalletAccount.MPESA
+        // A reversed payment and its reversal cancel out: neither is spend nor income.
+        val txs = if (mpesa) withoutReversals(ledger) else ledger
         val availableYears = txs
             .map { Instant.ofEpochMilli(it.timestampMillis).atZone(zone).year }
             .distinct()
@@ -475,6 +623,28 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             0
         }
         val busiest = busiestOutflow(outflowByDate, from, to)
+        val fees = if (mpesa) feeSummary(filtered) else FeeSummary()
+        val coveredFrom = if (ledgerStart != null && ledgerStart.isAfter(from)) ledgerStart else from
+        val coveredDays = (ChronoUnit.DAYS.between(coveredFrom, to) + 1).coerceAtLeast(1)
+        val regulars = if (mpesa) {
+            detectRegulars(txs, zone, today, marks.essential, marks.watched)
+        } else {
+            emptyList()
+        }
+        val habit = if (mpesa) {
+            topHabit(filtered, exclude = regulars.mapTo(HashSet()) { it.key })
+        } else {
+            null
+        }
+        val kept = if (mpesa) {
+            keptHeadline(
+                net = income - expense,
+                previousNet = prevIncome - prevExpense,
+                hasPrior = prior != null && previousTxs.isNotEmpty()
+            )
+        } else {
+            null
+        }
         val top = counterparties.firstOrNull()
         val topShare = if (top != null && expense > 0.0) top.total / expense else null
         val story = moneyStory(
@@ -509,6 +679,8 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             availableYears = availableYears,
             customStart = rangeState.customStart,
             customEnd = rangeState.customEnd,
+            periodFrom = from,
+            periodTo = to,
             rangeLabel = label,
             hasLedger = txs.isNotEmpty(),
             storyHeadline = story.headline,
@@ -517,7 +689,41 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             quietStreak = quietStreak,
             busiestLabel = busiest?.let { busiestDayLabel(it.first) },
             busiestTotal = busiest?.second ?: 0.0,
-            pulse = pulseCalendar(from, to, today, inflowByDate, outflowByDate)
+            pulse = pulseCalendar(
+                from = from,
+                to = to,
+                today = today,
+                inflowByDate = inflowByDate,
+                outflowByDate = outflowByDate,
+                dueDates = regulars.mapTo(HashSet()) { it.nextDue }
+            ),
+            keptHeadline = kept,
+            fees = fees,
+            regulars = regulars,
+            habit = habit,
+            periodTransactions = ledger.filter { tx ->
+                val date = Instant.ofEpochMilli(tx.timestampMillis).atZone(zone).toLocalDate()
+                !date.isBefore(from) && !date.isAfter(to)
+            },
+            heroLabel = buildString {
+                append(formatPeriodSpan(from, to))
+                append(" · ")
+                append(coveredDays)
+                append(if (coveredDays == 1L) " day" else " days")
+            },
+            badges = if (mpesa) {
+                insightBadges(
+                    fees = fees.total,
+                    previousFees = feeSummary(previousTxs).total,
+                    hasPrior = prior != null && previousTxs.isNotEmpty(),
+                    quietStreak = quietStreak,
+                    regulars = regulars,
+                    earned = marks.earnedBadges
+                )
+            } else {
+                emptyList()
+            },
+            periodBars = periodBars(coveredFrom, to, inflowByDate, outflowByDate)
         )
     }
 
@@ -528,9 +734,18 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         customStart: LocalDate?,
         customEnd: LocalDate?
     ): Triple<LocalDate, LocalDate, String> = when (range) {
-        AnalyticsRange.DAYS_7 -> Triple(today.minusDays(6), today, "Last 7 days")
-        AnalyticsRange.DAYS_30 -> Triple(today.minusDays(29), today, "Last 30 days")
-        AnalyticsRange.DAYS_90 -> Triple(today.minusDays(89), today, "Last 90 days")
+        AnalyticsRange.DAYS_7 -> {
+            val from = today.minusDays(6)
+            Triple(from, today, "Last 7 days · ${formatPeriodSpan(from, today)}")
+        }
+        AnalyticsRange.DAYS_30 -> {
+            val from = today.minusDays(29)
+            Triple(from, today, "Last 30 days · ${formatPeriodSpan(from, today)}")
+        }
+        AnalyticsRange.DAYS_90 -> {
+            val from = today.minusDays(89)
+            Triple(from, today, "Last 90 days · ${formatPeriodSpan(from, today)}")
+        }
         AnalyticsRange.THIS_YEAR -> Triple(
             LocalDate.of(today.year, 1, 1),
             today,
@@ -544,8 +759,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         AnalyticsRange.CUSTOM -> {
             val start = customStart ?: today.minusDays(29)
             val end = customEnd ?: today
-            val fmt = DateTimeFormatter.ofPattern("d MMM yyyy")
-            Triple(start, end, "${start.format(fmt)} – ${end.format(fmt)}")
+            Triple(start, end, formatPeriodSpan(start, end))
         }
         AnalyticsRange.ALL -> Triple(LocalDate.of(2010, 1, 1), today, "All time")
     }
@@ -635,7 +849,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             }
             val amount = tx.amount ?: continue
             if (tx.type.isOutgoing()) {
-                outflow[date] = (outflow[date] ?: 0.0) + amount
+                outflow[date] = (outflow[date] ?: 0.0) + amount + (tx.cost ?: 0.0)
             } else {
                 inflow[date] = (inflow[date] ?: 0.0) + amount
             }
@@ -665,7 +879,8 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         for (tx in txs) {
             val amount = tx.amount ?: continue
             if (tx.type == TransactionType.SAVINGS) continue
-            if (tx.type.isOutgoing()) expense += amount else income += amount
+            // Fees left the wallet too, so they count as money out.
+            if (tx.type.isOutgoing()) expense += amount + (tx.cost ?: 0.0) else income += amount
         }
         return income to expense
     }
@@ -698,11 +913,15 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             }
     }
 
+    private companion object {
+        const val RECENT_CHALLENGE_MILLIS = 3L * 24L * 60L * 60L * 1000L
+    }
+
     private data class WalletSlice(
         val visible: List<MpesaTransaction>,
         val analytics: List<MpesaTransaction>,
         val mpesaBalance: Double?,
-        val fulizaOutstanding: Double?,
+        val fulizaStatus: FulizaStatus?,
         val account: WalletAccount,
         val typeFilter: TransactionType? = null,
         val availableTypes: List<TransactionType> = emptyList(),

@@ -95,9 +95,9 @@ import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.data.sms.ReceiptOpenRequest
-import com.lipabill.app.ui.SourceFilterRow
 import com.lipabill.app.ui.adapt.LocalWindowForm
 import com.lipabill.app.ui.adapt.WindowWidth
+import com.lipabill.app.ui.SourceFilterRow
 import com.lipabill.app.ui.components.BalanceAmountRow
 import com.lipabill.app.ui.components.ConsumeSnackbarMessage
 import com.lipabill.app.ui.components.WalletAccountSwitch
@@ -142,6 +142,8 @@ import com.lipabill.app.viewmodel.DayGroup
 import com.lipabill.app.viewmodel.EngagementViewModel
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import com.lipabill.app.viewmodel.WalletAccount
+import com.lipabill.app.viewmodel.fulizaDueCopy
+import java.time.LocalDate
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -416,10 +418,10 @@ fun TransactionListScreen(
                 showingReceipt = showingReceipt,
                 listState = listState,
                 balance = shownBalance,
+                fulizaDue = state.fulizaDue,
                 frequent = frequent,
                 showFrequent = showFrequent,
                 account = state.account,
-                onAccountSelected = viewModel::setWalletAccount,
                 showFuliza = state.showFuliza,
                 showSendPay = state.showSendPay,
                 grouped = state.grouped,
@@ -431,6 +433,7 @@ fun TransactionListScreen(
                 sourceFilter = state.sourceFilter,
                 availableSources = state.availableSources,
                 onSourceFilter = viewModel::setSourceFilter,
+                onAccountSelected = viewModel::setWalletAccount,
                 searchEditor = searchEditor,
                 onQueryChange = viewModel::setSearchQuery,
                 searchOpen = searchOpen,
@@ -502,6 +505,7 @@ fun TransactionListScreen(
                         ) {
                             BalanceSection(
                                 balance = shownBalance,
+                                fulizaDue = state.fulizaDue,
                                 account = state.account,
                                 onAccountSelected = viewModel::setWalletAccount,
                                 onOpenProfile = onOpenProfile,
@@ -519,25 +523,24 @@ fun TransactionListScreen(
                             )
                         }
                     } else {
-            BalanceSection(
-                balance = shownBalance,
-                account = state.account,
-                onAccountSelected = viewModel::setWalletAccount,
-                onOpenProfile = onOpenProfile,
-                showFuliza = state.showFuliza,
-                modifier = Modifier.padding(horizontal = pageMargin)
-            )
-            if (state.account != WalletAccount.FULIZA && state.availableSources.size > 1) {
-                Spacer(modifier = Modifier.height(10.dp))
-                SourceFilterRow(
-                    sources = state.availableSources,
-                    selected = state.sourceFilter,
-                    onSelect = viewModel::setSourceFilter,
-                    modifier = Modifier.padding(horizontal = pageMargin)
-                )
-            }
-            Spacer(modifier = Modifier.height(HomeMock.SectionGap))
-            QuickActionsRow(
+                        BalanceSection(
+                            balance = shownBalance,
+                            fulizaDue = state.fulizaDue,
+                            account = state.account,
+                            onAccountSelected = viewModel::setWalletAccount,
+                            onOpenProfile = onOpenProfile,
+                            showFuliza = state.showFuliza,
+                            modifier = Modifier.padding(horizontal = pageMargin)
+                        )
+                        HomeSourceFilter(
+                            account = state.account,
+                            sources = state.availableSources,
+                            selected = state.sourceFilter,
+                            onSelect = viewModel::setSourceFilter,
+                            pageMargin = pageMargin
+                        )
+                        Spacer(modifier = Modifier.height(HomeMock.SectionGap))
+                        QuickActionsRow(
                             onSend = onSend,
                             onDeposit = onReceive,
                             onDetails = onExchange,
@@ -547,16 +550,13 @@ fun TransactionListScreen(
                             modifier = Modifier.padding(horizontal = pageMargin)
                         )
                     }
-                    if (window == WindowWidth.Medium &&
-                        state.account != WalletAccount.FULIZA &&
-                        state.availableSources.size > 1
-                    ) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        SourceFilterRow(
+                    if (window == WindowWidth.Medium) {
+                        HomeSourceFilter(
+                            account = state.account,
                             sources = state.availableSources,
                             selected = state.sourceFilter,
                             onSelect = viewModel::setSourceFilter,
-                            modifier = Modifier.padding(horizontal = pageMargin)
+                            pageMargin = pageMargin
                         )
                     }
                     Spacer(modifier = Modifier.height(HomeMock.SectionGap))
@@ -596,8 +596,6 @@ fun TransactionListScreen(
                     availableTypes = state.availableTypes,
                     onTypeFilter = viewModel::setTypeFilter,
                     sourceFilter = state.sourceFilter,
-                    availableSources = state.availableSources,
-                    onSourceFilter = viewModel::setSourceFilter,
                     searchEditor = searchEditor,
                     onQueryChange = viewModel::setSearchQuery,
                     searchOpen = searchOpen,
@@ -670,10 +668,10 @@ private fun HomeExpandedPane(
     showingReceipt: Boolean,
     listState: LazyListState,
     balance: Double?,
+    fulizaDue: LocalDate?,
     frequent: List<SendContact>,
     showFrequent: Boolean,
     account: WalletAccount,
-    onAccountSelected: (WalletAccount) -> Unit,
     showFuliza: Boolean,
     showSendPay: Boolean,
     grouped: List<DayGroup>,
@@ -685,6 +683,7 @@ private fun HomeExpandedPane(
     sourceFilter: MoneySource?,
     availableSources: List<MoneySource>,
     onSourceFilter: (MoneySource?) -> Unit,
+    onAccountSelected: (WalletAccount) -> Unit,
     searchEditor: SheetTextEditor,
     onQueryChange: (String) -> Unit,
     searchOpen: Boolean,
@@ -725,21 +724,20 @@ private fun HomeExpandedPane(
             )
             BalanceSection(
                 balance = balance,
+                fulizaDue = fulizaDue,
                 account = account,
                 onAccountSelected = onAccountSelected,
                 onOpenProfile = onOpenProfile,
                 showFuliza = showFuliza,
                 modifier = Modifier.padding(horizontal = pageMargin)
             )
-            if (account != WalletAccount.FULIZA && availableSources.size > 1) {
-                Spacer(modifier = Modifier.height(10.dp))
-                SourceFilterRow(
-                    sources = availableSources,
-                    selected = sourceFilter,
-                    onSelect = onSourceFilter,
-                    modifier = Modifier.padding(horizontal = pageMargin)
-                )
-            }
+            HomeSourceFilter(
+                account = account,
+                sources = availableSources,
+                selected = sourceFilter,
+                onSelect = onSourceFilter,
+                pageMargin = pageMargin
+            )
             Spacer(modifier = Modifier.height(HomeMock.SectionGap))
             QuickActionsRow(
                 onSend = onSend,
@@ -797,8 +795,6 @@ private fun HomeExpandedPane(
                         availableTypes = availableTypes,
                         onTypeFilter = onTypeFilter,
                         sourceFilter = sourceFilter,
-                        availableSources = availableSources,
-                        onSourceFilter = onSourceFilter,
                         searchEditor = searchEditor,
                         onQueryChange = onQueryChange,
                         searchOpen = searchOpen,
@@ -883,13 +879,32 @@ private fun HeaderIconButton(
 }
 
 @Composable
+private fun HomeSourceFilter(
+    account: WalletAccount,
+    sources: List<MoneySource>,
+    selected: MoneySource?,
+    onSelect: (MoneySource?) -> Unit,
+    pageMargin: Dp
+) {
+    if (account == WalletAccount.FULIZA || sources.size <= 1) return
+    Spacer(modifier = Modifier.height(10.dp))
+    SourceFilterRow(
+        sources = sources,
+        selected = selected,
+        onSelect = onSelect,
+        modifier = Modifier.padding(horizontal = pageMargin)
+    )
+}
+
+@Composable
 private fun BalanceSection(
     balance: Double?,
     account: WalletAccount,
     onAccountSelected: (WalletAccount) -> Unit,
     onOpenProfile: () -> Unit,
     modifier: Modifier = Modifier,
-    showFuliza: Boolean = true
+    showFuliza: Boolean = true,
+    fulizaDue: LocalDate? = null
 ) {
     Box(
         modifier = modifier
@@ -980,6 +995,14 @@ private fun BalanceSection(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Start
             )
+            if (account == WalletAccount.FULIZA && fulizaDue != null && (balance ?: 0.0) > 0.0) {
+                Text(
+                    text = fulizaDueCopy(fulizaDue, LocalDate.now()).replaceFirstChar { it.uppercase() } +
+                        " · daily charges since are not included",
+                    style = HomeType.caption,
+                    color = Mute
+                )
+            }
         }
         Box(
             modifier = Modifier
@@ -1489,8 +1512,6 @@ private fun LazyListScope.transactionFeed(
     availableTypes: List<TransactionType>,
     onTypeFilter: (TransactionType?) -> Unit,
     sourceFilter: MoneySource?,
-    availableSources: List<MoneySource>,
-    onSourceFilter: (MoneySource?) -> Unit,
     searchEditor: SheetTextEditor,
     onQueryChange: (String) -> Unit,
     searchOpen: Boolean,

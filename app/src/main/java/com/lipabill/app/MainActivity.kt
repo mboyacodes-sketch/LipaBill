@@ -1386,7 +1386,9 @@ private fun AuthenticatedApp(
             AdaptiveFrame {
                 MetricsScreen(
                     viewModel = listVm,
-                    onBack = { navigateHome() }
+                    onBack = { navigateHome() },
+                    onOpenCheckIn = { openCheckIn = true },
+                    onOpenTransactions = { navigateHome() }
                 )
             }
         }

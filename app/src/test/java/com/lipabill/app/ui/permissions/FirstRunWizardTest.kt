@@ -95,6 +95,7 @@ class FirstRunWizardTest {
     fun providers_page_is_wallets_then_banks() {
         assertEquals("Who should be in the picture?", FirstRunWizard.PROVIDERS_TITLE)
         assertTrue(FirstRunWizard.PROVIDERS_BODY.contains("Wallets first"))
+        assertTrue(FirstRunWizard.PROVIDERS_BODY.contains("up to 5"))
         assertTrue(FirstRunWizard.PROVIDERS_BODY.contains("Settings"))
     }
 

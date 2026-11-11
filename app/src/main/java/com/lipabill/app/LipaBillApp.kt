@@ -76,6 +76,15 @@ class LipaBillApp : Application() {
     private val _darkMode = MutableStateFlow(false)
     val darkMode: StateFlow<Boolean> = _darkMode.asStateFlow()
 
+    private val _essentialPayees = MutableStateFlow<Set<String>>(emptySet())
+    val essentialPayees: StateFlow<Set<String>> = _essentialPayees.asStateFlow()
+
+    private val _watchedPayees = MutableStateFlow<Set<String>>(emptySet())
+    val watchedPayees: StateFlow<Set<String>> = _watchedPayees.asStateFlow()
+
+    private val _earnedBadges = MutableStateFlow<Set<String>>(emptySet())
+    val earnedBadges: StateFlow<Set<String>> = _earnedBadges.asStateFlow()
+
     private val _appRegion = MutableStateFlow(AppRegion.DEFAULT)
     val appRegion: StateFlow<AppRegion> = _appRegion.asStateFlow()
     private val _enabledSources = MutableStateFlow(AppRegion.DEFAULT.sources)
@@ -135,6 +144,9 @@ class LipaBillApp : Application() {
         _favouritesSectionEnabled.value = securePreferences.favouritesSectionEnabled
         _recordingPrivacy.value = recordingCaptureEnabled()
         _darkMode.value = securePreferences.darkMode
+        _essentialPayees.value = securePreferences.essentialPayees
+        _watchedPayees.value = securePreferences.watchedPayees
+        _earnedBadges.value = securePreferences.earnedBadges
         _appRegion.value = securePreferences.appRegion
         _enabledSources.value = securePreferences.enabledLedgerSources(_appRegion.value)
         ActiveRegion.current = _appRegion.value
@@ -237,6 +249,25 @@ class LipaBillApp : Application() {
     fun setDarkMode(enabled: Boolean) {
         securePreferences.darkMode = enabled
         _darkMode.value = enabled
+    }
+
+    fun setPayeeEssential(key: String, essential: Boolean) {
+        val next = if (essential) _essentialPayees.value + key else _essentialPayees.value - key
+        securePreferences.essentialPayees = next
+        _essentialPayees.value = next
+    }
+
+    fun setPayeeWatched(key: String, watched: Boolean) {
+        val next = if (watched) _watchedPayees.value + key else _watchedPayees.value - key
+        securePreferences.watchedPayees = next
+        _watchedPayees.value = next
+    }
+
+    fun recordBadges(ids: Set<String>) {
+        val next = _earnedBadges.value + ids
+        if (next == _earnedBadges.value) return
+        securePreferences.earnedBadges = next
+        _earnedBadges.value = next
     }
 
     fun setAppRegion(region: AppRegion, rescan: Boolean = true) {

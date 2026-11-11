@@ -51,9 +51,25 @@ object ChallengeTemplates {
         durationDays = 3
     )
 
+    private const val SKIP_PAYEE_PREFIX = "skip_payee_7d:"
+
+    /** Seven days without paying one payee, named as it appears in their SMS. */
+    fun skipPayee(payeeName: String) = ChallengeTemplate(
+        id = SKIP_PAYEE_PREFIX + payeeName.trim(),
+        categoryId = CategoryRules.PAYEE_PREFIX + payeeName.trim(),
+        durationDays = 7
+    )
+
+    /** The payee a skip challenge is about, or null for category challenges. */
+    fun payeeOf(id: String): String? =
+        id.takeIf { it.startsWith(SKIP_PAYEE_PREFIX) }?.removePrefix(SKIP_PAYEE_PREFIX)
+
+    /** Template id safe for analytics: payee names never leave the device. */
+    fun metricId(id: String): String = if (payeeOf(id) != null) SKIP_PAYEE_PREFIX.trimEnd(':') else id
+
     fun byId(id: String): ChallengeTemplate? = when (id) {
         foodDelivery3Days.id -> foodDelivery3Days
-        else -> null
+        else -> payeeOf(id)?.takeIf { it.isNotBlank() }?.let { skipPayee(it) }
     }
 }
 

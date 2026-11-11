@@ -1,10 +1,11 @@
 package com.lipabill.app.ui.analytics
 
-import androidx.compose.foundation.Canvas
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,28 +26,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
-import androidx.compose.material.icons.automirrored.outlined.ShowChart
-import androidx.compose.material.icons.automirrored.outlined.Undo
-import androidx.compose.material.icons.outlined.AccountBalance
-import androidx.compose.material.icons.outlined.AccountBalanceWallet
-import androidx.compose.material.icons.outlined.AutoGraph
-import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Category
-import androidx.compose.material.icons.outlined.DateRange
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.NorthEast
-import androidx.compose.material.icons.outlined.Payments
-import androidx.compose.material.icons.outlined.PhoneIphone
-import androidx.compose.material.icons.outlined.Savings
-import androidx.compose.material.icons.outlined.SouthWest
-import androidx.compose.material.icons.outlined.Storefront
-import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -55,84 +44,201 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.intl.Locale as ComposeLocale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.lipabill.app.LipaBillApp
-import com.lipabill.app.ui.LipaChoiceChip
-import com.lipabill.app.ui.SourceFilterRow
-import com.lipabill.app.ui.components.BalanceAmountRow
-import com.lipabill.app.ui.components.WalletAccountSwitch
+import com.lipabill.app.R
+import com.lipabill.app.data.export.StatementTotals
+import com.lipabill.app.data.export.canExportStatementPdf
+import com.lipabill.app.data.export.statementSourceBadge
+import com.lipabill.app.data.export.writeLedgerStatementPdf
+import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.ui.components.PaymentRailRow
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
+import com.lipabill.app.ui.theme.ActionMetrics
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Income
-import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.ui.theme.Ink
+import com.lipabill.app.ui.theme.LabelBlue
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.OnPastel
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
-import com.lipabill.app.ui.theme.avatarPastel
-import com.lipabill.app.ui.util.categoryDisc
-import com.lipabill.app.ui.util.categoryInk
-import com.lipabill.app.ui.util.formatKes
-import com.lipabill.app.viewmodel.AnalyticsPoint
+import com.lipabill.app.ui.util.formatKsh
 import com.lipabill.app.viewmodel.AnalyticsRange
+import com.lipabill.app.viewmodel.AnalyticsSummary
+import com.lipabill.app.viewmodel.ChallengeCardKind
 import com.lipabill.app.viewmodel.CounterpartySpend
+import com.lipabill.app.viewmodel.DayFlow
+import com.lipabill.app.viewmodel.EngagementViewModel
+import com.lipabill.app.viewmodel.FeeSummary
+import com.lipabill.app.viewmodel.InsightBadge
+import com.lipabill.app.viewmodel.InsightChallenge
+import com.lipabill.app.viewmodel.PeriodBar
 import com.lipabill.app.viewmodel.PulseCell
+import com.lipabill.app.viewmodel.RegularPayee
+import com.lipabill.app.viewmodel.SpendingHabit
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import com.lipabill.app.viewmodel.TypeBreakdown
 import com.lipabill.app.viewmodel.WalletAccount
 import com.lipabill.app.viewmodel.busiestDayLabel
 import com.lipabill.app.viewmodel.calendarAmountLabel
-import com.lipabill.app.viewmodel.dailyAverage
+import com.lipabill.app.viewmodel.fulizaDueCopy
+import com.lipabill.app.viewmodel.formatPeriodSpan
+import com.lipabill.app.viewmodel.regularCadenceCopy
+import com.lipabill.app.viewmodel.shortPeriodSpan
 import com.lipabill.app.viewmodel.spendShareOfIncome
-import com.lipabill.app.viewmodel.vsPriorCopy
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.ZoneOffset
+import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.abs
-import kotlin.math.max
 import kotlin.math.roundToInt
+
+private val CardShape = RoundedCornerShape(20.dp)
+
+/** Observable locale for Compose lint (NonObservableLocale). */
+@Composable
+private fun currentJavaLocale(): Locale =
+    Locale.forLanguageTag(ComposeLocale.current.toLanguageTag())
+
+/** Amber for days that ended down despite money coming in; differs from red in hue and lightness. */
+private val NetDown = Color(0xFFD97706)
+
+/** Calendar fill per kind of day. Each differs in hue and lightness so they read apart. */
+@Composable
+private fun DayFlow.fill(): Color = when (this) {
+    DayFlow.IN_ONLY -> Income.copy(alpha = 0.18f)
+    DayFlow.OUT_ONLY -> Expense.copy(alpha = 0.16f)
+    DayFlow.NET_UP -> Accent.copy(alpha = 0.22f)
+    DayFlow.NET_DOWN -> NetDown.copy(alpha = 0.26f)
+    DayFlow.NONE -> Color.Transparent
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MetricsScreen(
     viewModel: TransactionListViewModel,
     onBack: (() -> Unit)? = null,
+    onOpenCheckIn: () -> Unit = {},
+    onOpenTransactions: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val challenge by viewModel.challenge.collectAsStateWithLifecycle()
+    // Fully qualified: the `viewModel` parameter hides the Compose helper of the same name.
+    val engageVm: EngagementViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val engage by engageVm.uiState.collectAsStateWithLifecycle()
     val stats = state.analytics
     val account = state.account
-    val shownBalance = state.shownBalance()
-    val net = stats.incomeTotal - stats.expenseTotal
-    val netPrior = stats.previousIncomeTotal - stats.previousExpenseTotal
+    val mpesa = account == WalletAccount.MPESA
     val emptyPeriod = stats.txnCount == 0
     var showDatePicker by remember { mutableStateOf(false) }
-    val app = LocalContext.current.applicationContext as LipaBillApp
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) { viewModel.refreshChallenge() }
+    val earnedNow = stats.badges.filter { it.earned }.map { it.id }.toSet()
+    LaunchedEffect(earnedNow) {
+        if (earnedNow.isNotEmpty()) viewModel.recordBadges(earnedNow)
+    }
+
+    val exportRows = stats.periodTransactions
+    val canExportPdf = canExportStatementPdf(stats.dayCount) &&
+        stats.periodFrom != null &&
+        stats.periodTo != null &&
+        exportRows.isNotEmpty()
+    val statementSourceLabel = statementSourceBadge(
+        txs = exportRows,
+        sourceFilter = state.sourceFilter,
+        fuliza = account == WalletAccount.FULIZA
+    )
+    val statementLogo = remember(context) {
+        ContextCompat.getDrawable(context, R.mipmap.ic_launcher)
+            ?.toBitmap(width = 192, height = 192)
+    }
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val from = stats.periodFrom ?: return@rememberLauncherForActivityResult
+        val to = stats.periodTo ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val written = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        writeLedgerStatementPdf(
+                            txs = exportRows,
+                            zone = ZoneId.systemDefault(),
+                            periodFrom = from,
+                            periodTo = to,
+                            totals = StatementTotals(
+                                income = stats.incomeTotal,
+                                expense = stats.expenseTotal,
+                                fees = stats.fees.total,
+                                incomeLabel = if (account == WalletAccount.FULIZA) {
+                                    "DRAWN"
+                                } else {
+                                    "CAME IN"
+                                },
+                                expenseLabel = if (account == WalletAccount.FULIZA) {
+                                    "ACCESS FEES"
+                                } else {
+                                    "WENT OUT"
+                                }
+                            ),
+                            output = out,
+                            logo = statementLogo,
+                            sourceLabel = statementSourceLabel
+                        )
+                    } != null
+                }.getOrDefault(false)
+            }
+            Toast.makeText(
+                context,
+                if (written) "Saved PDF statement" else "Export failed",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    val periodPill: @Composable () -> Unit = {
+        PeriodPill(
+            stats = stats,
+            onRange = viewModel::setAnalyticsRange,
+            onYear = viewModel::setAnalyticsYear,
+            onCustom = { showDatePicker = true }
+        )
+    }
 
     Scaffold(
         modifier = modifier,
@@ -140,16 +246,15 @@ fun MetricsScreen(
         topBar = {
             if (onBack != null) {
                 TopAppBar(
-                    title = {
-                        Text(
-                            account.metricsTitle,
-                            style = HomeType.greeting
-                        )
-                    },
+                    title = { Text(account.metricsTitle, style = HomeType.greeting) },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
+                    },
+                    actions = {
+                        periodPill()
+                        Spacer(modifier = Modifier.width(Space.page))
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Canvas)
                 )
@@ -161,221 +266,109 @@ fun MetricsScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = Space.page)
+                .padding(horizontal = Space.page),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             if (onBack == null) {
-                Text(
-                    account.metricsTitle,
-                    style = HomeType.greeting
-                )
-                Spacer(modifier = Modifier.height(Space.block))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = Space.block),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        account.metricsTitle,
+                        style = HomeType.greeting,
+                        modifier = Modifier.weight(1f)
+                    )
+                    periodPill()
+                }
             }
 
-            InsightsSection(
-                icon = Icons.Outlined.AccountBalance,
-                title = account.balanceCaption
+            PaymentRailRow(
+                account = account,
+                showFuliza = state.showFuliza,
+                sources = state.availableSources,
+                selectedSource = state.sourceFilter,
+                onSelectAll = viewModel::selectAllLedgerRails,
+                onSelectSource = viewModel::selectLedgerSource,
+                onSelectFuliza = viewModel::selectFulizaLedger
+            )
+
+            HeroCard(
+                stats = stats,
+                account = account,
+                showFigures = stats.hasLedger && !emptyPeriod,
+                fulizaOutstanding = if (state.showFuliza) state.fulizaOutstanding else null,
+                fulizaDue = state.fulizaDue
+            )
+
+            if (stats.hasLedger && mpesa &&
+                (stats.regulars.isNotEmpty() || stats.fees.total > 0.0 || stats.habit != null)
             ) {
-                WalletAccountSwitch(
-                    account = state.account,
-                    onSelect = viewModel::setWalletAccount,
-                    accounts = if (state.showFuliza) {
-                        WalletAccount.entries
-                    } else {
-                        listOf(WalletAccount.MPESA)
+                CostingYouCard(
+                    regulars = stats.regulars,
+                    fees = stats.fees,
+                    expense = stats.expenseTotal,
+                    habit = stats.habit,
+                    onEssential = viewModel::setPayeeEssential,
+                    onWatch = viewModel::setPayeeWatched
+                )
+            }
+
+            if (mpesa && stats.fees.withdrawCount >= 3 && stats.fees.withdrawFees > 0.0) {
+                FeeTipCard(
+                    withdrawCount = stats.fees.withdrawCount,
+                    withdrawFees = stats.fees.withdrawFees,
+                    onSee = {
+                        viewModel.setTypeFilter(TransactionType.WITHDRAW)
+                        onOpenTransactions()
                     }
                 )
-                Spacer(modifier = Modifier.height(Space.block))
-                BalanceAmountRow(
-                    balance = shownBalance,
-                    amountStyle = HomeType.amount,
-                    showEyeToggle = true
-                )
             }
 
-            InsightsSection(
-                icon = Icons.Outlined.CalendarMonth,
-                title = "Period",
-                caption = stats.rangeLabel
-            ) {
-                RangeSegmentRow(
-                    selected = stats.range,
-                    onSelect = { viewModel.setAnalyticsRange(it) },
-                    onCustom = { showDatePicker = true }
-                )
-                val yearMode = stats.range == AnalyticsRange.THIS_YEAR ||
-                    stats.range == AnalyticsRange.YEAR
-                if (yearMode && stats.availableYears.size > 1) {
-                    Spacer(modifier = Modifier.height(Space.block))
-                    HorizontalDivider(color = Hairline, thickness = 1.dp)
-                    Spacer(modifier = Modifier.height(Space.block))
-                    YearChipRow(
-                        years = stats.availableYears,
-                        selectedYear = stats.selectedYear ?: LocalDate.now().year,
-                        onSelect = { viewModel.setAnalyticsYear(it) }
-                    )
-                }
-            }
-
-            if (account != WalletAccount.FULIZA && state.availableSources.size > 1) {
-                InsightsSection(
-                    icon = Icons.Outlined.AccountBalanceWallet,
-                    title = "Ledger",
-                    caption = state.sourceFilter?.label ?: "All wallets and banks"
-                ) {
-                    SourceFilterRow(
-                        sources = state.availableSources,
-                        selected = state.sourceFilter,
-                        onSelect = viewModel::setSourceFilter
-                    )
-                }
-            }
-
-            InsightsSection(
-                icon = Icons.Outlined.AutoGraph,
-                title = "What is shaping it"
-            ) {
-                StretchStoryCard(
-                    headline = stats.storyHeadline,
-                    detail = stats.storyDetail,
-                    hasLedger = stats.hasLedger,
-                    quietDays = stats.quietDays,
+            if (stats.hasLedger && mpesa && (challenge != null || stats.habit != null)) {
+                ChallengeCard(
+                    challenge = challenge,
+                    habit = stats.habit,
                     quietStreak = stats.quietStreak,
-                    busiestLabel = stats.busiestLabel,
-                    busiestTotal = stats.busiestTotal,
-                    pulse = stats.pulse,
-                    fuliza = account == WalletAccount.FULIZA
+                    onStart = viewModel::startSkipChallenge,
+                    onCheckIn = onOpenCheckIn
                 )
+            }
+
+            if (stats.hasLedger) {
+                RhythmCard(stats = stats, fuliza = !mpesa)
             }
 
             if (stats.hasLedger && !emptyPeriod) {
-                InsightsSection(
-                    icon = Icons.Outlined.Payments,
-                    title = "This stretch"
-                ) {
-                    PeriodNetCard(
-                        net = net,
-                        vsPrior = vsPriorCopy(net, netPrior, stats.comparable),
-                        vsPriorColor = deltaColor(net, netPrior, moreIsGood = true),
-                        spendShare = if (account == WalletAccount.MPESA) {
-                            spendShareOfIncome(stats.expenseTotal, stats.incomeTotal)
-                        } else {
-                            null
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(Space.block))
-                    HorizontalDivider(color = Hairline, thickness = 1.dp)
-                    Spacer(modifier = Modifier.height(Space.block))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(Space.block)
-                    ) {
-                        MetricStatCard(
-                            title = account.inflowLabel,
-                            amount = stats.incomeTotal,
-                            tint = Income,
-                            icon = Icons.Outlined.SouthWest,
-                            changeLabel = vsPriorCopy(
-                                stats.incomeTotal,
-                                stats.previousIncomeTotal,
-                                stats.comparable
-                            ),
-                            changeColor = deltaColor(
-                                stats.incomeTotal,
-                                stats.previousIncomeTotal,
-                                moreIsGood = true
-                            ),
-                            modifier = Modifier.weight(1f)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .width(1.dp)
-                                .height(56.dp)
-                                .background(Hairline)
-                        )
-                        MetricStatCard(
-                            title = account.outflowLabel,
-                            amount = stats.expenseTotal,
-                            tint = Expense,
-                            icon = Icons.Outlined.NorthEast,
-                            changeLabel = vsPriorCopy(
-                                stats.expenseTotal,
-                                stats.previousExpenseTotal,
-                                stats.comparable
-                            ),
-                            changeColor = deltaColor(
-                                stats.expenseTotal,
-                                stats.previousExpenseTotal,
-                                moreIsGood = false
-                            ),
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(Space.block))
-                    HorizontalDivider(color = Hairline, thickness = 1.dp)
-                    Spacer(modifier = Modifier.height(Space.block))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(Space.block)
-                    ) {
-                        MetricTile(
-                            title = "Avg / day",
-                            value = formatKes(dailyAverage(stats.expenseTotal, stats.dayCount)),
-                            valueColor = Ink,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .width(1.dp)
-                                .height(40.dp)
-                                .background(Hairline)
-                        )
-                        MetricTile(
-                            title = "Transactions",
-                            value = stats.txnCount.toString(),
-                            valueColor = Ink,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                InsightsSection(
-                    icon = Icons.AutoMirrored.Outlined.ShowChart,
-                    title = "Cash flow",
-                    caption = account.cashFlowCaption
-                ) {
-                    CashFlowChartCard(
-                        series = stats.series,
-                        inflowLabel = account.inflowLabel,
-                        outflowLabel = account.outflowLabel
-                    )
-                }
-
-                InsightsSection(
-                    icon = Icons.Outlined.Category,
-                    title = "By type",
-                    caption = if (state.typeFilter == null) {
-                        "Tap a slice or a type to focus"
-                    } else {
-                        stats.byType.firstOrNull { it.type == state.typeFilter }?.label
-                            ?: "Tap again to clear"
-                    }
-                ) {
-                    TypeBreakdownCard(
-                        rows = stats.byType,
-                        selected = state.typeFilter,
-                        onSelect = viewModel::setTypeFilter
-                    )
-                }
-
+                WhereItWentCard(
+                    rows = stats.byType.filter { !mpesa || it.type.isOutgoing() },
+                    selected = state.typeFilter,
+                    onSelect = viewModel::setTypeFilter,
+                    onOpenTransactions = onOpenTransactions
+                )
                 if (stats.topCounterparties.isNotEmpty()) {
-                    InsightsSection(
-                        icon = Icons.Outlined.Groups,
-                        title = "Top people",
-                        caption = "Tap someone to see their share of outgoing"
-                    ) {
-                        TopCounterpartiesCard(rows = stats.topCounterparties)
-                    }
+                    PeopleCard(rows = stats.topCounterparties)
                 }
+            }
+
+            if (stats.hasLedger && mpesa) {
+                RecapCard(
+                    checkInDone = engage.checkInDone,
+                    finding = stats.keptHeadline
+                        ?: stats.habit?.let { "${it.name} came up ${it.visits} times." }
+                        ?: stats.storyHeadline,
+                    badges = stats.badges,
+                    onCheckIn = onOpenCheckIn
+                )
+            }
+
+            if (canExportPdf) {
+                ExportBlock(
+                    rangeLabel = stats.rangeLabel,
+                    onExport = { exportLauncher.launch(pdfFileName(stats.periodFrom, stats.periodTo)) }
+                )
             }
             Spacer(modifier = Modifier.height(Space.section))
         }
@@ -394,99 +387,1228 @@ fun MetricsScreen(
     }
 }
 
+// region Header
+
 @Composable
-private fun RangeSegmentRow(
-    selected: AnalyticsRange,
-    onSelect: (AnalyticsRange) -> Unit,
+private fun PeriodPill(
+    stats: AnalyticsSummary,
+    onRange: (AnalyticsRange) -> Unit,
+    onYear: (Int) -> Unit,
     onCustom: () -> Unit
 ) {
-    val presets = listOf(
-        AnalyticsRange.DAYS_7 to "Week",
-        AnalyticsRange.DAYS_30 to "Month",
-        AnalyticsRange.THIS_YEAR to "Year",
-        AnalyticsRange.ALL to "All"
-    )
-    val yearOn = selected == AnalyticsRange.THIS_YEAR || selected == AnalyticsRange.YEAR
-    val customOn = selected == AnalyticsRange.CUSTOM
-    val shape = RoundedCornerShape(12.dp)
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.gap)
-    ) {
+    var open by remember { mutableStateOf(false) }
+    Box {
         Row(
             modifier = Modifier
-                .weight(1f)
-                .height(40.dp)
-                .clip(shape)
-                .border(1.dp, Hairline, shape)
-                .background(Canvas)
+                .heightIn(min = 44.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .border(1.dp, Hairline, RoundedCornerShape(22.dp))
+                .background(CardWhite)
+                .clickable(role = Role.Button, onClickLabel = "Change period") { open = true }
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            presets.forEachIndexed { index, (range, label) ->
-                if (index > 0) {
+            Text(text = shortRangeLabel(stats), style = HomeType.label, color = Ink, maxLines = 1)
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                Icons.Outlined.KeyboardArrowDown,
+                contentDescription = null,
+                tint = Ink,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            listOf(
+                AnalyticsRange.DAYS_7 to "Last 7 days",
+                AnalyticsRange.DAYS_30 to "Last 30 days",
+                AnalyticsRange.DAYS_90 to "Last 90 days",
+                AnalyticsRange.THIS_YEAR to "This year",
+                AnalyticsRange.ALL to "All time"
+            ).forEach { (range, label) ->
+                DropdownMenuItem(
+                    text = {
+                        Text(label, fontWeight = if (stats.range == range) FontWeight.SemiBold else null)
+                    },
+                    onClick = {
+                        open = false
+                        onRange(range)
+                    }
+                )
+            }
+            val thisYear = LocalDate.now().year
+            stats.availableYears.filter { it != thisYear }.forEach { year ->
+                val on = stats.range == AnalyticsRange.YEAR && stats.selectedYear == year
+                DropdownMenuItem(
+                    text = { Text("Year $year", fontWeight = if (on) FontWeight.SemiBold else null) },
+                    onClick = {
+                        open = false
+                        onYear(year)
+                    }
+                )
+            }
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        "Custom dates…",
+                        fontWeight = if (stats.range == AnalyticsRange.CUSTOM) FontWeight.SemiBold else null
+                    )
+                },
+                onClick = {
+                    open = false
+                    onCustom()
+                }
+            )
+        }
+    }
+}
+
+private fun shortRangeLabel(stats: AnalyticsSummary): String {
+    val from = stats.periodFrom
+    val to = stats.periodTo
+    return when (stats.range) {
+        AnalyticsRange.DAYS_7,
+        AnalyticsRange.DAYS_30,
+        AnalyticsRange.DAYS_90,
+        AnalyticsRange.CUSTOM ->
+            if (from != null && to != null) shortPeriodSpan(from, to) else stats.rangeLabel
+        AnalyticsRange.THIS_YEAR -> "This year"
+        AnalyticsRange.YEAR -> stats.selectedYear?.toString() ?: "Year"
+        AnalyticsRange.ALL -> "All time"
+    }
+}
+
+// endregion
+
+// region Hero
+
+@Composable
+private fun HeroCard(
+    stats: AnalyticsSummary,
+    account: WalletAccount,
+    showFigures: Boolean,
+    fulizaOutstanding: Double?,
+    fulizaDue: LocalDate?
+) {
+    val soft = OnAccent.copy(alpha = 0.82f)
+    val mpesa = account == WalletAccount.MPESA
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(CardShape)
+            .background(Accent)
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Text(
+            text = stats.heroLabel.ifEmpty { stats.rangeLabel }.uppercase(currentJavaLocale()),
+            style = HomeType.caption,
+            color = soft,
+            letterSpacing = 0.6.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = stats.keptHeadline ?: stats.storyHeadline,
+            style = HomeType.greeting,
+            color = OnAccent,
+            modifier = Modifier.recordingPrivacyCover()
+        )
+        val detail = if (stats.keptHeadline != null) null else stats.storyDetail
+        if (detail != null) {
+            Text(detail, style = HomeType.body, color = soft)
+        }
+        if (fulizaOutstanding != null && fulizaOutstanding > 0.0) {
+            val due = fulizaDue?.let { " · ${fulizaDueCopy(it, LocalDate.now())}" }.orEmpty()
+            Text(
+                text = (if (mpesa) "Fuliza outstanding " else "Outstanding ") + formatKsh(fulizaOutstanding) + due,
+                style = HomeType.label,
+                color = Accent,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(OnAccent)
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                    .recordingPrivacyCover()
+            )
+        }
+        if (showFigures) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                HeroFigure(
+                    label = if (mpesa) "Came in" else account.inflowLabel,
+                    amount = stats.incomeTotal,
+                    modifier = Modifier.weight(1f)
+                )
+                HeroFigure(
+                    label = if (mpesa) "Went out" else account.outflowLabel,
+                    amount = stats.expenseTotal,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            val share = if (mpesa) spendShareOfIncome(stats.expenseTotal, stats.incomeTotal) else null
+            if (share != null) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Box(
                         modifier = Modifier
-                            .width(1.dp)
-                            .fillMaxHeight()
-                            .background(Hairline)
-                    )
-                }
-                val on = if (range == AnalyticsRange.THIS_YEAR) yearOn else selected == range
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clickable { onSelect(range) }
-                        .background(if (on) Accent else Color.Transparent)
-                ) {
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(OnAccent.copy(alpha = 0.25f))
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(share.toFloat().coerceIn(0f, 1f))
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(OnAccent)
+                        )
+                    }
                     Text(
-                        text = label,
-                        style = HomeType.label,
-                        color = if (on) OnAccent else Ink,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1
+                        text = "${(share * 100).roundToInt()}% of what came in has gone out · " +
+                            "reversals netted, fees included",
+                        style = HomeType.caption,
+                        color = soft,
+                        modifier = Modifier.recordingPrivacyCover()
                     )
                 }
             }
         }
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(40.dp)
-                .clip(shape)
-                .border(1.dp, if (customOn) Accent else Hairline, shape)
-                .background(if (customOn) Accent else Canvas)
-                .clickable(onClick = onCustom)
+    }
+}
+
+@Composable
+private fun HeroFigure(label: String, amount: Double, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(label, style = HomeType.caption, color = OnAccent.copy(alpha = 0.82f))
+        Text(
+            text = formatKsh(amount),
+            style = HomeType.rowTitle,
+            color = OnAccent,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.recordingPrivacyCover()
+        )
+    }
+}
+
+// endregion
+
+// region What keeps costing you
+
+private enum class CostTab { REGULARS, FEES, HABITS }
+
+private const val REGULARS_SHOWN = 5
+
+@Composable
+private fun CostingYouCard(
+    regulars: List<RegularPayee>,
+    fees: FeeSummary,
+    expense: Double,
+    habit: SpendingHabit?,
+    onEssential: (String, Boolean) -> Unit,
+    onWatch: (String, Boolean) -> Unit
+) {
+    var tab by remember { mutableStateOf(CostTab.REGULARS) }
+    var showEssential by remember { mutableStateOf(false) }
+    var showAllRegulars by remember { mutableStateOf(false) }
+    val today = remember { LocalDate.now() }
+    val shown = regulars.filterNot { it.essential }
+    val essential = regulars.filter { it.essential }
+    val feeShare = if (expense > 0.0) (fees.total / expense * 100).roundToInt() else null
+    InsightCard(title = "What keeps costing you", caption = "Money that leaves again and again") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Icon(
-                imageVector = Icons.Outlined.DateRange,
-                contentDescription = "Custom dates",
-                tint = if (customOn) OnAccent else Accent,
-                modifier = Modifier.size(20.dp)
+            CostTile(
+                title = "Regulars",
+                value = if (shown.isEmpty()) "—" else formatKsh(shown.sumOf { it.monthlyCost }),
+                caption = if (shown.isEmpty()) {
+                    "None yet"
+                } else {
+                    "a month · ${shown.size} payee${if (shown.size == 1) "" else "s"}"
+                },
+                selected = tab == CostTab.REGULARS,
+                onClick = { tab = CostTab.REGULARS },
+                modifier = Modifier.weight(1f)
+            )
+            CostTile(
+                title = "Fees",
+                value = formatKsh(fees.total),
+                caption = feeShare?.let { "$it% of spend" } ?: "this period",
+                selected = tab == CostTab.FEES,
+                onClick = { tab = CostTab.FEES },
+                modifier = Modifier.weight(1f)
+            )
+            CostTile(
+                title = "Habits",
+                value = habit?.let { "${it.visits} visits" } ?: "—",
+                caption = habit?.name ?: "None yet",
+                selected = tab == CostTab.HABITS,
+                onClick = { tab = CostTab.HABITS },
+                modifier = Modifier.weight(1f)
+            )
+        }
+        when (tab) {
+            CostTab.REGULARS -> Column {
+                if (regulars.isEmpty()) {
+                    Text(
+                        "Pay someone on a steady rhythm three times and they show up here. " +
+                            "Regulars look across your whole history, not just this period.",
+                        style = HomeType.body,
+                        color = Mute
+                    )
+                }
+                // Most expensive first; the top five keep the card short.
+                val listed = if (showAllRegulars) shown else shown.take(REGULARS_SHOWN)
+                listed.forEach { regular ->
+                    HorizontalDivider(color = Hairline, thickness = 1.dp)
+                    RegularRow(regular, today, onEssential, onWatch)
+                }
+                if (shown.size > REGULARS_SHOWN) {
+                    HorizontalDivider(color = Hairline, thickness = 1.dp)
+                    TextButton(onClick = { showAllRegulars = !showAllRegulars }) {
+                        Text(
+                            if (showAllRegulars) "Show top $REGULARS_SHOWN" else "Show all ${shown.size} regulars",
+                            style = HomeType.label,
+                            color = Accent
+                        )
+                    }
+                }
+                if (essential.isNotEmpty()) {
+                    HorizontalDivider(color = Hairline, thickness = 1.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 44.dp)
+                            .clickable(role = Role.Button) { showEssential = !showEssential },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${essential.size} essential payee${if (essential.size == 1) "" else "s"} " +
+                                "hidden (${essential.joinToString { it.name }}) · ",
+                            style = HomeType.caption,
+                            color = Mute,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .recordingPrivacyCover()
+                        )
+                        Text(if (showEssential) "hide" else "show", style = HomeType.caption, color = Accent)
+                    }
+                    if (showEssential) {
+                        essential.forEach { regular ->
+                            HorizontalDivider(color = Hairline, thickness = 1.dp)
+                            RegularRow(regular, today, onEssential, onWatch)
+                        }
+                    }
+                }
+            }
+            CostTab.FEES -> Column(verticalArrangement = Arrangement.spacedBy(Space.tight)) {
+                Text(
+                    text = "${formatKsh(fees.total)} went on transaction fees this period.",
+                    style = HomeType.body,
+                    color = Ink,
+                    modifier = Modifier.recordingPrivacyCover()
+                )
+                if (feeShare != null) {
+                    Text("That is $feeShare% of what went out.", style = HomeType.caption, color = Mute)
+                }
+                if (fees.withdrawCount > 0) {
+                    Text(
+                        text = "Cash withdrawals: ${fees.withdrawCount} · ${formatKsh(fees.withdrawFees)} in fees",
+                        style = HomeType.caption,
+                        color = Mute,
+                        modifier = Modifier.recordingPrivacyCover()
+                    )
+                }
+            }
+            CostTab.HABITS -> Text(
+                text = habit?.let {
+                    "${it.name}: ${it.visits} times this period, ${formatKsh(it.total)} in all."
+                } ?: "No single place shows up three times or more this period.",
+                style = HomeType.body,
+                color = if (habit == null) Mute else Ink,
+                modifier = Modifier.recordingPrivacyCover()
             )
         }
     }
 }
 
 @Composable
-private fun YearChipRow(
-    years: List<Int>,
-    selectedYear: Int?,
-    onSelect: (Int) -> Unit
+private fun CostTile(
+    title: String,
+    value: String,
+    caption: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
+    val shape = RoundedCornerShape(14.dp)
+    Column(
+        modifier = modifier
+            .heightIn(min = 88.dp)
+            .clip(shape)
+            .border(if (selected) 2.dp else 1.dp, if (selected) Accent else Hairline, shape)
+            .background(if (selected) SoftBlue else CardWhite)
+            .clickable(role = Role.Tab, onClick = onClick)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            title.uppercase(currentJavaLocale()),
+            style = HomeType.caption,
+            color = if (selected) Accent else Mute,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.4.sp,
+            maxLines = 1
+        )
+        Text(
+            text = value,
+            style = HomeType.label,
+            color = Ink,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.recordingPrivacyCover()
+        )
+        Text(
+            text = caption,
+            style = HomeType.caption,
+            color = Mute,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.recordingPrivacyCover()
+        )
+    }
+}
+
+@Composable
+private fun RegularRow(
+    regular: RegularPayee,
+    today: LocalDate,
+    onEssential: (String, Boolean) -> Unit,
+    onWatch: (String, Boolean) -> Unit
+) {
+    var menu by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClickLabel = "Payee options") { menu = true }
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            InitialDisc(name = regular.name, fill = SoftBlue, tint = Accent)
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    regular.name,
+                    style = HomeType.rowTitle,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.recordingPrivacyCover()
+                )
+                Text(regularCadenceCopy(regular, today), style = HomeType.caption, color = Mute)
+            }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    formatKsh(regular.typicalAmount),
+                    style = HomeType.rowTitle,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.recordingPrivacyCover()
+                )
+                when {
+                    regular.essential -> Pill("Essential")
+                    regular.watched -> Pill("Watching")
+                    else -> Text(
+                        "Watch it",
+                        style = HomeType.caption,
+                        color = Accent,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(role = Role.Button) { onWatch(regular.key, true) }
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            DropdownMenuItem(
+                text = { Text(if (regular.watched) "Stop watching" else "Watch it") },
+                onClick = {
+                    menu = false
+                    onWatch(regular.key, !regular.watched)
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(if (regular.essential) "Not essential" else "Mark essential") },
+                onClick = {
+                    menu = false
+                    onEssential(regular.key, !regular.essential)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun Pill(text: String) {
+    Text(
+        text = text,
+        style = HomeType.caption,
+        color = Accent,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(SoftBlue)
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+    )
+}
+
+// endregion
+
+// region Tip and challenge
+
+@Composable
+private fun FeeTipCard(withdrawCount: Int, withdrawFees: Double, onSee: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(Space.gap)
+            .clip(CardShape)
+            .background(ActionMetrics)
+            .padding(horizontal = 16.dp, vertical = 18.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        years.forEach { year ->
-            LipaChoiceChip(
-                label = year.toString(),
-                selected = year == selectedYear,
-                onClick = { onSelect(year) }
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Color.White)
+        ) {
+            Icon(
+                Icons.Outlined.Lightbulb,
+                contentDescription = null,
+                tint = OnPastel,
+                modifier = Modifier.size(20.dp)
             )
         }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "FEE TIP",
+                style = HomeType.caption,
+                color = OnPastel,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.6.sp
+            )
+            Text(
+                text = "You withdrew cash $withdrawCount times this period and paid " +
+                    "${formatKsh(withdrawFees)} in fees. Fewer, larger withdrawals usually cost less per shilling.",
+                style = HomeType.body,
+                color = OnPastel,
+                modifier = Modifier.recordingPrivacyCover()
+            )
+            Text(
+                text = "See the $withdrawCount withdrawals",
+                style = HomeType.label,
+                color = OnPastel,
+                modifier = Modifier
+                    .heightIn(min = 40.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.White)
+                    .clickable(role = Role.Button, onClick = onSee)
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChallengeCard(
+    challenge: InsightChallenge?,
+    habit: SpendingHabit?,
+    quietStreak: Int,
+    onStart: (String) -> Unit,
+    onCheckIn: () -> Unit
+) {
+    InsightCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val label = when (challenge?.kind) {
+                ChallengeCardKind.ACTIVE -> "Cost cutter · day ${challenge.day} of ${challenge.totalDays}"
+                ChallengeCardKind.COMPLETED -> "Cost cutter · done"
+                ChallengeCardKind.BROKEN -> "Cost cutter · ended"
+                else -> "Cost cutter · 7 days"
+            }
+            Text(
+                label.uppercase(currentJavaLocale()),
+                style = HomeType.caption,
+                color = Accent,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.6.sp,
+                modifier = Modifier.weight(1f)
+            )
+            if (quietStreak >= 2) {
+                Text(
+                    "$quietStreak quiet days",
+                    style = HomeType.caption,
+                    color = Income,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Income.copy(alpha = 0.12f))
+                        .padding(horizontal = 9.dp, vertical = 3.dp)
+                )
+            }
+        }
+        if (challenge == null) {
+            if (habit == null) return@InsightCard
+            Text(
+                "Skip ${habit.name} this week",
+                style = HomeType.section,
+                color = Ink,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "You paid them ${habit.visits} times this period, ${formatKsh(habit.total)} in all. " +
+                    "Seven days off keeps that money in your wallet.",
+                style = HomeType.body,
+                color = Mute,
+                modifier = Modifier.recordingPrivacyCover()
+            )
+            PrimaryAction(text = "Start", onClick = { onStart(habit.name) })
+            return@InsightCard
+        }
+        Text(challenge.title, style = HomeType.section, color = Ink, fontWeight = FontWeight.Bold)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            repeat(challenge.totalDays) { index ->
+                val date = challenge.startDate.plusDays(index.toLong())
+                val done = when (challenge.kind) {
+                    ChallengeCardKind.COMPLETED -> true
+                    ChallengeCardKind.ACTIVE -> index < challenge.day - 1
+                    else -> false
+                }
+                val today = challenge.kind == ChallengeCardKind.ACTIVE && index == challenge.day - 1
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (done) Accent else if (today) CardWhite else Canvas)
+                        .then(if (today) Modifier.border(2.dp, Accent, RoundedCornerShape(10.dp)) else Modifier)
+                ) {
+                    Text(
+                        date.dayOfWeek.getDisplayName(TextStyle.NARROW, currentJavaLocale()),
+                        style = HomeType.caption,
+                        fontWeight = FontWeight.Bold,
+                        color = if (done) OnAccent else if (today) Accent else Mute
+                    )
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    if (challenge.kind == ChallengeCardKind.BROKEN) "A payment landed" else "Kept so far",
+                    style = HomeType.caption,
+                    color = Mute
+                )
+                if (challenge.kind != ChallengeCardKind.BROKEN) {
+                    Text(
+                        formatKsh(challenge.kept),
+                        style = HomeType.rowTitle,
+                        color = Income,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.recordingPrivacyCover()
+                    )
+                }
+            }
+            when {
+                challenge.kind == ChallengeCardKind.ACTIVE -> PrimaryAction(text = "Check in", onClick = onCheckIn)
+                habit != null -> PrimaryAction(text = "Start again", onClick = { onStart(habit.name) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun PrimaryAction(text: String, onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(Accent)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 18.dp)
+    ) {
+        Text(text, style = HomeType.label, color = OnAccent)
+    }
+}
+
+// endregion
+
+// region Rhythm: day grid or month bars
+
+@Composable
+private fun RhythmCard(stats: AnalyticsSummary, fuliza: Boolean) {
+    val span = stats.periodFrom?.let { from ->
+        stats.periodTo?.let { to -> formatPeriodSpan(from, to) }
+    }
+    val title = when {
+        stats.pulse.isNotEmpty() && stats.range == AnalyticsRange.DAYS_7 ->
+            span?.let { "Your week · $it" } ?: "Your week, day by day"
+        stats.pulse.isNotEmpty() ->
+            span?.let { "Day by day · $it" } ?: "Day by day"
+        stats.periodBars.firstOrNull()?.label?.length == 4 -> "Year by year"
+        else -> "Month by month"
+    }
+    val caption = stats.busiestLabel?.let {
+        "Busiest: $it, ${formatKsh(stats.busiestTotal)} ${if (fuliza) "drawn" else "out"}"
+    } ?: "${stats.quietDays} days with no money out"
+    InsightCard(title = title, caption = caption) {
+        if (stats.pulse.isNotEmpty()) {
+            PulseGrid(cells = stats.pulse, fuliza = fuliza)
+            if (fuliza) {
+                LegendSwatch(fill = DayFlow.OUT_ONLY.fill(), border = null, label = "Drawn")
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        LegendSwatch(fill = DayFlow.IN_ONLY.fill(), border = null, label = "Only in")
+                        LegendSwatch(fill = DayFlow.OUT_ONLY.fill(), border = null, label = "Only out")
+                        LegendSwatch(fill = CardWhite, border = Accent, label = "Due")
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        LegendSwatch(fill = DayFlow.NET_UP.fill(), border = null, label = "Both, net up")
+                        LegendSwatch(fill = DayFlow.NET_DOWN.fill(), border = null, label = "Both, net down")
+                    }
+                }
+            }
+        } else if (stats.periodBars.isNotEmpty()) {
+            PeriodBars(bars = stats.periodBars, fuliza = fuliza)
+        }
+    }
+}
+
+@Composable
+private fun LegendSwatch(fill: Color, border: Color?, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(CircleShape)
+                .background(fill)
+                .then(if (border != null) Modifier.border(2.dp, border, CircleShape) else Modifier)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(label, style = HomeType.caption, color = Mute)
+    }
+}
+
+@Composable
+private fun PulseGrid(cells: List<PulseCell>, fuliza: Boolean) {
+    var selected by remember(cells) {
+        mutableStateOf(
+            cells.firstOrNull { it.isToday && it.inRange }
+                ?: cells.lastOrNull { it.inRange && it.hasOutflow }
+                ?: cells.lastOrNull { it.inRange }
+        )
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            listOf("M", "T", "W", "T", "F", "S", "S").forEach { day ->
+                Text(
+                    text = day,
+                    style = HomeType.caption,
+                    color = Mute,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+        cells.chunked(7).forEach { week ->
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                week.forEach { cell ->
+                    PulseDayCell(
+                        cell = cell,
+                        selected = cell.date == selected?.date,
+                        onSelect = { if (cell.inRange) selected = cell },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                repeat(7 - week.size) { Spacer(modifier = Modifier.weight(1f)) }
+            }
+        }
+    }
+    val day = selected
+    if (day != null && day.inRange) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = if (day.isToday) "Today" else busiestDayLabel(day.date),
+                style = HomeType.caption,
+                color = Mute
+            )
+            if (day.hasInflow) {
+                Text(
+                    "+${formatKsh(day.inflow)} received",
+                    style = HomeType.body,
+                    color = Income,
+                    modifier = Modifier.recordingPrivacyCover()
+                )
+            }
+            if (day.hasOutflow) {
+                Text(
+                    "−${formatKsh(day.outflow)} ${if (fuliza) "drawn" else "out"}",
+                    style = HomeType.body,
+                    color = Expense,
+                    modifier = Modifier.recordingPrivacyCover()
+                )
+            }
+            if (day.hasInflow && day.hasOutflow) {
+                val up = day.net >= 0.0
+                Text(
+                    "Net ${if (up) "+" else "−"}${formatKsh(abs(day.net))}",
+                    style = HomeType.body,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (up) Income else Expense,
+                    modifier = Modifier.recordingPrivacyCover()
+                )
+            }
+            if (!day.hasInflow && !day.hasOutflow) {
+                Text(
+                    if (day.isDue) "A regular payment is due" else "Nothing moved this day",
+                    style = HomeType.body,
+                    color = if (day.isDue) Accent else Mute
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PulseDayCell(
+    cell: PulseCell,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(10.dp)
+    val fill = when {
+        !cell.inRange -> Color.Transparent
+        cell.flow != DayFlow.NONE -> cell.flow.fill()
+        cell.isDue || cell.isToday -> CardWhite
+        else -> Canvas
+    }
+    val outline = when {
+        !cell.inRange -> null
+        selected || cell.isToday -> Ink
+        cell.isDue -> Accent
+        else -> null
+    }
+    Column(
+        modifier = modifier
+            .height(56.dp)
+            .clip(shape)
+            .background(fill)
+            .then(
+                if (outline != null) Modifier.border(if (selected) 2.dp else 1.5.dp, outline, shape) else Modifier
+            )
+            .clickable(enabled = cell.inRange, onClick = onSelect),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = cell.date.dayOfMonth.toString(),
+            style = HomeType.caption,
+            fontWeight = FontWeight.SemiBold,
+            color = if (cell.inRange) Ink else Hairline
+        )
+        if (cell.inRange) {
+            val received = calendarAmountLabel(cell.inflow)
+            val spent = calendarAmountLabel(cell.outflow)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.recordingPrivacyCover()
+            ) {
+                if (received.isNotEmpty()) {
+                    Text(
+                        text = "+$received",
+                        style = HomeType.caption,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Income,
+                        maxLines = 1
+                    )
+                }
+                if (spent.isNotEmpty()) {
+                    Text(
+                        text = "−$spent",
+                        style = HomeType.caption,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Expense,
+                        maxLines = 1
+                    )
+                }
+                if (received.isEmpty() && spent.isEmpty() && cell.isDue) {
+                    Text(
+                        text = "due",
+                        style = HomeType.caption,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Accent,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PeriodBars(bars: List<PeriodBar>, fuliza: Boolean) {
+    val max = bars.maxOfOrNull { it.outflow }?.takeIf { it > 0.0 } ?: 1.0
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        bars.forEach { bar ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(bar.label, style = HomeType.caption, color = Mute, modifier = Modifier.width(52.dp))
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(10.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(Canvas)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth((bar.outflow / max).toFloat().coerceIn(0f, 1f))
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(Expense)
+                    )
+                }
+                Text(
+                    text = formatKsh(bar.outflow),
+                    style = HomeType.caption,
+                    color = Ink,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier
+                        .width(96.dp)
+                        .recordingPrivacyCover()
+                )
+            }
+        }
+        Text(
+            if (fuliza) "Drawn in each period" else "Money out in each period, fees included",
+            style = HomeType.caption,
+            color = Mute
+        )
+    }
+}
+
+// endregion
+
+// region Where it went and people
+
+@Composable
+private fun WhereItWentCard(
+    rows: List<TypeBreakdown>,
+    selected: TransactionType?,
+    onSelect: (TransactionType?) -> Unit,
+    onOpenTransactions: () -> Unit
+) {
+    if (rows.isEmpty()) return
+    val max = rows.maxOf { it.total }.takeIf { it > 0.0 } ?: 1.0
+    InsightCard(title = "Where it went", caption = "Tap a row to focus your transactions on it") {
+        rows.forEach { row ->
+            val on = row.type == selected
+            val dimmed = selected != null && !on
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(role = Role.Button) { onSelect(if (on) null else row.type) }
+                    .padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row {
+                    Text(
+                        plainTypeLabel(row.type, row.label),
+                        style = HomeType.label,
+                        color = if (dimmed) Mute else Ink,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        formatKsh(row.total),
+                        style = HomeType.label,
+                        fontWeight = FontWeight.Bold,
+                        color = if (dimmed) Mute else Ink,
+                        modifier = Modifier.recordingPrivacyCover()
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(10.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(Canvas)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth((row.total / max).toFloat().coerceIn(0f, 1f))
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(if (dimmed) LabelBlue else Accent)
+                    )
+                }
+            }
+        }
+        if (selected != null) {
+            TextButton(onClick = onOpenTransactions) {
+                Text("Show these in transactions", style = HomeType.label, color = Accent)
+            }
+        }
+    }
+}
+
+private fun plainTypeLabel(type: TransactionType, fallback: String): String = when (type) {
+    TransactionType.SENT -> "Sent to people"
+    TransactionType.PAYBILL -> "Bills (Paybill)"
+    TransactionType.BUY_GOODS -> "Shops (Buy goods)"
+    TransactionType.POCHI -> "Small businesses (Pochi)"
+    TransactionType.WITHDRAW -> "Cash withdrawals"
+    TransactionType.AIRTIME -> "Airtime and bundles"
+    TransactionType.SAVINGS -> "Savings"
+    else -> fallback
+}
+
+@Composable
+private fun PeopleCard(rows: List<CounterpartySpend>) {
+    InsightCard(title = "People you send to most") {
+        Column {
+            rows.forEachIndexed { index, row ->
+                if (index > 0) HorizontalDivider(color = Hairline, thickness = 1.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    InitialDisc(name = row.name, fill = ActionMetrics, tint = OnPastel)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            row.name,
+                            style = HomeType.rowTitle,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.recordingPrivacyCover()
+                        )
+                        Text(
+                            text = buildString {
+                                append("${row.count} time${if (row.count == 1) "" else "s"}")
+                                if (row.lastMillis > 0L) {
+                                    val last = Instant.ofEpochMilli(row.lastMillis)
+                                        .atZone(ZoneId.systemDefault())
+                                        .toLocalDate()
+                                    append(" · last on ${busiestDayLabel(last)}")
+                                }
+                            },
+                            style = HomeType.caption,
+                            color = Mute
+                        )
+                    }
+                    Text(
+                        formatKsh(row.total),
+                        style = HomeType.rowTitle,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.recordingPrivacyCover()
+                    )
+                }
+            }
+        }
+    }
+}
+
+// endregion
+
+// region Recap, badges, export
+
+@Composable
+private fun RecapCard(
+    checkInDone: Boolean,
+    finding: String,
+    badges: List<InsightBadge>,
+    onCheckIn: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(CardShape)
+            .background(SoftBlue)
+            .padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                "MONDAY RECAP",
+                style = HomeType.caption,
+                color = Accent,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.6.sp
+            )
+            Text(
+                text = if (checkInDone) {
+                    "This week's finding: $finding"
+                } else {
+                    "Check in on Monday to unlock this week's new finding."
+                },
+                style = HomeType.body,
+                color = Ink,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.recordingPrivacyCover()
+            )
+            if (!checkInDone) {
+                TextButton(onClick = onCheckIn) {
+                    Text("Check in now", style = HomeType.label, color = Accent)
+                }
+            }
+        }
+        if (badges.isNotEmpty()) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                badges.forEach { badge ->
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(CircleShape)
+                                .background(if (badge.earned) Accent else CardWhite)
+                                .then(
+                                    if (badge.earned) Modifier else Modifier.border(2.dp, LabelBlue, CircleShape)
+                                )
+                        ) {
+                            Text(
+                                badge.mark,
+                                style = HomeType.caption,
+                                fontWeight = FontWeight.Bold,
+                                color = if (badge.earned) OnAccent else Mute
+                            )
+                        }
+                        Text(
+                            badge.name,
+                            style = HomeType.caption,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Ink,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExportBlock(rangeLabel: String, onExport: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .border(1.dp, Accent, RoundedCornerShape(24.dp))
+                .clickable(role = Role.Button, onClick = onExport),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Outlined.FileDownload,
+                contentDescription = null,
+                tint = Accent,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                "Save ${rangeLabel.replaceFirstChar { it.lowercase() }} as PDF",
+                style = HomeType.label,
+                color = Accent
+            )
+        }
+        Text(
+            "Statement for this stretch, saved on this phone. Up to 30 days.",
+            style = HomeType.caption,
+            color = Mute,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+private fun pdfFileName(from: LocalDate?, to: LocalDate?): String {
+    if (from == null || to == null) return "lipabill-statement.pdf"
+    val slug = shortPeriodSpan(from, to)
+        .lowercase(Locale.US)
+        .replace(Regex("[^a-z0-9]+"), "-")
+        .trim('-')
+    return "lipabill-statement-${slug.ifEmpty { "period" }}.pdf"
+}
+
+// endregion
+
+// region Shared pieces
+
+@Composable
+private fun InsightCard(
+    title: String? = null,
+    caption: String? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(CardShape)
+            .background(CardWhite)
+            .padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        if (title != null) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = HomeType.section, color = Ink, fontWeight = FontWeight.Bold)
+                if (caption != null) {
+                    Text(caption, style = HomeType.caption, color = Mute)
+                }
+            }
+        }
+        content()
+    }
+}
+
+@Composable
+private fun InitialDisc(name: String, fill: Color, tint: Color) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(fill)
+    ) {
+        Text(
+            name.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+            style = HomeType.rowTitle,
+            fontWeight = FontWeight.Bold,
+            color = tint
+        )
     }
 }
 
@@ -540,754 +1662,4 @@ private fun MetricsDateRangePicker(
     }
 }
 
-@Composable
-private fun PeriodNetCard(
-    net: Double,
-    vsPrior: String?,
-    vsPriorColor: Color,
-    spendShare: Double?
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text("Net this period", style = HomeType.label, color = Mute)
-        Spacer(modifier = Modifier.height(Space.gap))
-        Text(
-            text = if (net < 0) "−${formatKes(abs(net))}" else formatKes(net),
-            style = HomeType.greeting,
-            color = if (net >= 0) Income else Expense,
-            modifier = Modifier.recordingPrivacyCover()
-        )
-        if (vsPrior != null) {
-            Spacer(modifier = Modifier.height(Space.tight))
-            Text(vsPrior, style = HomeType.caption, color = vsPriorColor)
-        }
-        if (spendShare != null) {
-            Spacer(modifier = Modifier.height(Space.tight))
-            Text(
-                text = "Spent ${(spendShare * 100).roundToInt()}% of income",
-                style = HomeType.caption,
-                color = Mute,
-                modifier = Modifier.recordingPrivacyCover()
-            )
-        }
-    }
-}
-
-@Composable
-private fun StretchStoryCard(
-    headline: String,
-    detail: String?,
-    hasLedger: Boolean,
-    quietDays: Int,
-    quietStreak: Int,
-    busiestLabel: String?,
-    busiestTotal: Double,
-    pulse: List<PulseCell>,
-    fuliza: Boolean
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(headline, style = HomeType.greeting, color = Ink)
-        if (detail != null) {
-            Spacer(modifier = Modifier.height(Space.tight))
-            Text(detail, style = HomeType.body, color = Mute)
-        }
-        if (pulse.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(Space.block))
-            PulseGrid(cells = pulse, fuliza = fuliza)
-        }
-        if (hasLedger) {
-            Spacer(modifier = Modifier.height(Space.block))
-            HorizontalDivider(color = Hairline, thickness = 1.dp)
-            Spacer(modifier = Modifier.height(Space.block))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                RhythmStat(
-                    title = if (fuliza) "No-draw days" else "Quiet days",
-                    value = quietDays.toString(),
-                    modifier = Modifier.weight(1f)
-                )
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = Space.gap)
-                        .width(1.dp)
-                        .height(36.dp)
-                        .background(Hairline)
-                )
-                RhythmStat(
-                    title = "In a row",
-                    value = quietStreak.toString(),
-                    modifier = Modifier.weight(1f)
-                )
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = Space.gap)
-                        .width(1.dp)
-                        .height(36.dp)
-                        .background(Hairline)
-                )
-                RhythmStat(
-                    title = "Busiest",
-                    value = busiestLabel ?: "—",
-                    detail = busiestLabel?.let { formatKes(busiestTotal) },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PulseGrid(cells: List<PulseCell>, fuliza: Boolean) {
-    var selected by remember(cells) {
-        mutableStateOf(
-            cells.firstOrNull { it.isToday && it.inRange }
-                ?: cells.lastOrNull { it.inRange && it.hasOutflow }
-                ?: cells.lastOrNull { it.inRange }
-        )
-    }
-    val weeks = cells.chunked(7)
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                listOf("M", "T", "W", "T", "F", "S", "S").forEach { day ->
-                    Text(
-                        text = day,
-                        style = HomeType.caption,
-                        color = Mute,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-            weeks.forEach { week ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    week.forEach { cell ->
-                        PulseDayCell(
-                            cell = cell,
-                            selected = cell.date == selected?.date,
-                            onSelect = { if (cell.inRange) selected = cell },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    repeat(7 - week.size) {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
-                }
-            }
-        }
-        val day = selected
-        if (day != null && day.inRange) {
-            Spacer(modifier = Modifier.height(Space.block))
-            Text(
-                text = if (day.isToday) "Today" else busiestDayLabel(day.date),
-                style = HomeType.caption,
-                color = Mute
-            )
-            Spacer(modifier = Modifier.height(Space.tight))
-            if (day.hasInflow) {
-                Text(
-                    text = "+${formatKes(day.inflow)} received",
-                    style = HomeType.body,
-                    color = Income,
-                    modifier = Modifier.recordingPrivacyCover()
-                )
-            }
-            if (day.hasOutflow) {
-                Text(
-                    text = "−${formatKes(day.outflow)} ${if (fuliza) "drawn" else "spent"}",
-                    style = HomeType.body,
-                    color = Expense,
-                    modifier = Modifier.recordingPrivacyCover()
-                )
-            }
-            if (!day.hasInflow && !day.hasOutflow) {
-                Text("Nothing moved this day", style = HomeType.body, color = Mute)
-            }
-        }
-    }
-}
-
-@Composable
-private fun PulseDayCell(
-    cell: PulseCell,
-    selected: Boolean,
-    onSelect: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val shape = RoundedCornerShape(10.dp)
-    val fill = when {
-        !cell.inRange -> Color.Transparent
-        selected -> SoftBlue
-        else -> Color.Transparent
-    }
-    val dateColor = if (cell.inRange) Ink else Hairline
-    val outline = when {
-        selected && cell.inRange -> Ink
-        cell.isToday && cell.inRange -> Accent
-        cell.inRange -> Hairline
-        else -> Color.Transparent
-    }
-    Column(
-        modifier = modifier
-            .clip(shape)
-            .background(fill)
-            .then(if (outline != Color.Transparent) Modifier.border(1.dp, outline, shape) else Modifier)
-            .clickable(enabled = cell.inRange, onClick = onSelect)
-            .padding(top = 6.dp, bottom = 6.dp, start = 2.dp, end = 2.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = cell.date.dayOfMonth.toString(),
-            style = HomeType.label,
-            color = dateColor
-        )
-        if (cell.inRange) {
-            Spacer(modifier = Modifier.height(2.dp))
-            Column(
-                modifier = Modifier.recordingPrivacyCover(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                val received = calendarAmountLabel(cell.inflow)
-                val spent = calendarAmountLabel(cell.outflow)
-                if (received.isNotEmpty()) {
-                    Text(
-                        text = received,
-                        style = HomeType.caption,
-                        color = Income,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center
-                    )
-                }
-                if (spent.isNotEmpty()) {
-                    Text(
-                        text = spent,
-                        style = HomeType.caption,
-                        color = Expense,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center
-                    )
-                }
-                if (received.isEmpty() && spent.isEmpty()) {
-                    Text("—", style = HomeType.caption, color = Mute)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RhythmStat(
-    title: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    detail: String? = null
-) {
-    Column(modifier = modifier) {
-        Text(title, style = HomeType.caption, color = Mute)
-        Spacer(modifier = Modifier.height(Space.tight))
-        Text(
-            text = value,
-            style = HomeType.rowTitle,
-            color = Ink,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.recordingPrivacyCover()
-        )
-        if (detail != null) {
-            Text(
-                text = detail,
-                style = HomeType.caption,
-                color = Mute,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.recordingPrivacyCover()
-            )
-        }
-    }
-}
-
-@Composable
-private fun CashFlowChartCard(
-    series: List<AnalyticsPoint>,
-    inflowLabel: String,
-    outflowLabel: String
-) {
-    val maxY = remember(series) {
-        max(series.maxOfOrNull { max(it.income, it.expense) } ?: 0.0, 1.0)
-    }
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.chip)
-        ) {
-            LegendDot(color = Income, label = inflowLabel)
-            LegendDot(color = Expense, label = outflowLabel)
-            Spacer(modifier = Modifier.weight(1f))
-            Text(
-                text = formatChartAxis(maxY),
-                style = HomeType.caption,
-                color = Mute,
-                modifier = Modifier.recordingPrivacyCover()
-            )
-        }
-        Spacer(modifier = Modifier.height(Space.block))
-        if (series.isEmpty() || series.all { it.income == 0.0 && it.expense == 0.0 }) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("No data for this period", style = HomeType.body, color = Mute)
-            }
-        } else {
-            IncomeExpenseBarChart(
-                series = series,
-                maxY = maxY,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-                    .recordingPrivacyCover()
-            )
-            Spacer(modifier = Modifier.height(Space.gap))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(series.first().label, style = HomeType.caption, color = Mute)
-                if (series.size > 1) {
-                    Text(series.last().label, style = HomeType.caption, color = Mute)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LegendDot(color: Color, label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(color)
-        )
-        Spacer(modifier = Modifier.width(Space.gap))
-        Text(label, style = HomeType.caption, color = Mute)
-    }
-}
-
-@Composable
-private fun IncomeExpenseBarChart(
-    series: List<AnalyticsPoint>,
-    maxY: Double,
-    modifier: Modifier = Modifier
-) {
-    val grid = Hairline
-    val inflow = Income
-    val outflow = Expense
-    Canvas(modifier = modifier) {
-        val leftPad = 4.dp.toPx()
-        val rightPad = 4.dp.toPx()
-        val topPad = 8.dp.toPx()
-        val bottomPad = 4.dp.toPx()
-        val chartW = size.width - leftPad - rightPad
-        val chartH = size.height - topPad - bottomPad
-        val baseline = topPad + chartH
-        for (i in 0..3) {
-            val y = topPad + chartH * i / 3f
-            drawLine(
-                color = grid,
-                start = Offset(leftPad, y),
-                end = Offset(leftPad + chartW, y),
-                strokeWidth = 1.dp.toPx()
-            )
-        }
-        val n = series.size.coerceAtLeast(1)
-        val slot = chartW / n
-        val pairGap = 2.dp.toPx()
-        val barW = ((slot - pairGap) * 0.38f).coerceIn(3.dp.toPx(), 14.dp.toPx())
-        val radius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
-        series.forEachIndexed { i, point ->
-            val cx = leftPad + slot * i + slot / 2f
-            val inH = ((point.income / maxY).toFloat().coerceIn(0f, 1f) * chartH)
-            val outH = ((point.expense / maxY).toFloat().coerceIn(0f, 1f) * chartH)
-            if (inH > 0.5f) {
-                drawRoundRect(
-                    color = inflow,
-                    topLeft = Offset(cx - barW - pairGap / 2f, baseline - inH),
-                    size = Size(barW, inH),
-                    cornerRadius = radius
-                )
-            }
-            if (outH > 0.5f) {
-                drawRoundRect(
-                    color = outflow,
-                    topLeft = Offset(cx + pairGap / 2f, baseline - outH),
-                    size = Size(barW, outH),
-                    cornerRadius = radius
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TypeBreakdownCard(
-    rows: List<TypeBreakdown>,
-    selected: TransactionType?,
-    onSelect: (TransactionType?) -> Unit
-) {
-    val volume = rows.sumOf { it.total }
-    val focused = rows.firstOrNull { it.type == selected }
-    Column(modifier = Modifier.fillMaxWidth()) {
-        ShareStack(
-            slices = rows.map { row ->
-                ShareSlice(
-                    key = row.type.name,
-                    weight = row.total,
-                    color = row.type.categoryInk(),
-                    label = row.label
-                )
-            },
-            selectedKey = selected?.name,
-            onSelectKey = { key ->
-                onSelect(rows.firstOrNull { it.type.name == key }?.type)
-            },
-            modifier = Modifier.recordingPrivacyCover()
-        )
-        if (focused != null && volume > 0.0) {
-            Spacer(modifier = Modifier.height(Space.block))
-            Text(
-                text = "${focused.label} is ${(focused.total / volume * 100).roundToInt()}% of this stretch",
-                style = HomeType.body,
-                color = focused.type.categoryInk(),
-                modifier = Modifier.recordingPrivacyCover()
-            )
-        }
-        Spacer(modifier = Modifier.height(Space.block))
-        rows.forEachIndexed { index, row ->
-            val ink = row.type.categoryInk()
-            val share = if (volume <= 0.0) 0 else (row.total / volume * 100).roundToInt()
-            val on = row.type == selected
-            if (index > 0) {
-                HorizontalDivider(color = Hairline, thickness = 1.dp)
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (on) row.type.categoryDisc() else Color.Transparent)
-                    .clickable { onSelect(if (on) null else row.type) }
-                    .padding(vertical = Space.block, horizontal = Space.gap),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                FaviconDisc(
-                    icon = row.type.insightIcon(),
-                    fill = row.type.categoryDisc(),
-                    tint = ink
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        row.label,
-                        style = HomeType.rowTitle,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        "${row.count} txn${if (row.count == 1) "" else "s"} · $share%",
-                        style = HomeType.caption,
-                        color = Mute,
-                        modifier = Modifier.recordingPrivacyCover()
-                    )
-                }
-                Text(
-                    formatKes(row.total),
-                    style = HomeType.rowTitle,
-                    color = ink,
-                    modifier = Modifier.recordingPrivacyCover()
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TopCounterpartiesCard(rows: List<CounterpartySpend>) {
-    val volume = rows.sumOf { it.total }
-    var selected by remember(rows) { mutableStateOf<String?>(null) }
-    val focused = rows.firstOrNull { it.name == selected }
-    Column(modifier = Modifier.fillMaxWidth()) {
-        ShareStack(
-            slices = rows.map { row ->
-                ShareSlice(
-                    key = row.name,
-                    weight = row.total,
-                    color = avatarPastel(row.name.hashCode()),
-                    label = row.name
-                )
-            },
-            selectedKey = selected,
-            onSelectKey = { selected = it },
-            modifier = Modifier.recordingPrivacyCover()
-        )
-        if (focused != null && volume > 0.0) {
-            Spacer(modifier = Modifier.height(Space.block))
-            Text(
-                text = "${focused.name} took ${(focused.total / volume * 100).roundToInt()}% of outgoing here",
-                style = HomeType.body,
-                color = Ink,
-                modifier = Modifier.recordingPrivacyCover()
-            )
-        }
-        Spacer(modifier = Modifier.height(Space.block))
-        rows.forEachIndexed { index, row ->
-            val letter = row.name.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-            val fill = avatarPastel(row.name.hashCode())
-            val on = row.name == selected
-            if (index > 0) {
-                HorizontalDivider(color = Hairline, thickness = 1.dp)
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (on) fill.copy(alpha = 0.55f) else Color.Transparent)
-                    .clickable { selected = if (on) null else row.name }
-                    .padding(vertical = Space.block, horizontal = Space.gap),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                FaviconDisc(
-                    letter = letter,
-                    fill = fill,
-                    tint = OnPastel
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        row.name,
-                        style = HomeType.rowTitle,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.recordingPrivacyCover()
-                    )
-                    Text(
-                        "${row.count} txn${if (row.count == 1) "" else "s"}",
-                        style = HomeType.caption,
-                        color = Mute,
-                        modifier = Modifier.recordingPrivacyCover()
-                    )
-                }
-                Text(
-                    formatKes(row.total),
-                    style = HomeType.rowTitle,
-                    modifier = Modifier.recordingPrivacyCover()
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MetricTile(
-    title: String,
-    value: String,
-    valueColor: Color,
-    modifier: Modifier = Modifier
-) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        Text(title, style = HomeType.label, color = Mute)
-        Spacer(modifier = Modifier.height(Space.gap))
-        Text(
-            value,
-            style = HomeType.amount,
-            color = valueColor,
-            maxLines = 1,
-            softWrap = false,
-            modifier = Modifier.recordingPrivacyCover()
-        )
-    }
-}
-
-@Composable
-private fun MetricStatCard(
-    title: String,
-    amount: Double,
-    tint: Color,
-    icon: ImageVector,
-    modifier: Modifier = Modifier,
-    changeLabel: String? = null,
-    changeColor: Color = Mute
-) {
-    Column(modifier = modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = title,
-                style = HomeType.label,
-                color = Mute,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(icon, contentDescription = null, tint = tint)
-        }
-        Spacer(modifier = Modifier.height(Space.block))
-        Text(
-            text = formatKes(amount),
-            style = HomeType.rowTitle,
-            color = tint,
-            maxLines = 1,
-            softWrap = false,
-            modifier = Modifier.recordingPrivacyCover()
-        )
-        if (changeLabel != null) {
-            Spacer(modifier = Modifier.height(Space.tight))
-            Text(changeLabel, style = HomeType.caption, color = changeColor)
-        }
-    }
-}
-
-@Composable
-@ReadOnlyComposable
-private fun deltaColor(current: Double, previous: Double, moreIsGood: Boolean): Color {
-    val delta = current - previous
-    if (abs(delta) < 0.005) return Mute
-    val improved = if (moreIsGood) delta > 0 else delta < 0
-    return if (improved) Income else Expense
-}
-
-private fun formatChartAxis(amount: Double): String {
-    val magnitude = abs(amount)
-    return when {
-        magnitude >= 1_000_000 -> String.format(Locale.US, "%.1fM", amount / 1_000_000.0)
-        magnitude >= 10_000 -> String.format(Locale.US, "%.0fK", amount / 1_000.0)
-        magnitude >= 1_000 -> String.format(Locale.US, "%.1fK", amount / 1_000.0)
-        else -> formatKes(amount)
-    }
-}
-
-@Composable
-private fun InsightsSection(
-    icon: ImageVector,
-    title: String,
-    modifier: Modifier = Modifier,
-    caption: String? = null,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(bottom = Space.section)
-            .clip(RoundedCornerShape(16.dp))
-            .background(CardWhite)
-            .padding(Space.card)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            FaviconDisc(icon = icon, fill = SoftBlue, tint = Accent)
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = HomeType.section, color = Ink)
-                if (caption != null) {
-                    Text(caption, style = HomeType.caption, color = Mute)
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(Space.block))
-        HorizontalDivider(color = Hairline, thickness = 1.dp)
-        Spacer(modifier = Modifier.height(Space.block))
-        content()
-    }
-}
-
-@Composable
-private fun FaviconDisc(
-    fill: Color,
-    tint: Color,
-    modifier: Modifier = Modifier,
-    icon: ImageVector? = null,
-    letter: String? = null
-) {
-    Box(
-        modifier = modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(fill),
-        contentAlignment = Alignment.Center
-    ) {
-        if (icon != null) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(18.dp)
-            )
-        } else if (letter != null) {
-            Text(letter, style = HomeType.rowTitle, color = tint)
-        }
-    }
-}
-
-private data class ShareSlice(
-    val key: String,
-    val weight: Double,
-    val color: Color,
-    val label: String
-)
-
-@Composable
-private fun ShareStack(
-    slices: List<ShareSlice>,
-    selectedKey: String?,
-    onSelectKey: (String?) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val visible = slices.filter { it.weight > 0.0 }
-    if (visible.isEmpty()) return
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(28.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(Canvas),
-        horizontalArrangement = Arrangement.spacedBy(3.dp)
-    ) {
-        visible.forEach { slice ->
-            val on = slice.key == selectedKey
-            val dimmed = selectedKey != null && !on
-            Box(
-                modifier = Modifier
-                    .weight(slice.weight.toFloat().coerceAtLeast(0.05f))
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (dimmed) slice.color.copy(alpha = 0.28f) else slice.color)
-                    .clickable { onSelectKey(if (on) null else slice.key) }
-            )
-        }
-    }
-}
-
-private fun TransactionType.insightIcon(): ImageVector = when (this) {
-    TransactionType.SENT -> Icons.Outlined.NorthEast
-    TransactionType.RECEIVED -> Icons.Outlined.SouthWest
-    TransactionType.PAYBILL -> Icons.AutoMirrored.Outlined.ReceiptLong
-    TransactionType.BUY_GOODS -> Icons.Outlined.Storefront
-    TransactionType.POCHI -> Icons.Outlined.AccountBalanceWallet
-    TransactionType.WITHDRAW -> Icons.Outlined.NorthEast
-    TransactionType.DEPOSIT -> Icons.Outlined.SouthWest
-    TransactionType.REVERSED -> Icons.AutoMirrored.Outlined.Undo
-    TransactionType.FULIZA -> Icons.Outlined.Bolt
-    TransactionType.SAVINGS -> Icons.Outlined.Savings
-    TransactionType.AIRTIME -> Icons.Outlined.PhoneIphone
-    TransactionType.UNKNOWN -> Icons.Outlined.SwapHoriz
-}
+// endregion

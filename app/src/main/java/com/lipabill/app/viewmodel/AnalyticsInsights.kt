@@ -10,12 +10,17 @@ import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private val busiestDayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM")
+private val periodDayMonth: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM")
+private val periodDayMonthYear: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM yyyy")
+
+private fun orderedSpanEnds(from: LocalDate, to: LocalDate): Pair<LocalDate, LocalDate> =
+    if (from.isAfter(to)) to to from else from to to
 
 data class CounterpartySpend(
     val name: String,
     val count: Int,
-    val total: Double
+    val total: Double,
+    val lastMillis: Long = 0L
 )
 
 /** Same-length window immediately before [from]–[to], or the prior calendar year. */
@@ -79,7 +84,8 @@ fun topOutgoingCounterparties(
             CounterpartySpend(
                 name = name,
                 count = list.size,
-                total = list.sumOf { it.amount ?: 0.0 }
+                total = list.sumOf { it.amount ?: 0.0 },
+                lastMillis = list.maxOf { it.timestampMillis }
             )
         }
         .sortedByDescending { it.total }
@@ -95,11 +101,24 @@ data class PulseCell(
     val inRange: Boolean,
     val isToday: Boolean,
     val inflow: Double,
-    val outflow: Double
+    val outflow: Double,
+    /** A regular payee is expected to be paid this day. */
+    val isDue: Boolean = false
 ) {
     val hasOutflow: Boolean get() = outflow > 0.005
     val hasInflow: Boolean get() = inflow > 0.005
+    val net: Double get() = inflow - outflow
+    val flow: DayFlow
+        get() = when {
+            hasInflow && hasOutflow -> if (net >= 0.0) DayFlow.NET_UP else DayFlow.NET_DOWN
+            hasInflow -> DayFlow.IN_ONLY
+            hasOutflow -> DayFlow.OUT_ONLY
+            else -> DayFlow.NONE
+        }
 }
+
+/** How money moved on one day: one way only, or both ways with the net up or down. */
+enum class DayFlow { NONE, IN_ONLY, OUT_ONLY, NET_UP, NET_DOWN }
 
 fun quietDaysInRange(from: LocalDate, to: LocalDate, outflowDates: Set<LocalDate>): Int {
     val days = ChronoUnit.DAYS.between(from, to) + 1
@@ -139,7 +158,38 @@ fun busiestOutflow(
         .maxByOrNull { it.value }
         ?.toPair()
 
-fun busiestDayLabel(date: LocalDate): String = date.format(busiestDayFormat)
+fun busiestDayLabel(date: LocalDate): String = date.format(periodDayMonth)
+
+/**
+ * Inclusive calendar span with months named so Insights never relies on “this month”
+ * being obvious. Same month: `1–10 Nov 2026`. Across months: `12 Oct – 10 Nov 2026`.
+ */
+fun formatPeriodSpan(from: LocalDate, to: LocalDate): String {
+    val (start, end) = orderedSpanEnds(from, to)
+    return when {
+        start == end -> start.format(periodDayMonthYear)
+        start.year == end.year && start.month == end.month ->
+            "${start.dayOfMonth}–${end.format(periodDayMonthYear)}"
+        start.year == end.year ->
+            "${start.format(periodDayMonth)} – ${end.format(periodDayMonthYear)}"
+        else ->
+            "${start.format(periodDayMonthYear)} – ${end.format(periodDayMonthYear)}"
+    }
+}
+
+/** Compact span for the period pill when the full “Last N days · …” label is too long. */
+fun shortPeriodSpan(from: LocalDate, to: LocalDate): String {
+    val (start, end) = orderedSpanEnds(from, to)
+    return when {
+        start == end -> start.format(periodDayMonth)
+        start.year == end.year && start.month == end.month ->
+            "${start.dayOfMonth}–${end.format(periodDayMonth)}"
+        start.year == end.year ->
+            "${start.format(periodDayMonth)} – ${end.format(periodDayMonth)}"
+        else ->
+            "${start.format(periodDayMonthYear)} – ${end.format(periodDayMonthYear)}"
+    }
+}
 
 /** Compact fare-style figure for a calendar cell. Empty when nothing moved. */
 fun calendarAmountLabel(amount: Double): String {
@@ -158,7 +208,8 @@ fun pulseCalendar(
     to: LocalDate,
     today: LocalDate,
     inflowByDate: Map<LocalDate, Double>,
-    outflowByDate: Map<LocalDate, Double>
+    outflowByDate: Map<LocalDate, Double>,
+    dueDates: Set<LocalDate> = emptySet()
 ): List<PulseCell> {
     if (!shouldShowPulse(ChronoUnit.DAYS.between(from, to) + 1)) return emptyList()
     val start = from.with(DayOfWeek.MONDAY)
@@ -172,7 +223,8 @@ fun pulseCalendar(
             inRange = !date.isBefore(from) && !date.isAfter(to),
             isToday = date == today,
             inflow = inflowByDate[date] ?: 0.0,
-            outflow = outflowByDate[date] ?: 0.0
+            outflow = outflowByDate[date] ?: 0.0,
+            isDue = date in dueDates
         )
     }.toList()
 }

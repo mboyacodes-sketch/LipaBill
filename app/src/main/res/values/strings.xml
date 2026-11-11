@@ -14,7 +14,6 @@
     </string>
     <!-- Keep in sync with AccessibilityServiceDisclosure.SERVICE_LABEL. -->
     <string name="accessibility_service_label">LipaBill M-Pesa payments</string>
-    <string name="settings_habits">Habits</string>
     <string name="settings_check_update">Check for updates</string>
     <string name="update_latest">This install is already the latest build.</string>
     <string name="update_check_failed">The update check did not finish. Try again when you have a connection.</string>
@@ -39,10 +38,6 @@
     <string name="habits_subtitle">A short pause, and a look at the week.</string>
     <string name="habits_this_week">This week</string>
     <string name="habits_teaser_checkin">Check-in ready</string>
-    <string name="settings_challenges_title">No-spend challenges</string>
-    <string name="settings_challenges_body">Pause one kind of spending. Checked against your history.</string>
-    <string name="settings_checkin_title">Weekly check-in</string>
-    <string name="settings_checkin_body">A 30-second look at the week, on Sunday evening.</string>
     <string name="challenge_offer_title">3 days without food delivery</string>
     <string name="challenge_offer_body">Glovo, Uber Eats, Bolt Food, and Jumia Food count. Other spending does not.</string>
     <string name="challenge_start">Start</string>
@@ -55,6 +50,8 @@
     <string name="challenge_completed_body">Three days with no food delivery.</string>
     <string name="challenge_ended_title">Pause ended</string>
     <string name="challenge_ended_body">A food delivery landed. Start again when you want.</string>
+    <string name="challenge_completed_body_payee">%1$d days without %2$s.</string>
+    <string name="challenge_ended_body_payee">A payment to %1$s landed. Start again when you want.</string>
     <string name="checkin_offer_title">Weekly check-in</string>
     <string name="checkin_offer_body">Three short questions from this week. About 30 seconds.</string>
     <string name="checkin_open">Start</string>

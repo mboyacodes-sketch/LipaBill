@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +22,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lipabill.app.data.model.MoneySource
+import com.lipabill.app.ui.components.LedgerSourceChips
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Ink
@@ -67,26 +67,18 @@ fun SourceFilterRow(
     onSelect: (MoneySource?) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    if (sources.isEmpty()) return
-    Row(
+    if (sources.size <= 1) return
+    LedgerSourceChips(
+        sources = sources,
+        showAllChip = true,
+        allSelected = selected == null,
+        selectedSource = selected,
+        onSelectAll = { onSelect(null) },
+        onSelectSource = { onSelect(it) },
         modifier = modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        ProviderChip(
-            label = "All",
-            selected = selected == null,
-            onClick = { onSelect(null) }
-        )
-        sources.forEach { source ->
-            ProviderChip(
-                label = source.label,
-                selected = source == selected,
-                onClick = { onSelect(source) }
-            )
-        }
-    }
+            .horizontalScroll(rememberScrollState())
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -135,22 +127,3 @@ fun ProviderPicker(
     }
 }
 
-@Composable
-private fun ProviderChip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    Text(
-        text = label,
-        style = HomeType.caption,
-        color = if (selected) OnAccent else Ink,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(if (selected) Accent else SoftBlue)
-            .clickable(role = Role.RadioButton, onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 5.dp)
-    )
-}
