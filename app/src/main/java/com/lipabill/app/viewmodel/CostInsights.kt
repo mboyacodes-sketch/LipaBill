@@ -2,6 +2,8 @@ package com.lipabill.app.viewmodel
 
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.engage.CategoryMatcher
+import com.lipabill.app.engage.CategoryRules
 import com.lipabill.app.ui.util.formatKsh
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
@@ -40,6 +42,16 @@ fun withoutReversals(txs: List<MpesaTransaction>): List<MpesaTransaction> {
     return txs.filter { tx ->
         tx.type != TransactionType.REVERSED && tx.code.uppercase(Locale.US) !in undone
     }
+}
+
+/**
+ * Money moving between the user's own pots: into M-Shwari / Lock Savings and back out,
+ * and Fuliza draws that the payment they funded already counts. None of it is income or spend.
+ */
+fun isOwnMoneyMove(tx: MpesaTransaction): Boolean = when (tx.type) {
+    TransactionType.SAVINGS, TransactionType.FULIZA -> true
+    TransactionType.DEPOSIT -> tx.counterpartyName?.startsWith("M-Shwari", ignoreCase = true) == true
+    else -> false
 }
 
 data class FeeSummary(
@@ -119,9 +131,12 @@ private fun List<Double>.median(): Double {
 }
 
 /**
- * Payees paid on a steady rhythm (weekly, fortnightly or monthly) across the whole ledger.
- * Needs [minPayments] separate days, most gaps close to the typical gap, and a payment
- * recent enough that the habit has not stopped. Most expensive per month first.
+ * Bills and standing payments: the same payee, a similar amount, on a steady rhythm
+ * (weekly, fortnightly or monthly) across the whole ledger. Several payments on one day
+ * count as one. Needs [minPayments] separate days, most gaps close to the typical gap,
+ * most amounts close to the typical amount (a shop with changing baskets is a habit,
+ * not a regular), and a payment recent enough that the rhythm has not stopped.
+ * Most expensive per month first.
  */
 fun detectRegulars(
     txs: Iterable<MpesaTransaction>,
@@ -138,9 +153,11 @@ fun detectRegulars(
     for ((key, payments) in byPayee) {
         if (key == null) continue
         val ordered = payments.sortedBy { it.timestampMillis }
-        val dates = ordered
-            .map { Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDate() }
-            .distinct()
+        val byDay = ordered
+            .groupBy { Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDate() }
+            .mapValues { (_, list) -> list.sumOf { it.amount ?: 0.0 } }
+            .toSortedMap()
+        val dates = byDay.keys.toList()
         if (dates.size < minPayments) continue
         val gaps = dates.zipWithNext { a, b -> ChronoUnit.DAYS.between(a, b) }
         val typicalGap = gaps.map { it.toDouble() }.median().roundToLong()
@@ -148,9 +165,13 @@ fun detectRegulars(
         val tolerance = max(2.0, typicalGap * 0.35)
         val steady = gaps.count { abs(it - typicalGap) <= tolerance }
         if (steady < ceil(gaps.size * 2.0 / 3.0)) continue
+        val amounts = byDay.values.toList()
+        val typical = amounts.median()
+        val amountTolerance = max(50.0, typical * 0.4)
+        val similar = amounts.count { abs(it - typical) <= amountTolerance }
+        if (similar < ceil(amounts.size * 2.0 / 3.0)) continue
         val lastPaid = dates.last()
         if (ChronoUnit.DAYS.between(lastPaid, today) > typicalGap * 2 + 3) continue
-        val typical = ordered.mapNotNull { it.amount }.median()
         regulars += RegularPayee(
             key = key,
             name = payeeName(ordered.last()),
@@ -179,24 +200,39 @@ fun regularCadenceCopy(regular: RegularPayee, today: LocalDate): String {
 
 data class SpendingHabit(
     val name: String,
+    /** Separate days with a payment there. */
     val visits: Int,
     val total: Double
 )
 
-/** The payee visited most often in the period, outside the regular bills. */
+/** Shops and merchants. People, airtime and cash are not habits to pause. */
+private val HABIT_TYPES = setOf(
+    TransactionType.BUY_GOODS,
+    TransactionType.POCHI,
+    TransactionType.PAYBILL
+)
+
+/**
+ * The shop visited on the most separate days in the period, outside the regular bills,
+ * payees marked essential ([exclude]) and everyday essentials like groceries and power.
+ */
 fun topHabit(
     txs: Iterable<MpesaTransaction>,
+    zone: ZoneId,
     exclude: Set<String> = emptySet(),
     minVisits: Int = 3
 ): SpendingHabit? =
     txs
-        .filter { it.type in PAYEE_TYPES && it.type != TransactionType.AIRTIME }
+        .filter { it.type in HABIT_TYPES && (it.amount ?: 0.0) > 0.0 }
+        .filterNot { CategoryMatcher.matches(CategoryRules.everydayEssentials, it.counterpartyName) }
         .groupBy { payeeKey(it) }
         .filterKeys { it != null && it !in exclude }
         .map { (_, list) ->
             SpendingHabit(
                 name = payeeName(list.maxBy { it.timestampMillis }),
-                visits = list.size,
+                visits = list.map { Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDate() }
+                    .distinct()
+                    .size,
                 total = list.sumOf { it.amount ?: 0.0 }
             )
         }

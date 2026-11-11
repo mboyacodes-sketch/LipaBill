@@ -100,17 +100,63 @@ class CostInsightsTest {
     }
 
     @Test
-    fun top_habit_is_the_most_visited_place_outside_regulars() {
-        val day = LocalDate.of(2026, 11, 5)
-        val txs = List(4) { tx(TransactionType.BUY_GOODS, "Java House", 450.0, day) } +
-            List(5) { tx(TransactionType.PAYBILL, "Safaricom Home", 100.0, day) } +
-            List(2) { tx(TransactionType.BUY_GOODS, "Naivas", 2_000.0, day) }
+    fun top_habit_counts_separate_days_at_shops_outside_regulars() {
+        val days = (2..5).map { LocalDate.of(2026, 11, it) }
+        val txs = days.map { tx(TransactionType.BUY_GOODS, "Java House", 450.0, it) } +
+            // Two payments on one day are one visit.
+            tx(TransactionType.BUY_GOODS, "Java House", 200.0, days.last()) +
+            List(5) { tx(TransactionType.PAYBILL, "Safaricom Home", 100.0, LocalDate.of(2026, 11, it + 1)) }
 
-        val habit = topHabit(txs, exclude = setOf("safaricom home"))
+        val habit = topHabit(txs, zone, exclude = setOf("safaricom home"))
 
         assertEquals("Java House", habit?.name)
         assertEquals(4, habit?.visits)
-        assertEquals(1_800.0, habit?.total ?: 0.0, 0.001)
+        assertEquals(2_000.0, habit?.total ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun people_groceries_and_power_are_never_habits() {
+        val days = (1..6).map { LocalDate.of(2026, 11, it) }
+        val txs = days.map { tx(TransactionType.SENT, "Mum", 1_000.0, it) } +
+            days.map { tx(TransactionType.BUY_GOODS, "NAIVAS WESTLANDS", 800.0, it) } +
+            days.map { tx(TransactionType.PAYBILL, "KPLC PREPAID", 500.0, it) } +
+            days.map { tx(TransactionType.BUY_GOODS, "Quickmart Kilimani", 600.0, it) }
+        assertNull(topHabit(txs, zone))
+    }
+
+    @Test
+    fun a_shop_with_changing_baskets_is_not_a_regular() {
+        val today = LocalDate.of(2026, 11, 10)
+        val amounts = listOf(350.0, 2_400.0, 900.0, 4_100.0, 600.0)
+        val shop = amounts.mapIndexed { i, amount ->
+            tx(TransactionType.BUY_GOODS, "Corner Shop", amount, LocalDate.of(2026, 10, 6).plusWeeks(i.toLong()))
+        }
+        assertTrue(detectRegulars(shop, zone, today).isEmpty())
+    }
+
+    @Test
+    fun a_bill_split_across_two_payments_on_one_day_is_one_payment() {
+        val today = LocalDate.of(2026, 11, 10)
+        val rent = listOf(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 9, 1), LocalDate.of(2026, 10, 1))
+            .flatMap {
+                listOf(
+                    tx(TransactionType.PAYBILL, "Landlord", 10_000.0, it),
+                    tx(TransactionType.PAYBILL, "Landlord", 5_000.0, it)
+                )
+            }
+        val regular = detectRegulars(rent, zone, today).single()
+        assertEquals(15_000.0, regular.typicalAmount, 0.001)
+        assertEquals(3, regular.payments)
+    }
+
+    @Test
+    fun savings_moves_and_fuliza_draws_are_own_money() {
+        val day = LocalDate.of(2026, 11, 3)
+        assertTrue(isOwnMoneyMove(tx(TransactionType.SAVINGS, "M-Shwari", 1_000.0, day)))
+        assertTrue(isOwnMoneyMove(tx(TransactionType.DEPOSIT, "M-Shwari", 1_000.0, day)))
+        assertTrue(isOwnMoneyMove(tx(TransactionType.FULIZA, null, 300.0, day)))
+        assertTrue(!isOwnMoneyMove(tx(TransactionType.DEPOSIT, "Agent 123", 1_000.0, day)))
+        assertTrue(!isOwnMoneyMove(tx(TransactionType.RECEIVED, "Boss", 9_000.0, day)))
     }
 
     @Test
@@ -127,19 +173,48 @@ class CostInsightsTest {
     }
 
     @Test
-    fun due_dates_mark_pulse_cells() {
+    fun due_regulars_mark_pulse_cells_with_what_is_due() {
         val from = LocalDate.of(2026, 11, 1)
         val to = LocalDate.of(2026, 11, 30)
+        val fibre = regular("Safaricom Home", 2_999.0, LocalDate.of(2026, 11, 14))
         val cells = pulseCalendar(
             from = from,
             to = to,
             today = LocalDate.of(2026, 11, 10),
             inflowByDate = emptyMap(),
             outflowByDate = emptyMap(),
-            dueDates = setOf(LocalDate.of(2026, 11, 14))
+            regulars = listOf(fibre)
         )
-        assertEquals(listOf(LocalDate.of(2026, 11, 14)), cells.filter { it.isDue }.map { it.date })
+        val due = cells.filter { it.isDue }
+        assertEquals(listOf(LocalDate.of(2026, 11, 14)), due.map { it.date })
+        assertEquals(listOf("Safaricom Home"), due.single().due.map { it.name })
     }
+
+    @Test
+    fun upcoming_due_lists_overdue_and_the_next_two_weeks_soonest_first() {
+        val today = LocalDate.of(2026, 11, 10)
+        val late = regular("Landlord", 15_000.0, LocalDate.of(2026, 11, 8))
+        val soon = regular("Safaricom Home", 2_999.0, LocalDate.of(2026, 11, 14))
+        val far = regular("School", 30_000.0, LocalDate.of(2026, 12, 20))
+        assertEquals(
+            listOf("Landlord", "Safaricom Home"),
+            upcomingDue(listOf(far, soon, late), today).map { it.name }
+        )
+        assertEquals("Was due 8 Nov, not paid yet", dueCopy(late.nextDue, today))
+        assertEquals("Due tomorrow", dueCopy(today.plusDays(1), today))
+        assertEquals("Due Sat 14 Nov", dueCopy(soon.nextDue, today))
+    }
+
+    private fun regular(name: String, amount: Double, due: LocalDate) = RegularPayee(
+        key = name.lowercase(),
+        name = name,
+        cadence = Cadence.MONTHLY,
+        typicalAmount = amount,
+        monthlyCost = amount,
+        lastPaid = due.minusMonths(1),
+        nextDue = due,
+        payments = 3
+    )
 
     @Test
     fun badges_track_fee_cuts_quiet_runs_and_reviewed_regulars() {

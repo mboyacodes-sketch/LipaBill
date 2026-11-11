@@ -170,7 +170,8 @@ data class InsightChallenge(
     val kind: ChallengeCardKind,
     val day: Int,
     val totalDays: Int,
-    val kept: Double,
+    /** Usual spend avoided so far. Null when the challenge is not about spending. */
+    val kept: Double?,
     val startDate: LocalDate
 )
 
@@ -529,12 +530,18 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             else -> 0
         }
         val payee = ChallengeTemplates.payeeOf(latest.templateId)
+        val fuliza = latest.templateId == ChallengeTemplates.fulizaFree7Days.id
         return InsightChallenge(
-            title = payee?.let { "Skip $it this week" } ?: "No food delivery for $total days",
+            title = when {
+                fuliza -> "No Fuliza for $total days"
+                payee != null -> "Skip $payee this week"
+                else -> "No food delivery for $total days"
+            },
             kind = kind,
             day = day,
             totalDays = total,
-            kept = baseline * cleanDays.coerceAtLeast(0),
+            // A skipped Fuliza draw is borrowing avoided, not money kept, so it shows no "kept" figure.
+            kept = if (fuliza) null else baseline * cleanDays.coerceAtLeast(0),
             startDate = ChallengeClock.localDate(latest.startAt, zone)
         )
     }
@@ -583,6 +590,12 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                 !date.isBefore(prevFrom) && !date.isAfter(prevTo)
             }
         }
+        val ledgerStart = txs.minOfOrNull {
+            Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDate()
+        }
+        // Compare only when the ledger covers the whole stretch before; a half-recorded
+        // prior period makes every "+300% vs prior" and "kept more" wrong.
+        val comparable = prior != null && ledgerStart != null && !ledgerStart.isAfter(prior.first)
         val (prevIncome, prevExpense) = if (prior == null) {
             0.0 to 0.0
         } else {
@@ -609,12 +622,15 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         }
         val (inflowByDate, outflowByDate) = flowByDate(txs, zone, account)
         val outflowDates = outflowByDate.filter { it.value > 0.005 }.keys
-        val ledgerStart = txs.minOfOrNull {
-            Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDate()
-        }
         val dayCount = ChronoUnit.DAYS.between(from, to) + 1
-        val quietDays = quietDaysInRange(from, to, outflowDates)
-        val priorQuietDays = prior?.let { (prevFrom, prevTo) ->
+        // Days before the first text are unknown, not quiet.
+        val coveredFrom = if (ledgerStart != null && ledgerStart.isAfter(from)) ledgerStart else from
+        val quietDays = if (ledgerStart == null || ledgerStart.isAfter(to)) {
+            0
+        } else {
+            quietDaysInRange(coveredFrom, to, outflowDates)
+        }
+        val priorQuietDays = prior?.takeIf { comparable }?.let { (prevFrom, prevTo) ->
             quietDaysInRange(prevFrom, prevTo, outflowDates)
         }
         val quietStreak = if (txs.isNotEmpty()) {
@@ -624,7 +640,6 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         }
         val busiest = busiestOutflow(outflowByDate, from, to)
         val fees = if (mpesa) feeSummary(filtered) else FeeSummary()
-        val coveredFrom = if (ledgerStart != null && ledgerStart.isAfter(from)) ledgerStart else from
         val coveredDays = (ChronoUnit.DAYS.between(coveredFrom, to) + 1).coerceAtLeast(1)
         val regulars = if (mpesa) {
             detectRegulars(txs, zone, today, marks.essential, marks.watched)
@@ -632,7 +647,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             emptyList()
         }
         val habit = if (mpesa) {
-            topHabit(filtered, exclude = regulars.mapTo(HashSet()) { it.key })
+            topHabit(filtered, zone, exclude = regulars.mapTo(HashSet()) { it.key } + marks.essential)
         } else {
             null
         }
@@ -640,7 +655,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             keptHeadline(
                 net = income - expense,
                 previousNet = prevIncome - prevExpense,
-                hasPrior = prior != null && previousTxs.isNotEmpty()
+                hasPrior = comparable
             )
         } else {
             null
@@ -656,7 +671,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             expense = expense,
             income = income,
             previousExpense = prevExpense,
-            comparable = prior != null,
+            comparable = comparable,
             topName = top?.name,
             topShare = topShare,
             busiestLabel = busiest?.let { busiestDayLabel(it.first) },
@@ -668,7 +683,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             expenseTotal = expense,
             previousIncomeTotal = prevIncome,
             previousExpenseTotal = prevExpense,
-            comparable = prior != null,
+            comparable = comparable,
             dayCount = dayCount,
             byType = byType,
             series = series,
@@ -695,7 +710,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                 today = today,
                 inflowByDate = inflowByDate,
                 outflowByDate = outflowByDate,
-                dueDates = regulars.mapTo(HashSet()) { it.nextDue }
+                regulars = regulars
             ),
             keptHeadline = kept,
             fees = fees,
@@ -715,7 +730,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                 insightBadges(
                     fees = fees.total,
                     previousFees = feeSummary(previousTxs).total,
-                    hasPrior = prior != null && previousTxs.isNotEmpty(),
+                    hasPrior = comparable,
                     quietStreak = quietStreak,
                     regulars = regulars,
                     earned = marks.earnedBadges
@@ -848,6 +863,8 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                 continue
             }
             val amount = tx.amount ?: continue
+            // Same rule as flowTotals, so the calendar, quiet days and month bars match the totals.
+            if (isOwnMoneyMove(tx)) continue
             if (tx.type.isOutgoing()) {
                 outflow[date] = (outflow[date] ?: 0.0) + amount + (tx.cost ?: 0.0)
             } else {
@@ -878,7 +895,8 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         var expense = 0.0
         for (tx in txs) {
             val amount = tx.amount ?: continue
-            if (tx.type == TransactionType.SAVINGS) continue
+            // Savings in and out, and Fuliza draws, are the user's own money moving.
+            if (isOwnMoneyMove(tx)) continue
             // Fees left the wallet too, so they count as money out.
             if (tx.type.isOutgoing()) expense += amount + (tx.cost ?: 0.0) else income += amount
         }
