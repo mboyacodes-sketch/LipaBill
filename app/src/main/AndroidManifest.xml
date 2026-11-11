@@ -179,8 +179,8 @@
                 <data android:mimeType="application/vnd.apple.pkpasses" />
                 <data android:mimeType="application/vnd-apple.pkpass" />
             </intent-filter>
-            <!-- content:// .pkpass shares. Paths must start with "/" for Play's deep-link
-                 checker; pathPattern stops at dots so several depths are listed. -->
+            <!-- content:// .pkpass shares whose type says they are passes. No path rules here:
+                 Android ignores paths in a filter without a host, and lint fails on them. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <action android:name="android.intent.action.SEND" />
@@ -192,25 +192,41 @@
                 <data
                     android:scheme="content"
                     android:mimeType="application/vnd.apple.pkpasses" />
+            </intent-filter>
+            <!-- content:// shares typed as zip whose name ends in .pkpass. Any
+                 provider authority (host="*") so the path rules actually apply. Paths must
+                 start with "/" for Play's deep-link checker; pathPattern stops at dots so
+                 several depths are listed. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
                 <data
                     android:scheme="content"
+                    android:host="*"
                     android:mimeType="application/zip"
                     android:pathSuffix=".pkpass" />
                 <data
                     android:scheme="content"
+                    android:host="*"
                     android:mimeType="application/x-zip-compressed"
                     android:pathSuffix=".pkpass" />
                 <data
                     android:scheme="content"
+                    android:host="*"
                     android:pathPattern="/.*\\.pkpass" />
                 <data
                     android:scheme="content"
+                    android:host="*"
                     android:pathPattern="/.*\\..*\\.pkpass" />
                 <data
                     android:scheme="content"
+                    android:host="*"
                     android:pathPattern="/.*\\..*\\..*\\.pkpass" />
                 <data
                     android:scheme="content"
+                    android:host="*"
                     android:pathPattern="/.*\\..*\\..*\\..*\\.pkpass" />
             </intent-filter>
         </activity>
