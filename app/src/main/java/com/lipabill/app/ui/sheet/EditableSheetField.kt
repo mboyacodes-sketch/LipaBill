@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -114,7 +115,9 @@ class SheetTextEditor(initial: String = "") {
 @Composable
 fun rememberSheetEditor(external: String): SheetTextEditor {
     val editor = remember { SheetTextEditor(external) }
-    if (editor.text != external) editor.bind(external)
+    SideEffect {
+        if (editor.text != external) editor.bind(external)
+    }
     return editor
 }
 
@@ -146,12 +149,14 @@ fun EditableSheetField(
     val textMeasurer = rememberTextMeasurer()
     val interaction = remember { MutableInteractionSource() }
     val textStyle = SheetInputStyle.copy(color = if (enabled) Ink else Mute)
-    val textPx = textMeasurer.measure(
-        text = editor.text,
-        style = textStyle,
-        softWrap = false,
-        maxLines = 1
-    ).size.width
+    val textPx = remember(editor.text, textStyle, textMeasurer) {
+        textMeasurer.measure(
+            text = editor.text,
+            style = textStyle,
+            softWrap = false,
+            maxLines = 1
+        ).size.width
+    }
     val innerWidth = with(density) { (textPx + 16.dp.roundToPx()).toDp().coerceAtLeast(1.dp) }
     var viewportPx by remember { mutableIntStateOf(0) }
     var cursorX by remember { mutableFloatStateOf(0f) }
