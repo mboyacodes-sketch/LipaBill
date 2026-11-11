@@ -140,11 +140,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Payment alerts open the matching receipt, including when the app is already running. -->
+            <!-- Payment alerts open the matching receipt (custom action + extras). -->
             <intent-filter>
                 <action android:name="com.lipabill.app.action.OPEN_RECEIPT" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="lipabill" android:host="receipt" />
+            </intent-filter>
+            <!-- Same receipt target as a browsable custom-scheme URI. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="lipabill" android:host="receipt" android:pathPrefix="/" />
             </intent-filter>
             <!-- Pay code — legacy custom scheme. -->
             <intent-filter>
@@ -163,7 +169,7 @@
                     android:host="lipabill.app"
                     android:pathPrefix="/p/" />
             </intent-filter>
-            <!-- Apple Wallet passes. Generic zip and PDF shares stay in the in-app picker. -->
+            <!-- Apple Wallet passes by MIME type. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <action android:name="android.intent.action.SEND" />
@@ -173,15 +179,19 @@
                 <data android:mimeType="application/vnd.apple.pkpasses" />
                 <data android:mimeType="application/vnd-apple.pkpass" />
             </intent-filter>
-            <!-- content:// only. file:// is not a grant, and a wildcard mime would
-                 offer LipaBill for every share whose path happens to contain .pkpass. -->
-            <intent-filter tools:ignore="AppLinkUrlError">
+            <!-- content:// .pkpass shares. Paths must start with "/" for Play's deep-link
+                 checker; pathPattern stops at dots so several depths are listed. -->
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="content" />
-                <data android:mimeType="application/vnd.apple.pkpass" />
-                <data android:mimeType="application/vnd.apple.pkpasses" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="content"
+                    android:mimeType="application/vnd.apple.pkpass" />
+                <data
+                    android:scheme="content"
+                    android:mimeType="application/vnd.apple.pkpasses" />
                 <data
                     android:scheme="content"
                     android:mimeType="application/zip"
@@ -190,12 +200,18 @@
                     android:scheme="content"
                     android:mimeType="application/x-zip-compressed"
                     android:pathSuffix=".pkpass" />
-                <!-- pathPattern stops at dots, so repeat for names that already contain some. -->
-                <data android:pathPattern=".*\\.pkpass" />
-                <data android:pathPattern=".*\\..*\\.pkpass" />
-                <data android:pathPattern=".*\\..*\\..*\\.pkpass" />
-                <data android:pathPattern=".*\\..*\\..*\\..*\\.pkpass" />
-                <data android:pathSuffix=".pkpass" />
+                <data
+                    android:scheme="content"
+                    android:pathPattern="/.*\\.pkpass" />
+                <data
+                    android:scheme="content"
+                    android:pathPattern="/.*\\..*\\.pkpass" />
+                <data
+                    android:scheme="content"
+                    android:pathPattern="/.*\\..*\\..*\\.pkpass" />
+                <data
+                    android:scheme="content"
+                    android:pathPattern="/.*\\..*\\..*\\..*\\.pkpass" />
             </intent-filter>
         </activity>
 
