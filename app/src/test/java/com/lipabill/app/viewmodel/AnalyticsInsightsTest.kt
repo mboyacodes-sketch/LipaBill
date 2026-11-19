@@ -1,6 +1,6 @@
 package com.lipabill.app.viewmodel
 
-import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.testTransaction
 import com.lipabill.app.data.model.TransactionType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -9,6 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.YearMonth
 
 class AnalyticsInsightsTest {
 
@@ -214,6 +215,106 @@ class AnalyticsInsightsTest {
         assertTrue(cells.first { it.date == from }.hasOutflow)
         assertTrue(cells.first { it.date == from }.isToday)
         assertFalse(cells.first().inRange)
+        assertTrue(cells.first { it.date == from.plusDays(1) }.isFuture)
+        assertFalse(cells.first { it.date == from.plusDays(1) }.isActive)
+    }
+
+    @Test
+    fun month_pulse_calendar_starts_on_the_first_and_greys_future_days() {
+        val today = LocalDate.of(2026, 11, 17)
+        val month = YearMonth.of(2026, 11)
+        val cells = monthPulseCalendar(
+            month = month,
+            today = today,
+            inflowByDate = mapOf(LocalDate.of(2026, 11, 3) to 500.0),
+            outflowByDate = mapOf(LocalDate.of(2026, 11, 10) to 200.0),
+            activeFrom = month.atDay(1),
+            activeTo = today
+        )
+        val active = cells.filter { it.isActive }
+        assertEquals(1, active.first().date.dayOfMonth)
+        assertEquals(17, active.last().date.dayOfMonth)
+        assertEquals(DayOfWeek.MONDAY, cells.first().date.dayOfWeek)
+        assertEquals(DayOfWeek.SUNDAY, cells.last().date.dayOfWeek)
+        assertTrue(cells.first { it.date == today }.isToday)
+        assertTrue(cells.first { it.date == today.plusDays(1) }.isFuture)
+        assertFalse(cells.first { it.date == today.plusDays(1) }.isActive)
+        assertTrue(cells.first { it.date == LocalDate.of(2026, 11, 10) }.isActive)
+        assertEquals(200.0, cells.first { it.date == LocalDate.of(2026, 11, 10) }.outflow, 0.0)
+        // Padding days from adjacent months stay out of range.
+        assertTrue(cells.any { !it.inRange && it.date.monthValue == 10 })
+    }
+
+    @Test
+    fun month_pulse_respects_a_shorter_filter_window() {
+        val today = LocalDate.of(2026, 11, 17)
+        val cells = monthPulseCalendar(
+            month = YearMonth.of(2026, 11),
+            today = today,
+            inflowByDate = emptyMap(),
+            outflowByDate = mapOf(
+                LocalDate.of(2026, 11, 5) to 50.0,
+                LocalDate.of(2026, 11, 15) to 80.0
+            ),
+            activeFrom = today.minusDays(6),
+            activeTo = today
+        )
+        assertFalse(cells.first { it.date == LocalDate.of(2026, 11, 5) }.isActive)
+        assertTrue(cells.first { it.date == LocalDate.of(2026, 11, 15) }.isActive)
+        assertEquals(80.0, cells.first { it.date == LocalDate.of(2026, 11, 15) }.outflow, 0.0)
+    }
+
+    @Test
+    fun this_month_prior_bounds_are_the_previous_calendar_month() {
+        val from = LocalDate.of(2026, 11, 1)
+        val to = LocalDate.of(2026, 11, 17)
+        assertEquals(
+            LocalDate.of(2026, 10, 1) to LocalDate.of(2026, 10, 31),
+            previousAnalyticsBounds(AnalyticsRange.THIS_MONTH, from, to)
+        )
+    }
+
+    @Test
+    fun past_month_pulse_prefills_ledger_amounts() {
+        val today = LocalDate.of(2026, 11, 17)
+        val cells = monthPulseCalendar(
+            month = YearMonth.of(2026, 10),
+            today = today,
+            inflowByDate = mapOf(LocalDate.of(2026, 10, 5) to 1_000.0),
+            outflowByDate = mapOf(LocalDate.of(2026, 10, 12) to 350.0)
+        )
+        assertFalse(cells.any { it.isFuture && it.inRange })
+        assertEquals(1_000.0, cells.first { it.date == LocalDate.of(2026, 10, 5) }.inflow, 0.0)
+        assertEquals(350.0, cells.first { it.date == LocalDate.of(2026, 10, 12) }.outflow, 0.0)
+        assertTrue(cells.first { it.date == LocalDate.of(2026, 10, 12) }.isActive)
+    }
+
+    @Test
+    fun pulse_month_span_covers_ledger_and_upcoming_dues() {
+        val today = LocalDate.of(2026, 11, 17)
+        val months = pulseMonthSpan(
+            today = today,
+            inflowByDate = mapOf(LocalDate.of(2025, 6, 1) to 10.0),
+            outflowByDate = emptyMap(),
+            regulars = listOf(
+                RegularPayee(
+                    key = "bill:1",
+                    name = "Fibre",
+                    cadence = Cadence.MONTHLY,
+                    typicalAmount = 100.0,
+                    monthlyCost = 100.0,
+                    lastPaid = today.minusDays(30),
+                    nextDue = LocalDate.of(2027, 1, 5),
+                    payments = 3
+                )
+            ),
+            pastMonths = 24,
+            futureMonths = 3
+        )
+        assertEquals(YearMonth.of(2025, 6), months.first())
+        assertTrue(months.contains(YearMonth.of(2026, 11)))
+        assertTrue(months.contains(YearMonth.of(2027, 1)))
+        assertEquals(YearMonth.of(2027, 2), months.last())
     }
 
     @Test
@@ -347,16 +448,12 @@ class AnalyticsInsightsTest {
         amount: Double,
         phone: String? = null,
         code: String = "A"
-    ) = MpesaTransaction(
-        id = 0,
+    ) = testTransaction(
         code = code,
         type = type,
         amount = amount,
         counterpartyName = name,
         counterpartyPhone = phone,
-        timestampMillis = 1L,
-        balance = null,
-        cost = null,
-        rawBody = ""
+        timestampMillis = 1L
     )
 }
