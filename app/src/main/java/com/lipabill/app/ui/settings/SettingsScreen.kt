@@ -68,6 +68,8 @@ import com.lipabill.app.MarketingLinks
 import com.lipabill.app.ui.components.AccentGlyphBadge
 import com.lipabill.app.ui.util.openHttpsUrl
 import com.lipabill.app.ui.util.openMailto
+import com.lipabill.app.data.model.AppRegion
+import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.groupedProviderCatalog
 import com.lipabill.app.R
 import com.lipabill.app.data.local.entity.RepeatAttemptEntity
@@ -89,6 +91,7 @@ import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.util.formatActivityTime
 import com.lipabill.app.ui.util.formatKes
+import com.lipabill.app.ussd.PaymentDialResolver
 import com.lipabill.app.ussd.RepeatOutcome
 import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.viewmodel.SettingsViewModel
@@ -198,6 +201,7 @@ fun SettingsScreen(
                         groups = groupedProviderCatalog(state.region),
                         selected = state.enabledSources,
                         onToggle = viewModel::toggleProvider,
+                        locked = state.lockedSources,
                         modifier = Modifier.padding(bottom = Space.card)
                     )
                 }
@@ -206,9 +210,11 @@ fun SettingsScreen(
             if (state.region.canSendPay) {
                 SettingsSection("Payments", Icons.Outlined.Payments) {
                     SimChoices(
+                        region = state.region,
                         needsPermission = state.needsPhoneStatePermission,
                         lines = state.simLines,
                         selectedId = state.preferredSimSubscriptionId,
+                        enabledSources = state.enabledSources,
                         onAllow = onRequestPhoneStatePermission,
                         onSelect = viewModel::setPreferredSim
                     )
@@ -310,7 +316,7 @@ fun SettingsScreen(
                     }
                 }
                 SettingsDivider()
-                SettingsActionRow(
+                SettingsNavRow(
                     title = "Lock now",
                     onClick = { viewModel.lockNow() }
                 )
@@ -350,7 +356,7 @@ fun SettingsScreen(
                 SettingsSection("Developer", Icons.Outlined.Code) {
                     SettingsSwitchRow(
                         title = "Screen recording",
-                        subtitle = "Off by default. On clears capture protection and blurs names and amounts for scrcpy.",
+                        subtitle = "On by default for debug. Clears capture protection, blurs ledger PII, and shows dummy Request codes.",
                         checked = state.recordingPrivacy,
                         onCheckedChange = viewModel::setRecordingPrivacy
                     )
@@ -465,22 +471,6 @@ private fun SettingsSwitchRow(
 }
 
 @Composable
-private fun SettingsActionRow(
-    title: String,
-    onClick: () -> Unit
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = Space.card)
-    ) {
-        Text(title, style = HomeType.rowTitle, color = Ink)
-    }
-}
-
-@Composable
 private fun SettingsNavRow(
     title: String,
     onClick: () -> Unit,
@@ -523,12 +513,20 @@ private fun SettingsNavRow(
 
 @Composable
 private fun SimChoices(
+    region: AppRegion,
     needsPermission: Boolean,
     lines: List<SimLine>,
     selectedId: Int?,
+    enabledSources: Set<MoneySource>,
     onAllow: () -> Unit,
     onSelect: (Int) -> Unit
 ) {
+    val eligible = remember(region, lines, enabledSources) {
+        PaymentDialResolver.eligibleLines(region, lines, enabledSources)
+    }
+    val others = remember(eligible, lines) {
+        lines.filterNot { line -> eligible.any { it.subscriptionId == line.subscriptionId } }
+    }
     when {
         needsPermission -> {
             SettingsNavRow(
@@ -546,12 +544,12 @@ private fun SimChoices(
                 Text("No SIM in this phone.", style = HomeType.caption, color = Mute)
             }
         }
-        lines.none { it.isSafaricom } -> {
+        eligible.isEmpty() -> {
             Column(modifier = Modifier.padding(vertical = Space.card)) {
                 Text("Payment SIM", style = HomeType.rowTitle, color = Ink)
                 Spacer(modifier = Modifier.height(Space.tight))
                 Text(
-                    "Insert a Safaricom SIM to pay.",
+                    PaymentDialResolver.missingPaySimMessage(region),
                     style = HomeType.caption,
                     color = Expense
                 )
@@ -570,10 +568,8 @@ private fun SimChoices(
             }
         }
         else -> {
-            val safaricom = lines.filter { it.isSafaricom }
-            val others = lines.filterNot { it.isSafaricom }
-            if (safaricom.size == 1) {
-                val line = safaricom.first()
+            if (eligible.size == 1) {
+                val line = eligible.first()
                 Column(modifier = Modifier.padding(vertical = Space.card)) {
                     Text("Payment SIM", style = HomeType.rowTitle, color = Ink)
                     Spacer(modifier = Modifier.height(Space.tight))
@@ -606,12 +602,12 @@ private fun SimChoices(
                     modifier = Modifier.padding(top = Space.card)
                 )
                 Text(
-                    text = "Used for Send, Pay, and Repeat.",
+                    text = "Used for Send, Pay, and Repeat in ${region.label}.",
                     style = HomeType.caption,
                     color = Mute,
                     modifier = Modifier.padding(top = Space.tight, bottom = Space.gap)
                 )
-                safaricom.forEach { line ->
+                eligible.forEach { line ->
                     val selected = selectedId == line.subscriptionId
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
