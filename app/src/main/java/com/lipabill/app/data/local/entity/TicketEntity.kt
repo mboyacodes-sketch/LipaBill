@@ -40,6 +40,7 @@ data class TicketEntity(
     val boardingStartsAtMillis: Long? = null,
     val boardingSeatOrTier: String? = null,
     val boardingNotes: String? = null,
+    val boardingBarcodeSpec: String? = null,
     val hasReturnBoardingPass: Boolean = false,
     val returnBoardingBarcodeValue: String? = null,
     val returnBoardingBarcodeFormat: TicketBarcodeFormat? = null,
@@ -47,7 +48,9 @@ data class TicketEntity(
     val returnBoardingVenue: String? = null,
     val returnBoardingStartsAtMillis: Long? = null,
     val returnBoardingSeatOrTier: String? = null,
-    val returnBoardingNotes: String? = null
+    val returnBoardingNotes: String? = null,
+    val returnBoardingBarcodeSpec: String? = null,
+    val passColors: String? = null
 ) {
     fun toDomain(): Ticket = Ticket(
         id = id,
@@ -71,6 +74,7 @@ data class TicketEntity(
         boardingStartsAtMillis = boardingStartsAtMillis,
         boardingSeatOrTier = boardingSeatOrTier,
         boardingNotes = boardingNotes,
+        boardingBarcodeSpec = boardingBarcodeSpec,
         hasReturnBoardingPass = hasReturnBoardingPass,
         returnBoardingBarcodeValue = returnBoardingBarcodeValue,
         returnBoardingBarcodeFormat = returnBoardingBarcodeFormat,
@@ -78,7 +82,9 @@ data class TicketEntity(
         returnBoardingVenue = returnBoardingVenue,
         returnBoardingStartsAtMillis = returnBoardingStartsAtMillis,
         returnBoardingSeatOrTier = returnBoardingSeatOrTier,
-        returnBoardingNotes = returnBoardingNotes
+        returnBoardingNotes = returnBoardingNotes,
+        returnBoardingBarcodeSpec = returnBoardingBarcodeSpec,
+        passColors = passColors
     )
 
     companion object {
@@ -104,6 +110,7 @@ data class TicketEntity(
             boardingStartsAtMillis = ticket.boardingStartsAtMillis,
             boardingSeatOrTier = ticket.boardingSeatOrTier,
             boardingNotes = ticket.boardingNotes,
+            boardingBarcodeSpec = ticket.boardingBarcodeSpec,
             hasReturnBoardingPass = ticket.hasReturnBoardingPass,
             returnBoardingBarcodeValue = ticket.returnBoardingBarcodeValue,
             returnBoardingBarcodeFormat = ticket.returnBoardingBarcodeFormat,
@@ -111,7 +118,9 @@ data class TicketEntity(
             returnBoardingVenue = ticket.returnBoardingVenue,
             returnBoardingStartsAtMillis = ticket.returnBoardingStartsAtMillis,
             returnBoardingSeatOrTier = ticket.returnBoardingSeatOrTier,
-            returnBoardingNotes = ticket.returnBoardingNotes
+            returnBoardingNotes = ticket.returnBoardingNotes,
+            returnBoardingBarcodeSpec = ticket.returnBoardingBarcodeSpec,
+            passColors = ticket.passColors
         )
     }
 }
