@@ -1,7 +1,6 @@
 package com.lipabill.app.viewmodel
 
-import com.lipabill.app.data.model.MpesaTransaction
-import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.testTransaction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -70,15 +69,12 @@ class SendInsightsTest {
         cost: Double? = null,
         phone: String = "0712345678",
         date: LocalDate = LocalDate.of(2026, 11, 1)
-    ) = MpesaTransaction(
+    ) = testTransaction(
         code = "S$amount$date$phone",
-        type = TransactionType.SENT,
         amount = amount,
         counterpartyName = "Grace",
         counterpartyPhone = phone,
         timestampMillis = date.atTime(12, 0).toInstant(zone).toEpochMilli(),
-        balance = null,
-        cost = cost,
-        rawBody = ""
+        cost = cost
     )
 }
