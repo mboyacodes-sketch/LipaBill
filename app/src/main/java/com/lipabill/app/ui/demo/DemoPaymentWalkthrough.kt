@@ -1,5 +1,6 @@
 package com.lipabill.app.ui.demo
 
+import com.lipabill.app.ui.AccentWideButton
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -72,6 +73,7 @@ fun DemoPaymentWalkthrough(
     amountLabel: String,
     detail: String,
     totalSteps: Int = 5,
+    walletBadge: String = "M-Pesa",
     onCancel: () -> Unit,
     onComplete: () -> Unit
 ) {
@@ -106,18 +108,21 @@ fun DemoPaymentWalkthrough(
             DemoPayPhase.Steps -> DemoStepsPage(
                 completed = completed,
                 total = totalSteps.coerceAtLeast(1),
+                walletBadge = walletBadge,
                 onCancel = onCancel,
                 modifier = Modifier.fillMaxSize()
             )
             DemoPayPhase.Confirm -> DemoConfirmPage(
                 amountLabel = amountLabel,
                 detail = detail,
+                walletBadge = walletBadge,
                 onYes = { phase = DemoPayPhase.Pin },
                 onNo = onCancel,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
             DemoPayPhase.Pin -> DemoPinPage(
                 pinLength = pin.length,
+                walletBadge = walletBadge,
                 onDigit = { d -> if (pin.length < 8) pin += d },
                 onBackspace = { if (pin.isNotEmpty()) pin = pin.dropLast(1) },
                 onConfirm = {
@@ -141,6 +146,7 @@ fun DemoPaymentWalkthrough(
 private fun DemoStepsPage(
     completed: Int,
     total: Int,
+    walletBadge: String,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -186,9 +192,9 @@ private fun DemoStepsPage(
             Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = when {
-                    completed <= 0 -> "Step 1 of $total — filling the M-Pesa menu"
+                    completed <= 0 -> "Step 1 of $total — filling the $walletBadge menu"
                     completed >= total -> "Ready for your PIN"
-                    else -> "Step ${completed + 1} of $total — filling the M-Pesa menu"
+                    else -> "Step ${completed + 1} of $total — filling the $walletBadge menu"
                 },
                 style = HomeType.body,
                 color = Mute,
@@ -214,7 +220,7 @@ private fun DemoStepsPage(
             }
             Spacer(modifier = Modifier.height(40.dp))
             Text(
-                text = "Keep this screen open.\nYou’ll enter your M-Pesa PIN next.",
+                text = "Keep this screen open.\nYou’ll enter your $walletBadge PIN next.",
                 style = HomeType.body,
                 color = Color(0xFF9BB0C9),
                 textAlign = TextAlign.Center
@@ -231,6 +237,7 @@ private fun DemoStepsPage(
 private fun DemoConfirmPage(
     amountLabel: String,
     detail: String,
+    walletBadge: String,
     onYes: () -> Unit,
     onNo: () -> Unit,
     modifier: Modifier = Modifier
@@ -259,7 +266,7 @@ private fun DemoConfirmPage(
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Same as M-Pesa’s last step — Yes continues, No cancels",
+            text = "Same as ${walletBadge}’s last step — Yes continues, No cancels",
             style = HomeType.caption,
             color = Mute,
             textAlign = TextAlign.Center
@@ -294,17 +301,7 @@ private fun DemoConfirmPage(
             )
         }
         Spacer(modifier = Modifier.height(20.dp))
-        Button(
-            onClick = onYes,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            shape = RoundedCornerShape(26.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Accent,
-                contentColor = OnAccent
-            )
-        ) {
+        AccentWideButton(onClick = onYes, height = 52.dp) {
             Text("1. Yes", style = HomeType.rowTitle)
         }
         Spacer(modifier = Modifier.height(10.dp))
@@ -325,6 +322,7 @@ private fun DemoConfirmPage(
 @Composable
 private fun DemoPinPage(
     pinLength: Int,
+    walletBadge: String,
     onDigit: (String) -> Unit,
     onBackspace: () -> Unit,
     onConfirm: () -> Unit,
@@ -363,7 +361,7 @@ private fun DemoPinPage(
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Enter your M-Pesa PIN",
+            text = "Enter your $walletBadge PIN",
             style = HomeType.section.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold),
             color = Ink,
             textAlign = TextAlign.Center
