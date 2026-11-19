@@ -63,9 +63,12 @@
 -keep public class * extends java.lang.Exception
 -dontwarn com.google.firebase.crashlytics.**
 
-# --- PDFBox (e-ticket text extraction) ---
--keep class com.tom_roush.pdfbox.** { *; }
+# --- PDFBox (e-ticket text extraction only) ---
+# No blanket -keep: ETicketAnalyzer's PDDocument/PDFTextStripper refs keep the
+# reachable graph. FilterFactory/PDFontFactory hold direct Class literals, so
+# decode filters and font subtypes stay without freezing multipdf/rendering/etc.
 -dontwarn com.tom_roush.pdfbox.**
+-dontwarn com.tom_roush.fontbox.**
 -dontwarn org.apache.commons.**
 -dontwarn org.bouncycastle.**
 -dontwarn com.gemalto.jp2.**
