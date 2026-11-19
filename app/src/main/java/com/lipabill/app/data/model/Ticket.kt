@@ -60,6 +60,8 @@ data class Ticket(
     val boardingStartsAtMillis: Long? = null,
     val boardingSeatOrTier: String? = null,
     val boardingNotes: String? = null,
+    /** Serialized [com.lipabill.app.data.tickets.BarcodeSpec] read off the original pass. */
+    val boardingBarcodeSpec: String? = null,
     /** Return-leg boarding (round-trip bookings only). */
     val hasReturnBoardingPass: Boolean = false,
     val returnBoardingBarcodeValue: String? = null,
@@ -68,7 +70,10 @@ data class Ticket(
     val returnBoardingVenue: String? = null,
     val returnBoardingStartsAtMillis: Long? = null,
     val returnBoardingSeatOrTier: String? = null,
-    val returnBoardingNotes: String? = null
+    val returnBoardingNotes: String? = null,
+    val returnBoardingBarcodeSpec: String? = null,
+    /** Serialized PassColors from an imported Wallet pass (event styling). */
+    val passColors: String? = null
 ) {
     /** Booking time, else outbound boarding, else the return leg. */
     val occasionMillis: Long?
@@ -153,7 +158,8 @@ data class Ticket(
             venue = boardingVenue,
             startsAtMillis = boardingStartsAtMillis,
             seatOrTier = boardingSeatOrTier,
-            notes = boardingNotes
+            notes = boardingNotes,
+            barcodeSpec = boardingBarcodeSpec
         )
         BoardingLeg.RETURN -> legSnapshot(
             attached = hasReturnBoardingPass,
@@ -163,7 +169,8 @@ data class Ticket(
             venue = returnBoardingVenue,
             startsAtMillis = returnBoardingStartsAtMillis,
             seatOrTier = returnBoardingSeatOrTier,
-            notes = returnBoardingNotes
+            notes = returnBoardingNotes,
+            barcodeSpec = returnBoardingBarcodeSpec
         )
     }
 
@@ -175,7 +182,8 @@ data class Ticket(
         venue: String?,
         startsAtMillis: Long?,
         seatOrTier: String?,
-        notes: String?
+        notes: String?,
+        barcodeSpec: String?
     ): BoardingPassSnapshot? {
         if (!attached) return null
         return BoardingPassSnapshot(
@@ -185,7 +193,8 @@ data class Ticket(
             venue = venue,
             startsAtMillis = startsAtMillis,
             seatOrTier = seatOrTier,
-            notes = notes
+            notes = notes,
+            barcodeSpec = barcodeSpec
         )
     }
 }
@@ -205,6 +214,20 @@ fun String?.labeledPiece(prefix: String): String? =
         ?.firstOrNull { it.startsWith(prefix, ignoreCase = true) }
         ?.removePrefix(prefix)
         ?.trim()
+
+/**
+ * Sets (or with a blank [value], removes) the `Label: value` segment for [label] in " · "-joined
+ * notes, keeping every other segment as it was.
+ */
+fun String?.withNotesValue(label: String, value: String?): String? {
+    val prefix = "$label:"
+    val kept = orEmpty().split(" · ")
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && !it.startsWith(prefix, ignoreCase = true) }
+    val clean = value?.replace("·", "-")?.replace(Regex("\\s+"), " ")?.trim()
+    val all = if (clean.isNullOrEmpty()) kept else kept + "$label: $clean"
+    return all.joinToString(" · ").ifBlank { null }
+}
 
 /** Value of a `Label: value` segment in ticket notes joined by " · ". */
 fun String?.notesValue(label: String): String? {
@@ -226,5 +249,7 @@ data class BoardingPassSnapshot(
     val venue: String?,
     val startsAtMillis: Long?,
     val seatOrTier: String?,
-    val notes: String?
+    val notes: String?,
+    /** Serialized BarcodeSpec; null for passes attached before specs were captured. */
+    val barcodeSpec: String? = null
 )
