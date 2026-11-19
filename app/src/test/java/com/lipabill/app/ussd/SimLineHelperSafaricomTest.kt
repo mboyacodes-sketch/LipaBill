@@ -68,9 +68,31 @@ class SimLineHelperSafaricomTest {
             sim(id = 2, safaricom = false),
             sim(id = 3, safaricom = true)
         )
-        assertEquals(3, SimLineHelper.payLine(lines, preferredSubscriptionId = 3)?.subscriptionId)
-        assertEquals(1, SimLineHelper.payLine(lines, preferredSubscriptionId = 2)?.subscriptionId)
-        assertNull(SimLineHelper.payLine(listOf(sim(id = 2, safaricom = false)), 2))
+        assertEquals(
+            3,
+            SimLineHelper.payLine(
+                com.lipabill.app.data.model.AppRegion.KENYA,
+                lines,
+                preferredSubscriptionId = 3
+            )?.subscriptionId
+        )
+        // Kenya Airtel is also eligible — saved Airtel preference sticks.
+        assertEquals(
+            2,
+            SimLineHelper.payLine(
+                com.lipabill.app.data.model.AppRegion.KENYA,
+                lines,
+                preferredSubscriptionId = 2
+            )?.subscriptionId
+        )
+        // Uganda rejects Kenya SIMs.
+        assertNull(
+            SimLineHelper.payLine(
+                com.lipabill.app.data.model.AppRegion.UGANDA,
+                lines,
+                preferredSubscriptionId = 1
+            )
+        )
     }
 
     @Test
@@ -92,6 +114,8 @@ class SimLineHelperSafaricomTest {
         carrierName = if (safaricom) "Safaricom" else "Airtel",
         numberHint = null,
         label = "SIM $id",
-        isSafaricom = safaricom
+        isSafaricom = safaricom,
+        mcc = if (safaricom) 639 else 639,
+        mnc = if (safaricom) 2 else 3
     )
 }
