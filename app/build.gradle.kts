@@ -32,8 +32,8 @@ android {
         applicationId = "com.lipabill.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 40
-        versionName = "3.1.1"
+        versionCode = 41
+        versionName = "3.1.2"
         // Real devices are arm64; drop x86/x86_64 emulator ABIs from shipped APKs.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -392,7 +392,7 @@ dependencies {
 
     // Firebase Analytics + Crashlytics (no Messaging / Remote Config).
     // Active only when app/google-services.json is present.
-    implementation(platform("com.google.firebase:firebase-bom:35.1.0"))
+    implementation(platform("com.google.firebase:firebase-bom:35.2.0"))
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-crashlytics")
     // Play → Play in-app updates. Internal → self-hosted OTA (HttpURLConnection + FileProvider).
@@ -400,7 +400,7 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     // Real org.json for JVM unit tests (Android stubs return defaults).
-    testImplementation("org.json:json:20250517")
+    testImplementation("org.json:json:20260814")
     // Real Android Canvas on the JVM for the opt-in skyline gallery render (design review).
     testImplementation("org.robolectric:robolectric:4.14.1")
 }
