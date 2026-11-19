@@ -16,11 +16,11 @@ enum class PaymentAccessNeed(val line: String, val actionLabel: String) {
         actionLabel = "Allow phone"
     ),
     PhoneState(
-        line = "SIM access — see which line is Safaricom. Call history is not read",
+        line = "SIM access — see which line can pay for this country. Call history is not read",
         actionLabel = "Allow SIM access"
     ),
     Accessibility(
-        line = "Accessibility Service — fill Safaricom USSD screens for Send, Pay, and Repeat " +
+        line = "Accessibility Service — fill mobile-money USSD screens for Send, Pay, and Repeat " +
             "after you confirm the payment",
         actionLabel = AccessibilityServiceDisclosure.AGREE
     )
