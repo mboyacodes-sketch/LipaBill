@@ -1,8 +1,7 @@
 package com.lipabill.app.data.export
 
+import com.lipabill.app.testTransaction
 import com.lipabill.app.data.model.MoneySource
-import com.lipabill.app.data.model.MpesaTransaction
-import com.lipabill.app.data.model.TransactionType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -43,14 +42,10 @@ class LedgerStatementPdfTest {
         )
     }
 
-    private fun tx(source: MoneySource) = MpesaTransaction(
+    private fun tx(source: MoneySource) = testTransaction(
         code = "T${source.name}",
-        type = TransactionType.SENT,
-        amount = 100.0,
         counterpartyName = "Test",
-        counterpartyPhone = null,
         timestampMillis = 1L,
-        balance = null,
         cost = 0.0,
         rawBody = "x",
         source = source
