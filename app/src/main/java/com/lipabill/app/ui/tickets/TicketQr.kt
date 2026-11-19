@@ -4,7 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color as AndroidColor
 import android.graphics.Paint
-import android.util.Log
+import com.lipabill.app.metrics.AppLog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -149,7 +149,7 @@ private fun encodeWithZxing(
             backgroundColor = backgroundColor
         )
     }.onFailure { t ->
-        Log.w(TAG, "zxing encode failed format=$format len=${value.length}", t)
+        AppLog.w(TAG, "zxing encode failed format=$format len=${value.length}", t)
     }.getOrNull()
 }
 
