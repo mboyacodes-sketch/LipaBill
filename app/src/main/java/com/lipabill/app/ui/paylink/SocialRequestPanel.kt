@@ -1,5 +1,6 @@
 package com.lipabill.app.ui.paylink
 
+import com.lipabill.app.ui.AccentWideButton
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -42,8 +43,6 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.PersonAdd
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -77,11 +76,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lipabill.app.data.DemoLedger
 import com.lipabill.app.data.prefs.SecurePreferences
 import com.lipabill.app.social.SocialDialCountries
 import com.lipabill.app.social.SocialDialCountry
 import com.lipabill.app.social.SocialLink
-import com.lipabill.app.ui.privacy.recordingPrivacyCover
+import com.lipabill.app.ui.privacy.LocalRecordingPrivacy
 import com.lipabill.app.ui.sheet.EditableSheetField
 import com.lipabill.app.ui.sheet.InAppKeyboard
 import com.lipabill.app.ui.sheet.SheetTextEditor
@@ -178,8 +178,17 @@ fun SocialRequestPanel(
         fieldError = null
     }
 
-    fun linkedSlides(): List<RequestQrSlide.Social> =
-        SocialLink.Platform.entries.mapNotNull { entry ->
+    // Screen recording: sharp dummy handles/QRs instead of blurring real ones.
+    val recordingPrivacy = LocalRecordingPrivacy.current
+
+    fun linkedSlides(): List<RequestQrSlide.Social> {
+        if (recordingPrivacy) {
+            return DemoLedger.requestSocialPlatforms.map { entry ->
+                val handle = DemoLedger.requestSocialHandle(entry)
+                RequestQrSlide.Social(SocialLink.Target(entry, handle))
+            }
+        }
+        return SocialLink.Platform.entries.mapNotNull { entry ->
             val handle = if (entry == platform) {
                 savedHandle
             } else {
@@ -188,9 +197,16 @@ fun SocialRequestPanel(
             val clean = SocialLink.canonicalHandle(entry, handle) ?: return@mapNotNull null
             RequestQrSlide.Social(SocialLink.Target(entry, clean))
         }
+    }
 
-    val socialSlides = remember(platform, savedHandle, listEpoch) { linkedSlides() }
-    val target = remember(platform, savedHandle) {
+    val socialSlides = remember(platform, savedHandle, listEpoch, recordingPrivacy) { linkedSlides() }
+    val target = remember(platform, savedHandle, recordingPrivacy) {
+        if (recordingPrivacy) {
+            return@remember SocialLink.Target(
+                platform,
+                DemoLedger.requestSocialHandle(platform)
+            )
+        }
         val handle = SocialLink.canonicalHandle(platform, savedHandle) ?: return@remember null
         SocialLink.Target(platform, handle)
     }
@@ -653,17 +669,7 @@ private fun SocialNetworkSheet(
                     .padding(start = 4.dp, top = 8.dp)
             )
             Spacer(modifier = Modifier.height(Space.block))
-            Button(
-                onClick = onSave,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(28.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Accent,
-                    contentColor = OnAccent
-                )
-            ) {
+            AccentWideButton(onClick = onSave) {
                 Text(
                     text = if (editingExisting) "Save changes" else "Save profile",
                     style = HomeType.rowTitle
@@ -692,9 +698,7 @@ private fun SocialNetworkSheet(
                 style = HomeType.body,
                 color = Mute,
                 textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .padding(top = 4.dp)
-                    .recordingPrivacyCover()
+                modifier = Modifier.padding(top = 4.dp)
             )
             Spacer(modifier = Modifier.height(20.dp))
             RequestQrSlideCard(
@@ -709,17 +713,7 @@ private fun SocialNetworkSheet(
                 modifier = Modifier.padding(top = 12.dp)
             )
             Spacer(modifier = Modifier.height(24.dp))
-            Button(
-                onClick = onShare,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(28.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Accent,
-                    contentColor = OnAccent
-                )
-            ) {
+            AccentWideButton(onClick = onShare) {
                 Text("Share", style = HomeType.rowTitle)
                 Spacer(modifier = Modifier.size(8.dp))
                 Icon(
@@ -975,8 +969,7 @@ private fun SocialLinkedRow(
                 style = HomeType.caption,
                 color = Mute,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.recordingPrivacyCover()
+                overflow = TextOverflow.Ellipsis
             )
         }
         if (selected) {
@@ -1117,17 +1110,7 @@ internal fun RequestEmptyState(
             modifier = Modifier.padding(top = 10.dp, start = 8.dp, end = 8.dp)
         )
         Spacer(modifier = Modifier.height(28.dp))
-        Button(
-            onClick = onCta,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(28.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Accent,
-                contentColor = OnAccent
-            )
-        ) {
+        AccentWideButton(onClick = onCta) {
             Text(cta, style = HomeType.rowTitle)
         }
     }
