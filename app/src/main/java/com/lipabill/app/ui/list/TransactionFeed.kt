@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.engage.SpendCategory
 import com.lipabill.app.ui.components.CounterpartyAvatar
 import com.lipabill.app.ui.components.txAmountLook
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
@@ -163,7 +164,9 @@ internal fun TransactionSearchField(
 internal fun TransactionRow(
     tx: MpesaTransaction,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    spendCategory: SpendCategory? = null,
+    timeLabel: String? = null
 ) {
     val amount = txAmountLook(tx)
     val fuliza = tx.type == TransactionType.FULIZA
@@ -171,6 +174,7 @@ internal fun TransactionRow(
     val named = !tx.counterpartyName.isNullOrBlank()
     val title = tx.counterpartyName ?: tx.type.displayLabel()
     val categoryInk = tx.type.categoryInk()
+    val spendLabel = spendCategory?.label
 
     Row(
         modifier = modifier
@@ -208,6 +212,14 @@ internal fun TransactionRow(
                     color = categoryInk,
                     maxLines = 1
                 )
+                if (!spendLabel.isNullOrBlank()) {
+                    Text(
+                        text = " · $spendLabel",
+                        style = HomeType.caption,
+                        color = Mute,
+                        maxLines = 1
+                    )
+                }
                 if (fuliza && tx.cost != null) {
                     Text(
                         text = " · fee ${formatKes(tx.cost)}",
@@ -230,7 +242,7 @@ internal fun TransactionRow(
                     )
                 }
                 Text(
-                    text = " · ${formatActivityTime(tx.timestampMillis)}",
+                    text = " · ${timeLabel ?: formatActivityTime(tx.timestampMillis)}",
                     style = HomeType.caption,
                     color = Ink.copy(alpha = 0.62f),
                     maxLines = 1
@@ -358,11 +370,13 @@ internal fun LazyListScope.transactionFeed(
                         .padding(top = 14.dp, bottom = 2.dp)
                 )
             }
-            items(items = day.items, key = { it.id }) { tx ->
+            items(items = day.items, key = { it.id }) { row ->
                 TransactionRow(
-                    tx = tx,
-                    onClick = { onOpenTransaction(tx.id) },
-                    modifier = Modifier.fillMaxWidth().sheet()
+                    tx = row.tx,
+                    onClick = { onOpenTransaction(row.id) },
+                    modifier = Modifier.fillMaxWidth().sheet(),
+                    spendCategory = row.spendCategory,
+                    timeLabel = row.timeLabel
                 )
             }
         }
