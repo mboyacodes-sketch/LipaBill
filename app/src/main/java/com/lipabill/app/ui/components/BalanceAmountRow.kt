@@ -70,7 +70,9 @@ fun BalanceAmountRow(
     pendingDeduction: Double? = null,
     horizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
     showEyeToggle: Boolean = false,
-    eyeInCircle: Boolean = false
+    eyeInCircle: Boolean = false,
+    /** Text colour on a coloured surface (wallet card); null keeps Ink / Expense. */
+    contentColor: Color? = null
 ) {
     var revealed by remember { mutableStateOf(false) }
 
@@ -88,6 +90,7 @@ fun BalanceAmountRow(
         else -> balance
     }
     val amountColor = when {
+        contentColor != null -> contentColor
         !revealed -> Ink
         displayAmount != null && displayAmount < 0 -> Expense
         else -> Ink
@@ -99,6 +102,16 @@ fun BalanceAmountRow(
     }
     val interaction = remember { MutableInteractionSource() }
     val toggle: () -> Unit = { revealed = !revealed }
+    /** Tap the amount itself to show / hide it (blurred while screen recording). */
+    val tapToToggle = Modifier
+        .recordingPrivacyCover()
+        .clickable(
+            interactionSource = interaction,
+            indication = null,
+            role = Role.Button,
+            onClickLabel = if (revealed) "Hide balance" else "Show balance",
+            onClick = toggle
+        )
 
     // Sheets / metrics: tap amount to reveal, no eye — original wrap-content row.
     if (!showEyeToggle) {
@@ -114,15 +127,7 @@ fun BalanceAmountRow(
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .recordingPrivacyCover()
-                    .clickable(
-                        interactionSource = interaction,
-                        indication = null,
-                        role = Role.Button,
-                        onClickLabel = if (revealed) "Hide balance" else "Show balance",
-                        onClick = toggle
-                    )
+                modifier = tapToToggle
             )
         }
         return
@@ -153,54 +158,27 @@ fun BalanceAmountRow(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .weight(1f)
-                .recordingPrivacyCover()
-                .clickable(
-                    interactionSource = interaction,
-                    indication = null,
-                    role = Role.Button,
-                    onClickLabel = if (revealed) "Hide balance" else "Show balance",
-                    onClick = toggle
-                )
+                .then(tapToToggle)
         )
         Spacer(modifier = Modifier.width(12.dp))
-        val eyeContent = @Composable {
+        Box(
+            modifier = Modifier
+                .size(EyeChipSize)
+                .then(if (eyeInCircle) Modifier.clip(CircleShape).background(EyeChipFill) else Modifier)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    role = Role.Button,
+                    onClick = toggle
+                ),
+            contentAlignment = Alignment.Center
+        ) {
             Icon(
                 imageVector = if (revealed) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
                 contentDescription = if (revealed) "Hide balance" else "Show balance",
                 tint = Mute,
                 modifier = Modifier.size(18.dp)
             )
-        }
-        if (eyeInCircle) {
-            Box(
-                modifier = Modifier
-                    .size(EyeChipSize)
-                    .clip(CircleShape)
-                    .background(EyeChipFill)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        role = Role.Button,
-                        onClick = toggle
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                eyeContent()
-            }
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(EyeChipSize)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        role = Role.Button,
-                        onClick = toggle
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                eyeContent()
-            }
         }
     }
 }
