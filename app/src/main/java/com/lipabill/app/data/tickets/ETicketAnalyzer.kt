@@ -8,7 +8,7 @@ import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
-import android.util.Log
+import com.lipabill.app.metrics.AppLog
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -84,7 +84,8 @@ object ETicketAnalyzer {
 
         val pdfRead = if (isPdf) extractPdfText(context, uri) else PdfRead("", emptyList())
         val pdfText = pdfRead.text
-        Log.d(TAG, "kind=$kind pdfTextChars=${pdfText.length} mime=$mime name=$name")
+        // Lengths / kind only — never log file names (can embed passenger or PNR text).
+        AppLog.d(TAG, "kind=$kind pdfTextChars=${pdfText.length} mime=$mime")
 
         val bitmaps = loadBitmaps(context, uri, preferPdf = isPdf)
         if (bitmaps.isEmpty() && pdfText.length < 40) {
@@ -150,7 +151,7 @@ object ETicketAnalyzer {
 
             val combined = textParts.filter { it.isNotBlank() }.joinToString("\n")
             // Lengths only — never log OCR body (names, PNRs, seats).
-            Log.d(
+            AppLog.d(
                 TAG,
                 "barcodes=${barcodes.size} textChars=${combined.length} hints=${stationHints.size}"
             )
@@ -182,13 +183,13 @@ object ETicketAnalyzer {
                     }
                     val text = stripper.getText(doc).orEmpty().trim()
                     val lines = runCatching { PdfTextLines.read(doc) }
-                        .onFailure { Log.w(TAG, "pdf_lines_fail", it) }
+                        .onFailure { AppLog.w(TAG, "pdf_lines_fail", it) }
                         .getOrDefault(emptyList())
                     PdfRead(text, lines)
                 }
             } ?: PdfRead("", emptyList())
         } catch (t: Throwable) {
-            Log.w(TAG, "pdf_text_fail", t)
+            AppLog.w(TAG, "pdf_text_fail", t)
             PdfRead("", emptyList())
         }
     }
@@ -264,7 +265,7 @@ object ETicketAnalyzer {
             if (rotated != raw) raw.recycle()
             scaleDown(rotated, 2200)
         } catch (t: Throwable) {
-            Log.w(TAG, "decode_image_fail", t)
+            AppLog.w(TAG, "decode_image_fail", t)
             null
         }
     }
@@ -330,7 +331,7 @@ object ETicketAnalyzer {
                 }
             }
         } catch (t: Throwable) {
-            Log.w(TAG, "pdf_render_fail", t)
+            AppLog.w(TAG, "pdf_render_fail", t)
             return emptyList()
         } finally {
             cache.delete()
@@ -367,7 +368,7 @@ object ETicketAnalyzer {
                 ETicketTextParser.FoundBarcode(value, format, spec)
             }
         } catch (t: Throwable) {
-            Log.w(TAG, "barcode_fail", t)
+            AppLog.w(TAG, "barcode_fail", t)
             emptyList()
         } finally {
             scanner.close()
@@ -397,7 +398,7 @@ object ETicketAnalyzer {
             if (cropped != null && cropped != bitmap) cropped.recycle()
         }
     } catch (t: Throwable) {
-        Log.w(TAG, "barcode_spec_fail", t)
+        AppLog.w(TAG, "barcode_spec_fail", t)
         null
     }
 
@@ -451,7 +452,7 @@ object ETicketAnalyzer {
             }
             OcrResult(result.text.orEmpty(), hints, lines)
         } catch (t: Throwable) {
-            Log.w(TAG, "ocr_fail", t)
+            AppLog.w(TAG, "ocr_fail", t)
             OcrResult("", emptyList())
         } finally {
             recognizer.close()
