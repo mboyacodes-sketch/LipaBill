@@ -1,5 +1,6 @@
 package com.lipabill.app.ui.auth
 
+import com.lipabill.app.ui.AccentWideButton
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -22,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.outlined.WarningAmber
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -48,7 +48,6 @@ import com.lipabill.app.ui.components.LipaBillMark
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Canvas as ThemeCanvas
 import com.lipabill.app.ui.theme.CardWhite
-import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.GeometricSansFamily
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
@@ -197,18 +196,7 @@ private fun LockedContent(
                 )
             }
 
-            Button(
-                onClick = onUnlockClick,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(28.dp),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Accent,
-                    contentColor = OnAccent
-                )
-            ) {
+            AccentWideButton(onClick = onUnlockClick, elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)) {
                 Text(
                     text = "Open LipaBill",
                     style = MaterialTheme.typography.titleMedium.copy(
