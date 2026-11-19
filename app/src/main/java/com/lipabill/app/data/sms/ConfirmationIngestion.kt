@@ -46,7 +46,8 @@ object ConfirmationIngestion {
         region: AppRegion
     ): Boolean = when {
         source == MoneySource.MPESA && region == AppRegion.KENYA ->
-            MpesaSmsFilter.isTransactionConfirmation(body)
+            MpesaSmsFilter.isTransactionConfirmation(body) ||
+                KenyanConfirmationParser.isLipaNaKcbMerchantSms(body.orEmpty())
         else ->
             KenyanConfirmationFilter.isMoneyConfirmation(body, region)
     }
@@ -84,8 +85,15 @@ object ConfirmationIngestion {
         if (!shouldAcceptBody(source, text, region, enabled)) return Outcome.Skipped
         return runCatching {
             when {
-                source == MoneySource.MPESA && region == AppRegion.KENYA ->
-                    MpesaSmsParser.parse(text, timestampMillis).copy(source = MoneySource.MPESA)
+                source == MoneySource.MPESA && region == AppRegion.KENYA -> {
+                    if (MpesaSmsFilter.isTransactionConfirmation(text)) {
+                        MpesaSmsParser.parse(text, timestampMillis).copy(source = MoneySource.MPESA)
+                    } else {
+                        // Lipa-na-KCB receipts omit Confirmed + balance; same Kenyan parser.
+                        KenyanConfirmationParser.parse(text, timestampMillis, MoneySource.MPESA)
+                            ?: error("confirmation_unparsed")
+                    }
+                }
                 else ->
                     KenyanConfirmationParser.parse(text, timestampMillis, source)
                         ?: error("confirmation_unparsed")
@@ -97,4 +105,39 @@ object ConfirmationIngestion {
     }
 
     fun sourceKey(tx: MpesaTransaction): String = "${tx.source.name}:${tx.code}"
+
+    /** True when any receipt id in [body] is already stored under any rail. */
+    fun sharesKnownReceipt(body: String, knownSourceCodes: Set<String>): Boolean {
+        if (knownSourceCodes.isEmpty()) return false
+        val codes = KenyanConfirmationParser.allReceiptCodes(body)
+        if (codes.isEmpty()) return false
+        return knownSourceCodes.any { key ->
+            val code = key.substringAfter(':', missingDelimiterValue = "")
+            code.isNotEmpty() && code in codes
+        }
+    }
+
+    /**
+     * Lipa-na-KCB sends a merchant receipt and a bank settlement twin.
+     * Keep the merchant row; drop suspense / pay-to-biller twins that share a ref.
+     */
+    fun dedupeLipaNaKcbTwins(rows: List<MpesaTransaction>): List<MpesaTransaction> {
+        if (rows.size <= 1) return rows
+        val codesByIndex = rows.map { KenyanConfirmationParser.allReceiptCodes(it.rawBody) + it.code }
+        val twinIndexes = rows.indices.filter { KenyanConfirmationParser.isSettlementTwinSms(rows[it].rawBody) }
+        val merchantIndexes =
+            rows.indices.filter { KenyanConfirmationParser.isLipaNaKcbMerchantSms(rows[it].rawBody) }
+        if (twinIndexes.isEmpty() || merchantIndexes.isEmpty()) return rows
+        val drop = mutableSetOf<Int>()
+        for (t in twinIndexes) {
+            for (m in merchantIndexes) {
+                if (codesByIndex[t].any { it in codesByIndex[m] }) {
+                    drop += t
+                    break
+                }
+            }
+        }
+        if (drop.isEmpty()) return rows
+        return rows.filterIndexed { index, _ -> index !in drop }
+    }
 }
