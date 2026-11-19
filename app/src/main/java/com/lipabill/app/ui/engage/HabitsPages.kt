@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -15,7 +17,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -95,6 +96,23 @@ import java.util.Locale
 /** Pages inside Habits. Everything opens from the Habits home and returns to it. */
 internal enum class HabitsPage {
     HOME, CHALLENGES, NOTICED, BADGES, CHECK_IN, COMPLETE, RECAP, SETTINGS
+}
+
+/** The white, hairline-edged card every Habits section sits in. */
+@Composable
+internal fun HabitsCard(
+    padding: PaddingValues = PaddingValues(18.dp),
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(HabitsTokens.CardShape)
+            .background(CardWhite)
+            .border(1.dp, Hairline, HabitsTokens.CardShape)
+            .padding(padding),
+        content = content
+    )
 }
 
 internal object HabitsTokens {
@@ -336,14 +354,7 @@ internal fun PatternCard(
 ) {
     val (icon, title, body) = patternCopy(pattern)
     val strong = pattern is HabitPattern.FoodPeakDay && pattern.sharePercent >= 40
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(HabitsTokens.CardShape)
-            .background(CardWhite)
-            .border(1.dp, Hairline, HabitsTokens.CardShape)
-            .padding(18.dp)
-    ) {
+    HabitsCard {
         if (compact) {
             Row(verticalAlignment = Alignment.Top) {
                 IconChip(icon)
@@ -971,14 +982,7 @@ private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TeachCard(payee: String, onAnswer: (String) -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(HabitsTokens.CardShape)
-            .background(CardWhite)
-            .border(1.dp, Hairline, HabitsTokens.CardShape)
-            .padding(18.dp)
-    ) {
+    HabitsCard {
         Text(stringResource(R.string.teach_title), style = HomeType.rowTitle, color = Ink)
         Spacer(modifier = Modifier.height(6.dp))
         Text(
@@ -1054,14 +1058,7 @@ internal fun NoticedPage(
 ) {
     val learningGood = habits.learningScore >= 55
     Column(verticalArrangement = Arrangement.spacedBy(HabitsTokens.sectionGap)) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(HabitsTokens.CardShape)
-                .background(CardWhite)
-                .border(1.dp, Hairline, HabitsTokens.CardShape)
-                .padding(18.dp)
-        ) {
+        HabitsCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Lock, contentDescription = null, tint = Income, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(10.dp))
@@ -1121,14 +1118,7 @@ internal fun BadgesPage(habits: HabitsUiState) {
     val almost = habits.badges.filter { !it.earned && it.current > 0 }
     val toFind = habits.badges.size - earned - almost.size
     Column(verticalArrangement = Arrangement.spacedBy(HabitsTokens.sectionGap)) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(HabitsTokens.CardShape)
-                .background(CardWhite)
-                .border(1.dp, Hairline, HabitsTokens.CardShape)
-                .padding(18.dp)
-        ) {
+        HabitsCard {
             Text(stringResource(R.string.badges_levels), style = HomeType.rowTitle, color = Ink)
             Spacer(modifier = Modifier.height(12.dp))
             LevelPath(current = habits.level.number)
@@ -1151,14 +1141,7 @@ internal fun BadgesPage(habits: HabitsUiState) {
         }
         if (almost.isNotEmpty()) {
             Text(stringResource(R.string.badges_almost_title), style = HomeType.section.copy(fontSize = 17.sp, fontWeight = FontWeight.Bold), color = Ink)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(HabitsTokens.CardShape)
-                    .background(CardWhite)
-                    .border(1.dp, Hairline, HabitsTokens.CardShape)
-                    .padding(horizontal = 16.dp)
-            ) {
+            HabitsCard(padding = PaddingValues(horizontal = 16.dp)) {
                 almost.take(3).forEachIndexed { index, progress ->
                     AlmostRow(progress)
                     if (index < almost.take(3).lastIndex) {
@@ -1300,14 +1283,7 @@ private fun CollectionCell(progress: BadgeProgress, modifier: Modifier) {
 
 @Composable
 internal fun SettingsPage(onOpenRecap: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(HabitsTokens.CardShape)
-            .background(CardWhite)
-            .border(1.dp, Hairline, HabitsTokens.CardShape)
-            .padding(18.dp)
-    ) {
+    HabitsCard {
         Text(stringResource(R.string.habits_settings_title), style = HomeType.rowTitle, color = Ink)
         Spacer(modifier = Modifier.height(6.dp))
         Text(stringResource(R.string.habits_settings_body), style = HomeType.body, color = Mute)
