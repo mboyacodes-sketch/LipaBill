@@ -3,7 +3,7 @@ package com.lipabill.app.ui.util
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.util.Log
+import com.lipabill.app.metrics.AppLog
 
 private const val TAG = "ShareIntents"
 
@@ -20,10 +20,10 @@ fun Context.sharePlainText(chooserTitle: String, text: String): Boolean {
         startActivity(Intent.createChooser(send, chooserTitle))
         true
     } catch (e: ActivityNotFoundException) {
-        Log.w(TAG, "no_share_handler", e)
+        AppLog.w(TAG, "no_share_handler", e)
         false
     } catch (e: SecurityException) {
-        Log.w(TAG, "share_blocked", e)
+        AppLog.w(TAG, "share_blocked", e)
         false
     }
 }
