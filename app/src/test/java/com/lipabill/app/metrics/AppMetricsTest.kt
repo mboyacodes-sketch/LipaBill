@@ -31,6 +31,11 @@ class AppMetricsTest {
         assertEquals("other_a11y", paymentReasonCode("other_accessibility_service"))
         assertEquals("call_permission", paymentReasonCode("CALL_PHONE denied"))
         assertEquals("inject_failed", paymentReasonCode("Could not type into USSD field"))
+        assertEquals("session_timeout", paymentReasonCode("session_timeout"))
+        assertEquals("session_timeout", paymentReasonCode("stall_timeout"))
+        assertEquals("menu_mismatch", paymentReasonCode("menu_mismatch"))
+        assertEquals("dial_failed", paymentReasonCode("dial_failed"))
+        assertEquals("prepare_failed", paymentReasonCode("prepare_failed"))
         assertEquals("other", paymentReasonCode("paid 0712345678 KES 500"))
     }
 
