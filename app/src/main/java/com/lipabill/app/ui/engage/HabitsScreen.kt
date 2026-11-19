@@ -58,7 +58,7 @@ import com.lipabill.app.R
 import com.lipabill.app.engage.HabitPattern
 import com.lipabill.app.engage.centsToKes
 import com.lipabill.app.ui.LipaPillButton
-import com.lipabill.app.ui.theme.Accent
+import com.lipabill.app.ui.components.HabitsSkeleton
 import com.lipabill.app.ui.theme.ActionMetrics
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
@@ -91,6 +91,10 @@ fun HabitsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val habits by viewModel.habits.collectAsStateWithLifecycle()
+    if (state.isLoading) {
+        HabitsSkeleton(modifier = modifier)
+        return
+    }
     var page by rememberSaveable { mutableStateOf(HabitsPage.HOME) }
     var autoCompleteShown by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { viewModel.openHabits() }
@@ -388,14 +392,7 @@ private fun ActiveNowPlaying(
     tipDay: HabitPattern.FoodPeakDay?,
     usualCents: Long
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(HabitsTokens.CardShape)
-            .background(CardWhite)
-            .border(1.dp, Hairline, HabitsTokens.CardShape)
-            .padding(18.dp)
-    ) {
+    HabitsCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             CompactDayRing(day = card.day, totalDays = card.totalDays)
             Spacer(modifier = Modifier.width(14.dp))
