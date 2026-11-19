@@ -1,6 +1,6 @@
 package com.lipabill.app.data.repository
 
-import android.util.Log
+import com.lipabill.app.metrics.AppLog
 import com.lipabill.app.data.foldMerchantName
 import com.lipabill.app.data.local.dao.MerchantDao
 import com.lipabill.app.data.local.entity.MerchantEntity
@@ -56,7 +56,7 @@ class MerchantDirectory(
             val fromFile = snapshotStore.read()
             if (fromFile.isEmpty()) return@withContext 0
             dao.upsertAll(fromFile)
-            Log.i(TAG, "restored_merchants count=${fromFile.size}")
+            AppLog.i(TAG, "restored_merchants count=${fromFile.size}")
             fromFile.size
         }
     }
@@ -259,7 +259,7 @@ class MerchantDirectory(
     private suspend fun persistSnapshot() {
         runCatching {
             snapshotStore.write(dao.listAll())
-        }.onFailure { Log.w(TAG, "snapshot_write_failed", it) }
+        }.onFailure { AppLog.w(TAG, "snapshot_write_failed", it) }
     }
 
     private fun MerchantEntity.toHit() = MerchantHit(
