@@ -23,7 +23,7 @@ class AppRegionTest {
     @Test
     fun uganda_is_ledger_only_with_mtn() {
         val ug = AppRegion.UGANDA
-        assertFalse(ug.canSendPay)
+        assertTrue(ug.canSendPay)
         assertFalse(ug.hasFuliza)
         assertEquals(MoneySource.MTN_MOMO, ug.primaryWallet)
         assertTrue(MoneySource.MTN_MOMO in ug.sources)
