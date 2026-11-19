@@ -27,7 +27,9 @@ enum class SetupBlocker(val key: String) {
 enum class TicketImportResult(val key: String) {
     Saved("saved"),
     Duplicate("duplicate"),
-    Unreadable("unreadable")
+    Unreadable("unreadable"),
+    /** User closed the review step without saving. */
+    Cancelled("cancelled")
 }
 
 /**
@@ -115,7 +117,7 @@ object AppMetrics {
      * @param reason closed code only — never dialog text / amounts / phones.
      * Examples: pin_injected, accessibility_off, other_a11y, call_permission,
      * dial_failed, inject_failed, menu_mismatch, service_interrupted,
-     * driver_error, user_cancelled, confirm_no, finished_notice.
+     * session_timeout, driver_error, user_cancelled, confirm_no, finished_notice.
      */
     fun paymentFinished(outcome: RepeatOutcome, reason: String? = null) {
         val result = paymentFinishResult(outcome) ?: return
@@ -358,6 +360,8 @@ internal fun paymentReasonCode(raw: String): String {
         "inject_failed",
         "menu_mismatch",
         "service_interrupted",
+        "session_timeout",
+        "stall_timeout",
         "driver_error",
         "user_cancelled",
         "confirm_no",
@@ -371,6 +375,7 @@ internal fun paymentReasonCode(raw: String): String {
         "parse_error",
         "ok",
         "aborted" -> when (key) {
+            "stall_timeout" -> "session_timeout"
             "other_accessibility_service" -> "other_a11y"
             "call_phone_denied" -> "call_permission"
             else -> key
