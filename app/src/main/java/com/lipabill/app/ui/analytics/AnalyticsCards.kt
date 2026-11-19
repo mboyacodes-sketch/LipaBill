@@ -1,5 +1,8 @@
 package com.lipabill.app.ui.analytics
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,41 +19,60 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.launch
+import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.ui.LipaChipHeight
 import com.lipabill.app.ui.LipaPillButton
 import com.lipabill.app.ui.components.CounterpartyAvatar
+import com.lipabill.app.ui.components.txAmountLook
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.ActionMetrics
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
+import com.lipabill.app.ui.theme.Debit
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.HomeType
@@ -63,8 +85,12 @@ import com.lipabill.app.ui.theme.OnPastel
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.theme.asPillLabel
+import com.lipabill.app.ui.util.categoryDisc
+import com.lipabill.app.ui.util.categoryInk
+import com.lipabill.app.ui.util.displayLabel
+import com.lipabill.app.ui.util.formatActivityTime
+import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.ui.util.formatKsh
-import com.lipabill.app.viewmodel.AnalyticsRange
 import com.lipabill.app.viewmodel.AnalyticsSummary
 import com.lipabill.app.viewmodel.ChallengeCardKind
 import com.lipabill.app.viewmodel.CounterpartySpend
@@ -78,21 +104,27 @@ import com.lipabill.app.viewmodel.RegularPayee
 import com.lipabill.app.viewmodel.SpendingHabit
 import com.lipabill.app.viewmodel.TypeBreakdown
 import com.lipabill.app.viewmodel.WalletAccount
+import com.lipabill.app.viewmodel.billLikeComingUp
 import com.lipabill.app.viewmodel.busiestDayLabel
 import com.lipabill.app.viewmodel.calendarAmountLabel
 import com.lipabill.app.viewmodel.dueCopy
-import com.lipabill.app.viewmodel.formatPeriodSpan
 import com.lipabill.app.viewmodel.fulizaDueCopy
+import com.lipabill.app.viewmodel.monthPulseCalendar
+import com.lipabill.app.viewmodel.pulseMonthSpan
 import com.lipabill.app.viewmodel.regularCadenceCopy
 import com.lipabill.app.viewmodel.spendShareOfIncome
 import com.lipabill.app.viewmodel.upcomingDue
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
-import kotlin.math.abs
 import kotlin.math.roundToInt
+
+private val monthTitleFormat: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("MMMM yyyy", Locale.UK)
 
 internal val CardShape = RoundedCornerShape(20.dp)
 
@@ -576,7 +608,8 @@ internal fun ChallengeCard(
     habit: SpendingHabit?,
     quietStreak: Int,
     onStart: (String) -> Unit,
-    onCheckIn: () -> Unit
+    onCheckIn: () -> Unit,
+    onOpenBreakPayment: (Long) -> Unit = {}
 ) {
     InsightCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -676,8 +709,16 @@ internal fun ChallengeCard(
                 }
             }
             when {
-                challenge.kind == ChallengeCardKind.ACTIVE -> PrimaryAction(text = "Check in", onClick = onCheckIn)
-                habit != null -> PrimaryAction(text = "Start again", onClick = { onStart(habit.name) })
+                challenge.kind == ChallengeCardKind.ACTIVE ->
+                    PrimaryAction(text = "Check in", onClick = onCheckIn)
+                challenge.kind == ChallengeCardKind.BROKEN &&
+                    challenge.breakingTransactionId != null ->
+                    PrimaryAction(
+                        text = "See payment",
+                        onClick = { onOpenBreakPayment(challenge.breakingTransactionId) }
+                    )
+                habit != null ->
+                    PrimaryAction(text = "Start again", onClick = { onStart(habit.name) })
             }
         }
     }
@@ -697,41 +738,140 @@ internal fun PrimaryAction(text: String, onClick: () -> Unit) {
 // region Rhythm: day grid or month bars
 
 @Composable
-internal fun RhythmCard(stats: AnalyticsSummary, fuliza: Boolean) {
-    val span = stats.periodFrom?.let { from ->
-        stats.periodTo?.let { to -> formatPeriodSpan(from, to) }
-    }
+internal fun RhythmCard(
+    stats: AnalyticsSummary,
+    fuliza: Boolean,
+    onMonthChange: (YearMonth) -> Unit = {}
+) {
+    val showCalendar = stats.pulse.isNotEmpty()
     val title = when {
-        stats.pulse.isNotEmpty() && stats.range == AnalyticsRange.DAYS_7 ->
-            span?.let { "Your week · $it" } ?: "Your week, day by day"
-        stats.pulse.isNotEmpty() ->
-            span?.let { "Day by day · $it" } ?: "Day by day"
+        showCalendar -> "Day by day"
         stats.periodBars.firstOrNull()?.label?.length == 4 -> "Year by year"
         else -> "Month by month"
     }
-    val caption = stats.busiestLabel?.let {
-        "Busiest: $it, ${formatKsh(stats.busiestTotal)} ${if (fuliza) "drawn" else "out"}"
-    } ?: "${stats.quietDays} days with no money out"
-    val cells = stats.pulse
-    var selectedDate by remember(cells) {
-        mutableStateOf(
-            (
-                cells.firstOrNull { it.isToday && it.inRange }
-                    ?: cells.lastOrNull { it.inRange && it.hasOutflow }
-                    ?: cells.lastOrNull { it.inRange }
-                )?.date
-        )
+    val caption = when {
+        showCalendar -> "Swipe months to filter Insights · future days stay quiet"
+        else -> stats.busiestLabel?.let {
+            "Busiest: $it, ${formatKsh(stats.busiestTotal)} ${if (fuliza) "drawn" else "out"}"
+        } ?: "${stats.quietDays} days with no money out"
     }
     val today = LocalDate.now()
+    val periodFrom = stats.periodFrom ?: today.withDayOfMonth(1)
+    val periodTo = stats.periodTo ?: today
+    val filterMonth = YearMonth.from(periodTo)
+    val months = remember(
+        stats.inflowByDate,
+        stats.outflowByDate,
+        stats.regulars,
+        today
+    ) {
+        pulseMonthSpan(
+            today = today,
+            inflowByDate = stats.inflowByDate,
+            outflowByDate = stats.outflowByDate,
+            regulars = stats.regulars
+        )
+    }
+    val initialPage = remember(months, filterMonth) {
+        months.indexOf(filterMonth).coerceAtLeast(0)
+    }
+    val pager = rememberPagerState(initialPage = initialPage, pageCount = { months.size })
+    val scope = rememberCoroutineScope()
+    // Only a tap opens a day — never pre-select today.
+    var selectedDate by remember(filterMonth) { mutableStateOf<LocalDate?>(null) }
+    // Period pill / Today: keep the pager on the filter's month.
+    LaunchedEffect(filterMonth, months) {
+        selectedDate = null
+        val page = months.indexOf(filterMonth)
+        if (page >= 0 && page != pager.currentPage && !pager.isScrollInProgress) {
+            pager.scrollToPage(page)
+        }
+    }
+    val visibleMonth = months.getOrNull(pager.currentPage) ?: filterMonth
+    val billRegulars = remember(stats.regulars) { stats.regulars.filter(::billLikeComingUp) }
+    fun cellsFor(month: YearMonth): List<PulseCell> {
+        val activeFrom: LocalDate
+        val activeTo: LocalDate
+        if (month == filterMonth) {
+            activeFrom = periodFrom
+            activeTo = periodTo
+        } else {
+            // Browsing another month uses the whole month until the swipe commits.
+            activeFrom = month.atDay(1)
+            activeTo = month.atEndOfMonth().coerceAtMost(today)
+        }
+        return monthPulseCalendar(
+            month = month,
+            today = today,
+            inflowByDate = stats.inflowByDate,
+            outflowByDate = stats.outflowByDate,
+            regulars = billRegulars,
+            activeFrom = activeFrom,
+            activeTo = activeTo
+        )
+    }
+    val cellsByMonth = remember(
+        months,
+        filterMonth,
+        periodFrom,
+        periodTo,
+        today,
+        stats.inflowByDate,
+        stats.outflowByDate,
+        billRegulars
+    ) {
+        months.associateWith { cellsFor(it) }
+    }
+    LaunchedEffect(pager.settledPage, months, filterMonth) {
+        val month = months.getOrNull(pager.settledPage) ?: return@LaunchedEffect
+        if (month != filterMonth) {
+            selectedDate = null
+            onMonthChange(month)
+            return@LaunchedEffect
+        }
+        if (selectedDate != null && YearMonth.from(selectedDate) != month) {
+            selectedDate = null
+        }
+    }
+    val zone = remember { ZoneId.systemDefault() }
+    val txsByDate = remember(stats.periodTransactions, zone) {
+        stats.periodTransactions
+            .groupBy { Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDate() }
+            .mapValues { (_, rows) -> rows.sortedByDescending { it.timestampMillis } }
+    }
     val comingUp = if (fuliza) emptyList() else upcomingDue(stats.regulars, today)
     InsightCard(title = title, caption = caption) {
-        if (cells.isNotEmpty()) {
-            PulseGrid(
-                cells = cells,
-                fuliza = fuliza,
-                selectedDate = selectedDate,
-                onSelect = { selectedDate = it }
-            )
+        if (showCalendar && months.isNotEmpty()) {
+            val calendarView = LocalView.current
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onGloballyPositioned { coords ->
+                        val bounds = coords.boundsInWindow()
+                        val inView = bounds.bottom > 0f &&
+                            bounds.top < calendarView.height.toFloat()
+                        if (!inView && selectedDate != null) {
+                            selectedDate = null
+                        }
+                    }
+            ) {
+                MonthPulsePager(
+                    months = months,
+                    pagerPage = pager.currentPage,
+                    onPageChange = { page -> scope.launch { pager.animateScrollToPage(page) } },
+                    pager = pager,
+                    monthLabel = visibleMonth.format(monthTitleFormat),
+                    cellsForPage = { page ->
+                        cellsByMonth[months[page]].orEmpty()
+                    },
+                    fuliza = fuliza,
+                    selectedDate = selectedDate,
+                    onSelect = { date ->
+                        selectedDate = if (selectedDate == date) null else date
+                    },
+                    txsByDate = txsByDate
+                )
+            }
             if (fuliza) {
                 LegendSwatch(fill = DayFlow.OUT_ONLY.fill(), border = null, label = "Drawn")
             } else {
@@ -755,8 +895,84 @@ internal fun RhythmCard(stats: AnalyticsSummary, fuliza: Boolean) {
                 regulars = comingUp,
                 today = today,
                 onSelect = { date ->
-                    if (cells.any { it.date == date && it.inRange }) selectedDate = date
+                    val month = YearMonth.from(date)
+                    val page = months.indexOf(month)
+                    if (page >= 0) {
+                        scope.launch { pager.animateScrollToPage(page) }
+                        selectedDate = date
+                    }
                 }
+            )
+        }
+    }
+}
+
+@Composable
+private fun MonthPulsePager(
+    months: List<YearMonth>,
+    pagerPage: Int,
+    onPageChange: (Int) -> Unit,
+    pager: PagerState,
+    monthLabel: String,
+    cellsForPage: (Int) -> List<PulseCell>,
+    fuliza: Boolean,
+    selectedDate: LocalDate?,
+    onSelect: (LocalDate) -> Unit,
+    txsByDate: Map<LocalDate, List<MpesaTransaction>>
+) {
+    // SoftBlue panel so the month grid reads apart from the white Insight card.
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(SoftBlue)
+            .padding(horizontal = 6.dp, vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = { if (pagerPage > 0) onPageChange(pagerPage - 1) },
+                enabled = pagerPage > 0
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                    contentDescription = "Previous month"
+                )
+            }
+            Text(
+                text = monthLabel,
+                style = HomeType.rowTitle,
+                color = Ink,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(
+                onClick = { if (pagerPage < months.lastIndex) onPageChange(pagerPage + 1) },
+                enabled = pagerPage < months.lastIndex
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = "Next month"
+                )
+            }
+        }
+        HorizontalPager(
+            state = pager,
+            modifier = Modifier
+                .fillMaxWidth()
+                .wrapContentHeight(),
+            beyondViewportPageCount = 1,
+            verticalAlignment = Alignment.Top
+        ) { page ->
+            PulseGrid(
+                cells = cellsForPage(page),
+                fuliza = fuliza,
+                selectedDate = selectedDate,
+                onSelect = onSelect,
+                txsByDate = txsByDate
             )
         }
     }
@@ -774,7 +990,7 @@ internal fun ComingUp(
         Spacer(modifier = Modifier.height(8.dp))
         Text("Coming up", style = HomeType.rowTitle, color = Ink)
         Text(
-            "Regular payments, from how often you have paid them.",
+            "Bills and standing payments due soon, from how often you have paid them.",
             style = HomeType.caption,
             color = Mute
         )
@@ -835,7 +1051,8 @@ internal fun PulseGrid(
     cells: List<PulseCell>,
     fuliza: Boolean,
     selectedDate: LocalDate?,
-    onSelect: (LocalDate) -> Unit
+    onSelect: (LocalDate) -> Unit,
+    txsByDate: Map<LocalDate, List<MpesaTransaction>> = emptyMap()
 ) {
     val selected = cells.firstOrNull { it.date == selectedDate }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -852,67 +1069,132 @@ internal fun PulseGrid(
             }
         }
         cells.chunked(7).forEach { week ->
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.height(70.dp)
+            ) {
                 week.forEach { cell ->
                     PulseDayCell(
                         cell = cell,
-                        selected = cell.date == selected?.date,
-                        onSelect = { if (cell.inRange) onSelect(cell.date) },
+                        selected = cell.date == selectedDate,
+                        onSelect = { if (cell.isActive || cell.isDue) onSelect(cell.date) },
                         modifier = Modifier.weight(1f)
                     )
                 }
                 repeat(7 - week.size) { Spacer(modifier = Modifier.weight(1f)) }
             }
+            // Panel stays under this week while the selected day is in it; only the
+            // cell + txs are refreshed — no expand/collapse mount cycle.
+            if (selected != null && week.any { it.date == selected.date }) {
+                CalendarDayTxnPanel(
+                    cell = selected,
+                    txs = txsByDate[selected.date].orEmpty(),
+                    fuliza = fuliza
+                )
+            }
         }
     }
-    val day = selected
-    if (day != null && day.inRange) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = if (day.isToday) "Today" else busiestDayLabel(day.date),
-                style = HomeType.caption,
-                color = Mute
-            )
-            if (day.hasInflow) {
-                Text(
-                    "+${formatKsh(day.inflow)} received",
-                    style = HomeType.body,
-                    color = Income,
-                    modifier = Modifier.recordingPrivacyCover()
-                )
+}
+
+@Composable
+private fun CalendarDayTxnPanel(
+    cell: PulseCell,
+    txs: List<MpesaTransaction>,
+    fuliza: Boolean
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 2.dp, bottom = 4.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Canvas)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = if (cell.isToday) "Today" else busiestDayLabel(cell.date),
+            style = HomeType.caption,
+            color = Mute,
+            fontWeight = FontWeight.SemiBold
+        )
+        if (txs.isEmpty()) {
+            when {
+                cell.isFuture && !cell.isDue ->
+                    Text("Not yet", style = HomeType.body, color = Mute)
+                cell.isDue -> { /* dues listed below */ }
+                else ->
+                    Text("Nothing moved this day", style = HomeType.body, color = Mute)
             }
-            if (day.hasOutflow) {
-                Text(
-                    "−${formatKsh(day.outflow)} ${if (fuliza) "drawn" else "out"}",
-                    style = HomeType.body,
-                    color = Expense,
-                    modifier = Modifier.recordingPrivacyCover()
-                )
-            }
-            if (day.hasInflow && day.hasOutflow) {
-                val up = day.net >= 0.0
-                Text(
-                    "Net ${if (up) "+" else "−"}${formatKsh(abs(day.net))}",
-                    style = HomeType.body,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (up) Income else Expense,
-                    modifier = Modifier.recordingPrivacyCover()
-                )
-            }
-            if (!day.hasInflow && !day.hasOutflow && !day.isDue) {
-                Text("Nothing moved this day", style = HomeType.body, color = Mute)
-            }
-            day.due.forEach { regular ->
-                Text(
-                    "Due: ${regular.name} · ~${formatKsh(regular.typicalAmount)} " +
-                        regular.cadence.label.lowercase(Locale.UK),
-                    style = HomeType.body,
-                    color = Accent,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.recordingPrivacyCover()
-                )
+        } else {
+            txs.forEach { tx ->
+                CalendarDayTxnRow(tx = tx, fuliza = fuliza)
             }
         }
+        cell.due.forEach { regular ->
+            Text(
+                "Due: ${regular.name} · ~${formatKsh(regular.typicalAmount)} " +
+                    regular.cadence.label.lowercase(Locale.UK),
+                style = HomeType.body,
+                color = Accent,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.recordingPrivacyCover()
+            )
+        }
+    }
+}
+
+@Composable
+private fun CalendarDayTxnRow(tx: MpesaTransaction, fuliza: Boolean) {
+    val amount = txAmountLook(tx)
+    val title = tx.counterpartyName ?: tx.type.displayLabel()
+    val named = !tx.counterpartyName.isNullOrBlank()
+    val amountColor = if (amount.outgoingStyle) Debit else Income
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CounterpartyAvatar(
+            name = title,
+            fill = tx.type.categoryDisc(),
+            contentColor = OnPastel,
+            size = 28.dp,
+            privacyCover = named
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = HomeType.rowTitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.recordingPrivacyCover(named)
+            )
+            Text(
+                text = buildString {
+                    append(tx.type.displayLabel())
+                    append(" · ")
+                    append(formatActivityTime(tx.timestampMillis))
+                    if (fuliza && tx.cost != null) {
+                        append(" · fee ")
+                        append(formatKes(tx.cost))
+                    }
+                },
+                style = HomeType.caption,
+                color = tx.type.categoryInk(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "${amount.prefix}${formatKes(tx.amount)}",
+            style = HomeType.rowTitle,
+            color = amountColor,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.recordingPrivacyCover()
+        )
     }
 }
 
@@ -923,74 +1205,125 @@ internal fun PulseDayCell(
     onSelect: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(10.dp)
+    val shape = RoundedCornerShape(if (selected) 14.dp else 10.dp)
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1.06f else 1f,
+        animationSpec = tween(120),
+        label = "dayScale"
+    )
+    val elevation by animateDpAsState(
+        targetValue = if (selected) 4.dp else 0.dp,
+        animationSpec = tween(120),
+        label = "dayElevation"
+    )
+    // Inactive days (outside filter / future): number only in Ink, no spend tint.
     val fill = when {
-        !cell.inRange -> Color.Transparent
+        !cell.isActive -> Color.Transparent
         cell.flow != DayFlow.NONE -> cell.flow.fill()
         cell.isDue || cell.isToday -> CardWhite
         else -> Canvas
     }
+    // Today stays quiet until tapped — only the selected day gets the strong outline.
     val outline = when {
-        !cell.inRange -> null
-        selected || cell.isToday -> Ink
+        !cell.isActive -> if (cell.isDue) Accent else null
+        selected -> Ink
         cell.isDue -> Accent
         else -> null
     }
-    Column(
+    val numberColor = Ink
+    Box(
         modifier = modifier
-            .height(56.dp)
-            .clip(shape)
-            .background(fill)
-            .then(
-                if (outline != null) Modifier.border(if (selected) 2.dp else 1.5.dp, outline, shape) else Modifier
-            )
-            .clickable(enabled = cell.inRange, onClick = onSelect),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .zIndex(if (selected) 2f else 0f)
+            .height(56.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = cell.date.dayOfMonth.toString(),
-            style = HomeType.caption,
-            fontWeight = FontWeight.SemiBold,
-            color = if (cell.inRange) Ink else Hairline
-        )
-        if (cell.inRange) {
-            val received = calendarAmountLabel(cell.inflow)
-            val spent = calendarAmountLabel(cell.outflow)
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.recordingPrivacyCover()
-            ) {
-                if (received.isNotEmpty()) {
-                    Text(
-                        text = "+$received",
-                        style = HomeType.caption,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Income,
-                        maxLines = 1
-                    )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
                 }
-                if (spent.isNotEmpty()) {
-                    Text(
-                        text = "−$spent",
-                        style = HomeType.caption,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Expense,
-                        maxLines = 1
-                    )
+                .shadow(
+                    elevation = elevation,
+                    shape = shape,
+                    clip = false,
+                    ambientColor = Ink.copy(alpha = 0.18f),
+                    spotColor = Ink.copy(alpha = 0.22f)
+                )
+                .clip(shape)
+                .background(if (selected && fill == Color.Transparent) CardWhite else fill)
+                .then(
+                    if (outline != null) {
+                        Modifier.border(if (selected) 2.5.dp else 1.5.dp, outline, shape)
+                    } else if (selected) {
+                        Modifier.border(2.5.dp, Ink, shape)
+                    } else {
+                        Modifier
+                    }
+                )
+                .clickable(
+                    enabled = cell.isActive || (cell.inRange && cell.isDue),
+                    onClick = onSelect
+                ),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = cell.date.dayOfMonth.toString(),
+                style = HomeType.caption,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                fontSize = if (selected) 14.sp else 12.sp,
+                color = numberColor
+            )
+            if (cell.isActive) {
+                val received = calendarAmountLabel(cell.inflow)
+                val spent = calendarAmountLabel(cell.outflow)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.recordingPrivacyCover()
+                ) {
+                    if (received.isNotEmpty()) {
+                        Text(
+                            text = "+$received",
+                            style = HomeType.caption,
+                            fontSize = if (selected) 10.sp else 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Income,
+                            maxLines = 1
+                        )
+                    }
+                    if (spent.isNotEmpty()) {
+                        Text(
+                            text = "−$spent",
+                            style = HomeType.caption,
+                            fontSize = if (selected) 10.sp else 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Expense,
+                            maxLines = 1
+                        )
+                    }
+                    if (received.isEmpty() && spent.isEmpty() && cell.isDue) {
+                        Text(
+                            text = "due",
+                            style = HomeType.caption,
+                            fontSize = if (selected) 10.sp else 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Accent,
+                            maxLines = 1
+                        )
+                    }
                 }
-                if (received.isEmpty() && spent.isEmpty() && cell.isDue) {
-                    Text(
-                        text = "due",
-                        style = HomeType.caption,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Accent,
-                        maxLines = 1
-                    )
-                }
+            } else if (cell.inRange && cell.isDue) {
+                Text(
+                    text = "due",
+                    style = HomeType.caption,
+                    fontSize = if (selected) 10.sp else 9.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Accent.copy(alpha = 0.7f),
+                    maxLines = 1
+                )
             }
         }
     }
