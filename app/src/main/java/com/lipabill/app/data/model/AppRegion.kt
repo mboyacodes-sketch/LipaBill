@@ -1,8 +1,9 @@
 package com.lipabill.app.data.model
 
 /**
- * Country the ledger is reading. Send / Pay / Fuliza stay Kenya M-Pesa;
- * other East African countries import confirmation SMS only.
+ * Country the ledger is reading. Send / Pay dial when [canSendPay] and a
+ * matching wallet SIM is present (Kenya: Safaricom or Airtel; Uganda: Airtel or MTN).
+ * Tanzania / Rwanda import confirmation SMS only for now. Fuliza stays Kenya Safaricom.
  */
 enum class AppRegion(
     val iso: String,
@@ -37,7 +38,7 @@ enum class AppRegion(
         currencyCode = "UGX",
         currencySymbol = "USh",
         primaryWallet = MoneySource.MTN_MOMO,
-        canSendPay = false,
+        canSendPay = true,
         hasFuliza = false
     ),
     RWANDA(
