@@ -3,6 +3,7 @@ package com.lipabill.app.data
 import com.lipabill.app.data.local.entity.TransactionEntity
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.social.SocialLink
 
 /**
  * Fake rows for debug captures. Names, phones, and codes are sample copy —
@@ -17,8 +18,30 @@ import com.lipabill.app.data.model.TransactionType
  */
 object DemoLedger {
 
-    /** Request QR destination. Matches Ada Demo; allowed by promo/scan-pii.sh. */
+    /** Request QR destinations. Matches Ada Demo; allowed by promo/scan-pii.sh. */
     const val REQUEST_PHONE = "0700000001"
+    const val REQUEST_TILL = "123456"
+    const val REQUEST_PAYBILL = "888888"
+    const val REQUEST_ACCOUNT = "ADA01"
+
+    /** Socials shown on Request while Screen recording is on (sharp dummy copy). */
+    fun requestSocialHandle(platform: SocialLink.Platform): String = when (platform) {
+        SocialLink.Platform.WHATSAPP -> "254712345678"
+        SocialLink.Platform.INSTAGRAM -> "natgeo"
+        SocialLink.Platform.X -> "NASA"
+        SocialLink.Platform.FACEBOOK -> "lipabill"
+        SocialLink.Platform.TIKTOK -> "lipabill"
+        SocialLink.Platform.YOUTUBE -> "lipabill"
+        SocialLink.Platform.TELEGRAM -> "lipabill"
+        SocialLink.Platform.LINKEDIN -> "lipabill"
+        SocialLink.Platform.THREADS -> "lipabill"
+    }
+
+    val requestSocialPlatforms: List<SocialLink.Platform> = listOf(
+        SocialLink.Platform.WHATSAPP,
+        SocialLink.Platform.INSTAGRAM,
+        SocialLink.Platform.X
+    )
 
     /**
      * Sample SGR booking SMS for debug Passes seed / Maestro stills.
