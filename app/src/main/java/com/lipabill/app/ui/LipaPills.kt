@@ -1,5 +1,10 @@
 package com.lipabill.app.ui
 
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.material3.ButtonElevation
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Button
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -143,5 +148,31 @@ fun LipaSoftChip(
         modifier = modifier,
         unselectedContainer = SoftBlue.copy(alpha = 0.45f),
         unselectedBorder = Color.Transparent
+    )
+}
+
+/**
+ * Full-width Material button in the accent colour: the main call to action on a screen
+ * (Save, Continue, Share). Pill corners at half the height; content is the label row.
+ */
+@Composable
+fun AccentWideButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    height: Dp = 56.dp,
+    elevation: ButtonElevation? = ButtonDefaults.buttonElevation(),
+    content: @Composable RowScope.() -> Unit
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(height),
+        shape = RoundedCornerShape(height / 2),
+        elevation = elevation,
+        colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = OnAccent),
+        content = content
     )
 }
