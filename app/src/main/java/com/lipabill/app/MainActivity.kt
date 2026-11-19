@@ -115,6 +115,9 @@ import com.lipabill.app.viewmodel.TicketsViewModel
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import com.lipabill.app.viewmodel.viewModelFactory
 import com.lipabill.app.BuildConfig
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity(),
@@ -223,24 +226,24 @@ class MainActivity : AppCompatActivity(),
     }
 
     /**
-     * Receipt a notification asked to open. Held on the activity so the lock screen
-     * can come and go without dropping it.
+     * Receipt a notification asked to open. StateFlow so AuthenticatedApp can
+     * collect without recomposing the whole NavHost on every pending change.
      */
-    var pendingReceipt by mutableStateOf<ReceiptOpenRequest?>(null)
-        private set
+    private val _pendingReceipt = MutableStateFlow<ReceiptOpenRequest?>(null)
+    val pendingReceipt: StateFlow<ReceiptOpenRequest?> = _pendingReceipt.asStateFlow()
 
     /** Stops a resume from opening the same receipt again after it has been shown. */
     private var deliveredReceiptKey: String? = null
 
     /** Pay link that should open Send. Held across the lock screen. */
-    var pendingPay by mutableStateOf<PayLink.Target?>(null)
-        private set
+    private val _pendingPay = MutableStateFlow<PayLink.Target?>(null)
+    val pendingPay: StateFlow<PayLink.Target?> = _pendingPay.asStateFlow()
 
     private var deliveredPayToken: String? = null
 
     fun clearPendingPay() {
-        pendingPay?.let { deliveredPayToken = it.token }
-        pendingPay = null
+        _pendingPay.value?.let { deliveredPayToken = it.token }
+        _pendingPay.value = null
         val current = intent ?: return
         if (PayLink.parse(current.dataString) != null) {
             current.data = null
@@ -250,12 +253,12 @@ class MainActivity : AppCompatActivity(),
     private fun acceptPayIntent(intent: Intent?) {
         val target = PayLink.parse(intent?.dataString) ?: return
         if (target.token == deliveredPayToken) return
-        pendingPay = target
+        _pendingPay.value = target
     }
 
     fun clearPendingReceipt() {
-        pendingReceipt?.let { deliveredReceiptKey = it.deliveryKey() }
-        pendingReceipt = null
+        _pendingReceipt.value?.let { deliveredReceiptKey = it.deliveryKey() }
+        _pendingReceipt.value = null
         val current = intent ?: return
         current.removeExtra(EXTRA_OPEN_RECEIPT_ID)
         current.removeExtra(EXTRA_OPEN_RECEIPT_CODE)
@@ -267,6 +270,13 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
+    /** Opens a ledger receipt on Home (Insights challenge break, notifications). */
+    fun openLedgerReceipt(transactionId: Long) {
+        if (transactionId <= 0L) return
+        deliveredReceiptKey = null
+        _pendingReceipt.value = ReceiptOpenRequest(id = transactionId, code = null)
+    }
+
     private fun acceptReceiptIntent(intent: Intent?) {
         if (intent == null) return
         val request = receiptOpenRequestFrom(
@@ -275,37 +285,37 @@ class MainActivity : AppCompatActivity(),
             dataString = intent.dataString
         ) ?: return
         if (request.deliveryKey() == deliveredReceiptKey) return
-        pendingReceipt = request
+        _pendingReceipt.value = request
     }
 
     /** Local copy of a pass opened from another app. Survives the lock screen. */
-    var incomingDocumentUri by mutableStateOf<Uri?>(null)
-        private set
+    private val _incomingDocumentUri = MutableStateFlow<Uri?>(null)
+    val incomingDocumentUri: StateFlow<Uri?> = _incomingDocumentUri.asStateFlow()
 
     /**
      * Shared `.pkpass` URIs held until biometric unlock so import does not
      * write to the encrypted DB while the session is locked.
      */
-    var pendingPassImports by mutableStateOf<List<Uri>>(emptyList())
-        private set
+    private val _pendingPassImports = MutableStateFlow<List<Uri>>(emptyList())
+    val pendingPassImports: StateFlow<List<Uri>> = _pendingPassImports.asStateFlow()
 
     fun clearIncomingDocument() {
-        incomingDocumentUri = null
+        _incomingDocumentUri.value = null
     }
 
     fun consumePendingPassImports(): List<Uri> {
-        val out = pendingPassImports
-        pendingPassImports = emptyList()
+        val out = _pendingPassImports.value
+        _pendingPassImports.value = emptyList()
         return out
     }
 
     private fun captureIncomingDocument(intent: Intent?) {
         val passes = PkPassIntents.preparePkPasses(this, intent)
         if (passes.isNotEmpty()) {
-            pendingPassImports = passes
+            _pendingPassImports.value = passes
             return
         }
-        PkPassIntents.capture(this, intent)?.let { incomingDocumentUri = it }
+        PkPassIntents.capture(this, intent)?.let { _incomingDocumentUri.value = it }
     }
 
     companion object {
@@ -315,6 +325,8 @@ class MainActivity : AppCompatActivity(),
         const val EXTRA_OPEN_RECEIPT_ID = "com.lipabill.app.OPEN_RECEIPT_ID"
         const val EXTRA_OPEN_RECEIPT_CODE = "com.lipabill.app.OPEN_RECEIPT_CODE"
         const val EXTRA_OPEN_CHECK_IN = "com.lipabill.app.OPEN_CHECK_IN"
+        /** Money moments open Insights, where the plan and budgets live. */
+        const val EXTRA_OPEN_INSIGHTS = "com.lipabill.app.OPEN_INSIGHTS"
         const val EXTRA_OPEN_TICKET_ID = "com.lipabill.app.OPEN_TICKET_ID"
     }
 }
@@ -385,13 +397,14 @@ private fun AuthenticatedApp(
     LaunchedEffect(Unit) {
         AppUpdates.check(activity, manual = false)
     }
-    val pendingPassImports = host.pendingPassImports
-    LaunchedEffect(pendingPassImports) {
-        if (pendingPassImports.isEmpty()) return@LaunchedEffect
-        val uris = host.consumePendingPassImports()
-        if (uris.isNotEmpty()) app.importOpenedPasses(uris)
+    LaunchedEffect(Unit) {
+        host.pendingPassImports.collect { pending ->
+            if (pending.isEmpty()) return@collect
+            val uris = host.consumePendingPassImports()
+            if (uris.isNotEmpty()) app.importOpenedPasses(uris)
+        }
     }
-    val pendingPkPassUri = host.incomingDocumentUri
+    val pendingPkPassUri by host.incomingDocumentUri.collectAsStateWithLifecycle()
     val openedPass by app.openedPass.collectAsStateWithLifecycle()
     var returnToAmountAfterPinCancel by remember {
         mutableStateOf(
@@ -401,9 +414,11 @@ private fun AuthenticatedApp(
             ) == true
         )
     }
-    val openReceipt = host.pendingReceipt
     var openCheckIn by remember {
         mutableStateOf(activity.intent?.getBooleanExtra(MainActivity.EXTRA_OPEN_CHECK_IN, false) == true)
+    }
+    var openInsights by remember {
+        mutableStateOf(activity.intent?.getBooleanExtra(MainActivity.EXTRA_OPEN_INSIGHTS, false) == true)
     }
     var openTicketId by remember {
         mutableStateOf(activity.intent?.getLongExtra(MainActivity.EXTRA_OPEN_TICKET_ID, 0L) ?: 0L)
@@ -424,6 +439,9 @@ private fun AuthenticatedApp(
             }
             if (intent.getBooleanExtra(MainActivity.EXTRA_OPEN_CHECK_IN, false)) {
                 openCheckIn = true
+            }
+            if (intent.getBooleanExtra(MainActivity.EXTRA_OPEN_INSIGHTS, false)) {
+                openInsights = true
             }
             val ticketId = intent.getLongExtra(MainActivity.EXTRA_OPEN_TICKET_ID, 0L)
             if (ticketId != 0L) openTicketId = ticketId
@@ -551,6 +569,14 @@ private fun AuthenticatedApp(
             if (reopenPay) MoneySheets.showPay(fm)
         }
         accessibilityNote = note
+        // Already on this consent page (e.g. user just returned from Settings) —
+        // don't push another copy of the Agree screen.
+        val entry = navController.currentBackStackEntry
+        if (entry?.destination?.route == Route.Consent.pattern &&
+            RouteConsent.pageOf(entry.arguments?.getString("page")) == page
+        ) {
+            return
+        }
         navController.navigate(Route.Consent.of(page.toConsentRoute())) {
             launchSingleTop = true
         }
@@ -592,6 +618,8 @@ private fun AuthenticatedApp(
             val granted = (!askedCall || callOk) && (!askedState || result[Manifest.permission.READ_PHONE_STATE] == true)
             AppMetrics.phonePermission(granted)
         }
+        // SIM access may have just been granted: wallets with a line become usable now.
+        (context.applicationContext as? LipaBillApp)?.refreshSimLines()
         phoneStateRefreshKey++
         val txId = pendingDialTxId
         pendingDialTxId = null
@@ -770,6 +798,13 @@ private fun AuthenticatedApp(
         navController.navigate(Route.Habits.path) { launchSingleTop = true }
     }
 
+    LaunchedEffect(openInsights) {
+        if (!openInsights || !app.securePreferences.firstRunSetupDone) return@LaunchedEffect
+        navController.navigate(Route.Metrics.path) { launchSingleTop = true }
+        openInsights = false
+        activity.intent?.removeExtra(MainActivity.EXTRA_OPEN_INSIGHTS)
+    }
+
     LaunchedEffect(openTicketId) {
         val id = openTicketId
         if (id == 0L || !app.securePreferences.firstRunSetupDone) return@LaunchedEffect
@@ -841,14 +876,16 @@ private fun AuthenticatedApp(
         restoreAmountAfterPinCancel()
     }
 
-    LaunchedEffect(openReceipt) {
-        if (openReceipt == null || !app.securePreferences.firstRunSetupDone) return@LaunchedEffect
-        dismissMoneySheets()
-        // Already on Home: navigating again recreates the list and drops the receipt.
-        if (navController.currentDestination?.route == Route.List.path) return@LaunchedEffect
-        val popped = navController.popBackStack(Route.List.path, inclusive = false)
-        if (!popped) {
-            navController.navigate(Route.List.path) { launchSingleTop = true }
+    LaunchedEffect(Unit) {
+        host.pendingReceipt.collect { openReceipt ->
+            if (openReceipt == null || !app.securePreferences.firstRunSetupDone) return@collect
+            dismissMoneySheets()
+            // Already on Home: navigating again recreates the list and drops the receipt.
+            if (navController.currentDestination?.route == Route.List.path) return@collect
+            val popped = navController.popBackStack(Route.List.path, inclusive = false)
+            if (!popped) {
+                navController.navigate(Route.List.path) { launchSingleTop = true }
+            }
         }
     }
 
@@ -934,7 +971,9 @@ private fun AuthenticatedApp(
                 ).show()
                 return
             }
-            val (accessibilityEnabled, needsPhoneState) = readState()
+            // Live check — VM snapshot can lag OEM AccessibilityManager after Agree.
+            val accessibilityEnabled = AccessibilityHelper.isLipaBillServiceEnabled(context)
+            val needsPhoneState = readState().second
             when {
                 !accessibilityEnabled -> {
                     AppMetrics.setupBlocked(SetupBlocker.NoAccessibility)
@@ -990,20 +1029,21 @@ private fun AuthenticatedApp(
     }
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val pendingPay = host.pendingPay
     var confirmIncomingPay by remember { mutableStateOf<PayLink.Target?>(null) }
-    LaunchedEffect(pendingPay, navBackStackEntry?.destination?.route) {
-        val target = pendingPay ?: return@LaunchedEffect
-        if (!app.securePreferences.firstRunSetupDone) return@LaunchedEffect
-        if (navBackStackEntry?.destination?.route == Route.FirstRunSetup.path) return@LaunchedEffect
-        host.clearPendingPay()
-        if (navController.currentDestination?.route != Route.List.path) {
-            val popped = navController.popBackStack(Route.List.path, inclusive = false)
-            if (!popped) {
-                navController.navigate(Route.List.path) { launchSingleTop = true }
+    LaunchedEffect(Unit) {
+        host.pendingPay.collect { target ->
+            if (target == null) return@collect
+            if (!app.securePreferences.firstRunSetupDone) return@collect
+            if (navController.currentDestination?.route == Route.FirstRunSetup.path) return@collect
+            host.clearPendingPay()
+            if (navController.currentDestination?.route != Route.List.path) {
+                val popped = navController.popBackStack(Route.List.path, inclusive = false)
+                if (!popped) {
+                    navController.navigate(Route.List.path) { launchSingleTop = true }
+                }
             }
+            confirmIncomingPay = target
         }
-        confirmIncomingPay = target
     }
     confirmIncomingPay?.let { target ->
         AlertDialog(
@@ -1152,6 +1192,7 @@ private fun AuthenticatedApp(
             }
         }
         composable(Route.List.path) {
+            val openReceipt by host.pendingReceipt.collectAsStateWithLifecycle()
             MainShellScreen(
                 listVm = listVm,
                 openReceipt = openReceipt,
@@ -1212,7 +1253,8 @@ private fun AuthenticatedApp(
                     viewModel = listVm,
                     onBack = { navigateHome() },
                     onOpenCheckIn = { openCheckIn = true },
-                    onOpenTransactions = { navigateHome() }
+                    onOpenTransactions = { navigateHome() },
+                    onOpenBreakPayment = { id -> host.openLedgerReceipt(id) }
                 )
             }
         }
@@ -1370,9 +1412,12 @@ private fun AuthenticatedApp(
                     PendingPaymentReceipt.clear()
                     navigateHome()
                 }
+                val walletBadge = PendingPaymentReceipt.peek(auditId)?.wallet?.badge
+                    ?: "M-Pesa"
                 DemoPaymentWalkthrough(
                     amountLabel = amountLabel,
                     detail = detail,
+                    walletBadge = walletBadge,
                     onCancel = {
                         scope.launch { paymentDial.finishDemoWalkthrough(auditId, cancelled = true) }
                     },
