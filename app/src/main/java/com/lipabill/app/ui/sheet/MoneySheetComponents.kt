@@ -1,5 +1,6 @@
 package com.lipabill.app.ui.sheet
 
+import com.lipabill.app.ui.AccentWideButton
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
@@ -40,6 +41,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -56,6 +58,8 @@ import com.lipabill.app.ui.adapt.WindowHeight
 import com.lipabill.app.ui.adapt.WindowWidth
 import com.lipabill.app.ui.adapt.moneySheetAmountKeyHeight
 import com.lipabill.app.ui.components.BalanceAmountRow
+import com.lipabill.app.ui.components.WalletMark
+import com.lipabill.app.ussd.PaymentWallet
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.util.SecureKeyboardWindow
 import com.lipabill.app.ui.util.rememberKeyPressHaptic
@@ -171,6 +175,14 @@ fun MoneySheetScaffold(
     /** Amount on the payment pad when Calculate opened — restored if the user cancels. */
     var addUpSeed by remember { mutableStateOf("") }
     var addUpOp by remember { mutableStateOf<AmountOp?>(null) }
+    // Operator keys open Add up seeded with the current amount (shared by both keypad layouts).
+    val openAddUpWith: ((AmountOp) -> Unit)? = onApplyAddUpAmount?.let {
+        { op ->
+            addUpSeed = amountInput
+            addUpOp = op
+            showAddUp = true
+        }
+    }
     val window = LocalWindowForm.current
     // Content stays inset; amount / text keyboards always span the full phone width.
     val sidePad = when (window.width) {
@@ -259,13 +271,7 @@ fun MoneySheetScaffold(
                 onKey = onKey,
                 onBackspace = onBackspace,
                 onClear = onClearAmount,
-                onOperator = onApplyAddUpAmount?.let {
-                    { op ->
-                        addUpSeed = amountInput
-                        addUpOp = op
-                        showAddUp = true
-                    }
-                },
+                onOperator = openAddUpWith,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = padCeiling)
@@ -360,13 +366,7 @@ fun MoneySheetScaffold(
                     onKey = onKey,
                     onBackspace = onBackspace,
                     onClear = onClearAmount,
-                    onOperator = onApplyAddUpAmount?.let {
-                        { op ->
-                            addUpSeed = amountInput
-                            addUpOp = op
-                            showAddUp = true
-                        }
-                    },
+                    onOperator = openAddUpWith,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = padCeiling)
@@ -679,25 +679,16 @@ private data class KeypadCell(
     val op: AmountOp? = null
 )
 
-private fun classicRows(actionLabel: String): List<List<KeypadCell>> = listOf(
-    listOf(
-        KeypadCell("7", KeypadCellKind.DIGIT),
-        KeypadCell("8", KeypadCellKind.DIGIT),
-        KeypadCell("9", KeypadCellKind.DIGIT),
-        KeypadCell("C", KeypadCellKind.CLEAR)
-    ),
-    listOf(
-        KeypadCell("4", KeypadCellKind.DIGIT),
-        KeypadCell("5", KeypadCellKind.DIGIT),
-        KeypadCell("6", KeypadCellKind.DIGIT),
-        KeypadCell("⌫", KeypadCellKind.BACKSPACE)
-    ),
-    listOf(
-        KeypadCell("1", KeypadCellKind.DIGIT),
-        KeypadCell("2", KeypadCellKind.DIGIT),
-        KeypadCell("3", KeypadCellKind.DIGIT),
-        KeypadCell(actionLabel, KeypadCellKind.ACTION)
-    ),
+private fun digits(vararg labels: String) = labels.map { KeypadCell(it, KeypadCellKind.DIGIT) }
+
+/** 7 8 9 C and 4 5 6 ⌫: the top of both keypad layouts. */
+private val sharedUpperRows: List<List<KeypadCell>> = listOf(
+    digits("7", "8", "9") + KeypadCell("C", KeypadCellKind.CLEAR),
+    digits("4", "5", "6") + KeypadCell("⌫", KeypadCellKind.BACKSPACE)
+)
+
+private fun classicRows(actionLabel: String): List<List<KeypadCell>> = sharedUpperRows + listOf(
+    digits("1", "2", "3") + KeypadCell(actionLabel, KeypadCellKind.ACTION),
     listOf(
         KeypadCell(".", KeypadCellKind.DIGIT),
         KeypadCell("0", KeypadCellKind.DIGIT, weight = 2f),
@@ -707,31 +698,15 @@ private fun classicRows(actionLabel: String): List<List<KeypadCell>> = listOf(
 
 private fun operatorRows(): List<List<KeypadCell>> {
     fun op(value: AmountOp) = KeypadCell(value.symbol, KeypadCellKind.OPERATOR, op = value)
-    return listOf(
-        listOf(AmountOp.DIV, AmountOp.MUL, AmountOp.SUB, AmountOp.ADD).map { op(it) },
+    return listOf(listOf(AmountOp.DIV, AmountOp.MUL, AmountOp.SUB, AmountOp.ADD).map { op(it) }) +
+        sharedUpperRows +
         listOf(
-            KeypadCell("7", KeypadCellKind.DIGIT),
-            KeypadCell("8", KeypadCellKind.DIGIT),
-            KeypadCell("9", KeypadCellKind.DIGIT),
-            KeypadCell("C", KeypadCellKind.CLEAR)
-        ),
-        listOf(
-            KeypadCell("4", KeypadCellKind.DIGIT),
-            KeypadCell("5", KeypadCellKind.DIGIT),
-            KeypadCell("6", KeypadCellKind.DIGIT),
-            KeypadCell("⌫", KeypadCellKind.BACKSPACE)
-        ),
-        listOf(
-            KeypadCell("1", KeypadCellKind.DIGIT),
-            KeypadCell("2", KeypadCellKind.DIGIT),
-            KeypadCell("3", KeypadCellKind.DIGIT),
-            KeypadCell(".", KeypadCellKind.DIGIT)
-        ),
-        listOf(
-            KeypadCell("0", KeypadCellKind.DIGIT, weight = 3f),
-            KeypadCell("", KeypadCellKind.EMPTY)
+            digits("1", "2", "3", "."),
+            listOf(
+                KeypadCell("0", KeypadCellKind.DIGIT, weight = 3f),
+                KeypadCell("", KeypadCellKind.EMPTY)
+            )
         )
-    )
 }
 
 @Composable
@@ -898,7 +873,9 @@ fun MoneyConfirmDialog(
     confirmLabel: String = "Confirm",
     note: String = "You’ll enter your PIN on LipaBill’s secure keypad.",
     onDismiss: () -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: () -> Unit,
+    /** Wallet that will dial, shown so the user confirms which SIM pays. */
+    from: PaymentWallet? = null
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -933,6 +910,21 @@ fun MoneyConfirmDialog(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.recordingPrivacyCover(detail.isNotBlank())
             )
+            if (from != null) {
+                Spacer(modifier = Modifier.height(Space.block))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    WalletMark(from.ledgerSource, size = 22.dp)
+                    Text(
+                        text = "From ${from.badge}",
+                        style = HomeType.label,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Ink
+                    )
+                }
+            }
             if (note.isNotBlank()) {
                 Spacer(modifier = Modifier.height(Space.gap))
                 Text(
@@ -943,17 +935,7 @@ fun MoneyConfirmDialog(
                 )
             }
             Spacer(modifier = Modifier.height(Space.section))
-            Button(
-                onClick = onConfirm,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                shape = RoundedCornerShape(26.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Accent,
-                    contentColor = OnAccent
-                )
-            ) {
+            AccentWideButton(onClick = onConfirm, height = 52.dp) {
                 Text(confirmLabel, style = HomeType.rowTitle)
             }
             Spacer(modifier = Modifier.height(Space.tight))
