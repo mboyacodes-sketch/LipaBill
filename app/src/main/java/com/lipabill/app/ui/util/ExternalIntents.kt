@@ -4,7 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.util.Log
+import com.lipabill.app.metrics.AppLog
 
 private const val TAG = "ExternalIntents"
 
@@ -12,7 +12,7 @@ private const val TAG = "ExternalIntents"
 fun Context.openHttpsUrl(url: String): Boolean {
     val uri = Uri.parse(url)
     if (!uri.scheme.equals("https", ignoreCase = true)) {
-        Log.w(TAG, "rejected_non_https")
+        AppLog.w(TAG, "rejected_non_https")
         return false
     }
     val intent = Intent(Intent.ACTION_VIEW, uri)
@@ -20,10 +20,10 @@ fun Context.openHttpsUrl(url: String): Boolean {
         startActivity(intent)
         true
     } catch (e: ActivityNotFoundException) {
-        Log.w(TAG, "no_browser", e)
+        AppLog.w(TAG, "no_browser", e)
         false
     } catch (e: SecurityException) {
-        Log.w(TAG, "https_blocked", e)
+        AppLog.w(TAG, "https_blocked", e)
         false
     }
 }
@@ -39,10 +39,10 @@ fun Context.openMailto(email: String, subject: String): Boolean {
         startActivity(Intent.createChooser(intent, "Email support"))
         true
     } catch (e: ActivityNotFoundException) {
-        Log.w(TAG, "no_mail_app", e)
+        AppLog.w(TAG, "no_mail_app", e)
         false
     } catch (e: SecurityException) {
-        Log.w(TAG, "mailto_blocked", e)
+        AppLog.w(TAG, "mailto_blocked", e)
         false
     }
 }
