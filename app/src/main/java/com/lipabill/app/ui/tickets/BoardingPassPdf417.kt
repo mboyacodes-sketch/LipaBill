@@ -2,7 +2,7 @@ package com.lipabill.app.ui.tickets
 
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
-import android.util.Log
+import com.lipabill.app.metrics.AppLog
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.common.BitMatrix
@@ -37,7 +37,7 @@ object BoardingPassPdf417 {
                 raw.startsWith("REF:", ignoreCase = true)
             )
         ) {
-            Log.w(TAG, "refusing non-BCBP placeholder for PDF417")
+            AppLog.w(TAG, "refusing non-BCBP placeholder for PDF417")
             return null
         }
 
@@ -57,7 +57,7 @@ object BoardingPassPdf417 {
                 hints
             )
         }.onFailure { t ->
-            Log.w(TAG, "PDF417Writer failed len=${raw.length}", t)
+            AppLog.w(TAG, "PDF417Writer failed len=${raw.length}", t)
         }.getOrNull()
     }
 
