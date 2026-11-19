@@ -47,7 +47,9 @@ object CategoryRules {
         categoryId = "everyday_essentials",
         nameContains = listOf(
             "supermarket", "naivas", "quickmart", "carrefour", "chandarana", "magunas", "cleanshelf",
-            "kplc", "kenya power", "nairobi water", "water and sewerage", "pharmacy", "chemist", "hospital", "clinic", "school", "academy"
+            "tuskys", "eastmatt", "mahas", "society stores",
+            "kplc", "kenya power", "nairobi water", "water and sewerage",
+            "pharmacy", "chemist", "hospital", "clinic", "school", "academy", "university", "college"
         )
     )
 
