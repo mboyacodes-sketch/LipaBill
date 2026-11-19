@@ -1,5 +1,6 @@
 package com.lipabill.app.data.repository
 
+import com.lipabill.app.data.local.dao.ClassificationRepairRow
 import com.lipabill.app.BuildConfig
 import com.lipabill.app.data.DemoLedger
 import com.lipabill.app.data.local.dao.TransactionDao
@@ -18,10 +19,11 @@ import com.lipabill.app.data.sms.MpesaSmsFilter
 import com.lipabill.app.data.sms.SmsInboxReader
 import com.lipabill.app.ussd.PendingPaymentReceipt
 import com.lipabill.app.ussd.UssdMenuBuilder
+import com.lipabill.app.viewmodel.idsMatchingPayeeKey
+import com.lipabill.app.viewmodel.payeeKey
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
@@ -39,13 +41,23 @@ data class SendContact(
     val lastSentMillis: Long = 0L
 )
 
+/** Result of renaming every row that shares a payee key. */
+data class LinkedPayeeRenameResult(
+    val linkedCount: Int,
+    val renamedCount: Int,
+    val previousPayeeKey: String?,
+    val payeeKey: String?
+)
+
 class TransactionRepository(
     private val dao: TransactionDao,
     private val inboxReader: SmsInboxReader,
     private val securePreferences: SecurePreferences,
     private val merchantDirectory: MerchantDirectory,
     private val onNewTransaction: (MpesaTransaction) -> Unit = {},
-    var afterInsert: (suspend () -> Unit)? = null
+    var afterInsert: (suspend () -> Unit)? = null,
+    /** Narrows the user's picks to what may be imported now (region ∩ enabled; SIM is dial-only). */
+    private val usableSources: (AppRegion, Set<MoneySource>) -> Set<MoneySource> = { _, chosen -> chosen }
 ) {
 
     private val rescanLock = Mutex()
@@ -76,15 +88,15 @@ class TransactionRepository(
         } else {
             dao.observeSearch(trimmed, type, limit)
         }
-        return enrichList(source)
+        return mapListItems(source)
     }
 
-    private val nameLinks = dao.observeRecent(NAME_LINK_SCAN_LIMIT)
-
-    private fun enrichList(source: Flow<List<TransactionEntity>>): Flow<List<MpesaTransaction>> =
-        combine(source, nameLinks) { list, wide ->
-            CounterpartyNameLinker.enrichAll(list.map { it.toListItem() }, phoneDirectory(wide))
-        }.flowOn(Dispatchers.Default)
+    /**
+     * Map Room rows to list items. Phones are persisted at insert / [linkPhonesByName];
+     * do not re-enrich the whole list on every observe (that doubled work with nameLinks).
+     */
+    private fun mapListItems(source: Flow<List<TransactionEntity>>): Flow<List<MpesaTransaction>> =
+        source.map { list -> list.map { it.toListItem() } }.flowOn(Dispatchers.Default)
 
     /**
      * Past Send Money recipients consolidated by normalized phone.
@@ -103,17 +115,41 @@ class TransactionRepository(
 
     /** Full history for one ledger. Money and Fuliza are not mixed in this query. */
     fun observeWallet(fuliza: Boolean): Flow<List<MpesaTransaction>> =
-        enrichList(dao.observeWallet(if (fuliza) 1 else 0))
+        mapListItems(dao.observeWallet(if (fuliza) 1 else 0))
+
+    /** Newest [limit] rows for Home — no SMS bodies. */
+    fun observeWalletList(fuliza: Boolean, limit: Int = HOME_LIST_LIMIT): Flow<List<MpesaTransaction>> =
+        mapListItems(dao.observeWalletList(if (fuliza) 1 else 0, limit))
+
+    /** Newest [limit] ledger rows from [sources] only — Home's window, no SMS bodies. */
+    fun observeLedgerWindow(sources: Set<MoneySource>, limit: Int): Flow<List<MpesaTransaction>> =
+        mapListItems(dao.observeLedgerWindow(sources.map { it.name }, limit))
+
+    /** Ledger rows per source over all history. */
+    fun observeSourceCounts(): Flow<Map<MoneySource, Int>> =
+        dao.observeSourceCounts().map { rows -> rows.associate { it.source to it.n } }
+
+    /** Recent Send Money rows for fee / monthly counts on the Send sheet. */
+    fun observeRecentSends(limit: Int = SEND_HISTORY_LIMIT): Flow<List<MpesaTransaction>> =
+        mapListItems(dao.observeRecentSends(limit))
+
+    /** Ledger rows since [sinceMillis], no SMS bodies. */
+    suspend fun ledgerSince(sinceMillis: Long): List<MpesaTransaction> = withContext(Dispatchers.IO) {
+        dao.ledgerSince(sinceMillis).map { it.toListItem() }
+    }
+
+    /** Newest balance per source, for the home balance switch and money sheets. */
+    fun observeLatestBalances(): Flow<Map<MoneySource, Double>> =
+        dao.observeLatestBalances()
+            .map { rows -> rows.associate { it.source to it.balance } }
+            .flowOn(Dispatchers.Default)
 
     suspend fun latestMpesaBalance(): Double? = withContext(Dispatchers.IO) {
         dao.latestMpesaBalance()
     }
 
     fun observeById(id: Long): Flow<MpesaTransaction?> =
-        combine(dao.observeById(id), nameLinks) { entity, wide ->
-            val tx = entity?.toDomain() ?: return@combine null
-            CounterpartyNameLinker.enrich(tx, phoneDirectory(wide))
-        }.flowOn(Dispatchers.Default)
+        dao.observeById(id).map { it?.toDomain() }.flowOn(Dispatchers.Default)
 
     /**
      * Notification taps prefer the stored row id, then the confirmation code
@@ -182,6 +218,17 @@ class TransactionRepository(
     }
 
     /**
+     * App foreground / resume: one-shot repairs once, then a quiet inbox import.
+     * Shares [rescanLock] with [rescanInbox] so SMS watcher and lifecycle do not stack.
+     */
+    suspend fun catchUpOnForeground(): Int = withContext(Dispatchers.IO) {
+        rescanLock.withLock {
+            runOneShotLedgerRepairs()
+            importNewConfirmations(forceFullHistory = false)
+        }
+    }
+
+    /**
      * Debug / promo only. Lands a fake confirmation that matches [snapshot]
      * so ProcessingReceipt can show Confirmed and Home gains a new row.
      * Never dials USSD. Body avoids real “Confirmed.” / balance copy for OCR gates.
@@ -217,7 +264,7 @@ class TransactionRepository(
                 rawBody = "Demo payment $code. Ksh${"%.0f".format(amount)} $typeLabel $party" +
                     (phone?.let { " $it" } ?: "") +
                     ". Balance shown in app only. Not a real message. Not a PIN.",
-                source = MoneySource.MPESA
+                source = snapshot.wallet?.ledgerSource ?: MoneySource.MPESA
             )
             dao.insertIgnore(TransactionEntity.fromDomain(tx))
             if (snapshot.type == TransactionType.PAYBILL ||
@@ -256,21 +303,28 @@ class TransactionRepository(
         }
     }
 
-    private suspend fun importNewConfirmations(forceFullHistory: Boolean = false): Int {
-        val epochAtStart = inboxScanEpoch.get()
+    /** One-shot purge/repair/reclassify — prefs flags make repeats free after the first pass. */
+    private suspend fun runOneShotLedgerRepairs() {
         purgeNonConfirmationsIfNeeded()
         repairParsedAmountsIfNeeded()
         reclassifySavingsIfNeeded()
         reclassifyUnknownPartiesIfNeeded()
+        reclassifyBankDirectionsIfNeeded()
+        reclassifyBankDetailsIfNeeded()
+    }
+
+    private suspend fun importNewConfirmations(forceFullHistory: Boolean = false): Int {
+        val epochAtStart = inboxScanEpoch.get()
         // Without SMS access, leave prior rows alone and do not mark backfill complete.
         if (!inboxReader.hasSmsPermission()) {
-            linkPhonesByName()
             return 0
         }
         // Re-read prefs under the lock so a settings change that invalidated the
         // scan is visible even when this pass was queued before that change.
         val region = securePreferences.appRegion
-        val enabled = securePreferences.enabledLedgerSources(region)
+        val enabled = usableSources(region, securePreferences.enabledLedgerSources(region))
+        // Nothing enabled for this country: leave the high-water mark alone.
+        if (enabled.isEmpty()) return 0
         val fullHistory = forceFullHistory || !securePreferences.walletRailsInboxScanDone
         val since = if (fullHistory) {
             null
@@ -289,15 +343,36 @@ class TransactionRepository(
         var newestSeen = securePreferences.inboxHighWaterMillis
         var directory: Map<String, String>? = null
         val pending = ArrayList<MpesaTransaction>()
+        // Settlement-twin receipt ids: a Lipa-na-KCB merchant receipt replaces its twin either way round.
+        val batchTwinCodes = HashSet<String>()
+        var storedTwinCodes: Set<String>? = null
         for (sms in incoming) {
             if (sms.dateMillis > newestSeen) newestSeen = sms.dateMillis
             val source = MoneySource.fromSender(sms.address, region) ?: continue
-            val quickCode = if (source == MoneySource.MPESA && region == AppRegion.KENYA) {
+            val lipaNaKcb = KenyanConfirmationParser.isLipaNaKcbMerchantSms(sms.body)
+            val settlementTwin = KenyanConfirmationParser.isSettlementTwinSms(sms.body)
+            val quickCode = if (source == MoneySource.MPESA &&
+                region == AppRegion.KENYA &&
+                !lipaNaKcb
+            ) {
                 MpesaSmsParser.receiptCode(sms.body)
             } else {
                 KenyanConfirmationParser.receiptCode(sms.body)
             }
-            if (quickCode != null && "${source.name}:$quickCode" in known) continue
+            if (quickCode != null && "${source.name}:$quickCode" in known) {
+                val twins = if (lipaNaKcb && quickCode !in batchTwinCodes) {
+                    storedTwinCodes ?: storedSettlementTwinCodes().also { storedTwinCodes = it }
+                } else {
+                    batchTwinCodes
+                }
+                // Only the merchant receipt may take a code its settlement twin claimed first.
+                if (!lipaNaKcb || quickCode !in twins) continue
+                known.remove("${source.name}:$quickCode")
+            }
+            // Bank settlement twin of an already-stored Lipa-na-KCB merchant receipt.
+            if (settlementTwin && ConfirmationIngestion.sharesKnownReceipt(sms.body, known)) {
+                continue
+            }
             val parsed = ConfirmationIngestion.acceptAndParse(
                 sms.address,
                 sms.body,
@@ -306,6 +381,9 @@ class TransactionRepository(
                 enabled
             ) ?: continue
             if (!known.add(ConfirmationIngestion.sourceKey(parsed))) continue
+            for (code in KenyanConfirmationParser.allReceiptCodes(sms.body)) {
+                known.add("${source.name}:$code")
+            }
             val enriched = if (parsed.source == MoneySource.MPESA &&
                 InboxScan.mayMatchPendingDial(parsed.timestampMillis)
             ) {
@@ -321,11 +399,19 @@ class TransactionRepository(
                 enriched
             }
             pending.add(withPhone)
+            if (settlementTwin) batchTwinCodes += KenyanConfirmationParser.allReceiptCodes(sms.body)
         }
         var inserted = 0
-        if (pending.isNotEmpty()) {
-            val ids = dao.insertIgnoreAll(pending.map { TransactionEntity.fromDomain(it) })
-            pending.forEachIndexed { index, tx ->
+        val toStore = ConfirmationIngestion.dedupeLipaNaKcbTwins(pending)
+        if (toStore.isNotEmpty()) {
+            // Merchant SMS landed after a twin was already stored — drop the twin rows.
+            for (tx in toStore) {
+                if (KenyanConfirmationParser.isLipaNaKcbMerchantSms(tx.rawBody)) {
+                    deleteSettlementTwinsSharing(tx.rawBody)
+                }
+            }
+            val ids = dao.insertIgnoreAll(toStore.map { TransactionEntity.fromDomain(it) })
+            toStore.forEachIndexed { index, tx ->
                 val rowId = ids.getOrNull(index) ?: return@forEachIndexed
                 if (rowId == -1L) return@forEachIndexed
                 inserted++
@@ -356,18 +442,13 @@ class TransactionRepository(
     }
 
     suspend fun backfillIfNeeded(): Int {
-        purgeNonConfirmationsIfNeeded()
-        repairParsedAmountsIfNeeded()
-        reclassifySavingsIfNeeded()
-        reclassifyUnknownPartiesIfNeeded()
+        runOneShotLedgerRepairs()
         if (securePreferences.smsBackfillDone && dao.count() > 0) {
-            linkPhonesByName()
             return 0
         }
         // Never treat "no SMS permission" as a finished backfill — that would skip
         // re-import after the user grants access, leaving an empty history.
         if (!inboxReader.hasSmsPermission()) {
-            linkPhonesByName()
             return 0
         }
         return rescanInbox()
@@ -472,20 +553,128 @@ class TransactionRepository(
             if (row.rawBody.isBlank()) continue
             if (!MpesaSmsFilter.isTransactionConfirmation(row.rawBody)) continue
             val reparsed = MpesaSmsParser.parse(row.rawBody, row.timestampMillis)
-            val name = reparsed.counterpartyName?.takeIf { it.isNotBlank() }
-            val phone = reparsed.counterpartyPhone?.takeIf { it.isNotBlank() }
-            val typeChanged = reparsed.type != TransactionType.UNKNOWN
-            val nameChanged = name != null && name != row.counterpartyName
-            if (!typeChanged && !nameChanged && phone == null) continue
+            if (updatePartyIfBetter(row, reparsed, typeChanged = reparsed.type != TransactionType.UNKNOWN)) fixed++
+        }
+        fixed
+    }
+
+    /**
+     * Bank and non-Kenya-M-Pesa wallet rows: re-read SMS wording so send/receive
+     * direction matches debit/credit language (one-shot after classify fix).
+     */
+    suspend fun reclassifyBankDirectionsIfNeeded(): Int = withContext(Dispatchers.IO) {
+        if (securePreferences.bankDirectionRepairDone) return@withContext 0
+        val fixed = reclassifyBankDirections()
+        securePreferences.bankDirectionRepairDone = true
+        fixed
+    }
+
+    private suspend fun reclassifyBankDirections(): Int = withContext(Dispatchers.IO) {
+        val rows = dao.getAllForClassification()
+        var fixed = 0
+        for (row in rows) {
+            if (row.source == MoneySource.MPESA) continue
+            if (row.rawBody.isBlank()) continue
+            val nextType = KenyanConfirmationParser.classify(row.rawBody)
+            if (nextType == TransactionType.UNKNOWN || nextType == row.type) continue
             dao.updateParty(
                 id = row.id,
-                type = if (typeChanged) reparsed.type else row.type,
-                name = name,
-                phone = phone
+                type = nextType,
+                name = row.counterpartyName,
+                phone = null
             )
             fixed++
         }
+        fixed + purgeLipaNaKcbSettlementTwins()
+    }
+
+    /**
+     * Bank / non-M-Pesa rows: re-parse SMS for merchant, till, account holder, and
+     * corrected send/receive type (one-shot after richer bank party extraction).
+     */
+    suspend fun reclassifyBankDetailsIfNeeded(): Int = withContext(Dispatchers.IO) {
+        if (securePreferences.bankDetailRepairDone) return@withContext 0
+        val fixed = reclassifyBankDetails()
+        securePreferences.bankDetailRepairDone = true
         fixed
+    }
+
+    private suspend fun reclassifyBankDetails(): Int = withContext(Dispatchers.IO) {
+        val rows = dao.getAllForClassification()
+        var fixed = 0
+        for (row in rows) {
+            if (row.source == MoneySource.MPESA) continue
+            if (row.rawBody.isBlank()) continue
+            val reparsed = KenyanConfirmationParser.parse(
+                row.rawBody,
+                row.timestampMillis,
+                row.source
+            ) ?: continue
+            val typeChanged = reparsed.type != TransactionType.UNKNOWN && reparsed.type != row.type
+            if (updatePartyIfBetter(row, reparsed, typeChanged)) fixed++
+        }
+        fixed
+    }
+
+    /**
+     * Writes the name, phone and (when [typeChanged]) type a re-read SMS found.
+     * False when the re-read added nothing, so nothing was written.
+     */
+    private suspend fun updatePartyIfBetter(
+        row: ClassificationRepairRow,
+        reparsed: MpesaTransaction,
+        typeChanged: Boolean
+    ): Boolean {
+        val name = reparsed.counterpartyName?.takeIf { it.isNotBlank() }
+        val phone = reparsed.counterpartyPhone?.takeIf { it.isNotBlank() }
+        val nameChanged = name != null && name != row.counterpartyName
+        if (!typeChanged && !nameChanged && phone == null) return false
+        dao.updateParty(
+            id = row.id,
+            type = if (typeChanged) reparsed.type else row.type,
+            name = name,
+            phone = phone
+        )
+        return true
+    }
+
+    /** Drop bank suspense twins that share a Lipa-na-KCB ref with a merchant receipt. */
+    private suspend fun purgeLipaNaKcbSettlementTwins(): Int {
+        val rows = dao.getAllForClassification()
+        val merchants = rows.filter { KenyanConfirmationParser.isLipaNaKcbMerchantSms(it.rawBody) }
+        if (merchants.isEmpty()) return 0
+        val merchantCodes = merchants
+            .flatMap { KenyanConfirmationParser.allReceiptCodes(it.rawBody) }
+            .toHashSet()
+        if (merchantCodes.isEmpty()) return 0
+        val doomed = rows.mapNotNull { row ->
+            if (!KenyanConfirmationParser.isSettlementTwinSms(row.rawBody)) return@mapNotNull null
+            val codes = KenyanConfirmationParser.allReceiptCodes(row.rawBody)
+            if (codes.any { it in merchantCodes }) row.id else null
+        }
+        if (doomed.isEmpty()) return 0
+        dao.deleteByIds(doomed)
+        return doomed.size
+    }
+
+    /** Receipt ids on stored settlement-twin rows (Pay to M-PESA Biller / One Till Suspense). */
+    private suspend fun storedSettlementTwinCodes(): Set<String> =
+        dao.getAllForClassification()
+            .filter { KenyanConfirmationParser.isSettlementTwinSms(it.rawBody) }
+            .flatMapTo(HashSet()) { KenyanConfirmationParser.allReceiptCodes(it.rawBody) }
+
+    private suspend fun deleteSettlementTwinsSharing(body: String) {
+        val codes = KenyanConfirmationParser.allReceiptCodes(body)
+        if (codes.isEmpty()) return
+        val doomed = dao.getAllForClassification().mapNotNull { row ->
+            if (!KenyanConfirmationParser.isSettlementTwinSms(row.rawBody)) return@mapNotNull null
+            if (KenyanConfirmationParser.allReceiptCodes(row.rawBody).any { it in codes }) {
+                row.id
+            } else {
+                null
+            }
+        }
+        if (doomed.isNotEmpty()) dao.deleteByIds(doomed)
     }
 
     private fun moneyEquals(a: Double?, b: Double?): Boolean {
@@ -516,8 +705,51 @@ class TransactionRepository(
         updated
     }
 
-    private fun phoneDirectory(rows: List<TransactionEntity>): Map<String, String> =
-        CounterpartyNameLinker.buildPhoneDirectoryFromTransactions(rows.map { it.toListItem() })
+    /** How many stored payments share the same payee identity as [tx]. */
+    suspend fun countLinkedPayees(tx: MpesaTransaction): Int = withContext(Dispatchers.IO) {
+        val key = payeeKey(tx) ?: return@withContext 1
+        val ids = idsMatchingPayeeKey(dao.listPayeeLinkRows(), key)
+        ids.size.coerceAtLeast(1)
+    }
+
+    /**
+     * Rename every row linked by [payeeKey] for [fromTx]. Phones are left unchanged.
+     * Returns how many rows matched and how many names were written.
+     */
+    suspend fun renameLinkedPayee(
+        fromTx: MpesaTransaction,
+        newName: String?
+    ): LinkedPayeeRenameResult = withContext(Dispatchers.IO) {
+        val previousKey = payeeKey(fromTx)
+        val trimmed = newName?.trim()?.takeIf { it.isNotEmpty() }
+        val linkedIds = if (previousKey == null) {
+            listOf(fromTx.id).filter { it > 0L }
+        } else {
+            idsMatchingPayeeKey(dao.listPayeeLinkRows(), previousKey)
+                .ifEmpty { listOf(fromTx.id).filter { it > 0L } }
+        }
+        val linkedCount = linkedIds.size.coerceAtLeast(1)
+        if (trimmed == null || trimmed == fromTx.counterpartyName?.trim()) {
+            return@withContext LinkedPayeeRenameResult(
+                linkedCount = linkedCount,
+                renamedCount = 0,
+                previousPayeeKey = previousKey,
+                payeeKey = previousKey
+            )
+        }
+        var renamed = 0
+        for (chunk in linkedIds.chunked(400)) {
+            if (chunk.isEmpty()) continue
+            renamed += dao.updateCounterpartyNameForIds(chunk, trimmed)
+        }
+        val nextKey = payeeKey(trimmed, fromTx.counterpartyPhone) ?: previousKey
+        LinkedPayeeRenameResult(
+            linkedCount = linkedCount,
+            renamedCount = renamed,
+            previousPayeeKey = previousKey,
+            payeeKey = nextKey
+        )
+    }
 
     private suspend fun buildNamePhoneDirectory(limit: Int): Map<String, String> {
         val rows = dao.getNamedCounterparties(limit)
@@ -570,7 +802,10 @@ class TransactionRepository(
 
     companion object {
         const val LIST_LIMIT = 80
+        const val HOME_LIST_LIMIT = 250
         const val SEND_SCAN_LIMIT = 250
+        /** Enough recent sends for fee band + this-month counts without the full wallet. */
+        const val SEND_HISTORY_LIMIT = 120
         const val NAME_LINK_SCAN_LIMIT = 500
 
         internal fun consolidateSendContacts(rows: List<TransactionEntity>): List<SendContact> {
