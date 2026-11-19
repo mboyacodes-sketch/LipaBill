@@ -400,7 +400,7 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     // Real org.json for JVM unit tests (Android stubs return defaults).
-    testImplementation("org.json:json:20250517")
+    testImplementation("org.json:json:20260814")
     // Real Android Canvas on the JVM for the opt-in skyline gallery render (design review).
     testImplementation("org.robolectric:robolectric:4.14.1")
 }
