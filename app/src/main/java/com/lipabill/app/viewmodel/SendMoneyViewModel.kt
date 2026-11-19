@@ -5,11 +5,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.ussd.PaymentManualDetails
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
-import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.ussd.UssdMenuBuilder
 import com.lipabill.app.ui.util.appendAmountKey as applyAmountKey
 import com.lipabill.app.ui.util.formatKesMoney
@@ -32,12 +32,7 @@ data class SendMoneyUiState(
     val amountValid: Boolean = false,
     val detailsValid: Boolean = false,
     val canSend: Boolean = false,
-    val featureEnabled: Boolean = true,
-    val accessibilityEnabled: Boolean = false,
-    val simLines: List<SimLine> = emptyList(),
-    val selectedSubscriptionId: Int? = null,
-    val hasSavedSimPreference: Boolean = false,
-    val needsPhoneStatePermission: Boolean = false,
+    override val lines: PaymentLineSnapshot = InitialPaymentLines,
     val dialStarted: Boolean = false,
     val statusMessage: String? = null,
     /** What the user should do next on the recipient step (null when ready). */
@@ -48,7 +43,7 @@ data class SendMoneyUiState(
     val feeEstimate: Double? = null,
     /** Sends this month per [phoneKey], for the recipient list. */
     val monthlyCounts: Map<String, Int> = emptyMap()
-)
+) : PaymentLineState
 
 class SendMoneyViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -63,7 +58,8 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
     private val txContacts = app.repository.observeSendContacts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val history = app.repository.observeWallet(fuliza = false)
+    /** Bounded recent sends — not the full wallet — for fee / monthly counts. */
+    private val recentSends = app.repository.observeRecentSends()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val uiState: StateFlow<SendMoneyUiState> = combine(
@@ -71,7 +67,7 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
             RecipientDraft(tx, q, sel, amount)
         },
         _gates,
-        history
+        recentSends
     ) { draft, gates, past ->
         val trimmed = draft.query.trim()
         val filtered = filterRecipientSearch(draft.tx, trimmed)
@@ -82,6 +78,7 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
         val phone = draft.selected?.normalizedPhone ?: UssdMenuBuilder.normalizePhoneNumber(trimmed)
         val parsedAmount = RepeatTransactionViewModel.parseAmount(draft.amount)
         val counts = monthlySendCounts(past, LocalDate.now(), ZoneId.systemDefault())
+        val simReady = gates.needsPhoneStatePermission || gates.hasEligiblePaySim
         gates.copy(
             contacts = filtered,
             query = draft.query,
@@ -89,25 +86,34 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
             amountInput = draft.amount,
             amountValid = amountOk,
             detailsValid = detailsOk,
-            canSend = detailsOk && amountOk && probeOk && !gates.dialStarted,
+            canSend = detailsOk && amountOk && probeOk && simReady && !gates.dialStarted,
             guidanceMessage = sendDetailsGuidance(
                 query = trimmed,
                 selected = draft.selected,
                 contacts = filtered,
-                detailsOk = detailsOk
+                detailsOk = detailsOk,
+                missingPaySim = !gates.needsPhoneStatePermission && !gates.hasEligiblePaySim,
+                missingPaySimMessage = gates.missingPaySimMessage
             ),
             sentThisMonth = phoneKey(phone)?.let { counts[it] } ?: 0,
             monthlyCounts = counts,
             feeEstimate = parsedAmount?.let { estimatedSendFee(past, it) }
         )
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, SendMoneyUiState())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SendMoneyUiState())
 
     private fun sendDetailsGuidance(
         query: String,
         selected: SendContact?,
         contacts: List<SendContact>,
-        detailsOk: Boolean
+        detailsOk: Boolean,
+        missingPaySim: Boolean = false,
+        missingPaySimMessage: String = ""
     ): String? {
+        if (missingPaySim) {
+            return missingPaySimMessage.ifBlank {
+                "A matching SIM is required to send."
+            }
+        }
         if (detailsOk || selected != null) return null
         val label = query.take(28).let { if (query.length > 28) "$it…" else it }
         return when {
@@ -136,16 +142,19 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
     fun refreshGates() {
         val ctx = getApplication<Application>()
         val lines = ctx.paymentLineSnapshot(coordinator, app.securePreferences)
-        _gates.update {
-            it.copy(
-                featureEnabled = lines.featureEnabled,
-                accessibilityEnabled = lines.accessibilityEnabled,
-                simLines = lines.simLines,
-                selectedSubscriptionId = lines.selectedSubscriptionId,
-                hasSavedSimPreference = lines.hasSavedSimPreference,
-                needsPhoneStatePermission = lines.needsPhoneStatePermission
-            )
-        }
+        _gates.update { it.copy(lines = lines) }
+    }
+
+    /** Switch dialer primary to an on-device eligible MNO SIM. */
+    fun selectPayLine(subscriptionId: Int) {
+        val state = _gates.value
+        setPreferredPayLine(
+            app.securePreferences,
+            state.region,
+            state.simLines,
+            subscriptionId
+        ) ?: return
+        refreshGates()
     }
 
     fun setQuery(value: String) {
@@ -215,35 +224,39 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
             ?: phone
         val now = System.currentTimeMillis()
         val sourceId = state.selected?.takeIf { !it.fromPhoneBook && it.transactionId > 0 }?.transactionId ?: 0L
-        return MpesaTransaction(
-            id = sourceId,
-            code = "MANUAL-SEND-$now",
+        return manualPayment(
+            kind = "SEND",
             type = TransactionType.SENT,
             amount = amount,
-            counterpartyName = name,
-            counterpartyPhone = phone,
-            timestampMillis = now,
-            balance = null,
-            cost = null,
-            rawBody = ""
+            name = name,
+            phone = phone,
+            id = sourceId,
+            now = now,
+            source = state.activeWallet?.ledgerSource ?: MoneySource.MPESA
         )
     }
 
-    suspend fun prepare(): RepeatTransactionCoordinator.PreparedRepeat? {
-        val tx = buildSyntheticTransaction() ?: return null
-        val amount = RepeatTransactionViewModel.parseAmount(uiState.value.amountInput) ?: return null
-        return coordinator.prepareSession(tx, amount)
-    }
+    suspend fun prepare(): RepeatTransactionCoordinator.PreparedRepeat? =
+        coordinator.preparePayment(buildSyntheticTransaction(), uiState.value.amountInput)
 
     fun startDial(prepared: RepeatTransactionCoordinator.PreparedRepeat): Boolean {
+        refreshGates()
         val state = uiState.value
-        val status = coordinator.startDialWithStatus(
+        val started = coordinator.startPaymentDial(
             prepared,
             app.securePreferences,
+            state.region,
+            state.simLines,
             state.selectedSubscriptionId,
-            state.simLines
+            preferredSource = state.activeWallet?.ledgerSource
         ) ?: return false
-        _gates.update { it.copy(dialStarted = true, statusMessage = status) }
+        _gates.update {
+            it.copy(
+                dialStarted = true,
+                statusMessage = started.status,
+                lines = it.lines.after(started)
+            )
+        }
         return true
     }
 
