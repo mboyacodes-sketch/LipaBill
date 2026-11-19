@@ -28,7 +28,8 @@ class MoneySourceTest {
     fun other_kenyan_rails_map_from_common_headers() {
         assertEquals(MoneySource.AIRTEL_MONEY, MoneySource.fromSender("AirtelMoney"))
         assertEquals(MoneySource.AIRTEL_MONEY, MoneySource.fromSender("airtelmoney"))
-        assertNull(MoneySource.fromSender("AIRTEL", AppRegion.KENYA))
+        assertEquals(MoneySource.AIRTEL_MONEY, MoneySource.fromSender("AIRTEL", AppRegion.KENYA))
+        assertEquals(MoneySource.AIRTEL_MONEY, MoneySource.fromSender("airtel", AppRegion.KENYA))
         assertNull(MoneySource.fromSender("AirtelAlert", AppRegion.KENYA))
         assertEquals(
             MoneySource.AIRTEL_MONEY,
