@@ -1,91 +1,140 @@
 package com.lipabill.app.ui.tickets
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Train
+import androidx.compose.material.icons.filled.Train
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.data.model.Ticket
 import com.lipabill.app.data.model.firstNotesValue
 import com.lipabill.app.data.model.notesValue
-import com.lipabill.app.ui.util.formatTravelClock
-import com.lipabill.app.ui.theme.CardWhite
-import com.lipabill.app.ui.theme.PaperTicket
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
+import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.GeometricSansFamily
-import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Ink
+import com.lipabill.app.ui.theme.LocalLipaColors
 import com.lipabill.app.ui.theme.Mute
+import com.lipabill.app.ui.theme.OnAccent
+import com.lipabill.app.ui.theme.SoftBlue
+import com.lipabill.app.ui.util.formatTravelClock
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-/** Near-black stage behind the SGR ticket. */
-val SgrStage = Color(0xFF1A1A1A)
+private val StubTabHeight = 20.dp
+private val StubCorner = 26.dp
+private val StubNotchRadius = 13.dp
+private val StubBarcodeBlock = 100.dp
+private val StubUsedFooter = 28.dp
 
-/** Mint CTA from the reference. */
-val SgrMint = Color(0xFFA8E8B4)
+/** Stub fill — same travel navy as the rest of LipaBill. */
+val SgrTicketFill: Color
+    @Composable @ReadOnlyComposable get() = Accent
 
-private val SgrLabel = Color(0xFF757575)
-private val SgrDash = Color(0xFFC5C5C5)
-private val SgrGhostFill = Color(0xFFE8E6E1)
-/** Soft periwinkle detail band — matches boarding-pass mock. */
-private val SgrBand = Color(0xFFB5C4DF)
+/** Text / icons that sit on [SgrTicketFill]. */
+val SgrOnTicket: Color
+    @Composable @ReadOnlyComposable get() = OnAccent
 
 /**
- * SGR / Madaraka ticket — boarding-pass layout on a dark stage.
- * Same parsed fields; route → times → detail band → passenger → perforated barcode.
+ * SGR / Madaraka boarding pass, matching the boarding-pass template:
+ * huge origin code top-right with meta to its left, a dashed arc through a
+ * train glyph, huge destination code bottom-left with meta to its right, then
+ * a tabbed stub with side notches cut through, a passenger grid and a barcode.
  */
 @Composable
 fun SgrTicketStyleCard(
     ticket: Ticket,
     pdf417: ImageBitmap?,
     modifier: Modifier = Modifier,
-    stageColor: Color = SgrStage,
     isUsed: Boolean = false,
     showViewBoardingQr: Boolean = false,
     onViewBoardingQr: (() -> Unit)? = null
 ) {
-    PaperTicket {
-        SgrTicketStyleCardPaper(
-            ticket = ticket,
+    val model = remember(ticket) { ticket.toSgrTicketUiModel() }
+    val ticketFill = SgrTicketFill
+    val onTicket = SgrOnTicket
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .fadeWhenUsed(isUsed)
+    ) {
+        SgrRouteHero(
+            model = model,
+            codeInk = if (isUsed) Mute else Ink,
+            metaInk = if (isUsed) Mute else Ink,
+            glyphColor = if (isUsed) Mute else Accent,
+            dashColor = Mute.copy(alpha = if (isUsed) 0.35f else 0.6f),
+            haloColor = LocalLipaColors.current.canvas,
+            animateRoute = !isUsed
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        SgrStubCard(
+            model = model,
             pdf417 = pdf417,
-            modifier = modifier,
-            stageColor = stageColor,
+            ticketFill = ticketFill,
+            onTicket = onTicket,
+            onTicketMute = onTicket.copy(alpha = 0.72f),
             isUsed = isUsed,
             showViewBoardingQr = showViewBoardingQr,
             onViewBoardingQr = onViewBoardingQr
@@ -94,366 +143,66 @@ fun SgrTicketStyleCard(
 }
 
 @Composable
-private fun SgrTicketStyleCardPaper(
-    ticket: Ticket,
-    pdf417: ImageBitmap?,
-    modifier: Modifier = Modifier,
-    stageColor: Color = SgrStage,
-    isUsed: Boolean = false,
-    showViewBoardingQr: Boolean = false,
-    onViewBoardingQr: (() -> Unit)? = null
-) {
-    val model = remember(ticket) { ticket.toSgrTicketUiModel() }
-
-    Box(
-        modifier = modifier.fillMaxWidth(),
-        contentAlignment = Alignment.TopCenter
-    ) {
-        SgrGhostTicketBehind(
-            modifier = Modifier
-                .fillMaxWidth(0.78f)
-                .align(Alignment.TopCenter)
-                .offset(y = (-8).dp)
-                .height(14.dp)
-                .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
-        )
-
-        SgrActiveTicketStack(
-            model = model,
-            pdf417 = pdf417,
-            stageColor = stageColor,
-            isUsed = isUsed,
-            showViewBoardingQr = showViewBoardingQr,
-            onViewBoardingQr = onViewBoardingQr,
-            modifier = Modifier
-                .fillMaxWidth(0.88f)
-                .padding(top = 6.dp)
-        )
-    }
-}
-
-@Composable
-private fun SgrGhostTicketBehind(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .graphicsLayer { alpha = 0.35f }
-            .shadow(3.dp, RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp), clip = false)
-            .background(SgrGhostFill)
-    )
-}
-
-@Composable
-private fun SgrActiveTicketStack(
+private fun SgrRouteHero(
     model: SgrTicketUiModel,
-    pdf417: ImageBitmap?,
-    stageColor: Color,
-    isUsed: Boolean,
-    showViewBoardingQr: Boolean,
-    onViewBoardingQr: (() -> Unit)?,
-    modifier: Modifier = Modifier
+    codeInk: Color,
+    metaInk: Color,
+    glyphColor: Color,
+    dashColor: Color,
+    haloColor: Color,
+    animateRoute: Boolean
 ) {
-    val tear = rememberTicketTear(
-        used = isUsed,
-        label = "sgrTicketTear",
-        gapWhenUsed = 10.dp,
-        dropWhenUsed = 22.dp,
-        liftWhenUsed = (-4).dp,
-        shadowWhenUsed = 12.dp
-    )
-    val (topShape, stubShape) = tornTicketShapes(isUsed, 28.dp)
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        // Scale the station codes with width so three letters fill ~60% like the template.
+        val codeSize: TextUnit = (maxWidth.value * 0.25f).coerceIn(72f, 112f).sp
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Origin: meta block on the left of the code, both hugging the right edge.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SgrHeroMeta(
+                    caption = "From",
+                    city = model.fromCity,
+                    date = model.heroDepartDate,
+                    time = model.departTime,
+                    ink = metaInk,
+                    alignEnd = true,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                SgrHeroCode(model.fromCode, codeInk, codeSize)
+            }
 
-    val ink = if (isUsed) Mute else Ink
-
-    Column(
-        modifier = modifier.fadeWhenUsed(isUsed),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Column(
-            modifier = Modifier.tornTopPiece(
-                tear = tear,
-                shape = topShape,
-                isUsed = isUsed,
-                usedShadow = 8.dp,
-                restShadow = 14.dp
+            SgrRouteArc(
+                fromCity = model.fromCity,
+                toCity = model.toCity,
+                glyphColor = glyphColor,
+                dashColor = dashColor,
+                haloColor = haloColor,
+                animate = animateRoute,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(104.dp)
             )
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 18.dp)
+
+            // Destination: code hugging the left edge, meta block to its right.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Start,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (isUsed) {
-                    Text(
-                        text = "Used",
-                        color = Mute,
-                        fontSize = 11.sp,
-                        fontFamily = GeometricSansFamily,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-
-                // FROM ○ ── train ── ● TO  (single rail row)
-                SgrFromToRail(muted = isUsed)
-
-                // Duration + Direct badge centered under the rail
-                Spacer(modifier = Modifier.height(8.dp))
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    if (!model.durationLabel.isNullOrBlank()) {
-                        Text(
-                            text = model.durationLabel,
-                            color = SgrLabel,
-                            fontSize = 11.sp,
-                            fontFamily = GeometricSansFamily,
-                            fontWeight = FontWeight.Normal
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                    }
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(ink)
-                            .padding(horizontal = 12.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = model.serviceBadge,
-                            color = CardWhite,
-                            fontSize = 11.sp,
-                            fontFamily = GeometricSansFamily,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // Station codes + names
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = model.fromCode,
-                            color = ink,
-                            fontSize = 40.sp,
-                            fontFamily = GeometricSansFamily,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-0.5).sp,
-                            maxLines = 1
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = model.fromStation,
-                            color = SgrLabel,
-                            fontSize = 11.sp,
-                            fontFamily = GeometricSansFamily,
-                            fontWeight = FontWeight.Normal,
-                            lineHeight = 14.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.End
-                    ) {
-                        Text(
-                            text = model.toCode,
-                            color = ink,
-                            fontSize = 40.sp,
-                            fontFamily = GeometricSansFamily,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-0.5).sp,
-                            textAlign = TextAlign.End,
-                            maxLines = 1
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = model.toStation,
-                            color = SgrLabel,
-                            fontSize = 11.sp,
-                            fontFamily = GeometricSansFamily,
-                            fontWeight = FontWeight.Normal,
-                            lineHeight = 14.sp,
-                            textAlign = TextAlign.End,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Depart / arrive times + dates
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = model.departTime,
-                            color = ink,
-                            fontSize = 17.sp,
-                            fontFamily = GeometricSansFamily,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = model.departDate,
-                            color = SgrLabel,
-                            fontSize = 11.sp,
-                            fontFamily = GeometricSansFamily,
-                            fontWeight = FontWeight.Normal
-                        )
-                    }
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.End
-                    ) {
-                        Text(
-                            text = model.arriveTime,
-                            color = ink,
-                            fontSize = 17.sp,
-                            fontFamily = GeometricSansFamily,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.End
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = model.arriveDate,
-                            color = SgrLabel,
-                            fontSize = 11.sp,
-                            fontFamily = GeometricSansFamily,
-                            fontWeight = FontWeight.Normal,
-                            textAlign = TextAlign.End
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Soft blue logistics band — same 4-col placement as mock
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(SgrBand.copy(alpha = if (isUsed) 0.55f else 1f))
-                        .padding(horizontal = 14.dp, vertical = 12.dp)
-                ) {
-                    SgrBandCell("Depart time", model.departTime, Modifier.weight(1.15f), muted = isUsed)
-                    SgrBandCell(
-                        "Coach",
-                        model.coach,
-                        Modifier.weight(0.85f),
-                        muted = isUsed,
-                        cover = model.coach != "—"
-                    )
-                    SgrBandCell(
-                        "Train",
-                        model.train,
-                        Modifier.weight(0.95f),
-                        muted = isUsed,
-                        cover = model.train != "—"
-                    )
-                    SgrBandCell("Ref", model.bookingRef, Modifier.weight(1.05f), muted = isUsed, cover = true)
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Passenger | Seat | Class — same placement as mock
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    SgrMetaCell(
-                        "Passenger",
-                        model.passenger,
-                        Modifier.weight(1.5f),
-                        muted = isUsed,
-                        cover = true
-                    )
-                    SgrMetaCell(
-                        "Seat",
-                        model.seat,
-                        Modifier.weight(0.85f),
-                        muted = isUsed,
-                        alignEnd = false,
-                        cover = model.seat != "—"
-                    )
-                    SgrMetaCell(
-                        "Class",
-                        model.travelClass,
-                        Modifier.weight(1f),
-                        muted = isUsed,
-                        alignEnd = true
-                    )
-                }
-
-                if (showViewBoardingQr && onViewBoardingQr != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    TextButton(
-                        onClick = onViewBoardingQr,
-                        enabled = !isUsed,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "View boarding QR",
-                            color = if (isUsed) Mute else Ink,
-                            fontFamily = GeometricSansFamily,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp
-                        )
-                    }
-                }
-            }
-
-            SgrTicketPerforation(stageColor)
-        }
-
-        Spacer(modifier = Modifier.height(tear.gap))
-
-        Column(
-            modifier = Modifier.tornStubPiece(tear, stubShape)
-        ) {
-            if (isUsed) {
-                SgrTicketPerforation(stageColor)
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(CardWhite)
-                    .padding(horizontal = 18.dp, vertical = 16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                if (pdf417 != null) {
-                    Image(
-                        bitmap = pdf417,
-                        contentDescription = "SGR booking barcode",
-                        contentScale = ContentScale.FillWidth,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(64.dp)
-                            .recordingPrivacyCover()
-                            .graphicsLayer { alpha = if (isUsed) UsedPassAlpha else 1f }
-                    )
-                } else {
-                    Text(
-                        text = model.bookingRef,
-                        color = if (isUsed) Mute else Ink,
-                        fontSize = 14.sp,
-                        fontFamily = GeometricSansFamily,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.recordingPrivacyCover()
-                    )
-                }
-            }
-            if (isUsed) {
-                Text(
-                    text = "Stub detached",
-                    color = Expense,
-                    fontSize = 11.sp,
-                    fontFamily = GeometricSansFamily,
-                    fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp)
+                SgrHeroCode(model.toCode, codeInk, codeSize)
+                Spacer(modifier = Modifier.width(12.dp))
+                SgrHeroMeta(
+                    caption = "To",
+                    city = model.toCity,
+                    date = model.heroArriveDate,
+                    time = model.arriveTime,
+                    ink = metaInk,
+                    alignEnd = false,
+                    modifier = Modifier.padding(top = 18.dp)
                 )
             }
         }
@@ -461,149 +210,391 @@ private fun SgrActiveTicketStack(
 }
 
 @Composable
-private fun SgrFromToRail(muted: Boolean) {
-    val ink = if (muted) Mute else Ink
-    Box(
+private fun SgrHeroCode(code: String, ink: Color, size: TextUnit) {
+    Text(
+        text = code,
+        color = ink,
+        fontSize = size,
+        lineHeight = size,
+        fontFamily = GeometricSansFamily,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = (-0.06f * size.value).sp,
+        maxLines = 1,
+        softWrap = false
+    )
+}
+
+@Composable
+private fun SgrHeroMeta(
+    caption: String,
+    city: String,
+    date: String,
+    time: String,
+    ink: Color,
+    alignEnd: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val align = if (alignEnd) TextAlign.End else TextAlign.Start
+    Column(
+        modifier = modifier,
+        horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start
+    ) {
+        Text(
+            text = caption.uppercase(),
+            color = ink.copy(alpha = 0.55f),
+            fontSize = 10.sp,
+            fontFamily = GeometricSansFamily,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.2.sp,
+            textAlign = align,
+            maxLines = 1
+        )
+        Text(
+            text = city,
+            color = ink,
+            fontSize = 12.sp,
+            fontFamily = GeometricSansFamily,
+            fontWeight = FontWeight.Bold,
+            textAlign = align,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = date,
+            color = ink,
+            fontSize = 17.sp,
+            fontFamily = GeometricSansFamily,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = align,
+            maxLines = 1
+        )
+        Text(
+            text = time,
+            color = ink.copy(alpha = 0.8f),
+            fontSize = 13.sp,
+            fontFamily = GeometricSansFamily,
+            fontWeight = FontWeight.Medium,
+            textAlign = align,
+            maxLines = 1
+        )
+    }
+}
+
+/**
+ * Dashed S-curve from the origin code down to the destination code. Direction reads at a
+ * glance: a dot marks where the trip starts, chevrons point along the line, an arrowhead
+ * lands on the destination, and the dashes drift towards it (static when the pass is used).
+ */
+@Composable
+private fun SgrRouteArc(
+    fromCity: String,
+    toCity: String,
+    glyphColor: Color,
+    dashColor: Color,
+    haloColor: Color,
+    animate: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val train = rememberVectorPainter(Icons.Filled.Train)
+    val density = LocalDensity.current
+    val dashOn = with(density) { 6.dp.toPx() }
+    val dashOff = with(density) { 5.dp.toPx() }
+    val flow = if (animate) {
+        rememberInfiniteTransition(label = "sgrRouteFlow").animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
+            label = "sgrRouteFlowPhase"
+        )
+    } else {
+        null
+    }
+    val routeLabel = "Travel from $fromCity to $toCity"
+    Spacer(
+        modifier = modifier
+            .semantics { contentDescription = routeLabel }
+            .drawWithCache {
+                // Route geometry depends only on size: measured once, not on every animation frame.
+                val w = size.width
+                val h = size.height
+                val path = Path().apply {
+                    moveTo(w * 0.80f, 6.dp.toPx())
+                    cubicTo(w * 0.80f, h * 0.42f, w * 0.64f, h * 0.48f, w * 0.52f, h * 0.48f)
+                    cubicTo(w * 0.36f, h * 0.48f, w * 0.24f, h * 0.58f, w * 0.24f, h - 2.dp.toPx())
+                }
+                val measure = PathMeasure().apply { setPath(path, false) }
+                val length = measure.length
+                val arrowLen = 11.dp.toPx()
+                val dashed = Path().also { measure.getSegment(0f, length - arrowLen * 0.6f, it, true) }
+                val dashWidth = 1.8.dp.toPx()
+
+                fun unit(o: Offset): Offset {
+                    val d = o.getDistance()
+                    return if (d == 0f) Offset(0f, 1f) else o / d
+                }
+
+                // Chevrons pointing along the direction of travel: (centre, tip, two arm ends).
+                val chevron = 5.dp.toPx()
+                val chevrons = floatArrayOf(0.24f, 0.76f).map { fraction ->
+                    val at = length * fraction
+                    val p = measure.getPosition(at)
+                    val t = unit(measure.getTangent(at))
+                    val n = Offset(-t.y, t.x)
+                    val back = p - t * (chevron * 0.6f)
+                    listOf(p, p + t * (chevron * 0.6f), back + n * chevron, back - n * chevron)
+                }
+                val chevronStroke = 2.dp.toPx()
+
+                val start = measure.getPosition(0f)
+                val endPoint = measure.getPosition(length)
+                val endDir = unit(measure.getTangent(length))
+                val endNormal = Offset(-endDir.y, endDir.x)
+                val base = endPoint - endDir * arrowLen
+                val arrow = Path().apply {
+                    moveTo(endPoint.x, endPoint.y)
+                    lineTo((base + endNormal * (arrowLen * 0.55f)).x, (base + endNormal * (arrowLen * 0.55f)).y)
+                    lineTo((base - endNormal * (arrowLen * 0.55f)).x, (base - endNormal * (arrowLen * 0.55f)).y)
+                    close()
+                }
+                val mid = measure.getPosition(length * 0.5f)
+                val glyph = 30.dp.toPx()
+                val icon = 26.dp.toPx()
+                val tint = ColorFilter.tint(glyphColor)
+
+                onDrawBehind {
+                    // Negative phase walks the dash pattern from origin towards destination.
+                    val phase = -(flow?.value ?: 0f) * (dashOn + dashOff)
+                    drawPath(
+                        path = dashed,
+                        color = dashColor,
+                        style = Stroke(
+                            width = dashWidth,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashOn, dashOff), phase)
+                        )
+                    )
+                    for ((p, tip, armA, armB) in chevrons) {
+                        drawCircle(haloColor, radius = chevron * 1.5f, center = p)
+                        drawLine(glyphColor, armA, tip, chevronStroke, StrokeCap.Round)
+                        drawLine(glyphColor, armB, tip, chevronStroke, StrokeCap.Round)
+                    }
+                    // Origin: ringed dot where the trip starts.
+                    drawCircle(haloColor, radius = 7.dp.toPx(), center = start)
+                    drawCircle(glyphColor, radius = 5.dp.toPx(), center = start, style = Stroke(2.dp.toPx()))
+                    drawCircle(glyphColor, radius = 2.2.dp.toPx(), center = start)
+                    // Destination: solid arrowhead on the end of the line.
+                    drawPath(arrow, color = glyphColor)
+                    // Train sits on the true midpoint of the route.
+                    drawCircle(haloColor, radius = glyph / 2f, center = mid)
+                    translate(left = mid.x - icon / 2f, top = mid.y - icon / 2f) {
+                        with(train) { draw(Size(icon, icon), colorFilter = tint) }
+                    }
+                }
+            }
+    )
+}
+
+@Composable
+private fun SgrStubCard(
+    model: SgrTicketUiModel,
+    pdf417: ImageBitmap?,
+    ticketFill: Color,
+    onTicket: Color,
+    onTicketMute: Color,
+    isUsed: Boolean,
+    showViewBoardingQr: Boolean,
+    onViewBoardingQr: (() -> Unit)?
+) {
+    val notchFromBottom = StubBarcodeBlock + (if (isUsed) StubUsedFooter else 0.dp)
+    val shape = remember(notchFromBottom) {
+        SgrStubShape(
+            tabHeight = StubTabHeight,
+            corner = StubCorner,
+            notchRadius = StubNotchRadius,
+            notchCenterFromBottom = notchFromBottom
+        )
+    }
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(28.dp),
-        contentAlignment = Alignment.Center
+            .clip(shape)
+            .background(ticketFill)
     ) {
+        // Brand sits in the raised tab, like "IPSUM ✈ Flight" on the template.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "MADARAKA",
+                color = onTicket,
+                fontSize = 15.sp,
+                fontFamily = GeometricSansFamily,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.8.sp
+            )
+            Icon(
+                imageVector = Icons.Filled.Train,
+                contentDescription = null,
+                tint = SoftBlue,
+                modifier = Modifier
+                    .padding(horizontal = 6.dp)
+                    .size(19.dp)
+            )
+            Text(
+                text = "SGR",
+                color = onTicket,
+                fontSize = 15.sp,
+                fontFamily = GeometricSansFamily,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        if (isUsed) {
+            Text(
+                text = "Used",
+                color = onTicketMute,
+                fontSize = 11.sp,
+                fontFamily = GeometricSansFamily,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp)
+            )
+        }
+
+        // Two-column grid; both columns left-aligned like the template.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 24.dp, end = 20.dp, top = 14.dp, bottom = 14.dp)
+        ) {
+            Column(
+                modifier = Modifier.weight(1.15f),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                SgrStubField("Name Passenger", model.passenger, onTicket, onTicketMute, cover = true)
+                SgrStubField("Train", model.train, onTicket, onTicketMute, cover = model.train != "—")
+                SgrStubField("Coach", model.coach, onTicket, onTicketMute, cover = model.coach != "—")
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                SgrStubField("Booking ref", model.bookingRef, onTicket, onTicketMute, cover = true)
+                SgrStubField("Seat", model.seat, onTicket, onTicketMute, cover = model.seat != "—")
+                SgrStubField("Class", model.travelClass, onTicket, onTicketMute)
+            }
+        }
+
+        if (showViewBoardingQr && onViewBoardingQr != null) {
+            TextButton(
+                onClick = onViewBoardingQr,
+                enabled = !isUsed,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "View boarding QR",
+                    color = onTicket,
+                    fontFamily = GeometricSansFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp
+                )
+            }
+        }
+
+        // Tear line between the notches cut by SgrStubShape.
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(1.5.dp)
-                .align(Alignment.Center)
-                .padding(horizontal = 52.dp)
+                .height(1.dp)
+                .padding(horizontal = StubNotchRadius + 8.dp)
         ) {
             drawLine(
-                color = SgrDash,
-                start = Offset(0f, size.height / 2f),
-                end = Offset(size.width, size.height / 2f),
-                strokeWidth = 1.5.dp.toPx(),
+                color = onTicket.copy(alpha = 0.35f),
+                start = Offset(0f, 0f),
+                end = Offset(size.width, 0f),
+                strokeWidth = 1.dp.toPx(),
                 pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
             )
         }
 
-        // FROM + open circle (left)
-        Row(
-            modifier = Modifier.align(Alignment.CenterStart),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(StubBarcodeBlock)
+                .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 20.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "FROM",
-                color = SgrLabel,
-                fontSize = 10.sp,
-                fontFamily = GeometricSansFamily,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = 0.8.sp
-            )
-            Canvas(modifier = Modifier.size(10.dp)) {
-                drawCircle(
-                    color = ink,
-                    radius = size.minDimension / 2f - 1f,
-                    style = Stroke(width = 1.8f)
+            if (pdf417 != null) {
+                Image(
+                    bitmap = pdf417,
+                    contentDescription = "SGR booking barcode",
+                    contentScale = ContentScale.FillBounds,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .recordingPrivacyCover()
+                        .graphicsLayer { alpha = if (isUsed) UsedPassAlpha else 1f }
+                )
+            } else {
+                Text(
+                    text = model.bookingRef,
+                    color = onTicket,
+                    fontSize = 16.sp,
+                    fontFamily = GeometricSansFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.recordingPrivacyCover()
                 )
             }
         }
 
-        // Train on the rail (center)
-        Icon(
-            imageVector = Icons.Outlined.Train,
-            contentDescription = null,
-            tint = ink,
-            modifier = Modifier
-                .align(Alignment.Center)
-                .size(20.dp)
-                .background(CardWhite, CircleShape)
-                .padding(1.dp)
-        )
-
-        // Filled circle + TO (right)
-        Row(
-            modifier = Modifier.align(Alignment.CenterEnd),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(ink)
-            )
+        if (isUsed) {
             Text(
-                text = "TO",
-                color = SgrLabel,
-                fontSize = 10.sp,
+                text = "Stub detached",
+                color = Expense,
+                fontSize = 11.sp,
                 fontFamily = GeometricSansFamily,
                 fontWeight = FontWeight.Medium,
-                letterSpacing = 0.8.sp
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(StubUsedFooter)
             )
         }
     }
 }
 
 @Composable
-private fun SgrBandCell(
+private fun SgrStubField(
     label: String,
     value: String,
-    modifier: Modifier = Modifier,
-    muted: Boolean = false,
+    onTicket: Color,
+    onTicketMute: Color,
     cover: Boolean = false
 ) {
-    Column(modifier = modifier.padding(end = 4.dp)) {
+    Column {
         Text(
             text = label,
-            color = SgrLabel,
-            fontSize = 10.sp,
+            color = onTicketMute,
+            fontSize = 12.sp,
             fontFamily = GeometricSansFamily,
-            fontWeight = FontWeight.Normal,
+            fontWeight = FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        Spacer(modifier = Modifier.height(5.dp))
+        Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = value,
-            color = if (muted) Mute else Ink,
-            fontSize = 13.sp,
+            color = onTicket,
+            fontSize = if (value.length > 10) 17.sp else 21.sp,
             fontFamily = GeometricSansFamily,
             fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.recordingPrivacyCover(cover)
-        )
-    }
-}
-
-@Composable
-private fun SgrMetaCell(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    muted: Boolean = false,
-    alignEnd: Boolean = false,
-    cover: Boolean = false
-) {
-    Column(
-        modifier = modifier.padding(end = if (alignEnd) 0.dp else 6.dp),
-        horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start
-    ) {
-        Text(
-            text = label,
-            color = SgrLabel,
-            fontSize = 11.sp,
-            fontFamily = GeometricSansFamily,
-            fontWeight = FontWeight.Normal
-        )
-        Spacer(modifier = Modifier.height(5.dp))
-        Text(
-            text = value,
-            color = if (muted) Mute else Ink,
-            fontSize = 14.sp,
-            fontFamily = GeometricSansFamily,
-            fontWeight = FontWeight.Bold,
-            textAlign = if (alignEnd) TextAlign.End else TextAlign.Start,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.recordingPrivacyCover(cover)
@@ -611,37 +602,69 @@ private fun SgrMetaCell(
     }
 }
 
-@Composable
-private fun SgrTicketPerforation(notchColor: Color) {
-    NotchTicketPerforation(
-        notchColor = notchColor,
-        dashColor = SgrDash,
-        bandHeight = 22.dp,
-        dashInset = 16.dp
-    )
+/**
+ * Ticket stub outline: a raised centre tab for the brand, rounded corners, and
+ * two side notches cut right through so whatever is behind shows (no stage color needed).
+ */
+private class SgrStubShape(
+    private val tabHeight: Dp,
+    private val corner: Dp,
+    private val notchRadius: Dp,
+    private val notchCenterFromBottom: Dp,
+    private val tabWidthFraction: Float = 0.54f
+) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val t = with(density) { tabHeight.toPx() }
+        val r = with(density) { corner.toPx() }
+        val nr = with(density) { notchRadius.toPx() }
+        val ny = size.height - with(density) { notchCenterFromBottom.toPx() }
+        val f = t / 2f
+        val w = size.width
+        val h = size.height
+        val tabL = (w - w * tabWidthFraction) / 2f
+        val tabR = w - tabL
+
+        val body = Path().apply {
+            moveTo(0f, t + r)
+            quadraticTo(0f, t, r, t)
+            lineTo(tabL - f, t)
+            quadraticTo(tabL, t, tabL, t - f)
+            quadraticTo(tabL, 0f, tabL + f, 0f)
+            lineTo(tabR - f, 0f)
+            quadraticTo(tabR, 0f, tabR, f)
+            quadraticTo(tabR, t, tabR + f, t)
+            lineTo(w - r, t)
+            quadraticTo(w, t, w, t + r)
+            lineTo(w, h - r)
+            quadraticTo(w, h, w - r, h)
+            lineTo(r, h)
+            quadraticTo(0f, h, 0f, h - r)
+            close()
+        }
+        val notches = Path().apply {
+            addOval(Rect(center = Offset(0f, ny), radius = nr))
+            addOval(Rect(center = Offset(w, ny), radius = nr))
+        }
+        val cut = Path().apply { op(body, notches, PathOperation.Difference) }
+        return Outline.Generic(cut)
+    }
 }
 
 data class SgrTicketUiModel(
     val passenger: String,
     val departTime: String,
     val arriveTime: String,
-    val departDate: String,
-    val arriveDate: String,
-    val durationLabel: String?,
-    val serviceBadge: String,
+    val heroDepartDate: String,
+    val heroArriveDate: String,
     val fromCode: String,
     val toCode: String,
     val fromCity: String,
-    val fromStation: String,
     val toCity: String,
-    val toStation: String,
     val bookingRef: String,
     val coach: String,
     val train: String,
     val seat: String,
-    val travelClass: String,
-    val headerWhen: String,
-    val headerRoute: String
+    val travelClass: String
 )
 
 internal fun Ticket.toSgrTicketUiModel(): SgrTicketUiModel {
@@ -653,7 +676,7 @@ internal fun Ticket.toSgrTicketUiModel(): SgrTicketUiModel {
     val toParts = splitCityStation(destination)
 
     val zoned = startsAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) }
-    val dateFmt = DateTimeFormatter.ofPattern("MMM d, EEE", Locale.ENGLISH)
+    val heroFmt = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)
 
     val departTime = zoned?.let { formatTravelClock(it) }
         ?: notes.firstNotesValue("Departure time", "Time")
@@ -666,18 +689,8 @@ internal fun Ticket.toSgrTicketUiModel(): SgrTicketUiModel {
         null
     }
     val arriveTime = arriveZoned?.let { formatTravelClock(it) } ?: "—"
-    val departDate = zoned?.format(dateFmt) ?: "—"
-    val arriveDate = arriveZoned?.format(dateFmt) ?: departDate
-
-    val durationLabel = durationMinutes?.let { mins ->
-        val h = mins / 60
-        val m = mins % 60
-        when {
-            h == 0 -> "$m minutes"
-            m == 0 -> if (h == 1) "1 hour" else "$h hours"
-            else -> if (h == 1) "1 hour $m minutes" else "$h hours $m minutes"
-        }
-    }
+    val heroDepartDate = zoned?.format(heroFmt) ?: "—"
+    val heroArriveDate = arriveZoned?.format(heroFmt) ?: heroDepartDate
 
     val coach = seatOrTier
         ?.split("·")
@@ -708,44 +721,21 @@ internal fun Ticket.toSgrTicketUiModel(): SgrTicketUiModel {
     val passenger = notes.notesValue("Passenger") ?: "Traveler"
     val travelClass = notes.firstNotesValue("Class", "Cabin", "Tier") ?: "Standard"
 
-    val serviceBadge = when {
-        title.contains("Express", true) || notes.contains("Express", true) -> "Express"
-        title.contains("Inter", true) -> "Inter-county"
-        else -> "Direct"
-    }
-
-    val headerWhen = zoned?.format(DateTimeFormatter.ofPattern("d MMM, h:mm a", Locale.ENGLISH))
-        ?: listOfNotNull(
-            zoned?.format(DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH)),
-            departTime.takeIf { it != "—" }
-        ).joinToString(", ").ifBlank { "Upcoming trip" }
-
-    val headerRoute = listOf(fromParts.first, toParts.first)
-        .filter { it.isNotBlank() && it != "—" }
-        .joinToString("–")
-        .ifBlank { "SGR" }
-
     return SgrTicketUiModel(
         passenger = passenger,
         departTime = departTime,
         arriveTime = arriveTime,
-        departDate = departDate,
-        arriveDate = arriveDate,
-        durationLabel = durationLabel,
-        serviceBadge = serviceBadge,
+        heroDepartDate = heroDepartDate,
+        heroArriveDate = heroArriveDate,
         fromCode = stationCode(fromParts.first),
         toCode = stationCode(toParts.first),
         fromCity = fromParts.first,
-        fromStation = fromParts.second,
         toCity = toParts.first,
-        toStation = toParts.second,
         bookingRef = ref,
         coach = coach,
         train = train,
         seat = seat,
-        travelClass = travelClass,
-        headerWhen = headerWhen,
-        headerRoute = headerRoute
+        travelClass = travelClass
     )
 }
 
