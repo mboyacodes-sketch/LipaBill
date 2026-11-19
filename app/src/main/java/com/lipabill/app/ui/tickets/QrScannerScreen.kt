@@ -2,7 +2,7 @@
 
 package com.lipabill.app.ui.tickets
 
-import android.util.Log
+import com.lipabill.app.metrics.AppLog
 import android.view.ViewGroup
 import com.lipabill.app.metrics.AppCrashReporting
 import androidx.activity.compose.BackHandler
@@ -195,7 +195,7 @@ fun QrScannerScreen(
                         }
                     }
                     .addOnFailureListener { e ->
-                        Log.w(TAG, "barcode_scan_fail", e)
+                        AppLog.w(TAG, "barcode_scan_fail", e)
                     }
                     .addOnCompleteListener {
                         imageProxy.close()
@@ -214,7 +214,7 @@ fun QrScannerScreen(
             )
             cameraError = null
         } catch (t: Throwable) {
-            Log.e(TAG, "camera_bind_failed", t)
+            AppLog.e(TAG, "camera_bind_failed", t)
             AppCrashReporting.recordCaught(t)
             cameraError = t.message ?: "Couldn’t open the rear camera"
         }
