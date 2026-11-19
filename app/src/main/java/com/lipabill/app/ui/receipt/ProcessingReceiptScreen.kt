@@ -1,5 +1,7 @@
 package com.lipabill.app.ui.receipt
 
+import com.lipabill.app.ui.components.WalletMark
+import com.lipabill.app.data.model.MoneySource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -335,7 +337,10 @@ fun ProcessingReceiptScreen(
                         partyLabel = partyLabel,
                         idValue = idValue,
                         account = account,
-                        startedLabel = formatTimestamp(startedAt)
+                        startedLabel = formatTimestamp(startedAt),
+                        // Wallet that dialed (sheet choice); SMS source only if dial wallet unknown.
+                        fromSource = snapshot?.wallet?.ledgerSource ?: matchedTx?.source,
+                        fromLabel = snapshot?.wallet?.badge ?: matchedTx?.source?.label
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     PunchedTicketPerforation(ink = LabelGrey)
@@ -505,9 +510,21 @@ private fun PaymentDetailsBox(
     partyLabel: String,
     idValue: String?,
     account: String?,
-    startedLabel: String
+    startedLabel: String,
+    fromSource: MoneySource? = null,
+    fromLabel: String? = null
 ) {
     TicketDetailsFrame(title = "PAYMENT DETAILS", borderColor = DetailBorder) {
+            if (fromSource != null && fromLabel != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    WalletMark(fromSource, size = 28.dp)
+                    PaymentField(label = "From", value = fromLabel)
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween

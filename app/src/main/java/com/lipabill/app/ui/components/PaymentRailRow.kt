@@ -1,53 +1,41 @@
 package com.lipabill.app.ui.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lipabill.app.data.model.MAX_ENABLED_LEDGER_SOURCES
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.visibleLedgerSources
 import com.lipabill.app.ui.LipaFilterChip
-import com.lipabill.app.ui.theme.CardWhite
-import com.lipabill.app.ui.theme.HomeType
-import com.lipabill.app.ui.theme.Ink
-import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
-import com.lipabill.app.ui.theme.asPillLabel
 import com.lipabill.app.viewmodel.WalletAccount
 
 /**
  * Insights payment-rail row: capped ledger sources plus Fuliza.
- * Home keeps [WalletAccountSwitch] on the balance pill and [com.lipabill.app.ui.SourceFilterRow] below.
+ * One rail at a time (or All when [selectedSources] is empty). Home uses
+ * [com.lipabill.app.ui.SourceFilterRow] instead.
  */
 @Composable
 fun PaymentRailRow(
     account: WalletAccount,
     showFuliza: Boolean,
     sources: List<MoneySource>,
-    selectedSource: MoneySource?,
+    /** Empty = All; otherwise the single selected rail (Set kept for shared chips). */
+    selectedSources: Set<MoneySource>,
     onSelectAll: () -> Unit,
     onSelectSource: (MoneySource) -> Unit,
     onSelectFuliza: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val shown = visibleLedgerSources(sources, selectedSource, MAX_ENABLED_LEDGER_SOURCES)
+    // Selected rail stays visible ahead of the rest, within the chip cap.
+    val ordered = sources.filter { it in selectedSources } + sources.filterNot { it in selectedSources }
+    val shown = visibleLedgerSources(ordered, null, maxOf(MAX_ENABLED_LEDGER_SOURCES, selectedSources.size))
     if (!showFuliza && sources.size <= 1) return
     val onLedger = account == WalletAccount.MPESA
     Row(
@@ -59,8 +47,8 @@ fun PaymentRailRow(
         LedgerSourceChips(
             sources = shown,
             showAllChip = sources.size > 1,
-            allSelected = onLedger && selectedSource == null,
-            selectedSource = selectedSource.takeIf { onLedger },
+            allSelected = onLedger && selectedSources.isEmpty(),
+            selectedSources = if (onLedger) selectedSources else emptySet(),
             onSelectAll = onSelectAll,
             onSelectSource = onSelectSource
         )
@@ -80,7 +68,7 @@ fun LedgerSourceChips(
     sources: List<MoneySource>,
     showAllChip: Boolean,
     allSelected: Boolean,
-    selectedSource: MoneySource?,
+    selectedSources: Set<MoneySource>,
     onSelectAll: () -> Unit,
     onSelectSource: (MoneySource) -> Unit,
     modifier: Modifier = Modifier
@@ -98,7 +86,7 @@ fun LedgerSourceChips(
             sources.forEach { source ->
                 PaymentRailChip(
                     label = source.label,
-                    selected = selectedSource == source,
+                    selected = source in selectedSources,
                     onClick = { onSelectSource(source) }
                 )
             }
@@ -106,7 +94,7 @@ fun LedgerSourceChips(
             val only = sources.first()
             PaymentRailChip(
                 label = only.label,
-                selected = allSelected || selectedSource == only,
+                selected = allSelected || only in selectedSources,
                 onClick = onSelectAll
             )
         }
@@ -118,37 +106,14 @@ fun PaymentRailChip(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    /** Ink-on-white for the home balance pill; accent wash everywhere else. */
-    onBalancePill: Boolean = false
+    modifier: Modifier = Modifier
 ) {
-    if (!onBalancePill) {
-        LipaFilterChip(
-            label = label,
-            selected = selected,
-            onClick = onClick,
-            modifier = modifier,
-            unselectedContainer = SoftBlue,
-            unselectedBorder = Color.Transparent
-        )
-        return
-    }
-    val shape = RoundedCornerShape(percent = 50)
-    Box(
-        modifier = modifier
-            .height(28.dp)
-            .clip(shape)
-            .background(if (selected) Ink else Color.Transparent)
-            .clickable(role = Role.RadioButton, onClick = onClick)
-            .padding(horizontal = 10.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = label,
-            style = HomeType.caption.asPillLabel(),
-            color = if (selected) CardWhite else Mute,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
+    LipaFilterChip(
+        label = label,
+        selected = selected,
+        onClick = onClick,
+        modifier = modifier,
+        unselectedContainer = SoftBlue,
+        unselectedBorder = Color.Transparent
+    )
 }

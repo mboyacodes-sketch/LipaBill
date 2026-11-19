@@ -12,7 +12,8 @@ import com.lipabill.app.data.model.TransactionType
     indices = [
         Index(value = ["source", "code"], unique = true),
         Index(value = ["timestampMillis"]),
-        Index(value = ["source"])
+        Index(value = ["source"]),
+        Index(value = ["type", "timestampMillis"])
     ]
 )
 /** One money confirmation from any enabled wallet or bank. */

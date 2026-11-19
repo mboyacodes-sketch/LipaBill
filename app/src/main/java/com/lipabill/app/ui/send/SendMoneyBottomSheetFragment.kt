@@ -30,6 +30,7 @@ import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.lipabill.app.R
+import com.lipabill.app.ui.payment.MoneySheetWalletBlock
 import com.lipabill.app.ui.permissions.paymentAccessDirective
 import com.lipabill.app.ui.sheet.EditableSheetField
 import com.lipabill.app.ui.sheet.InAppKeyboard
@@ -52,9 +53,9 @@ import com.lipabill.app.ui.util.hideKeyboard
 import com.lipabill.app.ui.util.opensOnDigitKeys
 import com.lipabill.app.ui.util.sanitizeSheetLine
 import com.lipabill.app.ussd.UssdMenuBuilder
-import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.viewmodel.SendMoneyViewModel
 import com.lipabill.app.viewmodel.TransactionListViewModel
+import com.lipabill.app.viewmodel.sheetBalance
 import com.lipabill.app.viewmodel.WalletAccount
 import com.lipabill.app.viewmodel.phoneKey
 
@@ -107,7 +108,10 @@ fun SendMoneySheetContent(
     onConfirm: () -> Unit
 ) {
     val state by sendVm.uiState.collectAsStateWithLifecycle()
-    val shownBalance by listVm.latestBalance.collectAsStateWithLifecycle()
+    val homeBalance by listVm.latestBalance.collectAsStateWithLifecycle()
+    val walletBalances by listVm.walletBalances.collectAsStateWithLifecycle()
+    // The balance of the wallet this sheet will dial (e.g. Airtel on a dual-SIM phone).
+    val shownBalance = sheetBalance(state.activeWallet, walletBalances, homeBalance)
     var showConfirm by remember { mutableStateOf(false) }
     var queryFocused by remember { mutableStateOf(false) }
     var editingRecipient by remember {
@@ -228,7 +232,19 @@ fun SendMoneySheetContent(
         showRecipients = false,
         showAmountKeypad = amountFocused,
         scrollDetailsToEndOnKeyboard = false,
-        detailsHeader = { SendSheetHeader(shownBalance) },
+        detailsHeader = {
+            MoneySheetWalletBlock(
+                title = "Send money",
+                region = state.region,
+                eligibleLines = state.eligiblePayLines,
+                selectedSubscriptionId = state.selectedSubscriptionId,
+                activeWallet = state.activeWallet,
+                missingMessage = state.missingPaySimMessage,
+                onSelect = sendVm::selectPayLine,
+                showPicker = !state.needsPhoneStatePermission,
+                balances = walletBalances
+            )
+        },
         recipientsContent = {},
         extraAboveKeypad = {
             InterceptSystemIme {
@@ -350,6 +366,7 @@ fun SendMoneySheetContent(
         canConfirm = state.canSend,
         confirmLabel = "Send Now",
         summary = sendVm.confirmSummary(),
+        from = state.activeWallet,
         onDismiss = { showConfirm = false },
         onConfirm = {
             showConfirm = false

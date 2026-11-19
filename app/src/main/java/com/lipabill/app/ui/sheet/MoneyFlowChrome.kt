@@ -3,6 +3,7 @@ package com.lipabill.app.ui.sheet
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import com.lipabill.app.ui.permissions.PaymentAccessNeed
+import com.lipabill.app.ussd.PaymentWallet
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
 
 /** Shared amount / feedback / CTA wiring for Pay and Send sheets. */
@@ -87,7 +88,8 @@ fun MoneyFlowConfirmDialog(
     confirmLabel: String,
     summary: Triple<String, String, String>?,
     onDismiss: () -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: () -> Unit,
+    from: PaymentWallet? = null
 ) {
     if (!visible || !canConfirm || summary == null) return
     val (_, detail, amountLabel) = summary
@@ -96,6 +98,7 @@ fun MoneyFlowConfirmDialog(
         detail = detail,
         confirmLabel = confirmLabel,
         onDismiss = onDismiss,
-        onConfirm = onConfirm
+        onConfirm = onConfirm,
+        from = from
     )
 }

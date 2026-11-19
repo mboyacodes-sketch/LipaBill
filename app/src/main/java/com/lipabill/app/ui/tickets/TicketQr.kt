@@ -4,7 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color as AndroidColor
 import android.graphics.Paint
-import android.util.Log
+import com.lipabill.app.metrics.AppLog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -18,6 +18,7 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.MultiFormatWriter
 import com.google.zxing.common.BitMatrix
 import com.lipabill.app.data.model.TicketBarcodeFormat
+import com.lipabill.app.ui.components.RoundedQrRenderer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -45,7 +46,7 @@ internal object TicketBarcodeCache {
         format: TicketBarcodeFormat,
         sizePx: Int,
         onGrey: Boolean
-    ): String = "$format|$sizePx|$onGrey|$value"
+    ): String = "$format|$sizePx|$onGrey|r1|$value"
 
     fun getOrNull(
         value: String,
@@ -113,6 +114,24 @@ private fun encodeWithZxing(
             BarcodeFormat.PDF_417 -> (sizePx * 0.55f).toInt().coerceAtLeast(160)
             else -> sizePx
         }
+        if (format == BarcodeFormat.QR_CODE) {
+            val matrix = MultiFormatWriter().encode(
+                value,
+                format,
+                1,
+                1,
+                mapOf(
+                    EncodeHintType.CHARACTER_SET to "ISO-8859-1",
+                    EncodeHintType.MARGIN to 1
+                )
+            )
+            return@runCatching RoundedQrRenderer.toImageBitmap(
+                matrix = matrix,
+                sizePx = sizePx,
+                foregroundColor = foregroundColor,
+                backgroundColor = backgroundColor
+            )
+        }
         val matrix = MultiFormatWriter().encode(
             value,
             format,
@@ -130,7 +149,7 @@ private fun encodeWithZxing(
             backgroundColor = backgroundColor
         )
     }.onFailure { t ->
-        Log.w(TAG, "zxing encode failed format=$format len=${value.length}", t)
+        AppLog.w(TAG, "zxing encode failed format=$format len=${value.length}", t)
     }.getOrNull()
 }
 

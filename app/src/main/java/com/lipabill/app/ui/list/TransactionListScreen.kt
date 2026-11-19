@@ -1,5 +1,16 @@
 package com.lipabill.app.ui.list
 
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import com.lipabill.app.ui.analytics.safeToSpendDetail
+import com.lipabill.app.ui.util.formatKsh
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
+import com.lipabill.app.viewmodel.SafeToSpend
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import com.lipabill.app.viewmodel.WalletCardUi
+import com.lipabill.app.ui.components.CardLabel
+import com.lipabill.app.ui.components.WalletCardStack
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -15,7 +26,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,7 +43,6 @@ import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.ConfirmationNumber
 import androidx.compose.material.icons.outlined.NorthEast
 import androidx.compose.material.icons.outlined.Payments
-import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -57,7 +67,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
@@ -82,8 +91,8 @@ import com.lipabill.app.ui.SourceFilterRow
 import com.lipabill.app.ui.adapt.LocalWindowForm
 import com.lipabill.app.ui.adapt.WindowWidth
 import com.lipabill.app.ui.components.BalanceAmountRow
+import com.lipabill.app.ui.components.HomeSkeleton
 import com.lipabill.app.ui.components.ConsumeSnackbarMessage
-import com.lipabill.app.ui.components.WalletAccountSwitch
 import com.lipabill.app.ui.detail.TransactionReceiptPopup
 import com.lipabill.app.ui.engage.EngageHomeSection
 import com.lipabill.app.ui.sheet.InAppKeyboard
@@ -98,8 +107,6 @@ import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Canvas as CreamCanvas
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Ink
-import com.lipabill.app.ui.theme.LipaPalette
-import com.lipabill.app.ui.theme.LocalLipaColors
 import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.SoftBlue
@@ -118,6 +125,8 @@ import com.lipabill.app.viewmodel.fulizaDueCopy
 import java.time.LocalDate
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
@@ -134,14 +143,9 @@ internal object HomeMock {
     val HeaderIconGap = 10.dp
     /** Breathing room under status bar (inset applied on the list container). */
     val HeaderTop = 8.dp
-    /** Gap under search/gear before the balance pill. */
-    val HeaderBottom = 48.dp
+    /** Gap under search/gear before the wallet card. */
+    val HeaderBottom = 12.dp
 
-    val PillRadius = 28.dp
-    val PillMinHeight = 104.dp
-    val PillPadH = 22.dp
-    val PillPadV = 16.dp
-    val PillLabelGap = 8.dp
 
     val ActionSize = 60.dp
     val ActionIcon = 24.dp
@@ -176,6 +180,10 @@ fun TransactionListScreen(
     onOpenHabits: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    if (state.isLoading) {
+        HomeSkeleton(modifier = modifier)
+        return
+    }
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
     val app = context.applicationContext as LipaBillApp
@@ -212,6 +220,16 @@ fun TransactionListScreen(
 
     val shownBalance = state.shownBalance()
     val canSendPay = state.canFundPayment()
+    val plan by viewModel.moneyPlan.collectAsStateWithLifecycle()
+    val walletPick = BalanceWalletPick(
+        // Always show under the cards; amount stays visible (not balance-masked).
+        safe = plan.safe,
+        onOpenPlan = onExchange,
+        wallets = state.balanceWallets,
+        cards = state.walletCards,
+        selected = state.balanceWallet,
+        onSelect = viewModel::setBalanceWallet
+    )
     // Full row (incl. rawBody) so share can send truncated original SMS.
     val receiptTx by remember(receiptTxId) {
         receiptTxId?.let { viewModel.observeTransaction(it) } ?: flowOf(null)
@@ -225,6 +243,20 @@ fun TransactionListScreen(
     var searchFieldFocused by remember { mutableStateOf(false) }
     val searchEditor = rememberSheetEditor(state.searchQuery)
     val listState = rememberLazyListState()
+    // Load the next page of history as the list nears its end, so every row of the
+    // picked wallets and banks is reachable from Home.
+    val canLoadMoreHistory by viewModel.canLoadMoreHistory.collectAsStateWithLifecycle()
+    LaunchedEffect(listState, canLoadMoreHistory) {
+        if (!canLoadMoreHistory) return@LaunchedEffect
+        snapshotFlow {
+            val info = listState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            info.totalItemsCount > 0 && last >= info.totalItemsCount - HISTORY_PREFETCH_ROWS
+        }
+            .distinctUntilChanged()
+            .filter { it }
+            .collect { viewModel.loadMoreHistory() }
+    }
     val scope = rememberCoroutineScope()
     val suppressSearchDismiss = remember { intArrayOf(0) }
     var homeEpoch by remember { mutableIntStateOf(0) }
@@ -313,11 +345,11 @@ fun TransactionListScreen(
     }
     val window = LocalWindowForm.current.width
     val pageMargin = if (window == WindowWidth.Compact) HomeMock.Margin else 28.dp
+    // Index-only on Expanded too — scrollOffset invalidated every pixel and thrashed BackHandler.
     val homeMoved by remember(window, txHeaderIndex) {
         derivedStateOf {
             val listFull = if (window == WindowWidth.Expanded) {
-                listState.firstVisibleItemIndex > 0 ||
-                    listState.firstVisibleItemScrollOffset > 0
+                listState.firstVisibleItemIndex > 0
             } else {
                 listState.firstVisibleItemIndex >= txHeaderIndex
             }
@@ -393,6 +425,7 @@ fun TransactionListScreen(
                 availableSources = state.availableSources,
                 onSourceFilter = viewModel::setSourceFilter,
                 onAccountSelected = viewModel::setWalletAccount,
+                walletPick = walletPick,
                 searchEditor = searchEditor,
                 onQueryChange = viewModel::setSearchQuery,
                 searchOpen = searchOpen,
@@ -456,18 +489,27 @@ fun TransactionListScreen(
                     if (window == WindowWidth.Medium) {
                         Row(
                             modifier = Modifier.padding(horizontal = pageMargin),
-                            verticalAlignment = Alignment.CenterVertically,
+                            verticalAlignment = Alignment.Top,
                             horizontalArrangement = Arrangement.spacedBy(20.dp)
                         ) {
-                            BalanceSection(
-                                balance = shownBalance,
-                                fulizaDue = state.fulizaDue,
-                                account = state.account,
-                                onAccountSelected = viewModel::setWalletAccount,
-                                onOpenProfile = onOpenProfile,
-                                showFuliza = state.showFuliza,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                BalanceSection(
+                                    balance = shownBalance,
+                                    fulizaDue = state.fulizaDue,
+                                    account = state.account,
+                                    onAccountSelected = viewModel::setWalletAccount,
+                                    onOpenProfile = onOpenProfile,
+                                    showFuliza = state.showFuliza,
+                                    walletPick = walletPick
+                                )
+                                HomeSourceFilter(
+                                    account = state.account,
+                                    sources = state.availableSources,
+                                    selected = state.sourceFilter,
+                                    onSelect = viewModel::setSourceFilter,
+                                    pageMargin = 0.dp
+                                )
+                            }
                             QuickActionsRow(
                                 onSend = onSend,
                                 onDeposit = onReceive,
@@ -486,6 +528,7 @@ fun TransactionListScreen(
                             onAccountSelected = viewModel::setWalletAccount,
                             onOpenProfile = onOpenProfile,
                             showFuliza = state.showFuliza,
+                            walletPick = walletPick,
                             modifier = Modifier.padding(horizontal = pageMargin)
                         )
                         HomeSourceFilter(
@@ -504,15 +547,6 @@ fun TransactionListScreen(
                             sendPayEnabled = canSendPay,
                             showSendPay = state.showSendPay,
                             modifier = Modifier.padding(horizontal = pageMargin)
-                        )
-                    }
-                    if (window == WindowWidth.Medium) {
-                        HomeSourceFilter(
-                            account = state.account,
-                            sources = state.availableSources,
-                            selected = state.sourceFilter,
-                            onSelect = viewModel::setSourceFilter,
-                            pageMargin = pageMargin
                         )
                     }
                     Spacer(modifier = Modifier.height(HomeMock.SectionGap))
@@ -589,10 +623,15 @@ fun TransactionListScreen(
         receiptTx?.let { tx ->
             TransactionReceiptPopup(
                 tx = tx,
+                spendCategory = viewModel.spendCategoryFor(tx),
                 onDismiss = { receiptTxId = null },
                 onRepeat = { id ->
                     receiptTxId = null
                     onRepeatTransaction(id)
+                },
+                onCountLinked = { viewModel.countLinkedPayees(it) },
+                onSavePayee = { name, category ->
+                    viewModel.editPayee(tx, name, category)
                 }
             )
         }
@@ -622,6 +661,7 @@ private fun HomeExpandedPane(
     availableSources: List<MoneySource>,
     onSourceFilter: (MoneySource?) -> Unit,
     onAccountSelected: (WalletAccount) -> Unit,
+    walletPick: BalanceWalletPick,
     searchEditor: SheetTextEditor,
     onQueryChange: (String) -> Unit,
     searchOpen: Boolean,
@@ -665,6 +705,7 @@ private fun HomeExpandedPane(
                 onAccountSelected = onAccountSelected,
                 onOpenProfile = onOpenProfile,
                 showFuliza = showFuliza,
+                walletPick = walletPick,
                 modifier = Modifier.padding(horizontal = pageMargin)
             )
             HomeSourceFilter(
@@ -742,6 +783,9 @@ private fun HomeExpandedPane(
     }
 }
 
+/** Rows from the end of Home history at which the next page is requested. */
+private const val HISTORY_PREFETCH_ROWS = 12
+
 @Composable
 private fun HomeBrandHeader(
     onSearch: () -> Unit,
@@ -806,15 +850,48 @@ private fun HomeSourceFilter(
     pageMargin: Dp
 ) {
     if (account == WalletAccount.FULIZA || sources.size <= 1) return
+    val hasBankRail = sources.any { !it.isWallet }
     Spacer(modifier = Modifier.height(10.dp))
-    SourceFilterRow(
-        sources = sources,
-        selected = selected,
-        onSelect = onSelect,
-        modifier = Modifier.padding(horizontal = pageMargin)
-    )
+    Column(modifier = Modifier.padding(horizontal = pageMargin)) {
+        Text(
+            text = "History",
+            style = HomeType.caption,
+            color = Mute
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        SourceFilterRow(
+            sources = sources,
+            selected = selected,
+            onSelect = onSelect,
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (hasBankRail) {
+            Text(
+                text = if (selected != null && !selected.isWallet) {
+                    "${selected.label} filters history only."
+                } else {
+                    "Bank chips filter history only."
+                },
+                style = HomeType.caption,
+                color = Mute,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
+    }
 }
 
+/** Wallet chips on the balance pill when more than one Settings MNO rail is active. */
+private data class BalanceWalletPick(
+    /** Safe to spend until payday, shown under the cards. */
+    val safe: SafeToSpend? = null,
+    val onOpenPlan: () -> Unit = {},
+    val wallets: List<MoneySource> = emptyList(),
+    val cards: List<WalletCardUi> = emptyList(),
+    val selected: MoneySource? = null,
+    val onSelect: (MoneySource) -> Unit = {}
+)
+
+/** The wallet card deck with the safe-to-spend line under it. */
 @Composable
 private fun BalanceSection(
     balance: Double?,
@@ -823,125 +900,162 @@ private fun BalanceSection(
     onOpenProfile: () -> Unit,
     modifier: Modifier = Modifier,
     showFuliza: Boolean = true,
-    fulizaDue: LocalDate? = null
+    fulizaDue: LocalDate? = null,
+    walletPick: BalanceWalletPick = BalanceWalletPick()
 ) {
-    Box(
+    Column(modifier = modifier) {
+        WalletDeck(balance, account, onAccountSelected, onOpenProfile, Modifier, showFuliza, fulizaDue, walletPick)
+        SafeToSpendLine(
+            safe = walletPick.safe,
+            onClick = walletPick.onOpenPlan,
+            modifier = Modifier.padding(top = 10.dp)
+        )
+    }
+}
+
+/**
+ * Always visible under the wallet cards. Amount is shown outright (not eye-masked);
+ * tap opens the plan in Insights. Placeholder when no wallet balance SMS yet.
+ */
+@Composable
+private fun SafeToSpendLine(safe: SafeToSpend?, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = HomeMock.PillMinHeight)
-            .shadow(
-                elevation = 10.dp,
-                shape = RoundedCornerShape(HomeMock.PillRadius),
-                spotColor = Color.Black.copy(alpha = 0.10f),
-                ambientColor = Color.Black.copy(alpha = 0.05f)
-            )
-            .clip(RoundedCornerShape(HomeMock.PillRadius))
-            .background(CardWhite)
+            .clip(RoundedCornerShape(16.dp))
+            .background(SoftBlue)
+            .clickable(role = Role.Button, onClickLabel = "Open your plan", onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        // Mirrored leaf — anchored to the right edge of the pill.
-        val leafNavy = Accent
-        val leafWash = SoftBlue
-        Canvas(modifier = Modifier.matchParentSize()) {
-            val w = size.width
-            val h = size.height
-            // Build a left-side leaf, then mirror onto the right.
-            fun mirrorX(x: Float) = w - x
-            val leaf = Path().apply {
-                moveTo(mirrorX(w * 0.42f), 0f)
-                cubicTo(
-                    mirrorX(w * 0.32f), h * 0.02f,
-                    mirrorX(w * 0.28f), h * 0.28f,
-                    mirrorX(w * 0.22f), h * 0.52f
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("Safe to spend", style = HomeType.caption, color = Mute)
+            if (safe == null) {
+                Text(
+                    "Shows once a wallet balance arrives by SMS.",
+                    style = HomeType.label,
+                    fontWeight = FontWeight.Bold,
+                    color = Ink
                 )
-                cubicTo(
-                    mirrorX(w * 0.16f), h * 0.78f,
-                    mirrorX(w * 0.10f), h * 0.92f,
-                    mirrorX(0f), h
+            } else {
+                Text(
+                    text = "${formatKsh(safe.perDay)} a day",
+                    style = HomeType.label,
+                    fontWeight = FontWeight.Bold,
+                    color = Ink,
+                    modifier = Modifier.recordingPrivacyCover()
                 )
-                lineTo(w, h)
-                lineTo(w, 0f)
-                close()
+                Text(
+                    safeToSpendDetail(safe),
+                    style = HomeType.caption,
+                    color = Mute,
+                    maxLines = 2,
+                    modifier = Modifier.recordingPrivacyCover()
+                )
             }
-            drawPath(leaf, color = leafNavy.copy(alpha = 0.90f))
-            val highlight = Path().apply {
-                moveTo(mirrorX(w * 0.28f), 0f)
-                cubicTo(
-                    mirrorX(w * 0.18f), h * 0.12f,
-                    mirrorX(w * 0.12f), h * 0.35f,
-                    mirrorX(0f), h * 0.42f
-                )
-                lineTo(w, h * 0.42f)
-                lineTo(w, 0f)
-                close()
-            }
-            drawPath(highlight, color = leafNavy.copy(alpha = 0.45f))
-            drawCircle(
-                color = leafWash.copy(alpha = 0.35f),
-                radius = h * 0.38f,
-                center = Offset(mirrorX(w * 0.06f), h * 0.12f)
-            )
         }
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    start = HomeMock.PillPadH,
-                    // Clear of the request disc, which is centered on the pill.
-                    end = 84.dp,
-                    top = HomeMock.PillPadV,
-                    bottom = HomeMock.PillPadV
-                ),
-            horizontalAlignment = Alignment.Start,
-            verticalArrangement = Arrangement.spacedBy(HomeMock.PillLabelGap)
-        ) {
-            WalletAccountSwitch(
-                account = account,
-                onSelect = onAccountSelected,
-                accounts = if (showFuliza) {
-                    WalletAccount.entries
-                } else {
-                    listOf(WalletAccount.MPESA)
-                }
-            )
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = Mute
+        )
+    }
+}
+
+@Composable
+private fun WalletDeck(
+    balance: Double?,
+    account: WalletAccount,
+    onAccountSelected: (WalletAccount) -> Unit,
+    onOpenProfile: () -> Unit,
+    modifier: Modifier = Modifier,
+    showFuliza: Boolean = true,
+    fulizaDue: LocalDate? = null,
+    walletPick: BalanceWalletPick = BalanceWalletPick()
+) {
+    val front = walletPick.cards.firstOrNull { it.source == walletPick.selected }
+        ?: walletPick.cards.firstOrNull()
+    // M-Pesa's back is Fuliza (flipping switches the ledger); other wallets flip to line details.
+    val fulizaBack = showFuliza && front?.source == MoneySource.MPESA
+    var detailsFlipped by remember(front?.source) { mutableStateOf(false) }
+    val flipped = if (fulizaBack) account == WalletAccount.FULIZA else detailsFlipped
+    WalletCardStack(
+        cards = walletPick.cards,
+        selected = walletPick.selected,
+        flipped = flipped,
+        onSelect = walletPick.onSelect,
+        onFlip = {
+            if (fulizaBack) {
+                onAccountSelected(if (account == WalletAccount.FULIZA) WalletAccount.MPESA else WalletAccount.FULIZA)
+            } else {
+                detailsFlipped = !detailsFlipped
+            }
+        },
+        onOpenRequest = onOpenProfile,
+        flipHint = when {
+            !fulizaBack -> "Tilt, tap to flip"
+            flipped -> "Tilt, tap for M-Pesa"
+            else -> "Tilt, tap for Fuliza"
+        },
+        modifier = modifier
+    ) { card, ink ->
+        if (fulizaBack) {
             Text(
-                text = account.balanceCaption,
-                style = HomeType.caption,
-                color = Mute
+                text = "FULIZA",
+                color = ink.highlight,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp
             )
+            Text(text = "Overdraft on M-Pesa", color = ink.secondary, fontSize = 12.sp)
+            Spacer(modifier = Modifier.weight(1f))
+            CardLabel("OUTSTANDING", ink)
             BalanceAmountRow(
                 balance = balance,
-                amountStyle = HomeType.balance,
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start
+                amountStyle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold),
+                contentColor = ink.primary,
+                modifier = Modifier.fillMaxWidth()
             )
-            if (account == WalletAccount.FULIZA && fulizaDue != null && (balance ?: 0.0) > 0.0) {
-                Text(
-                    text = fulizaDueCopy(fulizaDue, LocalDate.now()).replaceFirstChar { it.uppercase() } +
-                        " · daily charges since are not included",
-                    style = HomeType.caption,
-                    color = Mute
-                )
-            }
-        }
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 16.dp)
-                .size(52.dp)
-                .clip(CircleShape)
-                .background(SoftBlue)
-                .clickable(onClick = onOpenProfile),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.QrCode2,
-                contentDescription = "Request",
-                tint = if (LocalLipaColors.current.canvas == LipaPalette.Dark.canvas) {
-                    Color.White
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = if (fulizaDue != null && (balance ?: 0.0) > 0.0) {
+                    fulizaDueCopy(fulizaDue, LocalDate.now()).replaceFirstChar { it.uppercase() } +
+                        " · daily charges since are not included"
                 } else {
-                    Accent
+                    "Nothing owed on Fuliza"
                 },
-                modifier = Modifier.size(26.dp)
+                color = ink.muted,
+                fontSize = 11.sp,
+                maxLines = 2
+            )
+        } else {
+            Text(
+                text = card.source.label.uppercase(),
+                color = ink.highlight,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            CardLabel("LINE", ink)
+            Text(
+                text = card.lineLabel ?: "Allow phone access to see this line",
+                color = ink.primary,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            card.lastDigits?.let {
+                Text(text = "Number ending $it", color = ink.secondary, fontSize = 12.sp)
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = if (card.source == walletPick.selected) {
+                    "Send & Pay use this wallet"
+                } else {
+                    "Swipe to make this your Send & Pay wallet"
+                },
+                color = ink.muted,
+                fontSize = 11.sp
             )
         }
     }
@@ -970,20 +1084,7 @@ private fun QuickActionsRow(
                 modifier = modifier,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                QuickAction(
-                    icon = Icons.Outlined.BarChart,
-                    label = "Insights",
-                    onClick = onDetails,
-                    face = ActionMetrics,
-                    iconTint = BrandNavy
-                )
-                QuickAction(
-                    icon = Icons.Outlined.ConfirmationNumber,
-                    label = "Passes",
-                    onClick = onTickets,
-                    face = ActionTickets,
-                    iconTint = BrandNavy
-                )
+                InsightsAndPassesActions(onDetails, onTickets)
             }
         }
         return
@@ -1012,20 +1113,7 @@ private fun QuickActionsRow(
             face = ActionPay,
             iconTint = BrandNavy
         )
-        QuickAction(
-            icon = Icons.Outlined.BarChart,
-            label = "Insights",
-            onClick = onDetails,
-            face = ActionMetrics,
-            iconTint = BrandNavy
-        )
-        QuickAction(
-            icon = Icons.Outlined.ConfirmationNumber,
-            label = "Passes",
-            onClick = onTickets,
-            face = ActionTickets,
-            iconTint = BrandNavy
-        )
+        InsightsAndPassesActions(onDetails, onTickets)
     }
 }
 
@@ -1152,4 +1240,23 @@ private fun QuickAction(
             maxLines = 1
         )
     }
+}
+
+/** The Insights and Passes tiles, shown in every quick-actions layout. */
+@Composable
+private fun InsightsAndPassesActions(onDetails: () -> Unit, onTickets: () -> Unit) {
+    QuickAction(
+        icon = Icons.Outlined.BarChart,
+        label = "Insights",
+        onClick = onDetails,
+        face = ActionMetrics,
+        iconTint = BrandNavy
+    )
+    QuickAction(
+        icon = Icons.Outlined.ConfirmationNumber,
+        label = "Passes",
+        onClick = onTickets,
+        face = ActionTickets,
+        iconTint = BrandNavy
+    )
 }

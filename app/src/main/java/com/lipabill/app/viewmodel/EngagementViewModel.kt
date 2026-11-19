@@ -154,7 +154,9 @@ data class EngageUiState(
     val streakCount: Int = 0,
     val nextStreakCount: Int = 0,
     val questions: List<QuizQuestion> = emptyList(),
-    val summary: WeeklySummary? = null
+    val summary: WeeklySummary? = null,
+    /** True until the first engagement emission — drives skeleton placeholders. */
+    val isLoading: Boolean = true
 )
 
 class EngagementViewModel(application: Application) : AndroidViewModel(application) {
@@ -194,7 +196,8 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
             streakCount = streakCount,
             nextStreakCount = nextStreak,
             questions = week?.let { QuizGenerator.generate(it) { type -> type.displayLabel() } }.orEmpty(),
-            summary = week
+            summary = week,
+            isLoading = false
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EngageUiState())
 

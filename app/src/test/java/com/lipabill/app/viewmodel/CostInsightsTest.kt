@@ -1,6 +1,6 @@
 package com.lipabill.app.viewmodel
 
-import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.testTransaction
 import com.lipabill.app.data.model.TransactionType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -392,6 +392,30 @@ class CostInsightsTest {
         assertEquals("Due Sat 14 Nov", dueCopy(soon.nextDue, today))
     }
 
+    @Test
+    fun upcoming_due_skips_weekly_shops_and_stale_overdue() {
+        val today = LocalDate.of(2026, 11, 10)
+        val weeklyShop = RegularPayee(
+            key = "till:1",
+            name = "Java House",
+            cadence = Cadence.WEEKLY,
+            typicalAmount = 450.0,
+            monthlyCost = 1_800.0,
+            lastPaid = today.minusDays(7),
+            nextDue = today.plusDays(2),
+            payments = 5
+        )
+        val stale = regular("Old Fibre", 2_999.0, today.minusDays(45))
+        val recentLate = regular("Landlord", 15_000.0, today.minusDays(5))
+        val soon = regular("DSTV", 2_450.0, today.plusDays(3))
+        assertTrue(billLikeComingUp(recentLate))
+        assertTrue(!billLikeComingUp(weeklyShop))
+        assertEquals(
+            listOf("Landlord", "DSTV"),
+            upcomingDue(listOf(weeklyShop, stale, recentLate, soon), today).map { it.name }
+        )
+    }
+
     private fun regular(name: String, amount: Double, due: LocalDate) = RegularPayee(
         key = name.lowercase(),
         name = name,
@@ -469,8 +493,13 @@ class CostInsightsTest {
     @Test
     fun business_payee_edges_brands_digits_long_names_and_airtime() {
         assertTrue(isBusinessLikeRegular("Netflix", "netflix", TransactionType.SENT))
-        assertTrue(isBusinessLikeRegular("Shop 123", "shop 123", TransactionType.SENT))
         assertTrue(isBusinessLikeRegular("Kenya Power", "kenya power", TransactionType.POCHI))
+        assertTrue(isBusinessLikeRegular("Landlord", "tel:700111222", TransactionType.SENT))
+        // Digits / place names alone are not enough on Send — people slip through that way.
+        assertTrue(!isBusinessLikeRegular("Shop 123", "shop 123", TransactionType.SENT))
+        assertTrue(!isBusinessLikeRegular("Ann Kenya", "tel:711000111", TransactionType.SENT))
+        assertTrue(!isBusinessLikeRegular("Grace Nairobi", "grace nairobi", TransactionType.SENT))
+        assertTrue(!isBusinessLikeRegular("Mary Wanjiku", "tel:711000111", TransactionType.SENT))
         assertTrue(
             !isBusinessLikeRegular(
                 "A B C D E",
@@ -478,11 +507,28 @@ class CostInsightsTest {
                 TransactionType.SENT
             )
         )
+        // Till / Paybill stay business even with a person-like SMS name.
+        assertTrue(isBusinessLikeRegular("Shop 123", "till:123", TransactionType.BUY_GOODS))
         assertTrue(isBusinessPayee(tx(TransactionType.AIRTIME, "Airtime", 50.0, LocalDate.of(2026, 11, 1))))
         assertTrue(isBusinessPayee(tx(TransactionType.BUY_GOODS, null, 100.0, LocalDate.of(2026, 11, 1), phone = "0700111222")))
         assertTrue(isOwnMoneyMove(tx(TransactionType.SAVINGS, "M-Shwari", 100.0, LocalDate.of(2026, 11, 1))))
         assertTrue(isOwnMoneyMove(tx(TransactionType.DEPOSIT, "M-Shwari", 100.0, LocalDate.of(2026, 11, 1))))
         assertTrue(!isOwnMoneyMove(tx(TransactionType.DEPOSIT, "Agent", 100.0, LocalDate.of(2026, 11, 1))))
+    }
+
+    @Test
+    fun place_name_sends_are_not_regulars_without_a_corporate_cue() {
+        val today = LocalDate.of(2026, 11, 10)
+        val phone = "254711222333"
+        val pays = listOf(
+            LocalDate.of(2026, 8, 5),
+            LocalDate.of(2026, 9, 5),
+            LocalDate.of(2026, 10, 5)
+        ).map {
+            tx(TransactionType.SENT, "Ann Kenya", 2_000.0, it, phone = phone)
+        }
+        assertTrue(detectRegulars(pays, zone, today).isEmpty())
+        assertTrue(!isBusinessLikeRegular("Ann Kenya", "tel:711222333", TransactionType.SENT))
     }
 
     @Test
@@ -538,15 +584,13 @@ class CostInsightsTest {
         cost: Double? = null,
         raw: String = "",
         phone: String? = null
-    ) = MpesaTransaction(
-        id = 0,
+    ) = testTransaction(
         code = code,
         type = type,
         amount = amount,
         counterpartyName = name,
         counterpartyPhone = phone,
         timestampMillis = date.atTime(12, 0).toInstant(ZoneOffset.UTC).toEpochMilli(),
-        balance = null,
         cost = cost,
         rawBody = raw
     )

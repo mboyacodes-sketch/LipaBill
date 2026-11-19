@@ -73,17 +73,19 @@ class ConfirmationIngestionTest {
     }
 
     @Test
-    fun kenya_airtel_telco_is_not_the_wallet() {
+    fun kenya_airtel_and_airtelmoney_senders_are_the_wallet() {
+        val send =
+            "43RAMS4FHNH. Ksh 70 sent to JANE DOE 254712345678 on 16/09/26 at 01:31 PM. " +
+                "Fee: Ksh 0. Bal: Ksh 66.0. MPESA ID: UIGRF6VRCN"
+        assertTrue(ConfirmationIngestion.shouldAccept("airtelmoney", send, AppRegion.KENYA))
+        assertTrue(ConfirmationIngestion.shouldAccept("AIRTEL", send, AppRegion.KENYA))
+        assertTrue(ConfirmationIngestion.shouldAccept("airtel", send, AppRegion.KENYA))
+        val tx = ConfirmationIngestion.acceptAndParse("airtelmoney", send, ts, AppRegion.KENYA)
+        assertNotNull(tx)
+        assertEquals(MoneySource.AIRTEL_MONEY, tx!!.source)
+        // Telco airtime promo from AIRTEL — currency only, no money movement.
         val promo = "You've spent 1.00 KES and your balance is 0.05 KES. Dial *544# now"
         assertFalse(ConfirmationIngestion.shouldAccept("AIRTEL", promo, AppRegion.KENYA))
-        assertTrue(
-            ConfirmationIngestion.shouldAccept(
-                "airtelmoney",
-                "43RAMS4FHNH. Ksh 70 sent to JANE DOE 254712345678 on 16/09/26 at 01:31 PM. " +
-                    "Fee: Ksh 0. Bal: Ksh 66.0. MPESA ID: UIGRF6VRCN",
-                AppRegion.KENYA
-            )
-        )
     }
 
     @Test
@@ -132,5 +134,37 @@ class ConfirmationIngestionTest {
         assertEquals(5000.0, tx.amount!!, 0.001)
         assertTrue(ConfirmationIngestion.looksLikeStoredConfirmation(MoneySource.MPESA, body))
         assertTrue(ConfirmationIngestion.looksLikeStoredConfirmation(MoneySource.KCB, kcbBody))
+    }
+
+    @Test
+    fun lipa_na_kcb_merchant_sms_is_accepted_from_mpesa_without_confirmed() {
+        val merchant =
+            "Ksh 400.0 sent to KCB account LUVIPHARMCHEMIST 7891955 has been received on 17/09/2026 " +
+                "at 05:35 PM. LipaNaKCB Ref MBNHEJ7B6WAAEYOV. To reverse this transaction, " +
+                "SMS this message to 16120."
+        assertTrue(ConfirmationIngestion.shouldAccept("MPESA", merchant))
+        val tx = ConfirmationIngestion.acceptAndParse("MPESA", merchant, ts)
+        assertNotNull(tx)
+        assertEquals(MoneySource.MPESA, tx!!.source)
+        assertEquals("MBNHEJ7B6WAAEYOV", tx.code)
+        assertEquals(TransactionType.SENT, tx.type)
+        assertEquals(400.0, tx.amount!!, 0.001)
+    }
+
+    @Test
+    fun lipa_na_kcb_dedupe_keeps_merchant_drops_settlement_twin() {
+        val merchantBody =
+            "Ksh 400.0 sent to KCB account LUVIPHARMCHEMIST 7891955 has been received on 17/09/2026 " +
+                "at 05:35 PM. LipaNaKCB Ref MBNHEJ7B6WAAEYOV."
+        val twinBody =
+            "MBNHEJ7B6WAAEYOV Completed. Your Pay to M-PESA Biller request of KES 400.00 from " +
+                "122****604 to 522533 - M-Pesa One Till Suspense account has been processed successfully. " +
+                "MPESA REF:FT26260T42N9"
+        val merchant = ConfirmationIngestion.acceptAndParse("MPESA", merchantBody, ts)!!
+        val twin = ConfirmationIngestion.acceptAndParse("KCB", twinBody, ts)!!
+        val kept = ConfirmationIngestion.dedupeLipaNaKcbTwins(listOf(twin, merchant))
+        assertEquals(1, kept.size)
+        assertEquals("MBNHEJ7B6WAAEYOV", kept.single().code)
+        assertEquals(MoneySource.MPESA, kept.single().source)
     }
 }

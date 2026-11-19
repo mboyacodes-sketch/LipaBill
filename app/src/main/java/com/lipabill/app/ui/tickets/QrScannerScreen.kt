@@ -2,7 +2,7 @@
 
 package com.lipabill.app.ui.tickets
 
-import android.util.Log
+import com.lipabill.app.metrics.AppLog
 import android.view.ViewGroup
 import com.lipabill.app.metrics.AppCrashReporting
 import androidx.activity.compose.BackHandler
@@ -64,11 +64,28 @@ import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Space
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import android.os.SystemClock
+import com.lipabill.app.data.tickets.BarcodeSpec
+import com.lipabill.app.data.tickets.BarcodeSpecReader
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 private const val TAG = "LipaBill.QrScan"
+
+/** How long to keep scanning for a frame zxing can read before accepting ML Kit alone. */
+private const val SpecWaitMs = 1_500L
+
+private class Luminance(val bytes: ByteArray, val rowStride: Int, val width: Int, val height: Int)
+
+private fun copyLuminance(proxy: androidx.camera.core.ImageProxy): Luminance {
+    val plane = proxy.planes[0]
+    val buffer = plane.buffer.duplicate().apply { rewind() }
+    val bytes = ByteArray(plane.rowStride * proxy.height)
+    buffer.get(bytes, 0, minOf(buffer.remaining(), bytes.size))
+    return Luminance(bytes, plane.rowStride, proxy.width, proxy.height)
+}
 
 /**
  * In-app QR scanner using CameraX (back camera) + ML Kit.
@@ -76,7 +93,8 @@ private const val TAG = "LipaBill.QrScan"
  */
 @Composable
 fun QrScannerScreen(
-    onResult: (String) -> Unit,
+    /** Raw payload (untrimmed) and, when zxing could read the frame, its encoding spec. */
+    onResult: (value: String, spec: BarcodeSpec?) -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -84,6 +102,7 @@ fun QrScannerScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
     val handled = remember { AtomicBoolean(false) }
+    val firstHitAt = remember { AtomicLong(0L) }
     var cameraError by remember { mutableStateOf<String?>(null) }
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
 
@@ -149,14 +168,34 @@ fun QrScannerScreen(
                     .addOnSuccessListener { barcodes ->
                         val value = barcodes
                             .asSequence()
-                            .mapNotNull { it.rawValue?.trim() }
-                            .firstOrNull { it.isNotEmpty() }
-                        if (value != null && handled.compareAndSet(false, true)) {
-                            view.post { onResult(value) }
+                            .mapNotNull { it.rawValue }
+                            .firstOrNull { it.isNotBlank() }
+                        if (value == null || handled.get()) return@addOnSuccessListener
+                        // Copy luminance while the frame is still open, then read the
+                        // EC level / version with zxing off the main thread.
+                        val luma = runCatching { copyLuminance(imageProxy) }.getOrNull()
+                        runCatching {
+                            analysisExecutor.execute {
+                                val spec = luma?.let {
+                                    runCatching {
+                                        BarcodeSpecReader.fromLuminance(
+                                            it.bytes, it.rowStride, it.width, it.height, value
+                                        )
+                                    }.getOrNull()
+                                }
+                                val now = SystemClock.elapsedRealtime()
+                                firstHitAt.compareAndSet(0L, now)
+                                val waited = now - firstHitAt.get()
+                                if ((spec != null || waited >= SpecWaitMs) &&
+                                    handled.compareAndSet(false, true)
+                                ) {
+                                    view.post { onResult(value, spec) }
+                                }
+                            }
                         }
                     }
                     .addOnFailureListener { e ->
-                        Log.w(TAG, "barcode_scan_fail", e)
+                        AppLog.w(TAG, "barcode_scan_fail", e)
                     }
                     .addOnCompleteListener {
                         imageProxy.close()
@@ -175,7 +214,7 @@ fun QrScannerScreen(
             )
             cameraError = null
         } catch (t: Throwable) {
-            Log.e(TAG, "camera_bind_failed", t)
+            AppLog.e(TAG, "camera_bind_failed", t)
             AppCrashReporting.recordCaught(t)
             cameraError = t.message ?: "Couldn’t open the rear camera"
         }

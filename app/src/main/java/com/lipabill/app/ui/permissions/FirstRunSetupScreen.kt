@@ -58,9 +58,12 @@ import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.RegionGuess
 import com.lipabill.app.data.model.detectAppRegion
 import com.lipabill.app.data.model.hint
+import com.lipabill.app.data.model.defaultLedgerSources
 import com.lipabill.app.data.model.groupedProviderCatalog
 import com.lipabill.app.data.model.providerCatalog
 import com.lipabill.app.data.model.toggleLedgerSource
+import com.lipabill.app.ussd.LineGatedSources
+import com.lipabill.app.ussd.SimLineHelper
 import com.lipabill.app.ui.ProviderPicker
 import com.lipabill.app.ui.RegionPicker
 import com.lipabill.app.ui.components.LipaBillMark
@@ -111,8 +114,17 @@ fun FirstRunSetupScreen(
     val context = LocalContext.current
     val regionGuess = remember { context.detectAppRegion() }
     var userChoseRegion by remember { mutableStateOf(false) }
+    // Primary + one other MNO + common banks — not M-Pesa alone under the 5-rail cap.
     var selectedProviders by remember(region) {
-        mutableStateOf(setOf(region.primaryWallet))
+        mutableStateOf(defaultLedgerSources(region))
+    }
+    // Missing SIMs block Send/Pay only; SMS still imports for enabled rails.
+    val lockedProviders = remember(region, simGranted) {
+        if (!simGranted) {
+            emptyMap()
+        } else {
+            LineGatedSources.locked(region, SimLineHelper.listActiveLines(context, region), phoneAccess = true)
+        }
     }
     LaunchedEffect(firstRun, regionGuess) {
         if (!firstRun || userChoseRegion) return@LaunchedEffect
@@ -152,6 +164,13 @@ fun FirstRunSetupScreen(
     }
     LaunchedEffect(phoneGranted, simGranted, pager.currentPage) {
         if (phoneGranted && simGranted && pages[pager.currentPage] == FirstRunPage.Phone) {
+            next()
+        }
+    }
+    LaunchedEffect(accessibilityEnabled, pager.currentPage) {
+        // Same auto-advance as SMS/Phone — return from Settings with the toggle on
+        // should leave the Agree loop without another tap.
+        if (accessibilityEnabled && pages[pager.currentPage] == FirstRunPage.Accessibility) {
             next()
         }
     }
@@ -226,6 +245,7 @@ fun FirstRunSetupScreen(
                         onRegionSelected(picked)
                     },
                     selectedProviders = selectedProviders,
+                    lockedProviders = lockedProviders,
                     onToggleProvider = { source ->
                         selectedProviders = toggleLedgerSource(
                             selectedProviders,
@@ -305,6 +325,7 @@ private fun WizardPageBody(
     regionGuess: RegionGuess? = null,
     onRegionSelected: (AppRegion) -> Unit = {},
     selectedProviders: Set<MoneySource> = emptySet(),
+    lockedProviders: Map<MoneySource, String> = emptyMap(),
     onToggleProvider: (MoneySource) -> Unit = {},
     smsGranted: Boolean,
     permanentlyDenied: Boolean,
@@ -404,7 +425,8 @@ private fun WizardPageBody(
                 catalog = providerCatalog(region),
                 groups = groupedProviderCatalog(region),
                 selected = selectedProviders,
-                onToggle = onToggleProvider
+                onToggle = onToggleProvider,
+                locked = lockedProviders
             )
         }
         if (page == FirstRunPage.Sms && showRestrictedSettingsHelp && !smsGranted) {

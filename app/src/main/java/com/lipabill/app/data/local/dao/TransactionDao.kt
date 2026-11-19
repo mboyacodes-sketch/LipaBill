@@ -9,6 +9,12 @@ import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.TransactionType
 import kotlinx.coroutines.flow.Flow
 
+/** Ledger row count for one source. */
+data class SourceCount(val source: MoneySource, val n: Int)
+
+/** Newest stored balance for one source (wallet or bank). */
+data class SourceBalance(val source: MoneySource, val balance: Double)
+
 @Dao
 interface TransactionDao {
 
@@ -17,7 +23,7 @@ interface TransactionDao {
 
     /**
      * One ledger at a time. [fuliza] = 1 is Fuliza draws only; 0 is every other row.
-     * No row cap — the inbox import is the bound.
+     * No row cap — Insights / challenge math; Home uses [observeWalletList].
      */
     @Query(
         """
@@ -30,6 +36,57 @@ interface TransactionDao {
         """
     )
     fun observeWallet(fuliza: Int): Flow<List<TransactionEntity>>
+
+    /**
+     * Home feed window: newest rows only, no SMS body (list UI never shows it).
+     */
+    @Query(
+        """
+        SELECT id, code, type, amount, counterpartyName, counterpartyPhone,
+               timestampMillis, balance, cost, '' AS rawBody, source
+        FROM transactions
+        WHERE (
+            (:fuliza = 1 AND type = 'FULIZA')
+            OR (:fuliza = 0 AND type != 'FULIZA')
+        )
+        ORDER BY timestampMillis DESC
+        LIMIT :limit
+        """
+    )
+    fun observeWalletList(fuliza: Int, limit: Int): Flow<List<TransactionEntity>>
+
+    /**
+     * Home ledger window for the picked sources only, so a quiet bank is not crowded out
+     * of the row cap by M-Pesa. No SMS bodies.
+     */
+    @Query(
+        """
+        SELECT id, code, type, amount, counterpartyName, counterpartyPhone,
+               timestampMillis, balance, cost, '' AS rawBody, source
+        FROM transactions
+        WHERE type != 'FULIZA' AND source IN (:sources)
+        ORDER BY timestampMillis DESC
+        LIMIT :limit
+        """
+    )
+    fun observeLedgerWindow(sources: List<String>, limit: Int): Flow<List<TransactionEntity>>
+
+    /** Rows per source across the whole ledger (chip order, not the Home window). */
+    @Query("SELECT source, COUNT(*) AS n FROM transactions WHERE type != 'FULIZA' GROUP BY source")
+    fun observeSourceCounts(): Flow<List<SourceCount>>
+
+    /** Recent Send Money rows for fee / monthly-count estimates on the Send sheet. */
+    @Query(
+        """
+        SELECT id, code, type, amount, counterpartyName, counterpartyPhone,
+               timestampMillis, balance, cost, '' AS rawBody, source
+        FROM transactions
+        WHERE type = 'SENT'
+        ORDER BY timestampMillis DESC
+        LIMIT :limit
+        """
+    )
+    fun observeRecentSends(limit: Int): Flow<List<TransactionEntity>>
 
     /**
      * Rows whose timestamp falls in [startInclusive, endExclusive).
@@ -182,6 +239,49 @@ interface TransactionDao {
         """
     )
     suspend fun latestMpesaBalance(): Double?
+
+    /** Ledger rows since [sinceMillis], newest first, without SMS bodies (money moments). */
+    @Query(
+        """
+        SELECT id, code, type, amount, counterpartyName, counterpartyPhone,
+               timestampMillis, balance, cost, '' AS rawBody, source
+        FROM transactions
+        WHERE type != 'FULIZA' AND timestampMillis >= :sinceMillis
+        ORDER BY timestampMillis DESC
+        """
+    )
+    suspend fun ledgerSince(sinceMillis: Long): List<TransactionEntity>
+
+    /** Newest balance per source, outside the Home row cap (a quiet second SIM still has one). */
+    @Query(
+        """
+        SELECT source, balance FROM transactions t
+        WHERE type != 'FULIZA' AND balance IS NOT NULL
+          AND timestampMillis = (
+              SELECT MAX(timestampMillis) FROM transactions
+              WHERE source = t.source AND type != 'FULIZA' AND balance IS NOT NULL
+          )
+        """
+    )
+    fun observeLatestBalances(): Flow<List<SourceBalance>>
+
+    /** Lightweight rows for payee-key linking (rename / count similar). */
+    @Query(
+        """
+        SELECT id, counterpartyName, counterpartyPhone, type
+        FROM transactions
+        """
+    )
+    suspend fun listPayeeLinkRows(): List<PayeeLinkRow>
+
+    @Query(
+        """
+        UPDATE transactions
+        SET counterpartyName = :name
+        WHERE id IN (:ids)
+        """
+    )
+    suspend fun updateCounterpartyNameForIds(ids: List<Long>, name: String): Int
 }
 
 /** Lightweight projection for confirmation-body purge. */
@@ -225,4 +325,11 @@ data class NamedCounterpartyRow(
     val counterpartyName: String?,
     val counterpartyPhone: String?,
     val timestampMillis: Long
+)
+
+data class PayeeLinkRow(
+    val id: Long,
+    val counterpartyName: String?,
+    val counterpartyPhone: String?,
+    val type: TransactionType
 )

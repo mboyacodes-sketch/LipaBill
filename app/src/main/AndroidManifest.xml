@@ -33,17 +33,17 @@
     <!-- Telephony stays optional so Wi-Fi tablets can install. -->
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <!--
-      Phones and tablets only. These are present on handhelds and missing on
-      TVs, watches, cars, and Android XR, so Play will not offer the app there.
+      Optional for Play availability (Desktop / XR / some tablets). Non-handheld
+      installs are still refused at runtime by HandheldDeviceGate.
     -->
     <uses-feature
         android:name="android.hardware.touchscreen"
-        android:required="true"
+        android:required="false"
         tools:replace="android:required" />
-    <uses-feature android:name="android.hardware.screen.portrait" android:required="true" />
-    <uses-feature android:name="android.hardware.screen.landscape" android:required="true" />
-    <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true" />
-    <uses-feature android:name="android.software.app_widgets" android:required="true" />
+    <uses-feature android:name="android.hardware.screen.portrait" android:required="false" />
+    <uses-feature android:name="android.hardware.screen.landscape" android:required="false" />
+    <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
+    <uses-feature android:name="android.software.app_widgets" android:required="false" />
 
     <queries>
         <package android:name="com.android.settings" />
@@ -243,6 +243,30 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!-- Shares one Wrapped story card image at a time, from cache/wrapped only. -->
+        <provider
+            android:name=".ui.analytics.WrappedFileProvider"
+            android:authorities="${applicationId}.wrapped"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/wrapped_paths" />
+        </provider>
+
+        <!-- Home-screen widget: safe to spend + balance, masked until the eye is tapped. -->
+        <receiver
+            android:name=".widget.BalanceWidget"
+            android:exported="true"
+            android:label="@string/widget_safe_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_balance_info" />
+        </receiver>
 
         <receiver
             android:name=".data.sms.MpesaSmsReceiver"

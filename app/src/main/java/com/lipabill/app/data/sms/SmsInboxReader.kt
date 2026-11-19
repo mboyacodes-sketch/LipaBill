@@ -36,7 +36,7 @@ class SmsInboxReader(private val context: Context) {
             extraArgs = extraArgs,
             newerThanMillis = newerThanMillis,
             region = region,
-            enabled = enabled.ifEmpty { region.sources }
+            enabled = enabled
         )
     }
 
@@ -47,7 +47,7 @@ class SmsInboxReader(private val context: Context) {
         region: AppRegion,
         enabled: Set<MoneySource>
     ): List<RawSms> {
-        if (!hasSmsPermission()) return emptyList()
+        if (!hasSmsPermission() || enabled.isEmpty()) return emptyList()
         val addressLikes = enabled.flatMap { it.addressLikes }.distinct()
             .ifEmpty { region.inboxAddressLikes }
         val (selection, selectionArgs) = inboxQuery(
@@ -93,7 +93,16 @@ class SmsInboxReader(private val context: Context) {
         )
 
         internal fun bodyQuery(region: AppRegion): Pair<String, Array<String>> {
-            val likes = region.bodyAmountLikes + listOf("%Confirmed%", "%credited%")
+            // Currency tokens plus common bank/wallet movement verbs (not only "credited").
+            val likes = region.bodyAmountLikes + listOf(
+                "%Confirmed%",
+                "%credited%",
+                "%debited%",
+                "%transferred%",
+                "%withdraw%",
+                "%received%",
+                "% sent %"
+            )
             val selection = likes.joinToString(
                 separator = " OR ",
                 prefix = "(",

@@ -7,12 +7,16 @@ import androidx.security.crypto.MasterKey
 import com.lipabill.app.BuildConfig
 import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MoneySource
+import com.lipabill.app.data.model.defaultLedgerSources
 import com.lipabill.app.data.model.parseStoredSources
 import com.lipabill.app.data.model.resolvedLedgerSources
 import com.lipabill.app.data.model.serializeLedgerSources
 import com.lipabill.app.pay.PayLink
 import com.lipabill.app.social.SocialLink
 import com.lipabill.app.ui.privacy.RecordingCapture
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * App settings and auth flags stored in EncryptedSharedPreferences.
@@ -76,7 +80,15 @@ class SecurePreferences(context: Context) {
      */
     var preferredSimSubscriptionId: Int
         get() = prefs.getInt(KEY_PREFERRED_SIM_SUB_ID, -1)
-        set(value) = prefs.edit().putInt(KEY_PREFERRED_SIM_SUB_ID, value).apply()
+        set(value) {
+            prefs.edit().putInt(KEY_PREFERRED_SIM_SUB_ID, value).apply()
+            _preferredSim.value = value
+        }
+
+    private val _preferredSim by lazy { MutableStateFlow(preferredSimSubscriptionId) }
+
+    /** Live [preferredSimSubscriptionId], so every screen follows a wallet switch made anywhere. */
+    val preferredSim: StateFlow<Int> get() = _preferredSim.asStateFlow()
 
     /** UI base font size in sp (Montserrat geometric sans). Default 12. */
     var uiFontSizeSp: Int
@@ -87,12 +99,12 @@ class SecurePreferences(context: Context) {
     /**
      * Debug / internal builds only. When true, FLAG_SECURE is cleared and names,
      * numbers, references, and ticket codes are blurred in the framebuffer.
-     * Keyboards stay sharp. Play release ignores this flag. Defaults off so
-     * capture stays blocked until a developer opts in.
+     * Keyboards stay sharp. Play release ignores this flag. Defaults on for
+     * debug/sideload so scrcpy and screen recording work without a Settings trip.
      */
     var recordingPrivacy: Boolean
         get() = RecordingCapture.available &&
-            prefs.getBoolean(KEY_RECORDING_PRIVACY, false)
+            prefs.getBoolean(KEY_RECORDING_PRIVACY, true)
         set(value) {
             if (!RecordingCapture.available) return
             prefs.edit().putBoolean(KEY_RECORDING_PRIVACY, value).apply()
@@ -143,6 +155,48 @@ class SecurePreferences(context: Context) {
         prefs.edit().putString(KEY_ENABLED_SOURCES, serializeLedgerSources(next)).apply()
     }
 
+    /**
+     * Old first-run saved only the primary wallet. Once, expand that to the multi-rail
+     * default so Airtel/bank SMS can import without a Settings visit. Skips null storage
+     * (already every rail) and any set the user already widened or trimmed.
+     */
+    fun widenPrimaryOnlyLedgerSourcesIfNeeded(region: AppRegion = appRegion): Boolean {
+        if (prefs.getBoolean(KEY_LEDGER_RAILS_WIDENED, false)) return false
+        val stored = storedLedgerSources()
+        if (stored == null || stored != setOf(region.primaryWallet)) {
+            prefs.edit().putBoolean(KEY_LEDGER_RAILS_WIDENED, true).apply()
+            return false
+        }
+        setEnabledLedgerSources(defaultLedgerSources(region), region)
+        prefs.edit().putBoolean(KEY_LEDGER_RAILS_WIDENED, true).apply()
+        return true
+    }
+
+    /**
+     * One full inbox re-read after multi-rail SMS import stopped being SIM-gated.
+     * Earlier installs marked the inbox "caught up" on M-Pesa alone, so incremental
+     * scans never revisited older Airtel/bank confirmations. False until first-run
+     * finishes; true once when a full rescan should run; then stays consumed.
+     */
+    fun consumePendingFullInboxRescan(): Boolean {
+        if (prefs.getBoolean(KEY_MULTI_RAIL_INBOX_RESCAN, false)) return false
+        if (!firstRunSetupDone) return false
+        prefs.edit().putBoolean(KEY_MULTI_RAIL_INBOX_RESCAN, true).apply()
+        return true
+    }
+
+    /** SIM-bound wallets that had an active line at the last check; null before the first check. */
+    var lineWalletsSeen: Set<MoneySource>?
+        get() = if (prefs.contains(KEY_LINE_WALLETS_SEEN)) {
+            parseStoredSources(prefs.getString(KEY_LINE_WALLETS_SEEN, null)) ?: emptySet()
+        } else {
+            null
+        }
+        set(value) = prefs.edit().apply {
+            if (value == null) remove(KEY_LINE_WALLETS_SEEN)
+            else putString(KEY_LINE_WALLETS_SEEN, serializeLedgerSources(value))
+        }.apply()
+
     /** When true, first-run permissions + SIM setup has been completed. */
     var firstRunSetupDone: Boolean
         get() = prefs.getBoolean(KEY_FIRST_RUN_SETUP_DONE, false)
@@ -167,6 +221,16 @@ class SecurePreferences(context: Context) {
     var unknownPartyRepairDone: Boolean
         get() = prefs.getBoolean(KEY_UNKNOWN_PARTY_REPAIR_DONE, false)
         set(value) = prefs.edit().putBoolean(KEY_UNKNOWN_PARTY_REPAIR_DONE, value).apply()
+
+    /** One-shot: re-read bank/wallet SMS direction after send/receive classify fix. */
+    var bankDirectionRepairDone: Boolean
+        get() = prefs.getBoolean(KEY_BANK_DIRECTION_REPAIR_DONE, false)
+        set(value) = prefs.edit().putBoolean(KEY_BANK_DIRECTION_REPAIR_DONE, value).apply()
+
+    /** One-shot: re-extract bank merchant / till / account holder from SMS bodies. */
+    var bankDetailRepairDone: Boolean
+        get() = prefs.getBoolean(KEY_BANK_DETAIL_REPAIR_DONE, false)
+        set(value) = prefs.edit().putBoolean(KEY_BANK_DETAIL_REPAIR_DONE, value).apply()
 
     /** Regular payees the user marked essential (rent, school fees): kept out of cost nudges. */
     var essentialPayees: Set<String>
@@ -204,6 +268,29 @@ class SecurePreferences(context: Context) {
     var taughtPayeeCategories: Set<String>
         get() = prefs.getStringSet(KEY_TAUGHT_PAYEE_CATEGORIES, null)?.toSet() ?: emptySet()
         set(value) = prefs.edit().putStringSet(KEY_TAUGHT_PAYEE_CATEGORIES, HashSet(value)).apply()
+
+    /**
+     * Spend-category overrides from the receipt editor. Encoded as `payeeKey=spendCategoryId`
+     * (same payee key as Insights regulars). Applies to every linked payment.
+     */
+    var spendCategoryOverrides: Set<String>
+        get() = prefs.getStringSet(KEY_SPEND_CATEGORY_OVERRIDES, null)?.toSet() ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_SPEND_CATEGORY_OVERRIDES, HashSet(value)).apply()
+
+    /** Monthly category budgets, `categoryId=limit`. */
+    var categoryBudgets: Set<String>
+        get() = prefs.getStringSet(KEY_CATEGORY_BUDGETS, null)?.toSet() ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_CATEGORY_BUDGETS, HashSet(value)).apply()
+
+    /** Savings goals as a JSON array. */
+    var savingsGoals: String?
+        get() = prefs.getString(KEY_SAVINGS_GOALS, null)
+        set(value) = prefs.edit().putString(KEY_SAVINGS_GOALS, value).apply()
+
+    /** Money moments already sent (one key per moment and period), so each nudges once. */
+    var moneyMomentsSent: Set<String>
+        get() = prefs.getStringSet(KEY_MONEY_MOMENTS_SENT, null)?.toSet() ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_MONEY_MOMENTS_SENT, HashSet(value)).apply()
 
     /** True while a duo / accountability invite is waiting. */
     var pendingDuoInvite: Boolean
@@ -358,6 +445,8 @@ class SecurePreferences(context: Context) {
         private const val KEY_AMOUNT_PARSE_REPAIR_DONE = "amount_parse_repair_v2"
         private const val KEY_SAVINGS_CLASSIFY_REPAIR_DONE = "savings_classify_repair_v2"
         private const val KEY_UNKNOWN_PARTY_REPAIR_DONE = "unknown_party_repair_v1"
+        private const val KEY_BANK_DIRECTION_REPAIR_DONE = "bank_direction_repair_v2"
+        private const val KEY_BANK_DETAIL_REPAIR_DONE = "bank_detail_repair_v1"
         private const val KEY_DARK_MODE = "dark_mode"
         private const val KEY_ESSENTIAL_PAYEES = "essential_payees"
         private const val KEY_WATCHED_PAYEES = "watched_payees"
@@ -366,11 +455,16 @@ class SecurePreferences(context: Context) {
         private const val KEY_DISMISSED_HABIT_PATTERNS = "dismissed_habit_patterns"
         private const val KEY_HABITS_LAST_VISIT = "habits_last_visit"
         private const val KEY_TAUGHT_PAYEE_CATEGORIES = "taught_payee_categories"
+        private const val KEY_SPEND_CATEGORY_OVERRIDES = "spend_category_overrides_v1"
+        private const val KEY_CATEGORY_BUDGETS = "category_budgets_v1"
+        private const val KEY_SAVINGS_GOALS = "savings_goals_v1"
+        private const val KEY_MONEY_MOMENTS_SENT = "money_moments_sent_v1"
         private const val KEY_PENDING_DUO_INVITE = "pending_duo_invite"
         private const val KEY_CUSTOM_DIY_CHALLENGES = "custom_diy_challenges"
         private const val KEY_INBOX_HISTORY_IMPORTED = "inbox_history_imported_v1"
         private const val KEY_INBOX_HIGH_WATER = "inbox_high_water_millis"
-        private const val KEY_WALLET_RAILS_INBOX_SCAN = "wallet_rails_inbox_scan_v1"
+        // v2: bank formats (NCBA, Equity, StanChart, Absa) and Lipa-na-KCB order widened; re-read once.
+        private const val KEY_WALLET_RAILS_INBOX_SCAN = "wallet_rails_inbox_scan_v2"
         private const val KEY_REPEAT_ENABLED = "repeat_feature_enabled"
         private const val KEY_A11Y_ONBOARDING_SEEN = "a11y_onboarding_seen"
         private const val KEY_A11Y_PREFERRED_ON = "a11y_preferred_on"
@@ -381,6 +475,9 @@ class SecurePreferences(context: Context) {
         private const val KEY_FIRST_RUN_SETUP_DONE = "first_run_setup_done"
         private const val KEY_APP_REGION = "app_region"
         private const val KEY_ENABLED_SOURCES = "enabled_ledger_sources_v1"
+        private const val KEY_LEDGER_RAILS_WIDENED = "ledger_rails_widened_v1"
+        private const val KEY_MULTI_RAIL_INBOX_RESCAN = "multi_rail_inbox_rescan_v2"
+        private const val KEY_LINE_WALLETS_SEEN = "line_wallets_seen_v1"
         private const val KEY_PAY_COLLECT_KIND = "pay_collect_kind"
         private const val KEY_PAY_PHONE = "pay_phone"
         private const val KEY_PAY_PHONE_HIDDEN = "pay_phone_hidden"

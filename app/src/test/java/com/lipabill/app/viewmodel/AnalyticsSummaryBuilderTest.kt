@@ -1,10 +1,12 @@
 package com.lipabill.app.viewmodel
 
-import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.testTransaction
+import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.TransactionType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -26,24 +28,21 @@ class AnalyticsSummaryBuilderTest {
         code: String = "C$daysAgo$type",
         phone: String? = null,
         cost: Double? = null
-    ) = MpesaTransaction(
-        id = 0,
+    ) = testTransaction(
         code = code,
         type = type,
         amount = amount,
         counterpartyName = name,
         counterpartyPhone = phone,
         timestampMillis = at(daysAgo),
-        balance = null,
-        cost = cost,
-        rawBody = ""
+        cost = cost
     )
 
     @Test
     fun empty_ledger_still_builds_a_story() {
         val summary = buildAnalyticsSummary(
             emptyList(),
-            AnalyticsRangeState(AnalyticsRange.DAYS_30, null, null, null),
+            AnalyticsRangeState(AnalyticsRange.THIS_MONTH, null, null, null),
             WalletAccount.MPESA,
             InsightMarks()
         )
@@ -51,6 +50,26 @@ class AnalyticsSummaryBuilderTest {
         assertTrue(summary.storyHeadline.isNotBlank())
         assertTrue(summary.topPeople.isEmpty())
         assertTrue(summary.topBusinesses.isEmpty())
+    }
+
+    @Test
+    fun this_month_range_starts_on_the_first() {
+        val ledger = listOf(
+            tx(TransactionType.BUY_GOODS, "Old Shop", 9_000.0, today.dayOfMonth + 5),
+            tx(TransactionType.BUY_GOODS, "New Shop", 100.0, 1)
+        )
+        val summary = buildAnalyticsSummary(
+            ledger,
+            AnalyticsRangeState(AnalyticsRange.THIS_MONTH, null, null, null),
+            WalletAccount.MPESA,
+            InsightMarks()
+        )
+        assertEquals(today.withDayOfMonth(1), summary.periodFrom)
+        assertEquals(today, summary.periodTo)
+        assertEquals(AnalyticsRange.THIS_MONTH, summary.range)
+        assertEquals(100.0, summary.expenseTotal, 0.0)
+        assertTrue(summary.pulse.isNotEmpty())
+        assertTrue(summary.pulse.any { it.isToday })
     }
 
     @Test
@@ -161,5 +180,91 @@ class AnalyticsSummaryBuilderTest {
             InsightMarks()
         )
         assertNull(summary.keptHeadline)
+    }
+
+    /**
+     * Regulars are all-time cadence estimates: period pills must not change them.
+     * Rail filtering works by narrowing the ledger before build — that must change them.
+     */
+    @Test
+    fun regulars_ignore_period_but_follow_source_filtered_ledger() {
+        fun monthlyPaybill(
+            name: String,
+            amount: Double,
+            source: MoneySource,
+            dayOffsets: List<Int>
+        ) = dayOffsets.mapIndexed { i, daysAgo ->
+            testTransaction(
+                code = "${source.name}-$name-$i",
+                type = TransactionType.PAYBILL,
+                amount = amount,
+                counterpartyName = name,
+                timestampMillis = at(daysAgo),
+                source = source
+            )
+        }
+        // ~30-day gaps so cadence maps to MONTHLY.
+        val mpesaFibre = monthlyPaybill(
+            "Safaricom Home",
+            2_999.0,
+            MoneySource.MPESA,
+            listOf(90, 60, 30)
+        )
+        val airtelDstv = monthlyPaybill(
+            "DStv Kenya",
+            5_500.0,
+            MoneySource.AIRTEL_MONEY,
+            listOf(88, 58, 28)
+        )
+        // One-off spend inside the last week so period totals move while regulars stay put.
+        val recentShop = testTransaction(
+            code = "SHOP-RECENT",
+            type = TransactionType.BUY_GOODS,
+            amount = 400.0,
+            counterpartyName = "Naivas",
+            timestampMillis = at(3),
+            source = MoneySource.MPESA
+        )
+        val both = mpesaFibre + airtelDstv + listOf(recentShop)
+        val marks = InsightMarks()
+        val month = buildAnalyticsSummary(
+            both,
+            AnalyticsRangeState(AnalyticsRange.THIS_MONTH, null, null, null),
+            WalletAccount.MPESA,
+            marks
+        )
+        val week = buildAnalyticsSummary(
+            both,
+            AnalyticsRangeState(AnalyticsRange.DAYS_7, null, null, null),
+            WalletAccount.MPESA,
+            marks
+        )
+        assertEquals(2, month.regulars.size)
+        assertEquals(month.regulars.map { it.key to it.monthlyCost }, week.regulars.map { it.key to it.monthlyCost })
+        // Period spend can move; regulars stay the same list/amounts.
+        assertTrue(month.txnCount >= week.txnCount)
+        assertEquals(week.expenseTotal, 400.0, 0.001)
+
+        val mpesaOnly = buildAnalyticsSummary(
+            both.filter { it.source == MoneySource.MPESA },
+            AnalyticsRangeState(AnalyticsRange.THIS_MONTH, null, null, null),
+            WalletAccount.MPESA,
+            marks
+        )
+        val airtelOnly = buildAnalyticsSummary(
+            both.filter { it.source == MoneySource.AIRTEL_MONEY },
+            AnalyticsRangeState(AnalyticsRange.THIS_MONTH, null, null, null),
+            WalletAccount.MPESA,
+            marks
+        )
+        assertEquals(1, mpesaOnly.regulars.size)
+        assertEquals("Safaricom Home", mpesaOnly.regulars.single().name)
+        assertEquals(1, airtelOnly.regulars.size)
+        assertEquals("DStv Kenya", airtelOnly.regulars.single().name)
+        assertNotEquals(
+            mpesaOnly.regulars.single().monthlyCost,
+            airtelOnly.regulars.single().monthlyCost,
+            0.001
+        )
     }
 }

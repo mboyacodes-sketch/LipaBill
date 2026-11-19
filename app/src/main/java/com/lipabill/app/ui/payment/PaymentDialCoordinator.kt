@@ -7,6 +7,7 @@ import com.lipabill.app.BuildConfig
 import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.ui.navigation.Route
 import com.lipabill.app.ui.util.formatKesMoney
+import com.lipabill.app.ussd.PaymentWallet
 import com.lipabill.app.ussd.PendingPaymentReceipt
 import com.lipabill.app.ussd.RepeatOutcome
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
@@ -38,7 +39,8 @@ class PaymentDialCoordinator(
         flow: String,
         prepare: suspend () -> RepeatTransactionCoordinator.PreparedRepeat?,
         startDial: (RepeatTransactionCoordinator.PreparedRepeat) -> Boolean,
-        pendingId: Long? = null
+        pendingId: Long? = null,
+        wallet: () -> PaymentWallet? = { null }
     ) {
         val needCall = !hasCallPermission()
         val needState = !hasPhoneStatePermission()
@@ -46,7 +48,7 @@ class PaymentDialCoordinator(
             onPendingDialTxId(pendingId)
             requestPhoneConsent {
                 if (hasCallPermission() && hasPhoneStatePermission()) {
-                    run(flow, prepare, startDial, pendingId)
+                    run(flow, prepare, startDial, pendingId, wallet)
                 }
             }
             return
@@ -57,7 +59,7 @@ class PaymentDialCoordinator(
                 AppMetrics.paymentAborted(flow, "prepare_failed")
                 Toast.makeText(
                     context,
-                    "Couldn’t start payment — check amount and recipient",
+                    "Couldn’t start payment — check amount, recipient, country, and SIM",
                     Toast.LENGTH_LONG
                 ).show()
                 return@launch
@@ -66,12 +68,12 @@ class PaymentDialCoordinator(
             if (!startDial(prepared)) {
                 Toast.makeText(
                     context,
-                    "Payment didn’t start. Turn off other accessibility services, then try again.",
+                    "Payment didn’t start. Check Accessibility, SIM, and try again.",
                     Toast.LENGTH_LONG
                 ).show()
                 return@launch
             }
-            PendingPaymentReceipt.capture(prepared)
+            PendingPaymentReceipt.capture(prepared, wallet() ?: prepared.plan.wallet)
             dismissMoneySheets()
             navController.navigate(Route.Processing(prepared.auditId).path) {
                 popUpTo(Route.List.path) { inclusive = false }
@@ -85,7 +87,8 @@ class PaymentDialCoordinator(
             flow = "repeat",
             prepare = { repeatVm.prepare() },
             startDial = { repeatVm.startDial(it) },
-            pendingId = repeatVm.uiState.value.transaction?.id
+            pendingId = repeatVm.uiState.value.transaction?.id,
+            wallet = { repeatVm.uiState.value.activeWallet }
         )
     }
 
@@ -94,7 +97,8 @@ class PaymentDialCoordinator(
             runDemoWalkthrough(
                 flow = "send",
                 prepare = { sendVm.prepare() },
-                summary = { sendVm.confirmSummary() }
+                summary = { sendVm.confirmSummary() },
+                wallet = { sendVm.uiState.value.activeWallet }
             )
             return
         }
@@ -102,7 +106,8 @@ class PaymentDialCoordinator(
             flow = "send",
             prepare = { sendVm.prepare() },
             startDial = { sendVm.startDial(it) },
-            pendingId = null
+            pendingId = null,
+            wallet = { sendVm.uiState.value.activeWallet }
         )
     }
 
@@ -111,7 +116,8 @@ class PaymentDialCoordinator(
             runDemoWalkthrough(
                 flow = "pay",
                 prepare = { payVm.prepare() },
-                summary = { payVm.confirmSummary() }
+                summary = { payVm.confirmSummary() },
+                wallet = { payVm.uiState.value.activeWallet }
             )
             return
         }
@@ -119,7 +125,8 @@ class PaymentDialCoordinator(
             flow = "pay",
             prepare = { payVm.prepare() },
             startDial = { payVm.startDial(it) },
-            pendingId = null
+            pendingId = null,
+            wallet = { payVm.uiState.value.activeWallet }
         )
     }
 
@@ -130,7 +137,8 @@ class PaymentDialCoordinator(
     fun runDemoWalkthrough(
         flow: String,
         prepare: suspend () -> RepeatTransactionCoordinator.PreparedRepeat?,
-        summary: () -> Triple<String, String, String>?
+        summary: () -> Triple<String, String, String>?,
+        wallet: () -> PaymentWallet? = { null }
     ) {
         scope.launch {
             val prepared = prepare()
@@ -144,7 +152,7 @@ class PaymentDialCoordinator(
                 return@launch
             }
             AppMetrics.paymentStarted(flow)
-            PendingPaymentReceipt.capture(prepared)
+            PendingPaymentReceipt.capture(prepared, wallet() ?: prepared.plan.wallet)
             dismissMoneySheets()
             val labels = summary()
             val amountLabel = labels?.third ?: formatKesMoney(prepared.amount)
@@ -155,6 +163,7 @@ class PaymentDialCoordinator(
                 ).joinToString(" · ").ifBlank { "Demo payment" }
             val auditId = prepared.auditId
             val maskSummary = "$amountLabel\n$detail\nDemo walkthrough — no USSD dial"
+            val dialWallet = wallet()
             val usedMask = UssdAutomationMask.startDebugWalkthrough(
                 totalSteps = prepared.plan.actions.size.coerceAtLeast(1),
                 summary = maskSummary,
@@ -163,7 +172,8 @@ class PaymentDialCoordinator(
                 },
                 onCancel = {
                     scope.launch { finishDemoWalkthrough(auditId, cancelled = true) }
-                }
+                },
+                walletBadge = dialWallet?.badge ?: prepared.plan.wallet.badge
             )
             if (!usedMask) {
                 navController.navigate(

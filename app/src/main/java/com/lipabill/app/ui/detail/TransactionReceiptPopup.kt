@@ -1,5 +1,6 @@
 package com.lipabill.app.ui.detail
 
+import com.lipabill.app.ui.components.WalletMark
 import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -9,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,12 +24,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,7 +39,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,8 +54,10 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,6 +66,7 @@ import androidx.compose.ui.unit.sp
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.engage.SpendCategory
 import com.lipabill.app.ui.components.CounterpartyAvatar
 import com.lipabill.app.ui.components.txAmountLook
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
@@ -76,6 +87,8 @@ import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.ui.util.formatTimestamp
 import com.lipabill.app.ui.util.sharePlainText
 import com.lipabill.app.ussd.UssdMenuBuilder
+import com.lipabill.app.viewmodel.PayeeEditResult
+import kotlinx.coroutines.launch
 
 private val DetailFill: Color
     @androidx.compose.runtime.Composable
@@ -95,9 +108,13 @@ private val LabelGrey: Color
 fun TransactionReceiptPopup(
     tx: MpesaTransaction,
     onDismiss: () -> Unit,
-    onRepeat: ((Long) -> Unit)? = null
+    onRepeat: ((Long) -> Unit)? = null,
+    spendCategory: SpendCategory = SpendCategory.OTHER,
+    onCountLinked: (suspend (MpesaTransaction) -> Int)? = null,
+    onSavePayee: (suspend (String?, SpendCategory) -> PayeeEditResult)? = null
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val amount = txAmountLook(tx)
     val fuliza = tx.type == TransactionType.FULIZA
     val outgoing = tx.type.isOutgoing()
@@ -106,8 +123,22 @@ fun TransactionReceiptPopup(
     val canPay = UssdMenuBuilder.canRepeat(tx)
     val typeLabel = tx.type.displayLabel()
     val avatarName = tx.counterpartyName?.takeIf { it.isNotBlank() } ?: tx.source.label
+    var editing by remember(tx.id) { mutableStateOf(false) }
+    var draftName by remember(tx.id) { mutableStateOf(tx.counterpartyName.orEmpty()) }
+    var draftCategory by remember(tx.id) { mutableStateOf(spendCategory) }
+    var linkedCount by remember(tx.id) { mutableStateOf(1) }
+    var saving by remember { mutableStateOf(false) }
 
-    BackHandler(onBack = onDismiss)
+    LaunchedEffect(tx.id, editing, spendCategory) {
+        draftCategory = spendCategory
+        if (editing && onCountLinked != null) {
+            linkedCount = onCountLinked(tx).coerceAtLeast(1)
+        }
+    }
+
+    BackHandler(onBack = {
+        if (editing) editing = false else onDismiss()
+    })
 
     Box(
         modifier = Modifier
@@ -233,6 +264,63 @@ fun TransactionReceiptPopup(
                         ) {
                             StatusPill(text = "Confirmed", filled = false)
                             StatusPill(text = typeLabel, filled = true)
+                            StatusPill(text = spendCategory.label, filled = false)
+                        }
+                        if (onSavePayee != null) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            if (!editing) {
+                                OutlinedButton(
+                                    onClick = {
+                                        draftName = tx.counterpartyName.orEmpty()
+                                        draftCategory = spendCategory
+                                        editing = true
+                                    },
+                                    shape = RoundedCornerShape(18.dp),
+                                    border = BorderStroke(1.dp, Hairline),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Edit,
+                                        contentDescription = null,
+                                        tint = Ink,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.size(6.dp))
+                                    Text("Edit name & category", style = HomeType.label, color = Ink)
+                                }
+                            } else {
+                                PayeeEditPanel(
+                                    draftName = draftName,
+                                    onNameChange = { draftName = it },
+                                    draftCategory = draftCategory,
+                                    onCategoryChange = { draftCategory = it },
+                                    linkedCount = linkedCount,
+                                    saving = saving,
+                                    onCancel = { editing = false },
+                                    onSave = {
+                                        if (saving) return@PayeeEditPanel
+                                        saving = true
+                                        scope.launch {
+                                            val result = onSavePayee(
+                                                draftName.trim().ifEmpty { null },
+                                                draftCategory
+                                            )
+                                            saving = false
+                                            editing = false
+                                            val n = result.linkedCount.coerceAtLeast(1)
+                                            Toast.makeText(
+                                                context,
+                                                if (n == 1) {
+                                                    "Updated this payment"
+                                                } else {
+                                                    "Applies to $n similar payments"
+                                                },
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -260,11 +348,29 @@ fun TransactionReceiptPopup(
                 DetailSection(title = "Transaction details") {
                     DetailRow("Date", formatTimestamp(tx.timestampMillis))
                     DetailRow("Type", typeLabel)
-                    if (tx.source != MoneySource.MPESA) {
-                        DetailRow("Source", tx.source.label)
+                    // Every receipt names its wallet or bank, with the same mark as the payment flow.
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (tx.source.isWallet) "Wallet" else "Bank",
+                            style = HomeType.caption,
+                            color = LabelGrey
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            WalletMark(tx.source, size = 18.dp)
+                            Text(text = tx.source.label, color = Ink, fontSize = 12.sp)
+                        }
                     }
                     if (!tx.counterpartyPhone.isNullOrBlank()) {
-                        DetailRow("Phone", tx.counterpartyPhone, coverValue = true)
+                        DetailRow(tx.source.partyIdLabel, tx.counterpartyPhone, coverValue = true)
                     }
                 }
 
@@ -341,6 +447,115 @@ private fun StatusPill(text: String, filled: Boolean) {
             )
             .padding(horizontal = 10.dp, vertical = 4.dp)
     )
+}
+
+@Composable
+private fun PayeeEditPanel(
+    draftName: String,
+    onNameChange: (String) -> Unit,
+    draftCategory: SpendCategory,
+    onCategoryChange: (SpendCategory) -> Unit,
+    linkedCount: Int,
+    saving: Boolean,
+    onCancel: () -> Unit,
+    onSave: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(DetailFill)
+            .padding(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("Name", style = HomeType.label, color = Mute, modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(4.dp))
+        BasicTextField(
+            value = draftName,
+            onValueChange = onNameChange,
+            singleLine = true,
+            textStyle = TextStyle(
+                color = Ink,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            ),
+            cursorBrush = SolidColor(Accent),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(CardWhite)
+                .border(1.dp, Hairline, RoundedCornerShape(10.dp))
+                .padding(horizontal = 10.dp, vertical = 10.dp)
+                .recordingPrivacyCover(true)
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Text("Category", style = HomeType.label, color = Mute, modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            SpendCategory.editable.forEach { cat ->
+                val selected = cat == draftCategory
+                Text(
+                    text = cat.label,
+                    style = HomeType.label.asPillLabel(),
+                    color = if (selected) OnAccent else Ink,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(percent = 50))
+                        .background(if (selected) Accent else CardWhite)
+                        .border(
+                            width = if (selected) 0.dp else 1.dp,
+                            color = if (selected) Color.Transparent else Hairline,
+                            shape = RoundedCornerShape(percent = 50)
+                        )
+                        .clickable { onCategoryChange(cat) }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = if (linkedCount <= 1) {
+                "Applies to this payment only."
+            } else {
+                "Applies to $linkedCount similar payments."
+            },
+            style = HomeType.caption,
+            color = Mute,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = onCancel,
+                enabled = !saving,
+                modifier = Modifier.weight(1f).height(40.dp),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, Hairline)
+            ) {
+                Text("Cancel", style = HomeType.label, color = Ink)
+            }
+            Button(
+                onClick = onSave,
+                enabled = !saving,
+                modifier = Modifier.weight(1f).height(40.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Accent,
+                    contentColor = OnAccent
+                )
+            ) {
+                Text(if (saving) "Saving…" else "Save", style = HomeType.label)
+            }
+        }
+    }
 }
 
 @Composable

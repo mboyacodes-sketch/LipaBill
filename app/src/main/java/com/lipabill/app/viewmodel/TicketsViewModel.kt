@@ -1,5 +1,6 @@
 package com.lipabill.app.viewmodel
 
+import com.lipabill.app.data.tickets.EventTicketSms
 import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -13,11 +14,15 @@ import com.lipabill.app.data.model.TicketStatus
 import com.lipabill.app.data.tickets.BookingConfirmationParser
 import com.lipabill.app.data.tickets.TicketDocumentImporter
 import com.lipabill.app.data.tickets.TicketDocumentKind
+import com.lipabill.app.data.tickets.BarcodeSpec
 import com.lipabill.app.data.tickets.TicketImport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -25,14 +30,27 @@ class TicketsViewModel(
     private val app: LipaBillApp
 ) : ViewModel() {
 
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
     val tickets: StateFlow<List<Ticket>> = app.ticketRepository.observeAll()
+        .onEach { _isLoading.value = false }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** SGR: paste booking SMS → ticket awaiting boarding pass. */
+    /**
+     * A pasted ticket SMS: an SGR booking keeps the booking flow; any other ticket SMS becomes
+     * an event pass (QR pending) or joins the pass already saved for the same ticket.
+     */
     suspend fun addFromConfirmation(message: String): Long? = withContext(Dispatchers.IO) {
-        val draft = BookingConfirmationParser.parse(message)
-        app.ticketRepository.addImport(draft)
-            ?: throw IllegalArgumentException("That booking ref is already saved.")
+        if (EventTicketSms.looksLikeRailBooking(message)) {
+            val draft = BookingConfirmationParser.parse(message)
+            app.ticketRepository.addImport(draft)
+                ?: throw IllegalArgumentException("That booking ref is already saved.")
+        } else {
+            app.ticketRepository.addOrMerge(EventTicketSms.parse(message))
+                ?: throw IllegalArgumentException("Couldn't save that ticket.")
+        }
     }
 
     suspend fun addFromPaste(
@@ -51,24 +69,36 @@ class TicketsViewModel(
             hasBoardingPass = true
         )
 
-    /** Import a file as an event ticket (one-shot) or SGR e-ticket. */
-    suspend fun addFromDocument(
+    /** Reads a ticket file into a draft without saving (the review step edits it). */
+    suspend fun readDocument(
         context: Context,
         uri: Uri,
         kind: TicketDocumentKind
+    ): TicketImport = withContext(Dispatchers.IO) {
+        TicketDocumentImporter.import(context, uri, kind)
+    }
+
+    /** Saves a draft read by [readDocument] (after review, for PDF / photo event tickets). */
+    suspend fun saveImport(
+        draft: TicketImport,
+        kind: TicketDocumentKind
     ): Long? = withContext(Dispatchers.IO) {
-        val draft = TicketDocumentImporter.import(context, uri, kind)
         when (kind) {
+            // Event tickets join a pass already saved for the same ticket (e.g. from its SMS).
             TicketDocumentKind.EVENT, TicketDocumentKind.PKPASS -> {
-                app.ticketRepository.addImport(
+                app.ticketRepository.addOrMerge(
                     draft.copy(expectsBoardingPass = false, hasBoardingPass = true)
                 ) ?: throw IllegalArgumentException("That ticket is already saved.")
             }
             else -> {
-                app.ticketRepository.addImport(draft)
+                app.ticketRepository.addOrMerge(draft)
                     ?: throw IllegalArgumentException("That ticket is already saved.")
             }
         }
+    }
+
+    fun delete(id: Long) {
+        viewModelScope.launch { app.ticketRepository.delete(id) }
     }
 
 }
@@ -78,7 +108,11 @@ class TicketDetailViewModel(
     ticketId: Long
 ) : ViewModel() {
 
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
     val ticket: StateFlow<Ticket?> = app.ticketRepository.observeById(ticketId)
+        .onEach { _isLoading.value = false }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun markUsed() {
@@ -98,27 +132,29 @@ class TicketDetailViewModel(
     ): Boolean =
         withContext(Dispatchers.IO) {
             val current = ticket.value ?: return@withContext false
+            // Keep the detected symbology (QR / PDF417 / Aztec) and its encoding spec.
             val draft = TicketDocumentImporter.import(context, uri, TicketDocumentKind.SGR_TICKET)
                 .copy(
                     expectsBoardingPass = true,
-                    hasBoardingPass = true,
-                    barcodeFormat = TicketBarcodeFormat.QR_CODE
+                    hasBoardingPass = true
                 )
             app.ticketRepository.attachBoardingPass(current.id, draft, leg) != null
         }
 
     suspend fun attachBoardingPassScan(
         barcodeValue: String,
-        leg: BoardingLeg? = null
+        leg: BoardingLeg? = null,
+        spec: BarcodeSpec? = null
     ): Boolean =
         withContext(Dispatchers.IO) {
             val current = ticket.value ?: return@withContext false
-            val payload = barcodeValue.trim()
-            if (payload.isEmpty()) return@withContext false
+            val payload = barcodeValue
+            if (payload.isBlank()) return@withContext false
             val draft = TicketImport(
                 title = "Boarding pass",
                 barcodeValue = payload,
-                barcodeFormat = TicketBarcodeFormat.QR_CODE,
+                barcodeFormat = spec?.format ?: TicketBarcodeFormat.QR_CODE,
+                barcodeSpec = spec,
                 orderId = current.orderId,
                 source = TicketSource.MANUAL_SCAN,
                 expectsBoardingPass = true,

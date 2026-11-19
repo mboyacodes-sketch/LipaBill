@@ -7,7 +7,8 @@ import android.content.res.Configuration
 /**
  * LipaBill runs on phones and tablets. TVs, XR headsets, watches, cars,
  * Chrome OS, and other non-handheld devices are refused even if the APK
- * is sideloaded. Play filtering uses the matching uses-feature declarations.
+ * is sideloaded. Play keeps related uses-feature entries optional so Desktop
+ * and XR listings are not blocked; this gate is the install-time filter.
  */
 object HandheldDeviceGate {
 

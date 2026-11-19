@@ -26,7 +26,9 @@ data class ParsedPkPass(
     val barcodeValue: String,
     val barcodeFormat: TicketBarcodeFormat,
     val orderId: String?,
-    val notes: String?
+    val notes: String?,
+    /** backgroundColor / foregroundColor / labelColor from pass.json, when set. */
+    val colors: PassColors? = null
 )
 
 object PkPassParser {
@@ -112,7 +114,12 @@ object PkPassParser {
             barcodeValue = barcode.message,
             barcodeFormat = barcode.format,
             orderId = serial,
-            notes = notes
+            notes = notes,
+            colors = PassColors.fromPassJson(
+                root.optString("backgroundColor").ifBlank { null },
+                root.optString("foregroundColor").ifBlank { null },
+                root.optString("labelColor").ifBlank { null }
+            )
         )
     }
 

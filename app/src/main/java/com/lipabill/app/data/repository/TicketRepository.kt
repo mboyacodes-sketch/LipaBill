@@ -1,5 +1,8 @@
 package com.lipabill.app.data.repository
 
+import com.lipabill.app.data.model.withNotesValue
+import com.lipabill.app.data.tickets.EventPresets
+import com.lipabill.app.data.tickets.EventTicketSms
 import com.lipabill.app.BuildConfig
 import com.lipabill.app.data.DemoLedger
 import com.lipabill.app.data.local.dao.TicketDao
@@ -53,7 +56,8 @@ class TicketRepository(
         boardingVenue: String? = null,
         boardingStartsAtMillis: Long? = null,
         boardingSeatOrTier: String? = null,
-        boardingNotes: String? = null
+        boardingNotes: String? = null,
+        passColors: String? = null
     ): Long? = withContext(Dispatchers.IO) {
         val payload = barcodeValue.trim()
         if (payload.isEmpty()) return@withContext null
@@ -88,7 +92,8 @@ class TicketRepository(
                 boardingVenue = boardingVenue?.trim()?.ifBlank { null },
                 boardingStartsAtMillis = boardingStartsAtMillis,
                 boardingSeatOrTier = boardingSeatOrTier?.trim()?.ifBlank { null },
-                boardingNotes = boardingNotes?.trim()?.ifBlank { null }
+                boardingNotes = boardingNotes?.trim()?.ifBlank { null },
+                passColors = passColors
             )
         )
     }
@@ -114,6 +119,47 @@ class TicketRepository(
         }
     }
 
+    /**
+     * Saves an event ticket, or folds it into the pass already saved for the same ticket (an SMS
+     * and the PDF / screenshot of one ticket, in either order). Matching is by order number,
+     * printed ticket number, or the same entry code. Returns the pass id, or null when nothing
+     * could be saved.
+     */
+    suspend fun addOrMerge(draft: TicketImport): Long? {
+        if (draft.expectsBoardingPass) return addImport(draft)
+        val existing = withContext(Dispatchers.IO) {
+            val refs = ticketRefs(draft.orderId, draft.notes, draft.barcodeValue)
+            if (refs.isEmpty()) null else dao.eventTickets().firstOrNull { e ->
+                ticketRefs(e.orderId, e.notes, e.barcodeValue).any { it in refs }
+            }
+        } ?: return addImport(draft)
+        return withContext(Dispatchers.IO) { merge(existing, draft) }
+    }
+
+    /** Fills the saved pass's blanks from [draft]; a real entry code replaces a pending one. */
+    private suspend fun merge(existing: TicketEntity, draft: TicketImport): Long? {
+        val newCode = draft.barcodeValue.trim()
+        val newIsReal = newCode.isNotEmpty() && !EventTicketSms.isPending(newCode)
+        // A real code replaces a pending one, and a newer real one (a guest transfer issues a
+        // fresh QR and kills the old) replaces the old, unless another pass already holds it.
+        val takeCode = newIsReal && newCode != existing.barcodeValue && !codeInUse(newCode, exceptId = existing.id)
+        val genericTitle = EventPresets.isGenericTitle(existing.title)
+        dao.update(
+            existing.copy(
+                title = if (genericTitle && !EventPresets.isGenericTitle(draft.title)) draft.title.trim() else existing.title,
+                venue = existing.venue ?: draft.venue?.trim()?.ifBlank { null },
+                startsAtMillis = existing.startsAtMillis ?: draft.startsAtMillis,
+                seatOrTier = existing.seatOrTier ?: draft.seatOrTier?.trim()?.ifBlank { null },
+                orderId = existing.orderId ?: draft.orderId?.trim()?.ifBlank { null },
+                notes = mergeNotes(existing.notes, draft.notes),
+                barcodeValue = if (takeCode) newCode else existing.barcodeValue,
+                barcodeFormat = if (takeCode) draft.barcodeFormat else existing.barcodeFormat,
+                passColors = existing.passColors ?: draft.passColors
+            )
+        )
+        return existing.id
+    }
+
     suspend fun addImport(draft: TicketImport): Long? {
         val boarding = draft.expectsBoardingPass && draft.hasBoardingPass
         return add(
@@ -135,7 +181,8 @@ class TicketRepository(
             boardingVenue = draft.venue.takeIf { boarding },
             boardingStartsAtMillis = draft.startsAtMillis.takeIf { boarding },
             boardingSeatOrTier = draft.seatOrTier.takeIf { boarding },
-            boardingNotes = draft.notes.takeIf { boarding }
+            boardingNotes = draft.notes.takeIf { boarding },
+            passColors = draft.passColors
         )
     }
 
@@ -150,9 +197,11 @@ class TicketRepository(
     ): Long? = withContext(Dispatchers.IO) {
         val existing = dao.getById(ticketId) ?: return@withContext null
         val ticket = existing.toDomain()
-        val payload = draft.barcodeValue.trim()
-        if (payload.isEmpty()) return@withContext null
+        // Keep the gate payload byte-for-byte: fixed-width codes can carry edge spaces.
+        val payload = draft.barcodeValue
+        if (payload.isBlank()) return@withContext null
         if (codeInUse(payload, exceptId = ticketId)) return@withContext null
+        val spec = draft.barcodeSpec?.serialize()
 
         val resolved = leg ?: resolveBoardingLeg(ticket, draft)
         val updated = when (resolved) {
@@ -165,7 +214,8 @@ class TicketRepository(
                 boardingVenue = draft.venue?.trim()?.ifBlank { null },
                 boardingStartsAtMillis = draft.startsAtMillis,
                 boardingSeatOrTier = draft.seatOrTier?.trim()?.ifBlank { null },
-                boardingNotes = draft.notes?.trim()?.ifBlank { null }
+                boardingNotes = draft.notes?.trim()?.ifBlank { null },
+                boardingBarcodeSpec = spec
             )
             BoardingLeg.RETURN -> existing.copy(
                 expectsBoardingPass = true,
@@ -176,7 +226,8 @@ class TicketRepository(
                 returnBoardingVenue = draft.venue?.trim()?.ifBlank { null },
                 returnBoardingStartsAtMillis = draft.startsAtMillis,
                 returnBoardingSeatOrTier = draft.seatOrTier?.trim()?.ifBlank { null },
-                returnBoardingNotes = draft.notes?.trim()?.ifBlank { null }
+                returnBoardingNotes = draft.notes?.trim()?.ifBlank { null },
+                returnBoardingBarcodeSpec = spec
             )
         }
         dao.update(updated)
@@ -246,4 +297,28 @@ class TicketRepository(
             h.indexOf(parts[1].take(3)) < h.indexOf(parts[0].take(3))
     }
 
+
+    private companion object {
+        /** Order number, printed ticket number and real (or pending) entry code, normalised. */
+        fun ticketRefs(orderId: String?, notes: String?, code: String?): Set<String> =
+            listOfNotNull(
+                orderId,
+                notes.notesValue("Ticket no"),
+                code?.removePrefix(EventTicketSms.PENDING_PREFIX)
+            )
+                .map { it.uppercase().filter(Char::isLetterOrDigit) }
+                .filter { it.length >= 4 }
+                .toSet()
+
+        /** Adds `Label: value` segments the saved notes lack; saved values win. */
+        fun mergeNotes(saved: String?, incoming: String?): String? {
+            var out = saved
+            incoming.orEmpty().split(" · ").map { it.trim() }.forEach { segment ->
+                val label = segment.substringBefore(':', "").trim()
+                if (label.isEmpty()) return@forEach
+                if (out.notesValue(label) == null) out = out.withNotesValue(label, segment.substringAfter(':').trim())
+            }
+            return out
+        }
+    }
 }

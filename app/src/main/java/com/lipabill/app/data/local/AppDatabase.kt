@@ -3,7 +3,7 @@ package com.lipabill.app.data.local
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import android.util.Log
+import com.lipabill.app.metrics.AppLog
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -40,7 +40,7 @@ import java.security.SecureRandom
         WeeklyCheckInEntity::class,
         CheckInStreakEntity::class
     ],
-    version = 12,
+    version = 15,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -81,10 +81,10 @@ abstract class AppDatabase : RoomDatabase() {
                 first.openHelper.writableDatabase
                 first
             } catch (t: Throwable) {
-                Log.w(TAG, "cipher_open_failed", t)
+                AppLog.w(TAG, "cipher_open_failed", t)
                 runCatching { first.close() }
                 if (!isFreshInstall(context)) {
-                    Log.e(
+                    AppLog.e(
                         TAG,
                         "cipher_open_failed_on_update — preserving DB/passphrase " +
                             "(uninstall or Clear storage is required to reset)"
@@ -94,7 +94,7 @@ abstract class AppDatabase : RoomDatabase() {
                     retry.openHelper.writableDatabase
                     return retry
                 }
-                Log.w(TAG, "cipher_open_failed_on_fresh_install_recreating", t)
+                AppLog.w(TAG, "cipher_open_failed_on_fresh_install_recreating", t)
                 wipeCipherArtifacts(context)
                 val fresh = tryBuild(context)
                 fresh.openHelper.writableDatabase
@@ -158,7 +158,7 @@ abstract class AppDatabase : RoomDatabase() {
                 return try {
                     readPassphrase(context, masterKey, file)
                 } catch (t: Throwable) {
-                    Log.w(TAG, "passphrase_unreadable", t)
+                    AppLog.w(TAG, "passphrase_unreadable", t)
                     // On updates, never rotate the key — that would orphan the existing DB.
                     if (!isFreshInstall(context)) {
                         throw IllegalStateException(
@@ -167,7 +167,7 @@ abstract class AppDatabase : RoomDatabase() {
                             t
                         )
                     }
-                    Log.w(TAG, "passphrase_unreadable_rotating_fresh_install", t)
+                    AppLog.w(TAG, "passphrase_unreadable_rotating_fresh_install", t)
                     file.delete()
                     createPassphrase(context, masterKey, file)
                 }

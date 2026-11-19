@@ -101,15 +101,20 @@ fun formatEventWhen(millis: Long): String {
     return day + time
 }
 
+private val activityClockFormat: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("h:mm a", Locale.UK)
+private val activityDayFormat: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("d MMM", Locale.UK)
+
 /** Home activity row style: "Today, 9:30 am" */
 fun formatActivityTime(millis: Long): String {
     val zone = ZoneId.systemDefault()
     val zoned = Instant.ofEpochMilli(millis).atZone(zone)
     val date = zoned.toLocalDate()
     val today = LocalDate.now(zone)
-    val time = zoned.format(DateTimeFormatter.ofPattern("h:mm a", Locale.UK))
+    val time = zoned.format(activityClockFormat)
     val day = relativeDayLabel(date, today, includeTomorrow = false) { d ->
-        d.format(DateTimeFormatter.ofPattern("d MMM", Locale.UK))
+        d.format(activityDayFormat)
     }
     return "$day, $time"
 }

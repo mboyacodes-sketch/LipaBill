@@ -9,9 +9,10 @@ import com.lipabill.app.ussd.UssdMenuBuilder
 object CounterpartyNameLinker {
 
     private const val MIN_NAME_LEN = 3
+    private val whitespaceRuns = "\\s+".toRegex()
 
     fun normalizeName(raw: String?): String? {
-        val trimmed = raw?.trim()?.replace("\\s+".toRegex(), " ").orEmpty()
+        val trimmed = raw?.trim()?.replace(whitespaceRuns, " ").orEmpty()
         if (trimmed.length < MIN_NAME_LEN) return null
         // Ignore pure digit "names" (tills / paybills stored as name).
         if (trimmed.all { it.isDigit() || it.isWhitespace() }) return null

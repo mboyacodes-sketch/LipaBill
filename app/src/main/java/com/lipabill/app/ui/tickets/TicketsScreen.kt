@@ -1,6 +1,7 @@
 package com.lipabill.app.ui.tickets
 
-import android.Manifest
+import com.lipabill.app.data.tickets.EventTicketSms
+import androidx.compose.runtime.ReadOnlyComposable
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -44,9 +45,12 @@ import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Sms
 import androidx.compose.material.icons.outlined.Train
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
@@ -86,11 +90,10 @@ import com.lipabill.app.data.model.TicketStatus
 import com.lipabill.app.OpenedPass
 import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.metrics.TicketImportResult
+import com.lipabill.app.data.model.TicketSource
 import com.lipabill.app.data.tickets.TicketDocumentKind
 import com.lipabill.app.ui.adapt.LocalWindowForm
-import com.lipabill.app.ui.permissions.rememberCameraAccessOffer
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
-import com.lipabill.app.ui.permissions.permissionGranted
 import com.lipabill.app.ui.adapt.WindowWidth
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.Hairline
@@ -104,6 +107,7 @@ import com.lipabill.app.ui.theme.Income
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.asPillLabel
 import com.lipabill.app.ui.components.AccentGlyphBadge
+import com.lipabill.app.ui.components.PassesSkeleton
 import com.lipabill.app.ui.components.SpeedDialColumn
 import com.lipabill.app.ui.components.SpeedDialItem
 import com.lipabill.app.ui.theme.Accent
@@ -142,9 +146,14 @@ fun TicketsScreen(
     modifier: Modifier = Modifier
 ) {
     val tickets by viewModel.tickets.collectAsStateWithLifecycle()
+    val ticketsLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     // Surface events + SGR only; leftover flight tickets stay off the list.
     val visibleTickets = remember(tickets) {
         tickets.filter { !it.expectsBoardingPass || it.isRailTravel }
+    }
+    if (ticketsLoading) {
+        PassesSkeleton(modifier = modifier)
+        return
     }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -153,6 +162,8 @@ fun TicketsScreen(
     var pendingDocumentKind by remember { mutableStateOf(TicketDocumentKind.AUTO) }
     var error by remember { mutableStateOf<String?>(null) }
     var importing by remember { mutableStateOf(false) }
+    var reviewDraft by remember { mutableStateOf<ReviewDraft?>(null) }
+    var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
 
     suspend fun importDocument(
         uri: Uri,
@@ -162,7 +173,13 @@ fun TicketsScreen(
         if (importing) return
         importing = true
         try {
-            val id = viewModel.addFromDocument(context, uri, kind)
+            val draft = viewModel.readDocument(context, uri, kind)
+            // PDF / photo event tickets: let the user check what was read before saving.
+            if (draft.source == TicketSource.E_TICKET && !draft.expectsBoardingPass) {
+                reviewDraft = ReviewDraft(draft, kind, source)
+                return
+            }
+            val id = viewModel.saveImport(draft, kind)
             if (id == null) {
                 AppMetrics.ticketImport(source, TicketImportResult.Duplicate)
                 error = "That ticket is already saved, or has no usable code."
@@ -251,7 +268,7 @@ fun TicketsScreen(
                 contentDescriptionCollapsed = "Add pass",
                 actions = listOf(
                     SpeedDialItem(
-                        label = "SGR booking SMS",
+                        label = "Ticket SMS",
                         icon = Icons.Outlined.Train
                     ) {
                         addMenuOpen = false
@@ -349,14 +366,22 @@ fun TicketsScreen(
                                 title = entry.title,
                                 count = entry.count
                             )
-                            is PassListItem.TodayHero -> TodayPassCard(
-                                ticket = entry.ticket,
-                                onClick = { onOpenTicket(entry.ticket.id) }
-                            )
-                            is PassListItem.Pass -> TicketListRow(
-                                ticket = entry.ticket,
-                                onClick = { onOpenTicket(entry.ticket.id) }
-                            )
+                            is PassListItem.TodayHero -> PassSwipeToDelete(
+                                onRequestDelete = { pendingDeleteId = entry.ticket.id }
+                            ) {
+                                TodayPassCard(
+                                    ticket = entry.ticket,
+                                    onClick = { onOpenTicket(entry.ticket.id) }
+                                )
+                            }
+                            is PassListItem.Pass -> PassSwipeToDelete(
+                                onRequestDelete = { pendingDeleteId = entry.ticket.id }
+                            ) {
+                                TicketListRow(
+                                    ticket = entry.ticket,
+                                    onClick = { onOpenTicket(entry.ticket.id) }
+                                )
+                            }
                         }
                     }
                 }
@@ -419,6 +444,23 @@ fun TicketsScreen(
         null -> Unit
     }
 
+    pendingDeleteId?.let { deleteId ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteId = null },
+            title = { Text("Delete pass?") },
+            text = { Text("This removes the pass from this phone. You can add it again later.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDeleteId = null
+                    viewModel.delete(deleteId)
+                }) { Text("Delete", color = Expense) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteId = null }) { Text("Cancel") }
+            }
+        )
+    }
+
     error?.let { msg ->
         AlertDialog(
             onDismissRequest = { error = null },
@@ -427,6 +469,37 @@ fun TicketsScreen(
             },
             title = { Text("Passes") },
             text = { Text(msg) }
+        )
+    }
+
+    reviewDraft?.let { review ->
+        TicketReviewDialog(
+            draft = review.draft,
+            onCancel = {
+                AppMetrics.ticketImport(review.source, TicketImportResult.Cancelled)
+                reviewDraft = null
+            },
+            onSave = { edited ->
+                reviewDraft = null
+                scope.launch {
+                    try {
+                        val id = viewModel.saveImport(edited, review.kind)
+                        if (id == null) {
+                            AppMetrics.ticketImport(review.source, TicketImportResult.Duplicate)
+                            error = "That ticket is already saved, or has no usable code."
+                        } else {
+                            AppMetrics.ticketImport(review.source, TicketImportResult.Saved)
+                            addMode = null
+                            pendingDocumentKind = TicketDocumentKind.AUTO
+                            onOpenTicket(id)
+                        }
+                    } catch (t: Throwable) {
+                        if (t is CancellationException) throw t
+                        AppMetrics.ticketImportFailure(review.source, t)
+                        error = t.message?.takeIf { it.isNotBlank() } ?: "Couldn’t save that ticket."
+                    }
+                }
+            }
         )
     }
 
@@ -510,8 +583,8 @@ private fun EmptyTickets(
         Spacer(modifier = Modifier.height(10.dp))
         PassPathCard(
             icon = Icons.Outlined.Train,
-            title = "SGR booking SMS",
-            body = "The fare is already paid. Paste the SMS you got after booking.",
+            title = "Ticket SMS",
+            body = "Paste the SMS your SGR booking or event ticket came in.",
             onClick = onSgrSms
         )
         Spacer(modifier = Modifier.height(88.dp))
@@ -674,64 +747,59 @@ private fun EmptySgrPreview(
         modifier = modifier
             .shadow(10.dp, RoundedCornerShape(22.dp), clip = false)
             .clip(RoundedCornerShape(22.dp))
-            .background(SgrStage)
+            .background(Canvas)
             .clickable(onClick = onClick)
             .padding(10.dp)
-            .semantics { contentDescription = "Add SGR booking SMS" }
+            .semantics { contentDescription = "Add ticket SMS" }
     ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "NBO",
+                color = Ink,
+                fontFamily = GeometricSansFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp
+            )
+            Icon(
+                imageVector = Icons.Outlined.Train,
+                contentDescription = null,
+                tint = Accent,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = "MSA",
+                color = Ink,
+                fontFamily = GeometricSansFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(CardWhite)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Accent)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "NBO",
-                    color = Ink,
-                    fontFamily = GeometricSansFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
-                )
-                Icon(
-                    imageVector = Icons.Outlined.Train,
-                    contentDescription = null,
-                    tint = Accent,
-                    modifier = Modifier.size(18.dp)
-                )
-                Text(
-                    text = "MSA",
-                    color = Ink,
-                    fontFamily = GeometricSansFamily,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
-                )
-            }
-            Box(
+            Text(
+                text = "SGR",
+                color = OnAccent,
+                fontFamily = GeometricSansFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 10.sp,
+                letterSpacing = 1.sp,
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(SgrMint)
-                    .padding(horizontal = 10.dp, vertical = 3.dp)
-            ) {
-                Text(
-                    text = "SGR",
-                    color = Ink,
-                    fontFamily = GeometricSansFamily,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 10.sp
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
+                    .padding(top = 10.dp, bottom = 4.dp)
+            )
             NotchTicketPerforation(
-                notchColor = SgrStage,
-                dashColor = Mute.copy(alpha = 0.45f),
+                notchColor = Canvas,
+                dashColor = Color.White.copy(alpha = 0.35f),
                 bandHeight = 14.dp,
                 dashInset = 10.dp
             )
@@ -756,13 +824,17 @@ private fun EmptyPreviewQr() {
             1, 0, 1, 1, 1
         )
     }
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(
+        modifier = Modifier.clip(RoundedCornerShape(6.dp)),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
         cells.chunked(5).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 row.forEach { on ->
                     Box(
                         modifier = Modifier
                             .size(7.dp)
+                            .clip(RoundedCornerShape(1.5.dp))
                             .background(if (on == 1) Ink else Color.Transparent)
                     )
                 }
@@ -952,6 +1024,56 @@ private fun PassSectionHeader(
     }
 }
 
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PassSwipeToDelete(
+    onRequestDelete: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        positionalThreshold = { distance -> distance * 0.28f },
+        confirmValueChange = { value ->
+            when (value) {
+                SwipeToDismissBoxValue.EndToStart -> {
+                    onRequestDelete()
+                    false // spring back; confirm dialog owns the delete
+                }
+                SwipeToDismissBoxValue.StartToEnd -> false
+                SwipeToDismissBoxValue.Settled -> true
+            }
+        }
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        modifier = Modifier.fillMaxWidth(),
+        enableDismissFromStartToEnd = false,
+        enableDismissFromEndToStart = true,
+        backgroundContent = {
+            val reveal = dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart ||
+                dismissState.targetValue == SwipeToDismissBoxValue.EndToStart
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(if (reveal) Expense else Color.Transparent)
+                    .padding(horizontal = 22.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                if (reveal) {
+                    Icon(
+                        imageVector = Icons.Outlined.Delete,
+                        contentDescription = "Delete",
+                        tint = OnAccent
+                    )
+                }
+            }
+        }
+    ) {
+        content()
+    }
+}
+
 @Composable
 private fun TodayPassCard(
     ticket: Ticket,
@@ -1114,6 +1236,7 @@ private fun TicketListRow(
     }
     val badge = when {
         ticket.isConfirmationOnly -> "Awaiting pass"
+        EventTicketSms.isPending(ticket.barcodeValue) -> "Awaiting QR"
         else -> ticket.effectiveStatus().label()
     }
     val rowIcon = when {
@@ -1189,11 +1312,12 @@ private fun PasteConfirmationDialog(
     var message by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("SGR booking SMS") },
+        title = { Text("Ticket SMS") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Space.gap)) {
                 Text(
-                    "Paste the SMS you got after paying — Ref No, train, date, seat. Add the printed boarding pass on the ticket next.",
+                    "Paste the SMS your ticket came in. SGR: Ref No, train, date, seat. Event: match, gate, seat, ticket no. " +
+                        "The SMS has no QR, so add the ticket screenshot or PDF next: it joins this same pass.",
                     style = HomeType.body,
                     color = Mute
                 )
@@ -1239,6 +1363,18 @@ private fun ManualTicketDialog(
         title = { Text("Paste ticket code") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Space.gap)) {
+                // Known upcoming events: one tap fills the blanks for a code-only ticket.
+                com.lipabill.app.data.tickets.EventPresets.upcoming().forEach { preset ->
+                    com.lipabill.app.ui.LipaChoiceChip(
+                        label = "Quick fill: ${preset.label}",
+                        selected = title == preset.title && venue == preset.venue,
+                        onClick = {
+                            if (title.isBlank()) title = preset.title
+                            if (venue.isBlank()) venue = preset.venue
+                            if (startsAtMillis == null) startsAtMillis = preset.startsAtMillis
+                        }
+                    )
+                }
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
@@ -1306,3 +1442,16 @@ private fun ManualTicketDialog(
 
 private fun ticketImportSource(kind: TicketDocumentKind): String =
     if (kind == TicketDocumentKind.PKPASS) "pkpass" else "pdf"
+
+/** Solid brand stage behind event pass previews in the list. */
+val EventStage: Color
+    @Composable
+    @ReadOnlyComposable
+    get() = Accent
+
+/** A read ticket waiting on the user's review before it's saved. */
+private data class ReviewDraft(
+    val draft: com.lipabill.app.data.tickets.TicketImport,
+    val kind: TicketDocumentKind,
+    val source: String
+)

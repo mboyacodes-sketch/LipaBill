@@ -1,6 +1,6 @@
 package com.lipabill.app.ussd
 
-import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.testTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.parser.MpesaSmsParser
 import org.junit.Assert.assertEquals
@@ -37,7 +37,7 @@ class PendingPaymentMatcherTest {
         name: String? = "JANE DOE",
         raw: String = "Confirmed. Ksh100.00 sent to Jane",
         time: Long = started + 5_000L
-    ) = MpesaTransaction(
+    ) = testTransaction(
         id = 9,
         code = "ABC123XYZ",
         type = type,

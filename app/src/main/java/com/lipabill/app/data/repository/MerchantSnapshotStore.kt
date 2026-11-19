@@ -1,7 +1,7 @@
 package com.lipabill.app.data.repository
 
 import android.content.Context
-import android.util.Log
+import com.lipabill.app.metrics.AppLog
 import androidx.security.crypto.EncryptedFile
 import androidx.security.crypto.MasterKey
 import com.lipabill.app.data.local.entity.MerchantEntity
@@ -66,7 +66,7 @@ class MerchantSnapshotStore(context: Context) {
         val plain = AppAtRestCrypto.open(appContext, file.readBytes()) ?: return null
         parseJson(String(plain, Charsets.UTF_8))
     } catch (t: Throwable) {
-        Log.w(TAG, "read_failed", t)
+        AppLog.w(TAG, "read_failed", t)
         null
     }
 
@@ -92,7 +92,7 @@ class MerchantSnapshotStore(context: Context) {
                 legacyPlain.delete()
             }
         } catch (t: Throwable) {
-            Log.w(TAG, "legacy_migrate_failed", t)
+            AppLog.w(TAG, "legacy_migrate_failed", t)
         }
     }
 

@@ -1,7 +1,7 @@
 package com.lipabill.app.data.sms
 
+import com.lipabill.app.testTransaction
 import com.lipabill.app.data.model.MoneySource
-import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -56,16 +56,11 @@ class LedgerNotificationTest {
         name: String?,
         phone: String?,
         source: MoneySource = MoneySource.MPESA
-    ) = MpesaTransaction(
-        code = "ABC123",
+    ) = testTransaction(
         type = type,
         amount = 500.0,
         counterpartyName = name,
         counterpartyPhone = phone,
-        timestampMillis = 0L,
-        balance = null,
-        cost = null,
-        rawBody = "",
         source = source
     )
 }

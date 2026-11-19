@@ -32,8 +32,8 @@ android {
         applicationId = "com.lipabill.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 37
-        versionName = "3.0.0"
+        versionCode = 40
+        versionName = "3.1.1"
         // Real devices are arm64; drop x86/x86_64 emulator ABIs from shipped APKs.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -138,8 +138,12 @@ android {
             excludes += "META-INF/NOTICE.txt"
             // PDFBox pulls BouncyCastle PQC tables that text extraction never uses.
             excludes += "org/bouncycastle/pqc/**"
+            excludes += "org/bouncycastle/x509/*.properties"
             // CJK cmaps also exist as AAR assets; those are stripped after merge*Assets.
             excludes += "**/fontbox/resources/cmap/**"
+            excludes += "**/fontbox/resources/unicode/**"
+            // Keep pdfbox glyphlist/* and text/*: the text engine loads them on first use;
+            // without them every PDF import fails and drops to OCR.
         }
     }
 
@@ -155,6 +159,19 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        // Robolectric PDF tests read the real PDFBox assets (glyph lists, AFMs).
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            // Opt-in: SKYLINE_GALLERY=1 ./gradlew testPlayDebugUnitTest --tests '*SkylineGalleryRender*'
+            it.environment("SKYLINE_GALLERY", System.getenv("SKYLINE_GALLERY") ?: "")
+            // Opt-in private corpus of real tickets (never committed): TICKET_CORPUS=/path/to/dir
+            it.environment("TICKET_CORPUS", System.getenv("TICKET_CORPUS") ?: "")
+            // Opt-in local inbox export for import diagnostics (never committed): INBOX_AUDIT=/path/inbox.json
+            it.environment("INBOX_AUDIT", System.getenv("INBOX_AUDIT") ?: "")
+            it.environment("INBOX_REGION", System.getenv("INBOX_REGION") ?: "KENYA")
+            it.environment("WALLET_CARD_RENDER", System.getenv("WALLET_CARD_RENDER") ?: "")
+            it.environment("SAMPLE_TICKET_OUT", System.getenv("SAMPLE_TICKET_OUT") ?: "")
+        }
     }
 }
 
@@ -270,13 +287,41 @@ tasks.configureEach {
     if (!name.startsWith("merge") || !name.endsWith("Assets")) return@configureEach
     doLast {
         outputs.files.files.forEach { out ->
+            val root = out.path
             // Keep Identity-H / Identity-V (~10 KB): most PDFs, airline e-tickets included,
             // use them, and without them PDF text extraction fails and falls back to OCR.
-            file("${out.path}/com/tom_roush/fontbox/resources/cmap")
+            file("$root/com/tom_roush/fontbox/resources/cmap")
                 .listFiles()
                 ?.filterNot { it.name == "Identity-H" || it.name == "Identity-V" }
                 ?.forEach { it.deleteRecursively() }
-            file("${out.path}/com/tom_roush/pdfbox/resources/ttf").deleteRecursively()
+            // Keep pdfbox/resources/ttf/LiberationSans-Regular.ttf (~400 KB): PDFBox's font mapper
+            // loads it whenever a PDF uses a non-embedded font (common on generated tickets).
+            // Latin ticket PDFs: Unicode Scripts tables unused (Bidi in pdfbox/text stays).
+            file("$root/com/tom_roush/fontbox/resources/unicode").deleteRecursively()
+            // Keep all 14 Standard-14 AFMs: PDFBox loads every one when it first meets a
+            // standard font, so dropping Courier/Symbol/Zapf breaks Helvetica PDFs too.
+            // Guard: PDF text extraction needs these at class init. If a trim rule ever
+            // removes one, every PDF import silently falls back to OCR — fail the build instead.
+            if (file("$root/com/tom_roush/pdfbox").exists()) {
+                val required = listOf(
+                    "com/tom_roush/pdfbox/resources/glyphlist/glyphlist.txt",
+                    "com/tom_roush/pdfbox/resources/glyphlist/additional.txt",
+                    "com/tom_roush/pdfbox/resources/glyphlist/zapfdingbats.txt",
+                    "com/tom_roush/pdfbox/resources/text/BidiMirroring.txt",
+                    "com/tom_roush/fontbox/resources/cmap/Identity-H",
+                    "com/tom_roush/pdfbox/resources/afm/Helvetica.afm",
+                    "com/tom_roush/pdfbox/resources/afm/Courier.afm",
+                    "com/tom_roush/pdfbox/resources/afm/Symbol.afm",
+                    "com/tom_roush/pdfbox/resources/afm/ZapfDingbats.afm",
+                    "com/tom_roush/pdfbox/resources/ttf/LiberationSans-Regular.ttf"
+                )
+                val missing = required.filterNot { file("$root/$it").exists() }
+                if (missing.isNotEmpty()) {
+                    throw GradleException(
+                        "PDFBox assets stripped from $name: $missing. PDF ticket import would break."
+                    )
+                }
+            }
         }
     }
 }
@@ -356,4 +401,6 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // Real org.json for JVM unit tests (Android stubs return defaults).
     testImplementation("org.json:json:20250517")
+    // Real Android Canvas on the JVM for the opt-in skyline gallery render (design review).
+    testImplementation("org.robolectric:robolectric:4.14.1")
 }

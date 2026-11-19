@@ -31,11 +31,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import com.lipabill.app.ui.components.QrImageShape
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import com.lipabill.app.pay.PayLink
 import com.lipabill.app.social.SocialLink
-import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import kotlin.math.absoluteValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -194,7 +194,6 @@ fun RequestQrSlideCard(
             .clip(RoundedCornerShape(22.dp))
             .background(Color.White)
             .border(1.dp, Color(0x14000000), RoundedCornerShape(22.dp))
-            .recordingPrivacyCover()
             .clickable(onClick = onCopy),
         contentAlignment = Alignment.Center
     ) {
@@ -208,7 +207,8 @@ fun RequestQrSlideCard(
                 },
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(12.dp),
+                    .padding(12.dp)
+                    .clip(QrImageShape),
                 contentScale = ContentScale.Fit
             )
         }

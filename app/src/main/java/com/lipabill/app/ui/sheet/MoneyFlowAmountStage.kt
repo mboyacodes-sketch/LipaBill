@@ -30,28 +30,14 @@ private val FulizaNoteFill = Color(0xFFFDF0DC)
 private val FulizaNoteInk = Color(0xFF5C3205)
 
 @Composable
-fun MoneyFlowSheetHeader(
-    title: String,
-    balance: Double?
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            title,
-            style = HomeType.section,
-            fontWeight = FontWeight.Bold,
-            color = Ink,
-            modifier = Modifier.weight(1f)
-        )
-        Text(
-            text = balance?.let { "Available ${formatKsh(it)}" } ?: "Balance not read yet",
-            style = HomeType.caption,
-            color = Mute,
-            modifier = Modifier.recordingPrivacyCover()
-        )
-    }
+fun MoneyFlowSheetHeader(title: String) {
+    Text(
+        title,
+        style = HomeType.section,
+        fontWeight = FontWeight.Bold,
+        color = Ink,
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 /** Shared cost / remaining line used by Send amount breakdown. */

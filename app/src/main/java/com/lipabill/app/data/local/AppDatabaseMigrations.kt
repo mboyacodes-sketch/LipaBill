@@ -184,11 +184,39 @@ object AppDatabaseMigrations {
         }
     }
 
+    /** Wallet list filter (Fuliza vs rest) + DESC time. */
+    val MIGRATION_12_13 = object : Migration(12, 13) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_transactions_type_timestampMillis` " +
+                    "ON `transactions` (`type`, `timestampMillis`)"
+            )
+        }
+    }
+
+    /** Boarding-pass barcode encoding (format / EC level / version / charset) per leg. */
+    val MIGRATION_13_14 = object : Migration(13, 14) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `tickets` ADD COLUMN `boardingBarcodeSpec` TEXT")
+            db.execSQL("ALTER TABLE `tickets` ADD COLUMN `returnBoardingBarcodeSpec` TEXT")
+        }
+    }
+
+    /** Wallet pass colours (background / foreground / label) for event styling. */
+    val MIGRATION_14_15 = object : Migration(14, 15) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `tickets` ADD COLUMN `passColors` TEXT")
+        }
+    }
+
     /** Migrations that preserve data. Add new ones at the end of this list. */
     val ALL: Array<Migration> = arrayOf(
         MIGRATION_8_9,
         MIGRATION_9_11,
         MIGRATION_10_11,
-        MIGRATION_11_12
+        MIGRATION_11_12,
+        MIGRATION_12_13,
+        MIGRATION_13_14,
+        MIGRATION_14_15
     )
 }

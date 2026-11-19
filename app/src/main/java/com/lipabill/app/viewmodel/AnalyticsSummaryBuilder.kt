@@ -1,10 +1,10 @@
 package com.lipabill.app.viewmodel
 
 import com.lipabill.app.data.model.MpesaTransaction
-import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.ui.util.displayLabel
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
@@ -19,7 +19,8 @@ internal fun buildAnalyticsSummary(
     ledger: List<MpesaTransaction>,
     rangeState: AnalyticsRangeState,
     account: WalletAccount,
-    marks: InsightMarks
+    marks: InsightMarks,
+    overrides: Map<String, String> = emptyMap()
 ): AnalyticsSummary {
     val zone = ZoneId.systemDefault()
     val today = LocalDate.now(zone)
@@ -186,14 +187,23 @@ internal fun buildAnalyticsSummary(
         quietStreak = quietStreak,
         busiestLabel = busiest?.let { busiestDayLabel(it.first) },
         busiestTotal = busiest?.second ?: 0.0,
-        pulse = pulseCalendar(
-            from = from,
-            to = to,
-            today = today,
-            inflowByDate = inflowByDate,
-            outflowByDate = outflowByDate,
-            regulars = regulars
-        ),
+        pulse = if (shouldShowPulse(dayCount)) {
+            // Month grid for the period's end month; only days inside [from, to] stay active.
+            // Due marks match Coming Up: bill-like cadences only, not weekly shops.
+            monthPulseCalendar(
+                month = YearMonth.from(to),
+                today = today,
+                inflowByDate = inflowByDate,
+                outflowByDate = outflowByDate,
+                regulars = regulars.filter(::billLikeComingUp),
+                activeFrom = from,
+                activeTo = to
+            )
+        } else {
+            emptyList()
+        },
+        inflowByDate = inflowByDate,
+        outflowByDate = outflowByDate,
         keptHeadline = kept,
         fees = fees,
         regulars = regulars,
@@ -220,7 +230,15 @@ internal fun buildAnalyticsSummary(
         } else {
             emptyList()
         },
-        periodBars = periodBars(coveredFrom, to, inflowByDate, outflowByDate)
+        periodBars = periodBars(coveredFrom, to, inflowByDate, outflowByDate),
+        isReady = true,
+        regularChanges = if (mpesa) regularChanges(txs, today, zone) else emptyList(),
+        priceTrends = if (mpesa) priceTrends(txs, today, zone) else emptyList(),
+        categoryChanges = if (mpesa && comparable) {
+            categoryChanges(spendByCategory(filtered, overrides), spendByCategory(previousTxs, overrides))
+        } else {
+            emptyList()
+        }
     )
 }
 
@@ -231,6 +249,10 @@ private fun resolveBounds(
     customStart: LocalDate?,
     customEnd: LocalDate?
 ): Triple<LocalDate, LocalDate, String> = when (range) {
+    AnalyticsRange.THIS_MONTH -> {
+        val from = today.withDayOfMonth(1)
+        Triple(from, today, "This month · ${formatPeriodSpan(from, today)}")
+    }
     AnalyticsRange.DAYS_7 -> {
         val from = today.minusDays(6)
         Triple(from, today, "Last 7 days · ${formatPeriodSpan(from, today)}")

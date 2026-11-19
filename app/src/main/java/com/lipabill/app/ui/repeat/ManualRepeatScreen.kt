@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lipabill.app.ui.components.DetailSkeleton
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.util.copyPlainText
@@ -40,13 +41,17 @@ fun ManualRepeatScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val details = viewModel.manualDetailsText().ifBlank {
-        val tx = state.transaction
-        if (tx == null) "Loading…"
-        else buildString {
+    val manual = viewModel.manualDetailsText()
+    val tx = state.transaction
+    if (manual.isBlank() && tx == null) {
+        DetailSkeleton()
+        return
+    }
+    val details = manual.ifBlank {
+        buildString {
             appendLine("Dial ${UssdMenuBuilder.USSD_CODE}")
-            appendLine("To: ${tx.counterpartyName ?: "—"} ${tx.counterpartyPhone ?: ""}")
-            appendLine("Amount: ${tx.amount}")
+            appendLine("To: ${tx?.counterpartyName ?: "—"} ${tx?.counterpartyPhone ?: ""}")
+            appendLine("Amount: ${tx?.amount}")
         }
     }
 
@@ -80,7 +85,7 @@ fun ManualRepeatScreen(
                 style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .recordingPrivacyCover(details != "Loading…")
+                    .recordingPrivacyCover(details.isNotBlank())
             )
             Spacer(modifier = Modifier.height(Space.section))
             Button(

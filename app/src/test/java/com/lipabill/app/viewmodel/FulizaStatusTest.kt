@@ -1,6 +1,6 @@
 package com.lipabill.app.viewmodel
 
-import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.testTransaction
 import com.lipabill.app.data.model.TransactionType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -53,15 +53,13 @@ class FulizaStatusTest {
         assertEquals("was due 30 Sep", fulizaDueCopy(LocalDate.of(2026, 9, 30), today))
     }
 
-    private fun draw(code: String, outstanding: Double, minute: Int, body: String) = MpesaTransaction(
+    private fun draw(code: String, outstanding: Double, minute: Int, body: String) = testTransaction(
         code = code,
         type = TransactionType.FULIZA,
         amount = 0.0,
         counterpartyName = "Due 02/10/26",
-        counterpartyPhone = null,
         timestampMillis = 1_790_000_000_000L + minute * 60_000L,
         balance = outstanding,
-        cost = null,
         rawBody = body
     )
 }

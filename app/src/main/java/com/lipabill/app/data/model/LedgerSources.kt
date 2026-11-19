@@ -34,6 +34,50 @@ fun clipLedgerSources(
     return sources.sortedWith(catalogSourceComparator(region)).take(max).toSet()
 }
 
+/**
+ * First-run / upgrade default rails: primary wallet, one other MNO wallet when present,
+ * then common banks — so SMS history is not M-Pesa-only under the 5-rail cap.
+ */
+fun defaultLedgerSources(
+    region: AppRegion,
+    max: Int = MAX_ENABLED_LEDGER_SOURCES
+): Set<MoneySource> {
+    val catalog = region.sources
+    val primary = region.primaryWallet
+    val otherWallets = catalog
+        .filter { it.isWallet && it != primary }
+        .sortedBy { it.label }
+    // Local retail banks first (only those in [catalog] apply), then shared names.
+    val bankPriority = listOf(
+        MoneySource.CENTENARY,
+        MoneySource.CRDB,
+        MoneySource.NMB,
+        MoneySource.BK,
+        MoneySource.KCB,
+        MoneySource.EQUITY,
+        MoneySource.COOP,
+        MoneySource.NCBA,
+        MoneySource.ABSA,
+        MoneySource.STANBIC,
+        MoneySource.FAMILY,
+        MoneySource.I_AND_M
+    )
+    val banks = bankPriority.filter { it in catalog } +
+        catalog.filter { !it.isWallet && it !in bankPriority }.sortedBy { it.label }
+    val picks = ArrayList<MoneySource>(max)
+    if (primary in catalog) picks += primary
+    otherWallets.firstOrNull()?.let { picks += it }
+    for (bank in banks) {
+        if (picks.size >= max) break
+        picks += bank
+    }
+    for (wallet in otherWallets.drop(1)) {
+        if (picks.size >= max) break
+        picks += wallet
+    }
+    return picks.toSet().ifEmpty { setOf(primary) }
+}
+
 fun parseStoredSources(raw: String?): Set<MoneySource>? {
     if (raw == null) return null
     return raw.split(',')

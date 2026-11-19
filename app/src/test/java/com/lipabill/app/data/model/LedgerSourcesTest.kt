@@ -102,6 +102,21 @@ class LedgerSourcesTest {
     }
 
     @Test
+    fun default_rails_mix_wallet_and_common_banks() {
+        val ke = defaultLedgerSources(AppRegion.KENYA)
+        assertEquals(MAX_ENABLED_LEDGER_SOURCES, ke.size)
+        assertTrue(MoneySource.MPESA in ke)
+        assertTrue(MoneySource.AIRTEL_MONEY in ke)
+        assertTrue(MoneySource.KCB in ke)
+        assertTrue(MoneySource.EQUITY in ke)
+
+        val ug = defaultLedgerSources(AppRegion.UGANDA)
+        assertTrue(MoneySource.MTN_MOMO in ug)
+        assertTrue(MoneySource.AIRTEL_MONEY in ug)
+        assertTrue(MoneySource.CENTENARY in ug)
+    }
+
+    @Test
     fun catalog_lists_the_primary_wallet_first() {
         val chips = providerCatalog(AppRegion.KENYA)
         assertEquals(MoneySource.MPESA, chips.first())

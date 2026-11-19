@@ -11,6 +11,8 @@ import com.lipabill.app.data.model.toggleLedgerSource
 import com.lipabill.app.data.local.entity.RepeatAttemptEntity
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
 import com.lipabill.app.ussd.AccessibilityHelper
+import com.lipabill.app.ussd.LineGatedSources
+import com.lipabill.app.ussd.PaymentDialResolver
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
 import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.ussd.SimLineHelper
@@ -32,7 +34,9 @@ data class SettingsUiState(
     val lipaBillA11yEnabled: Boolean = false,
     val simLines: List<SimLine> = emptyList(),
     val preferredSimSubscriptionId: Int? = null,
-    val needsPhoneStatePermission: Boolean = false
+    val needsPhoneStatePermission: Boolean = false,
+    /** Wallets with no active SIM line, and why; shown greyed out in the ledger picker. */
+    val lockedSources: Map<MoneySource, String> = emptyMap()
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -61,6 +65,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun toggleProvider(source: MoneySource) {
+        // No SIM for this wallet in the phone: disabled, so it can't be switched on.
+        if (source in _ui.value.lockedSources) return
         val region = app.appRegion.value
         val next = toggleLedgerSource(
             app.enabledSources.value,
@@ -108,9 +114,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setPreferredSim(subscriptionId: Int) {
-        val lines = SimLineHelper.listActiveLines(getApplication())
+        val region = app.securePreferences.appRegion
+        val enabled = app.enabledSources.value
+        val lines = SimLineHelper.listActiveLines(getApplication(), region)
         val line = lines.firstOrNull { it.subscriptionId == subscriptionId } ?: return
-        if (!line.isSafaricom) return
+        val wallet = line.payWalletFor(region) ?: return
+        if (wallet.ledgerSource !in enabled) return
         app.securePreferences.preferredSimSubscriptionId = subscriptionId
         refresh()
     }
@@ -131,19 +140,26 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private fun buildState(): SettingsUiState {
         val ctx = getApplication<Application>()
-        val needsPerm = !SimLineHelper.hasPhoneStatePermission(ctx)
-        val lines = if (needsPerm) emptyList() else SimLineHelper.listActiveLines(ctx)
-        if (!needsPerm) {
-            SimLineHelper.ensureSafaricomPreferred(app.securePreferences, lines)
-        }
-        val preferred = app.securePreferences.preferredSimSubscriptionId
-        val selected = lines.firstOrNull { it.subscriptionId == preferred && it.isSafaricom }
-            ?.subscriptionId
-            ?: SimLineHelper.findSafaricom(lines)?.subscriptionId
         val region = app.securePreferences.appRegion
+        val needsPerm = !SimLineHelper.hasPhoneStatePermission(ctx)
+        val lines = if (needsPerm) emptyList() else SimLineHelper.listActiveLines(ctx, region)
+        val enabled = app.enabledSources.value
+        if (!needsPerm) {
+            SimLineHelper.ensurePayPreferred(region, app.securePreferences, lines, enabled)
+        }
+        // Settings is where phone access gets granted; let the ledger see the lines at once.
+        app.refreshSimLines(lines)
+        val preferred = app.securePreferences.preferredSimSubscriptionId
+        val selected = lines.firstOrNull {
+            it.subscriptionId == preferred &&
+                it.isPayEligible(region) &&
+                it.payWalletFor(region)?.ledgerSource in enabled
+        }?.subscriptionId
+            ?: PaymentDialResolver.resolve(region, lines, preferred, enabled = enabled)
+                ?.subscriptionId
         return SettingsUiState(
             region = region,
-            enabledSources = app.enabledSources.value,
+            enabledSources = enabled,
             providerChoices = providerCatalog(region),
             timeoutMinutes = auth.timeoutMinutes(),
             fontSizeSp = app.securePreferences.uiFontSizeSp,
@@ -153,7 +169,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             lipaBillA11yEnabled = AccessibilityHelper.isLipaBillServiceEnabled(ctx),
             simLines = lines,
             preferredSimSubscriptionId = selected,
-            needsPhoneStatePermission = needsPerm
+            needsPhoneStatePermission = needsPerm,
+            lockedSources = LineGatedSources.locked(region, lines, phoneAccess = !needsPerm)
         )
     }
 }

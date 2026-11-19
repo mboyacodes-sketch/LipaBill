@@ -1,10 +1,10 @@
 package com.lipabill.app.ui.paylink
 
+import com.lipabill.app.ui.AccentWideButton
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,8 +32,6 @@ import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Storefront
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
@@ -70,9 +68,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.R
+import com.lipabill.app.data.DemoLedger
 import com.lipabill.app.pay.PayLink
 import com.lipabill.app.social.SocialLink
 import com.lipabill.app.ussd.SimLineHelper
+import com.lipabill.app.ui.privacy.LocalRecordingPrivacy
 import com.lipabill.app.ui.components.ConsumeSnackbarMessage
 import com.lipabill.app.ui.components.SpeedDialColumn
 import com.lipabill.app.ui.components.SpeedDialItem
@@ -177,6 +177,12 @@ fun PayProfileScreen(
         savedPhone.isNotBlank() -> savedPhone
         else -> simPhone.orEmpty()
     }
+    // Screen recording: sharp dummy destinations instead of blurring real ones.
+    val recordingPrivacy = LocalRecordingPrivacy.current
+    val viewPhone = if (recordingPrivacy) DemoLedger.REQUEST_PHONE else phone
+    val viewTill = if (recordingPrivacy) DemoLedger.REQUEST_TILL else savedTill
+    val viewBill = if (recordingPrivacy) DemoLedger.REQUEST_PAYBILL else savedBill
+    val viewAccount = if (recordingPrivacy) DemoLedger.REQUEST_ACCOUNT else savedAccount
     var amountText by remember { mutableStateOf("") }
     var fieldError by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -220,73 +226,69 @@ fun PayProfileScreen(
         }
     }
     val amount = amountText.toLongOrNull()?.takeIf { it > 0L }
-    val ready = !editing && hasDestination(
-        collectKind, simPhone, savedPhone, savedTill, savedBill, savedAccount, payPhoneHidden
+    val ready = !editing && (
+        recordingPrivacy ||
+            hasDestination(
+                collectKind, simPhone, savedPhone, savedTill, savedBill, savedAccount, payPhoneHidden
+            )
+    )
+    /** Pay link for one destination kind, with today's amount and rotation setting. */
+    fun encodePayLink(kind: PayLink.Kind) = PayLink.encode(
+        kind = kind,
+        identifier = when (kind) {
+            PayLink.Kind.PHONE -> viewPhone
+            PayLink.Kind.TILL -> viewTill
+            PayLink.Kind.PAYBILL -> viewBill
+        },
+        account = viewAccount.takeIf { kind == PayLink.Kind.PAYBILL },
+        amountShillings = amount,
+        rotateDaily = !payQrFixed
     )
     val link = remember(
-        collectKind, phone, savedTill, savedBill, savedAccount, amount, payQrFixed, dayTick, ready
+        collectKind, viewPhone, viewTill, viewBill, viewAccount, amount, payQrFixed, dayTick, ready
     ) {
         if (!ready) return@remember null
-        when (collectKind) {
-            PayLink.Kind.PHONE -> PayLink.encode(
-                kind = PayLink.Kind.PHONE,
-                identifier = phone,
-                amountShillings = amount,
-                rotateDaily = !payQrFixed
-            )
-            PayLink.Kind.TILL -> PayLink.encode(
-                kind = PayLink.Kind.TILL,
-                identifier = savedTill,
-                amountShillings = amount,
-                rotateDaily = !payQrFixed
-            )
-            PayLink.Kind.PAYBILL -> PayLink.encode(
-                kind = PayLink.Kind.PAYBILL,
-                identifier = savedBill,
-                account = savedAccount,
-                amountShillings = amount,
-                rotateDaily = !payQrFixed
-            )
-        }
+        encodePayLink(collectKind)
     }
     val mark = remember {
         ContextCompat.getDrawable(context, R.mipmap.ic_launcher)
             ?.toBitmap(width = 192, height = 192)
             ?.asImageBitmap()
     }
+
+    /** Social request panel; the same wiring in the wide and narrow layouts. */
+    @Composable
+    fun Socials(modifier: Modifier = Modifier) {
+        SocialRequestPanel(
+            prefs = prefs,
+            mark = mark,
+            onNotice = { notice = it },
+            modifier = modifier,
+            selectedPlatformKey = socialPlatformKey,
+            onPlatformKeyChange = { key ->
+                socialPlatformKey = key
+                prefs.socialPlatformKey = key
+            },
+            pendingAddPlatform = pendingSocialAdd,
+            onPendingAddConsumed = { pendingSocialAdd = null },
+            onEditingChange = { socialEditing = it },
+            onHandlesChanged = { socialRevision += 1 }
+        )
+    }
     val paymentSlides = remember(
+        recordingPrivacy, viewPhone, viewTill, viewBill, viewAccount,
         simPhone, savedPhone, payPhoneHidden, savedTill, savedBill, savedAccount,
         amount, payQrFixed, dayTick
     ) {
         PayLink.Kind.entries.mapNotNull { kind ->
-            if (!hasDestination(
+            if (!recordingPrivacy &&
+                !hasDestination(
                     kind, simPhone, savedPhone, savedTill, savedBill, savedAccount, payPhoneHidden
                 )
             ) {
                 return@mapNotNull null
             }
-            val phoneId = savedPhone.ifBlank { simPhone.orEmpty() }
-            val encoded = when (kind) {
-                PayLink.Kind.PHONE -> PayLink.encode(
-                    kind = PayLink.Kind.PHONE,
-                    identifier = phoneId,
-                    amountShillings = amount,
-                    rotateDaily = !payQrFixed
-                )
-                PayLink.Kind.TILL -> PayLink.encode(
-                    kind = PayLink.Kind.TILL,
-                    identifier = savedTill,
-                    amountShillings = amount,
-                    rotateDaily = !payQrFixed
-                )
-                PayLink.Kind.PAYBILL -> PayLink.encode(
-                    kind = PayLink.Kind.PAYBILL,
-                    identifier = savedBill,
-                    account = savedAccount,
-                    amountShillings = amount,
-                    rotateDaily = !payQrFixed
-                )
-            } ?: return@mapNotNull null
+            val encoded = encodePayLink(kind) ?: return@mapNotNull null
             RequestQrSlide.Payment(kind, encoded)
         }
     }
@@ -405,29 +407,6 @@ fun PayProfileScreen(
 
     BackHandler(enabled = editing) {
         cancelPaymentEdit()
-    }
-
-    fun selectKind(kind: PayLink.Kind) {
-        if (kind == collectKind) return
-        val has = hasDestination(
-            kind, simPhone, savedPhone, savedTill, savedBill, savedAccount, payPhoneHidden
-        )
-        collectKind = kind
-        primaryFocused = false
-        accountFocused = false
-        amountFocused = false
-        focusManager.clearFocus(force = true)
-        // Unset kinds get a clean form; saved kinds load their stored values.
-        val (primary, account) = draftsForKind(kind, blankIfUnset = !has)
-        setPaymentDrafts(primary, account)
-        if (editing) return
-        if (has) {
-            prefs.payCollectKind = kind.storageKey()
-            collectKindBeforeEdit = null
-        } else {
-            collectKindBeforeEdit = prefs.payCollectKind.toPayKind()
-            editing = true
-        }
     }
 
     fun saveDestination() {
@@ -644,22 +623,10 @@ fun PayProfileScreen(
                     )
                     Spacer(modifier = Modifier.height(Space.section))
                     if (socialsEmpty) {
-                        SocialRequestPanel(
-                            prefs = prefs,
-                            mark = mark,
-                            onNotice = { notice = it },
-                            modifier = Modifier
+                        Socials(
+                            Modifier
                                 .weight(1f)
-                                .fillMaxWidth(),
-                            selectedPlatformKey = socialPlatformKey,
-                            onPlatformKeyChange = { key ->
-                                socialPlatformKey = key
-                                prefs.socialPlatformKey = key
-                            },
-                            pendingAddPlatform = pendingSocialAdd,
-                            onPendingAddConsumed = { pendingSocialAdd = null },
-                            onEditingChange = { socialEditing = it },
-                            onHandlesChanged = { socialRevision += 1 }
+                                .fillMaxWidth()
                         )
                     } else if (paymentsQrReady) {
                         val payLink = link!!
@@ -895,28 +862,20 @@ fun PayProfileScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                     if (requestMode == RequestQrMode.Socials) {
-                        SocialRequestPanel(
-                            prefs = prefs,
-                            mark = mark,
-                            onNotice = { notice = it },
-                            selectedPlatformKey = socialPlatformKey,
-                            onPlatformKeyChange = { key ->
-                                socialPlatformKey = key
-                                prefs.socialPlatformKey = key
-                            },
-                            pendingAddPlatform = pendingSocialAdd,
-                            onPendingAddConsumed = { pendingSocialAdd = null },
-                            onEditingChange = { socialEditing = it },
-                            onHandlesChanged = { socialRevision += 1 }
-                        )
+                        Socials()
                     } else {
                         when {
                             editing -> {
+                                val kindTitle = when (collectKind) {
+                                    PayLink.Kind.PHONE -> "Phone"
+                                    PayLink.Kind.TILL -> "Till"
+                                    PayLink.Kind.PAYBILL -> "Paybill"
+                                }
                                 Text(
-                                    text = if (paymentSlides.isEmpty()) {
-                                        "Set up how you get paid"
-                                    } else {
-                                        "Add a payment destination"
+                                    text = when {
+                                        paymentSlides.any { it.kind == collectKind } ->
+                                            "Edit $kindTitle"
+                                        else -> "Add $kindTitle"
                                     },
                                     style = HomeType.section.copy(
                                         fontSize = 22.sp,
@@ -926,21 +885,18 @@ fun PayProfileScreen(
                                     textAlign = TextAlign.Center
                                 )
                                 Text(
-                                    text = "Choose phone, till, or paybill, then enter the details.",
+                                    text = when (collectKind) {
+                                        PayLink.Kind.PHONE ->
+                                            "Enter the mobile money number that should receive payments."
+                                        PayLink.Kind.TILL ->
+                                            "Enter the Buy Goods till that should receive payments."
+                                        PayLink.Kind.PAYBILL ->
+                                            "Enter the paybill and account that should receive payments."
+                                    },
                                     style = HomeType.body,
                                     color = Mute,
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier.padding(top = 8.dp)
-                                )
-                                Spacer(modifier = Modifier.height(Space.block))
-                                CollectKindRow(
-                                    selected = collectKind,
-                                    onSelect = ::selectKind,
-                                    kinds = if (paymentSlides.isEmpty()) {
-                                        PayLink.Kind.entries
-                                    } else {
-                                        (listOf(collectKind) + unsetPaymentKinds).distinct()
-                                    }
                                 )
                                 Spacer(modifier = Modifier.height(Space.block))
                                 InterceptSystemIme {
@@ -992,17 +948,7 @@ fun PayProfileScreen(
                                         .padding(start = 4.dp, top = 8.dp)
                                 )
                                 Spacer(modifier = Modifier.height(Space.block))
-                                Button(
-                                    onClick = ::saveDestination,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(56.dp),
-                                    shape = RoundedCornerShape(28.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Accent,
-                                        contentColor = OnAccent
-                                    )
-                                ) {
+                                AccentWideButton(onClick = ::saveDestination) {
                                     Text("Save destination", style = HomeType.rowTitle)
                                 }
                                 if (paymentSlides.isNotEmpty()) {
@@ -1159,32 +1105,6 @@ private fun RequestModeRow(
     }
 }
 
-@Composable
-private fun CollectKindRow(
-    selected: PayLink.Kind,
-    onSelect: (PayLink.Kind) -> Unit,
-    kinds: List<PayLink.Kind> = PayLink.Kind.entries
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        kinds.forEach { kind ->
-            RequestChip(
-                label = when (kind) {
-                    PayLink.Kind.PHONE -> "Phone"
-                    PayLink.Kind.TILL -> "Till"
-                    PayLink.Kind.PAYBILL -> "Paybill"
-                },
-                selected = kind == selected,
-                onClick = { onSelect(kind) }
-            )
-        }
-    }
-}
-
 private fun hasDestination(
     kind: PayLink.Kind,
     simPhone: String?,
@@ -1230,8 +1150,10 @@ private fun PayLink.Kind.storageKey(): String = when (this) {
 }
 
 private fun Context.mpesaSimPhone(preferredSubscriptionId: Int): String? {
-    val lines = SimLineHelper.listActiveLines(this)
-    val line = SimLineHelper.payLine(lines, preferredSubscriptionId) ?: return null
+    val region = (applicationContext as? LipaBillApp)?.securePreferences?.appRegion
+        ?: com.lipabill.app.data.model.ActiveRegion.current
+    val lines = SimLineHelper.listActiveLines(this, region)
+    val line = SimLineHelper.payLine(region, lines, preferredSubscriptionId) ?: return null
     return PayLink.canonicalPhone(line.numberHint)
 }
 

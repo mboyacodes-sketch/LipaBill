@@ -6,7 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
-import android.util.Log
+import com.lipabill.app.metrics.AppLog
 
 private const val TAG = "Clipboard"
 
@@ -24,10 +24,10 @@ fun Context.copyPlainText(label: String, text: String): Boolean {
         clipboard.setPrimaryClip(clip)
         true
     } catch (e: SecurityException) {
-        Log.w(TAG, "copy_blocked", e)
+        AppLog.w(TAG, "copy_blocked", e)
         false
     } catch (e: IllegalStateException) {
-        Log.w(TAG, "copy_failed", e)
+        AppLog.w(TAG, "copy_failed", e)
         false
     }
 }

@@ -1,6 +1,6 @@
 package com.lipabill.app.ui.detail
 
-import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.testTransaction
 import com.lipabill.app.data.model.TransactionType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -14,11 +14,8 @@ class MpesaReverseTest {
     private fun tx(
         rawBody: String = "ABC123 Confirmed. Ksh100.00 sent to JOHN on 1/1/24 at 12:00 PM. New M-PESA balance is Ksh50.00.",
         timestampMillis: Long = paidAt
-    ) = MpesaTransaction(
+    ) = testTransaction(
         id = 1,
-        code = "ABC123",
-        type = TransactionType.SENT,
-        amount = 100.0,
         counterpartyName = "JOHN",
         counterpartyPhone = "0712345678",
         timestampMillis = timestampMillis,

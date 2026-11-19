@@ -122,6 +122,17 @@ class AuthManager(
         }
     }
 
+    /**
+     * True when the app would show amounts right now without asking to unlock: no lock set, or
+     * unlocked and still inside the lock timeout. The home-screen widget only reveals then.
+     */
+    fun unlockedWithinTimeout(): Boolean {
+        if (skipLockForCapture() || !securePreferences.authRequired) return true
+        if (_state.value !is AuthUiState.Unlocked) return false
+        val away = securePreferences.lastBackgroundedAt
+        return away <= 0L || System.currentTimeMillis() - away < securePreferences.authTimeoutMillis
+    }
+
     fun lockNow() {
         if (skipLockForCapture()) {
             _state.value = AuthUiState.Unlocked

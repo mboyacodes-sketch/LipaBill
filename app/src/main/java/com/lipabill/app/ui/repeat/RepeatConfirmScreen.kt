@@ -1,10 +1,10 @@
 package com.lipabill.app.ui.repeat
 
 import androidx.compose.foundation.background
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -17,20 +17,22 @@ import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.parser.extractAccount
 import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.metrics.SetupBlocker
+import com.lipabill.app.ui.payment.PayWalletPicker
 import com.lipabill.app.ui.permissions.AccessibilityServiceDisclosure
 import com.lipabill.app.ui.sheet.MoneyConfirmDialog
 import com.lipabill.app.ui.sheet.MoneySheetScaffold
 import com.lipabill.app.ui.sheet.SheetFeedbackTone
 import com.lipabill.app.ui.sheet.amountExceedsBalance
 import com.lipabill.app.ui.sheet.amountStepGuidance
-import com.lipabill.app.ui.util.formatMoneyInputLabel
 import com.lipabill.app.ui.sheet.moneySheetFeedback
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.util.findComponentActivity
 import com.lipabill.app.ui.util.formatKesMoney
+import com.lipabill.app.ui.util.formatMoneyInputLabel
 import com.lipabill.app.viewmodel.RepeatTransactionViewModel
-import com.lipabill.app.viewmodel.WalletAccount
 import com.lipabill.app.viewmodel.TransactionListViewModel
+import com.lipabill.app.viewmodel.sheetBalance
+import com.lipabill.app.viewmodel.WalletAccount
 
 @Composable
 fun RepeatConfirmScreen(
@@ -46,23 +48,26 @@ fun RepeatConfirmScreen(
     val activity = LocalContext.current.findComponentActivity()
         ?: error("Repeat amount screen is not hosted by an activity")
     val listVm: TransactionListViewModel = activityViewModel(viewModelStoreOwner = activity)
-    val listState by listVm.uiState.collectAsStateWithLifecycle()
+    val homeBalance by listVm.latestBalance.collectAsStateWithLifecycle()
+    val walletBalances by listVm.walletBalances.collectAsStateWithLifecycle()
+    // The balance of the wallet this sheet will dial (e.g. Airtel on a dual-SIM phone).
+    val shownBalance = sheetBalance(state.activeWallet, walletBalances, homeBalance)
     val app = activity.application as LipaBillApp
     var showConfirm by remember { mutableStateOf(false) }
 
     val tx = state.transaction
-    val needsSimSetup = state.simLines.size > 1 && !state.hasSavedSimPreference
-    val missingSafaricom = !state.needsPhoneStatePermission &&
+    val needsSimSetup = state.simLines.count { it.isPayEligible(state.region) } > 1 &&
+        !state.hasSavedSimPreference
+    val missingPaySim = !state.needsPhoneStatePermission &&
         state.simLines.isNotEmpty() &&
-        state.simLines.none { it.isSafaricom }
+        !state.hasEligiblePaySim
     val pendingAmount = remember(state.amountInput) {
         RepeatTransactionViewModel.parseAmount(state.amountInput)
     }
-    val shownBalance = listState.latestBalance
     val exceedsBalance = amountExceedsBalance(shownBalance, pendingAmount)
     val setupAction = when {
         state.needsPhoneStatePermission -> "Allow"
-        missingSafaricom -> null
+        missingPaySim -> null
         needsSimSetup -> "Set SIM"
         !state.featureEnabled -> "Copy details"
         !state.accessibilityEnabled -> "Enable"
@@ -74,8 +79,10 @@ fun RepeatConfirmScreen(
             "This payment cannot be started automatically."
         state.needsPhoneStatePermission ->
             "Allow phone access to use your default SIM."
-        missingSafaricom ->
-            "A Safaricom SIM is required to send."
+        missingPaySim ->
+            state.missingPaySimMessage.ifBlank {
+                "A matching SIM for ${state.region.label} is required to send."
+            }
         needsSimSetup ->
             "Set your default payment SIM in Settings first."
         !state.featureEnabled ->
@@ -97,8 +104,8 @@ fun RepeatConfirmScreen(
         status = state.statusMessage,
         guidance = guidance
     )
-    LaunchedEffect(missingSafaricom) {
-        if (missingSafaricom) AppMetrics.setupBlocked(SetupBlocker.NoSafaricom)
+    LaunchedEffect(missingPaySim) {
+        if (missingPaySim) AppMetrics.setupBlocked(SetupBlocker.NoSafaricom)
     }
     val recipient = tx?.counterpartyName?.takeIf { it.isNotBlank() } ?: "Recipient"
     val subtitle = tx?.counterpartyPhone?.takeIf { it.isNotBlank() }
@@ -123,8 +130,21 @@ fun RepeatConfirmScreen(
             showKeypad = true,
             showRecipients = false,
             recipientsContent = {},
+            detailsHeader = {
+                if (!state.needsPhoneStatePermission) {
+                    PayWalletPicker(
+                        region = state.region,
+                        eligibleLines = state.eligiblePayLines,
+                        selectedSubscriptionId = state.selectedSubscriptionId,
+                        activeWallet = state.activeWallet,
+                        missingMessage = state.missingPaySimMessage,
+                        onSelect = viewModel::selectPayLine,
+                        balances = walletBalances
+                    )
+                }
+            },
             ctaLabel = setupAction ?: "Pay Now",
-            ctaEnabled = !state.dialStarted && !missingSafaricom && tx != null && (
+            ctaEnabled = !state.dialStarted && !missingPaySim && tx != null && (
                 setupAction != null || (state.amountValid && state.plan != null && state.canPay)
                 ),
             onCta = {
@@ -166,6 +186,7 @@ fun RepeatConfirmScreen(
             amountLabel = formatKesMoney(pendingAmount),
             detail = detail,
             confirmLabel = "Pay Now",
+            from = state.activeWallet,
             onDismiss = { showConfirm = false },
             onConfirm = {
                 showConfirm = false

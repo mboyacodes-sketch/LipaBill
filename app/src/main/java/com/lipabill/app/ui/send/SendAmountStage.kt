@@ -52,10 +52,10 @@ import com.lipabill.app.ui.util.formatMoneyInputDisplay
 import com.lipabill.app.viewmodel.maskPhone
 import com.lipabill.app.viewmodel.sentThisMonthCopy
 
-/** "Send money · Available KSh …" */
+/** Send sheet title. Balance is shown on the From wallet row. */
 @Composable
-internal fun SendSheetHeader(balance: Double?) {
-    MoneyFlowSheetHeader(title = "Send money", balance = balance)
+internal fun SendSheetHeader() {
+    MoneyFlowSheetHeader(title = "Send money")
 }
 
 /** Selected recipient card from the Send amount artboard. */

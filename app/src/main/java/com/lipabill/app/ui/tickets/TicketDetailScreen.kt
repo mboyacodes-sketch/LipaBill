@@ -7,7 +7,6 @@ import android.content.Context
 import android.net.Uri
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -34,6 +34,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -47,19 +48,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lipabill.app.data.model.BoardingLeg
 import com.lipabill.app.data.model.BoardingPassSnapshot
-import com.lipabill.app.data.model.TicketBarcodeFormat
 import com.lipabill.app.data.model.TicketStatus
 import com.lipabill.app.data.tickets.BookingConfirmationParser
 import com.lipabill.app.metrics.AppMetrics
@@ -67,9 +64,8 @@ import com.lipabill.app.metrics.TicketImportResult
 import com.lipabill.app.ui.permissions.permissionGranted
 import com.lipabill.app.ui.permissions.rememberCameraAccessOffer
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
-import com.lipabill.app.ui.theme.Accent
+import com.lipabill.app.ui.components.DetailSkeleton
 import com.lipabill.app.ui.theme.Canvas
-import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.GeometricSansFamily
 import com.lipabill.app.ui.theme.HomeType
@@ -92,10 +88,14 @@ fun TicketDetailScreen(
     onBack: () -> Unit
 ) {
     val ticket by viewModel.ticket.collectAsStateWithLifecycle()
+    val ticketLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    if (ticketLoading || ticket == null) {
+        DetailSkeleton()
+        return
+    }
     val view = LocalView.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var confirmDelete by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var attaching by remember { mutableStateOf(false) }
     var showAttachScanner by remember { mutableStateOf(false) }
@@ -179,13 +179,13 @@ fun TicketDetailScreen(
 
     if (showAttachScanner) {
         QrScannerScreen(
-            onResult = { contents ->
+            onResult = { contents, spec ->
                 showAttachScanner = false
                 val leg = attachLeg
                 scope.launch {
                     attaching = true
                     try {
-                        val ok = viewModel.attachBoardingPassScan(contents, leg)
+                        val ok = viewModel.attachBoardingPassScan(contents, leg, spec)
                         AppMetrics.ticketImport(
                             "camera",
                             when {
@@ -213,56 +213,47 @@ fun TicketDetailScreen(
     val isRailDetail = current?.isRailTravel == true
     val isEventDetail = current != null && !current.isTravelTicket
     val detailStage = when {
-        isRailDetail -> SgrStage
-        isEventDetail -> EventStage
+        isRailDetail -> Canvas
+        isEventDetail -> EventPassNight
         else -> Canvas
-    }
-    val useColoredStage = isRailDetail || isEventDetail
-    val sgrHeader = remember(current) {
-        current?.takeIf { it.isRailTravel }?.toSgrTicketUiModel()
     }
 
     Scaffold(
         containerColor = detailStage,
         topBar = {
-            if (useColoredStage) {
-                TopAppBar(
+            if (isEventDetail) {
+                // Event pass draws its own glass header.
+            } else if (isRailDetail) {
+                CenterAlignedTopAppBar(
                     title = {
                         Text(
-                            if (isRailDetail) "Upcoming Trips" else (current?.title ?: "Ticket"),
-                            color = Color.White,
+                            "Boarding Pass",
+                            color = Ink,
                             fontFamily = GeometricSansFamily,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 17.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.recordingPrivacyCover(
-                                !isRailDetail && !current?.title.isNullOrBlank()
-                            )
+                            fontSize = 17.sp
                         )
                     },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
+                                Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                                 contentDescription = "Back",
-                                tint = Color.White
+                                tint = Ink
                             )
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = detailStage,
-                        titleContentColor = Color.White,
-                        navigationIconContentColor = Color.White
-                    )
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Canvas)
                 )
             } else {
                 TopAppBar(
                     title = {
                         Text(
-                            current?.title ?: "Ticket",
+                            if (isRailDetail) "Boarding Pass" else (current?.title ?: "Ticket"),
                             style = HomeType.greeting,
-                            modifier = Modifier.recordingPrivacyCover(!current?.title.isNullOrBlank())
+                            modifier = Modifier.recordingPrivacyCover(
+                                !isRailDetail && !current?.title.isNullOrBlank()
+                            )
                         )
                     },
                     navigationIcon = {
@@ -280,7 +271,7 @@ fun TicketDetailScreen(
                 "Ticket not found",
                 modifier = Modifier.padding(padding).padding(Space.page),
                 style = HomeType.body,
-                color = if (useColoredStage) Color.White.copy(alpha = 0.7f) else Mute
+                color = Mute
             )
             return@Scaffold
         }
@@ -296,6 +287,8 @@ fun TicketDetailScreen(
         val hasEventPayload = !eventGateCode.isNullOrBlank() &&
             !BookingConfirmationParser.isConfirmationPlaceholder(eventGateCode) &&
             !eventGateCode.startsWith("ETKT:", ignoreCase = true) &&
+            // An SMS-only event ticket has no QR yet: never draw its placeholder.
+            !com.lipabill.app.data.tickets.EventTicketSms.isPending(eventGateCode) &&
             !eventGateCode.startsWith("BOARDING:", ignoreCase = true)
         val gateQr = rememberTicketQrBitmap(
             value = eventGateCode.takeIf { hasEventPayload },
@@ -310,7 +303,7 @@ fun TicketDetailScreen(
             TicketStatus.PAST_DUE -> Expense
         }
         val isUsed = displayStatus == TicketStatus.USED
-        val bookingPdf417 = rememberHorizontalPdf417ImageBitmap(
+                val bookingPdf417 = rememberHorizontalPdf417ImageBitmap(
             bcbpPayload = if (isRail) {
                 val ref = current.orderId?.takeIf { it.isNotBlank() }
                     ?: current.barcodeValue
@@ -322,6 +315,9 @@ fun TicketDetailScreen(
             } else {
                 null
             },
+            // White bars on Accent stub (navy in both themes).
+            foregroundColor = android.graphics.Color.WHITE,
+            backgroundColor = android.graphics.Color.TRANSPARENT,
             allowPlaceholder = true
         )
         if (isRail) {
@@ -338,29 +334,10 @@ fun TicketDetailScreen(
                         .verticalScroll(rememberScrollState())
                         .padding(bottom = Space.block)
                 ) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = sgrHeader?.headerWhen ?: "",
-                        color = Color.White.copy(alpha = 0.65f),
-                        fontSize = 13.sp,
-                        fontFamily = GeometricSansFamily
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = sgrHeader?.headerRoute ?: "SGR",
-                        color = Color.White,
-                        fontSize = 26.sp,
-                        fontFamily = GeometricSansFamily,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.recordingPrivacyCover(
-                            !sgrHeader?.headerRoute.isNullOrBlank() && sgrHeader?.headerRoute != "SGR"
-                        )
-                    )
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     SgrTicketStyleCard(
                         ticket = current,
                         pdf417 = bookingPdf417,
-                        stageColor = SgrStage,
                         isUsed = isUsed,
                         showViewBoardingQr = current.hasBoardingPass && outboundQr != null,
                         onViewBoardingQr = { showBoardingQrDialog = true }
@@ -369,59 +346,19 @@ fun TicketDetailScreen(
                     if (!isUsed && (!current.hasBoardingPass || current.canMarkUsedFromEventDay())) {
                         Spacer(modifier = Modifier.height(16.dp))
                         if (!current.hasBoardingPass) {
-                            Button(
-                                onClick = { launchAttachPicker(BoardingLeg.OUTBOUND) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(54.dp),
-                                shape = RoundedCornerShape(28.dp),
-                                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = SgrMint,
-                                    contentColor = Ink
-                                )
-                            ) {
-                                Text(
-                                    "Add boarding pass",
-                                    fontFamily = GeometricSansFamily,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
+                            SgrPillButton("Add boarding pass", onClick = { launchAttachPicker(BoardingLeg.OUTBOUND) })
                             Spacer(modifier = Modifier.height(8.dp))
                             TextButton(
                                 onClick = { launchAttachScan(BoardingLeg.OUTBOUND) },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Scan boarding QR", color = Color.White.copy(alpha = 0.75f))
+                                Text("Scan boarding QR", color = Mute)
                             }
                         } else {
                             Spacer(modifier = Modifier.height(8.dp))
-                            Button(
-                                onClick = { viewModel.markUsed() },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(54.dp),
-                                shape = RoundedCornerShape(28.dp),
-                                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = SgrMint,
-                                    contentColor = Ink
-                                )
-                            ) {
-                                Text(
-                                    "Mark as used",
-                                    fontFamily = GeometricSansFamily,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
+                            SgrPillButton("Mark as used", onClick = { viewModel.markUsed() })
                         }
                     }
-                }
-                TextButton(
-                    onClick = { confirmDelete = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Delete ticket", color = Expense)
                 }
                 Spacer(modifier = Modifier.height(Space.gap))
             }
@@ -430,20 +367,17 @@ fun TicketDetailScreen(
                 AlertDialog(
                     onDismissRequest = { showBoardingQrDialog = false },
                     containerColor = Color.White,
-                    titleContentColor = Ink,
-                    textContentColor = Ink,
+                    titleContentColor = Color(0xFF14101F),
+                    textContentColor = Color(0xFF14101F),
                     confirmButton = {
                         TextButton(onClick = { showBoardingQrDialog = false }) {
-                            Text("Close", color = Ink, fontFamily = GeometricSansFamily)
+                            Text("Close", color = Color(0xFF14101F), fontFamily = GeometricSansFamily)
                         }
                     },
                     title = {
-                        Text(
-                            "Boarding QR",
-                            fontFamily = GeometricSansFamily,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Ink
-                        )
+                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            MadarakaExpressLogo()
+                        }
                     },
                     text = {
                         Column(
@@ -452,25 +386,11 @@ fun TicketDetailScreen(
                                 .background(Color.White),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(Color.White)
-                                    .padding(12.dp)
-                            ) {
-                                Image(
-                                    bitmap = outboundQr,
-                                    contentDescription = "Boarding QR code",
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier
-                                        .size(240.dp)
-                                        .recordingPrivacyCover()
-                                )
-                            }
+                            BoardingQrCard(code = outboundQr)
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
                                 text = "Show this code at the gate",
-                                color = Mute,
+                                color = Color(0xFF6B6B76),
                                 fontFamily = GeometricSansFamily,
                                 fontSize = 13.sp,
                                 textAlign = TextAlign.Center
@@ -479,6 +399,25 @@ fun TicketDetailScreen(
                     }
                 )
             }
+        } else if (isEventDetail) {
+            EventPassContent(
+                ticket = current,
+                qrBitmap = gateQr,
+                status = displayStatus,
+                canMarkUsed = !isUsed && current.canMarkUsedFromEventDay(),
+                contentPadding = padding,
+                onBack = onBack,
+                onMarkUsed = { viewModel.markUsed() },
+                onChangeDate = if (!isUsed) {
+                    {
+                        pickEventDateTime(view.context, current.startsAtMillis) {
+                            viewModel.setEventStartsAt(it)
+                        }
+                    }
+                } else {
+                    null
+                }
+            )
         } else {
         Column(
             modifier = Modifier
@@ -498,96 +437,26 @@ fun TicketDetailScreen(
                 Text(
                     text = displayStatus.label(),
                     style = HomeType.label,
-                    color = if (isEventDetail) Color.White else statusColor,
+                    color = statusColor,
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .background(
-                            if (isEventDetail) {
-                                Color.White.copy(alpha = 0.14f)
-                            } else {
-                                statusColor.copy(alpha = 0.12f)
-                            }
-                        )
+                        .background(statusColor.copy(alpha = 0.12f))
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 )
                 Spacer(modifier = Modifier.height(Space.block))
 
-                if (current.isTravelTicket) {
-                    Text(
-                        "This pass type is no longer available. You can delete it.",
-                        style = HomeType.body,
-                        color = Mute,
-                        textAlign = TextAlign.Center
-                    )
-                } else {
-                    EventTicketStyleCard(
-                        ticket = current,
-                        qrBitmap = gateQr,
-                        stageColor = EventStage,
-                        isUsed = isUsed,
-                        onChangeDate = if (!isUsed) {
-                            {
-                                pickEventDateTime(
-                                    view.context,
-                                    current.startsAtMillis
-                                ) { viewModel.setEventStartsAt(it) }
-                            }
-                        } else {
-                            null
-                        }
-                    )
-                }
-            }
-
-            if (!isUsed && !current.isTravelTicket && current.canMarkUsedFromEventDay()) {
-                Button(
-                    onClick = { viewModel.markUsed() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp),
-                    shape = RoundedCornerShape(28.dp),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = CardWhite,
-                        contentColor = Accent
-                    )
-                ) {
-                    Text(
-                        "Mark as used",
-                        fontFamily = GeometricSansFamily,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-            TextButton(
-                onClick = { confirmDelete = true },
-                modifier = Modifier.fillMaxWidth()
-            ) {
+                // Only non-SGR travel passes reach here (events have their own screen).
                 Text(
-                    "Delete ticket",
-                    color = if (isEventDetail) Color.White.copy(alpha = 0.75f) else Expense
+                    "This pass type is no longer available. Swipe left on Passes to delete it.",
+                    style = HomeType.body,
+                    color = Mute,
+                    textAlign = TextAlign.Center
                 )
             }
+
             Spacer(modifier = Modifier.height(Space.gap))
         }
         } // end non-rail
-    }
-
-    if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete ticket?") },
-            text = { Text("This removes the ticket from this phone. You can add it again later.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmDelete = false
-                    viewModel.delete(onBack)
-                }) { Text("Delete", color = Expense) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
-            }
-        )
     }
 
     error?.let { msg ->
@@ -620,16 +489,16 @@ fun TicketDetailScreen(
 }
 
 @Composable
-private fun rememberBoardingQr(snapshot: BoardingPassSnapshot?): ImageBitmap? {
+private fun rememberBoardingQr(snapshot: BoardingPassSnapshot?): BoardingCode? {
     val code = snapshot?.barcodeValue?.takeIf { it.isNotBlank() }
     val usable = code != null &&
         !BookingConfirmationParser.isConfirmationPlaceholder(code) &&
         !code.startsWith("ETKT:", ignoreCase = true) &&
         !code.startsWith("BOARDING:", ignoreCase = true)
-    return rememberTicketQrBitmap(
+    return rememberBoardingCode(
         value = code.takeIf { usable },
-        format = TicketBarcodeFormat.QR_CODE,
-        sizePx = 480
+        format = snapshot?.barcodeFormat,
+        serializedSpec = snapshot?.barcodeSpec
     )
 }
 
@@ -665,4 +534,23 @@ internal fun pickEventDateTime(
         cal.get(Calendar.MONTH),
         cal.get(Calendar.DAY_OF_MONTH)
     ).show()
+}
+
+/** Full-width pill in the SGR stub colour, for the actions under a boarding pass. */
+@Composable
+private fun SgrPillButton(label: String, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(54.dp),
+        shape = RoundedCornerShape(28.dp),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = SgrTicketFill,
+            contentColor = SgrOnTicket
+        )
+    ) {
+        Text(label, fontFamily = GeometricSansFamily, fontWeight = FontWeight.SemiBold)
+    }
 }

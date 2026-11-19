@@ -41,6 +41,21 @@ Out of scope:
 - Missing hardening headers on static pages that hold no user data
 - Findings from automated scanners without a demonstrated impact
 
+## Data at rest and SQL
+
+- **Ledger and tickets** live in a Room database on SQLCipher. The key is 32 random bytes,
+  stored only in an `EncryptedFile` (AES-256-GCM) under an Android Keystore master key.
+- **Settings, budgets, goals and auth flags** live in `EncryptedSharedPreferences`.
+- **SQL** goes through Room `@Query` with bound parameters. The only raw `execSQL` in app code
+  is fixed DDL in `AppDatabaseMigrations`; the SMS inbox query uses `LIKE ?` with arguments.
+  No user or SMS text is ever concatenated into SQL.
+- **WorkManager's database** is not encrypted; pass reminders store only a ticket id and kind.
+
+MobSF's APK scan reports `android_sql_raw_query` ("App uses SQLite Database and execute raw
+SQL query"). As of 2026-11-19 every flagged class is library code (SQLCipher, Firebase
+Analytics and Crashlytics, Google Data Transport, ML Kit, AndroidX), none of it LipaBill's.
+Map R8 names back with `mapping.txt` from the same build before treating it as new.
+
 ## Supported versions
 
 Only the latest release of each flavor gets security fixes.

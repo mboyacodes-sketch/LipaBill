@@ -48,6 +48,8 @@ import com.lipabill.app.R
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.parser.sanitizeAccountNumber
 import com.lipabill.app.data.repository.MerchantHit
+import com.lipabill.app.ui.payment.MoneySheetWalletBlock
+import com.lipabill.app.ui.payment.PayWalletPicker
 import com.lipabill.app.ui.permissions.paymentAccessDirective
 import com.lipabill.app.ui.sheet.EditableSheetField
 import com.lipabill.app.ui.sheet.InAppKeyboard
@@ -82,8 +84,10 @@ import com.lipabill.app.ui.util.hideKeyboard
 import com.lipabill.app.ui.util.opensOnDigitKeys
 import com.lipabill.app.ui.util.sanitizeSheetLine
 import com.lipabill.app.viewmodel.PayMethod
+import com.lipabill.app.viewmodel.payMethodsFor
 import com.lipabill.app.viewmodel.PayMoneyViewModel
 import com.lipabill.app.viewmodel.TransactionListViewModel
+import com.lipabill.app.viewmodel.sheetBalance
 import com.lipabill.app.viewmodel.WalletAccount
 
 private enum class PayFocusedField {
@@ -141,7 +145,10 @@ fun PayMoneySheetContent(
     onConfirm: () -> Unit
 ) {
     val state by payVm.uiState.collectAsStateWithLifecycle()
-    val shownBalance by listVm.latestBalance.collectAsStateWithLifecycle()
+    val homeBalance by listVm.latestBalance.collectAsStateWithLifecycle()
+    val walletBalances by listVm.walletBalances.collectAsStateWithLifecycle()
+    // The balance of the wallet this sheet will dial (e.g. Airtel on a dual-SIM phone).
+    val shownBalance = sheetBalance(state.activeWallet, walletBalances, homeBalance)
     var showConfirm by remember { mutableStateOf(false) }
     var focusedField by remember { mutableStateOf<PayFocusedField?>(null) }
     var amountFocused by remember { mutableStateOf(payVm.consumeResumeOnAmountStep()) }
@@ -292,10 +299,23 @@ fun PayMoneySheetContent(
         showRecipients = true,
         showRecipientsHeader = false,
         showAmountKeypad = amountFocused,
-        detailsHeader = { MoneyFlowSheetHeader(title = "Pay", balance = shownBalance) },
+        detailsHeader = {
+            MoneySheetWalletBlock(
+                title = "Pay",
+                region = state.region,
+                eligibleLines = state.eligiblePayLines,
+                selectedSubscriptionId = state.selectedSubscriptionId,
+                activeWallet = state.activeWallet,
+                missingMessage = state.missingPaySimMessage,
+                onSelect = payVm::selectPayLine,
+                showPicker = !state.needsPhoneStatePermission,
+                balances = walletBalances
+            )
+        },
         recipientsContent = {
             Column(verticalArrangement = Arrangement.spacedBy(Space.section)) {
                 MethodSegmentedRow(
+                    methods = payMethodsFor(state.activeWallet),
                     selected = state.method,
                     onSelect = {
                         dismissTextKeyboard()
@@ -491,6 +511,7 @@ fun PayMoneySheetContent(
         canConfirm = state.canPay,
         confirmLabel = "Pay Now",
         summary = payVm.confirmSummary(),
+        from = state.activeWallet,
         onDismiss = { showConfirm = false },
         onConfirm = {
             showConfirm = false
@@ -499,16 +520,16 @@ fun PayMoneySheetContent(
     )
 }
 
-private val MethodTabs = listOf(PayMethod.TILL, PayMethod.PAYBILL, PayMethod.POCHI)
-
 private val FillNoteFill = Color(0xFFE7F6EC)
 private val FillNoteInk = Color(0xFF14532D)
 
 @Composable
 private fun MethodSegmentedRow(
+    methods: List<PayMethod>,
     selected: PayMethod?,
     onSelect: (PayMethod) -> Unit
 ) {
+    if (methods.isEmpty()) return
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -517,7 +538,7 @@ private fun MethodSegmentedRow(
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        MethodTabs.forEach { method ->
+        methods.forEach { method ->
             val on = method == selected
             Box(
                 modifier = Modifier

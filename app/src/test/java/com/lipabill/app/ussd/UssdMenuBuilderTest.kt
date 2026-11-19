@@ -1,6 +1,6 @@
 package com.lipabill.app.ussd
 
-import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.testTransaction
 import com.lipabill.app.data.model.TransactionType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,16 +17,13 @@ class UssdMenuBuilderTest {
         phone: String? = "0712345678",
         name: String? = "TEST",
         raw: String = ""
-    ) = MpesaTransaction(
+    ) = testTransaction(
         id = 1,
-        code = "ABC123",
         type = type,
         amount = amount,
         counterpartyName = name,
         counterpartyPhone = phone,
         timestampMillis = 1L,
-        balance = null,
-        cost = null,
         rawBody = raw
     )
 
@@ -212,6 +209,132 @@ class UssdMenuMatcherTest {
     fun looks_like_menu() {
         assertTrue(UssdMenuMatcher.looksLikeMenu(classicMain))
         assertFalse(UssdMenuMatcher.looksLikeMenu("Enter amount"))
+        assertFalse(UssdMenuMatcher.looksLikeMenu("1. Only one"))
+    }
+
+    @Test
+    fun parses_paren_dash_and_space_formats() {
+        assertEquals(
+            listOf(
+                UssdMenuMatcher.Option("1", "Send Money"),
+                UssdMenuMatcher.Option("2", "Pay Bill")
+            ),
+            UssdMenuMatcher.parseOptions("1) Send Money\n2) Pay Bill")
+        )
+        assertEquals(
+            listOf(
+                UssdMenuMatcher.Option("1", "Lipa na M-PESA"),
+                UssdMenuMatcher.Option("2", "My Account")
+            ),
+            UssdMenuMatcher.parseOptions("1 - Lipa na M-PESA\n2 - My Account")
+        )
+        assertEquals(
+            listOf(
+                UssdMenuMatcher.Option("1", "Send Money"),
+                UssdMenuMatcher.Option("2", "Buy Goods")
+            ),
+            UssdMenuMatcher.parseOptions("1 Send Money\n2 Buy Goods")
+        )
+    }
+
+    @Test
+    fun airtel_exclude_blocks_safaricom_lipa_tree() {
+        val safaricomMain = """
+            M-PESA
+            1. Send Money
+            2. Withdraw Cash
+            3. Buy Airtime
+            4. Lipa Na M-PESA
+            5. My Account
+        """.trimIndent()
+        val airtelLipa = """
+            Airtel Money
+            1. Send Money
+            2. Withdraw Cash
+            3. Lipa Na Airtel Money
+            4. My Account
+        """.trimIndent()
+        assertNull(
+            UssdMenuMatcher.resolveChoice(
+                safaricomMain,
+                labels = listOf("lipa na airtel money", "lipa na airtel", "lipa"),
+                excludeLabels = WalletMenuPlans.SAFARICOM_EXCLUDE
+            )
+        )
+        assertTrue(
+            UssdMenuMatcher.looksLikeExcludedTree(
+                safaricomMain,
+                labels = listOf("lipa na airtel money", "lipa", "lipa na airtel"),
+                excludeLabels = WalletMenuPlans.SAFARICOM_EXCLUDE
+            )
+        )
+        assertEquals(
+            "3",
+            UssdMenuMatcher.resolveChoice(
+                airtelLipa,
+                labels = listOf("lipa na airtel money", "lipa na airtel", "lipa"),
+                excludeLabels = WalletMenuPlans.SAFARICOM_EXCLUDE
+            )
+        )
+    }
+
+    @Test
+    fun uganda_network_select_prefers_airtel_over_mtn() {
+        val dialog = """
+            Send Money
+            1. Airtel
+            2. MTN Number
+            3. UTL Number
+        """.trimIndent()
+        assertEquals(
+            "1",
+            UssdMenuMatcher.resolveChoice(
+                dialog,
+                labels = listOf("airtel money", "airtel", "mtn", "utl"),
+                excludeLabels = WalletMenuPlans.SAFARICOM_EXCLUDE
+            )
+        )
+    }
+
+    @Test
+    fun ambiguous_two_strong_hits_returns_null() {
+        val tied = """
+            1. Transfer Funds
+            2. Move Funds
+        """.trimIndent()
+        val ambiguous = UssdMenuMatcher.resolveChoiceDetailed(
+            tied,
+            labels = listOf("funds"),
+            excludeLabels = emptyList()
+        )
+        assertEquals(UssdMenuMatcher.ResolveReason.AMBIGUOUS, ambiguous.reason)
+        assertNull(ambiguous.number)
+    }
+
+    @Test
+    fun clear_winner_beats_longer_contains_hit() {
+        val dialog = """
+            1. Send Money
+            2. Send Money International
+        """.trimIndent()
+        val result = UssdMenuMatcher.resolveChoiceDetailed(
+            dialog,
+            labels = listOf("send money")
+        )
+        assertEquals(UssdMenuMatcher.ResolveReason.MATCHED, result.reason)
+        assertEquals("1", result.number)
+    }
+
+    @Test
+    fun no_options_and_blank_labels() {
+        assertEquals(
+            UssdMenuMatcher.ResolveReason.NO_OPTIONS,
+            UssdMenuMatcher.resolveChoiceDetailed("Enter amount", listOf("send")).reason
+        )
+        assertEquals(
+            UssdMenuMatcher.ResolveReason.NO_LABELS,
+            UssdMenuMatcher.resolveChoiceDetailed(classicMain, emptyList()).reason
+        )
     }
 }
 
@@ -237,12 +360,30 @@ class ConfirmDetectorTest {
     }
 
     @Test
+    fun ok_cancel_and_swapped_digits() {
+        val okCancel = "Proceed with payment?\n1. OK\n2. Cancel"
+        assertTrue(ConfirmDetector.isYesNoConfirm(okCancel))
+        assertEquals("1", ConfirmDetector.resolveYes(okCancel))
+        assertEquals("2", ConfirmDetector.resolveNo(okCancel))
+
+        val swapped = "Accept?\n1. No\n2. Yes"
+        assertTrue(ConfirmDetector.isYesNoConfirm(swapped))
+        assertEquals("2", ConfirmDetector.resolveYes(swapped))
+        assertEquals("1", ConfirmDetector.resolveNo(swapped))
+    }
+
+    @Test
     fun ignores_ordinary_menu() {
         assertFalse(
             ConfirmDetector.isYesNoConfirm(
                 "1. Send Money\n2. Withdraw Cash\n3. Buy Goods"
             )
         )
+    }
+
+    @Test
+    fun pin_prompt_is_not_confirm() {
+        assertFalse(ConfirmDetector.isYesNoConfirm("Enter M-PESA PIN\n1. Yes\n2. No"))
     }
 
     @Test
@@ -312,13 +453,25 @@ class PinDetectorTest {
     }
 
     @Test
+    fun detects_airtel_and_mtn_pin_prompts() {
+        assertTrue(PinDetector.isPinPrompt("Enter Airtel Money PIN"))
+        assertTrue(PinDetector.isPinPrompt("Enter Airtel PIN"))
+        assertTrue(PinDetector.isPinPrompt("Enter MoMo PIN"))
+        assertTrue(PinDetector.isPinPrompt("Enter MTN PIN"))
+        assertTrue(PinDetector.isPinPrompt("Enter Mobile Money PIN"))
+    }
+
+    @Test
     fun detects_masked_field() {
         assertTrue(PinDetector.isPinPrompt("****"))
+        assertTrue(PinDetector.isPinPrompt("••••"))
+        assertTrue(PinDetector.isPinPrompt("PIN\n●●●●"))
     }
 
     @Test
     fun ignores_ordinary_menu() {
         assertFalse(PinDetector.isPinPrompt("1. Send Money\n2. Withdraw Cash"))
         assertFalse(PinDetector.isPinPrompt("Enter amount"))
+        assertFalse(PinDetector.isPinPrompt("Confirm Ksh 100\n1. Yes\n2. No"))
     }
 }
