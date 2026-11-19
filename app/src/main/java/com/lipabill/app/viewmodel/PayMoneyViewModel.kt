@@ -5,15 +5,17 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.parser.PaybillPasteParser
 import com.lipabill.app.data.parser.sanitizeAccountNumber
 import com.lipabill.app.data.repository.MerchantHit
 import com.lipabill.app.data.repository.SendContact
 import com.lipabill.app.ussd.PaymentManualDetails
+import com.lipabill.app.ussd.PaymentWallet
 import com.lipabill.app.ussd.RepeatTransactionCoordinator
-import com.lipabill.app.ussd.SimLine
 import com.lipabill.app.ussd.UssdMenuBuilder
+import com.lipabill.app.ussd.WalletMenuPlans
 import com.lipabill.app.ui.util.appendAmountKey as applyAmountKey
 import com.lipabill.app.ui.util.formatKesMoney
 import com.lipabill.app.ui.util.sanitizeAmountInput
@@ -35,6 +37,22 @@ enum class PayMethod {
     POCHI
 }
 
+/**
+ * Pay tabs the active MNO can actually dial. Pochi is Safaricom-only;
+ * Airtel / MTN get Till (merchant) and Paybill only.
+ */
+fun payMethodsFor(wallet: PaymentWallet?): List<PayMethod> = when (wallet) {
+    PaymentWallet.SAFARICOM_MPESA -> listOf(
+        PayMethod.TILL,
+        PayMethod.PAYBILL,
+        PayMethod.POCHI
+    )
+    PaymentWallet.AIRTEL_KENYA,
+    PaymentWallet.AIRTEL_UGANDA,
+    PaymentWallet.MTN_UGANDA,
+    null -> listOf(PayMethod.TILL, PayMethod.PAYBILL)
+}
+
 data class PayMoneyUiState(
     val method: PayMethod? = null,
     val businessNumber: String = "",
@@ -49,17 +67,12 @@ data class PayMoneyUiState(
     val detailsValid: Boolean = false,
     val amountValid: Boolean = false,
     val canPay: Boolean = false,
-    val featureEnabled: Boolean = true,
-    val accessibilityEnabled: Boolean = false,
-    val simLines: List<SimLine> = emptyList(),
-    val selectedSubscriptionId: Int? = null,
-    val hasSavedSimPreference: Boolean = false,
-    val needsPhoneStatePermission: Boolean = false,
+    override val lines: PaymentLineSnapshot = InitialPaymentLines,
     val dialStarted: Boolean = false,
     val statusMessage: String? = null,
     /** What the user should do next on the details step (null when ready). */
     val guidanceMessage: String? = null
-)
+) : PaymentLineState
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PayMoneyViewModel(application: Application) : AndroidViewModel(application) {
@@ -107,7 +120,7 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
             merchantHits = draft.hits,
             merchantQuery = merchantQ
         ).revalidate()
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, PayMoneyUiState())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PayMoneyUiState())
 
     private data class PochiDraft(
         val state: PayMoneyUiState,
@@ -124,18 +137,23 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
         val ctx = getApplication<Application>()
         val lines = ctx.paymentLineSnapshot(coordinator, app.securePreferences)
         _ui.update { state ->
-            state.copy(
-                featureEnabled = lines.featureEnabled,
-                accessibilityEnabled = lines.accessibilityEnabled,
-                simLines = lines.simLines,
-                selectedSubscriptionId = lines.selectedSubscriptionId,
-                hasSavedSimPreference = lines.hasSavedSimPreference,
-                needsPhoneStatePermission = lines.needsPhoneStatePermission
-            )
+            state.copy(lines = lines).dropUnsupportedMethod().revalidate()
         }
     }
 
+    fun selectPayLine(subscriptionId: Int) {
+        val state = _ui.value
+        setPreferredPayLine(
+            app.securePreferences,
+            state.region,
+            state.simLines,
+            subscriptionId
+        ) ?: return
+        refreshGates()
+    }
+
     fun selectMethod(method: PayMethod) {
+        if (method !in payMethodsFor(_ui.value.activeWallet)) return
         pochiQuery.value = ""
         merchantQuery.value = ""
         _ui.update {
@@ -152,18 +170,26 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /** Clears a method the new wallet cannot dial (e.g. Pochi after switching to Airtel). */
+    private fun PayMoneyUiState.dropUnsupportedMethod(): PayMoneyUiState {
+        val selected = method ?: return this
+        if (selected in payMethodsFor(activeWallet)) return this
+        if (selected == PayMethod.POCHI) {
+            this@PayMoneyViewModel.pochiQuery.value = ""
+        }
+        return copy(
+            method = null,
+            selectedPochi = null,
+            dialStarted = false,
+            statusMessage = null
+        )
+    }
+
     fun clearMethod() {
         pochiQuery.value = ""
         merchantQuery.value = ""
         _ui.update {
-            PayMoneyUiState(
-                featureEnabled = it.featureEnabled,
-                accessibilityEnabled = it.accessibilityEnabled,
-                simLines = it.simLines,
-                selectedSubscriptionId = it.selectedSubscriptionId,
-                hasSavedSimPreference = it.hasSavedSimPreference,
-                needsPhoneStatePermission = it.needsPhoneStatePermission
-            )
+            PayMoneyUiState(lines = it.lines)
         }
     }
 
@@ -187,6 +213,8 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
         pochiPhone: String? = null,
         pochiName: String? = null
     ) {
+        refreshGates()
+        if (method !in payMethodsFor(_ui.value.activeWallet)) return
         selectMethod(method)
         when (method) {
             PayMethod.PAYBILL -> {
@@ -347,6 +375,7 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
         val state = uiState.value
         val amount = RepeatTransactionViewModel.parseAmount(state.amountInput) ?: return null
         val method = state.method ?: return null
+        if (method !in payMethodsFor(state.activeWallet)) return null
         val now = System.currentTimeMillis()
         return when (method) {
             PayMethod.PAYBILL -> {
@@ -356,17 +385,15 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
                 val knownName = state.merchantHits
                     .firstOrNull { it.identifier == business }
                     ?.displayName
-                MpesaTransaction(
-                    id = 0,
-                    code = "MANUAL-PB-$now",
+                manualPayment(
+                    kind = "PB",
                     type = TransactionType.PAYBILL,
                     amount = amount,
-                    counterpartyName = knownName ?: "Paybill $business",
-                    counterpartyPhone = business,
-                    timestampMillis = now,
-                    balance = null,
-                    cost = null,
-                    rawBody = "Account $account"
+                    name = knownName ?: "Paybill $business",
+                    phone = business,
+                    rawBody = "Account $account",
+                    now = now,
+                    source = state.activeWallet?.ledgerSource ?: MoneySource.MPESA
                 )
             }
             PayMethod.TILL -> {
@@ -375,17 +402,14 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
                 val knownName = state.merchantHits
                     .firstOrNull { it.identifier == till }
                     ?.displayName
-                MpesaTransaction(
-                    id = 0,
-                    code = "MANUAL-TILL-$now",
+                manualPayment(
+                    kind = "TILL",
                     type = TransactionType.BUY_GOODS,
                     amount = amount,
-                    counterpartyName = knownName ?: "Till $till",
-                    counterpartyPhone = till,
-                    timestampMillis = now,
-                    balance = null,
-                    cost = null,
-                    rawBody = ""
+                    name = knownName ?: "Till $till",
+                    phone = till,
+                    now = now,
+                    source = state.activeWallet?.ledgerSource ?: MoneySource.MPESA
                 )
             }
             PayMethod.POCHI -> {
@@ -394,37 +418,40 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
                     ?: return null
                 val name = state.selectedPochi?.name
                     ?: "Pochi La Biashara $phone"
-                MpesaTransaction(
-                    id = 0,
-                    code = "MANUAL-POCHI-$now",
+                manualPayment(
+                    kind = "POCHI",
                     type = TransactionType.POCHI,
                     amount = amount,
-                    counterpartyName = name,
-                    counterpartyPhone = phone,
-                    timestampMillis = now,
-                    balance = null,
-                    cost = null,
-                    rawBody = ""
+                    name = name,
+                    phone = phone,
+                    now = now,
+                    source = state.activeWallet?.ledgerSource ?: MoneySource.MPESA
                 )
             }
         }
     }
 
-    suspend fun prepare(): RepeatTransactionCoordinator.PreparedRepeat? {
-        val tx = buildSyntheticTransaction() ?: return null
-        val amount = RepeatTransactionViewModel.parseAmount(uiState.value.amountInput) ?: return null
-        return coordinator.prepareSession(tx, amount)
-    }
+    suspend fun prepare(): RepeatTransactionCoordinator.PreparedRepeat? =
+        coordinator.preparePayment(buildSyntheticTransaction(), uiState.value.amountInput)
 
     fun startDial(prepared: RepeatTransactionCoordinator.PreparedRepeat): Boolean {
+        refreshGates()
         val state = uiState.value
-        val status = coordinator.startDialWithStatus(
+        val started = coordinator.startPaymentDial(
             prepared,
             app.securePreferences,
+            state.region,
+            state.simLines,
             state.selectedSubscriptionId,
-            state.simLines
+            preferredSource = state.activeWallet?.ledgerSource
         ) ?: return false
-        _ui.update { it.copy(dialStarted = true, statusMessage = status) }
+        _ui.update {
+            it.copy(
+                dialStarted = true,
+                statusMessage = started.status,
+                lines = it.lines.after(started)
+            )
+        }
         return true
     }
 
@@ -508,13 +535,31 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun PayMoneyUiState.computeDetailsGuidance(detailsOk: Boolean): String? {
+        if (!needsPhoneStatePermission && !hasEligiblePaySim) {
+            return missingPaySimMessage.ifBlank { "A matching SIM is required to pay." }
+        }
         if (detailsOk) return null
         return when (method) {
-            null -> "Choose Paybill, Till, or Pochi to continue."
+            null -> {
+                val labels = payMethodsFor(activeWallet).map { it.choiceLabel() }
+                val choices = when (labels.size) {
+                    0 -> "a method"
+                    1 -> labels[0]
+                    2 -> "${labels[0]} or ${labels[1]}"
+                    else -> labels.dropLast(1).joinToString(", ") + ", or " + labels.last()
+                }
+                "Choose $choices to continue."
+            }
             PayMethod.PAYBILL -> paybillGuidance()
             PayMethod.TILL -> tillGuidance()
             PayMethod.POCHI -> pochiGuidance()
         }
+    }
+
+    private fun PayMethod.choiceLabel(): String = when (this) {
+        PayMethod.PAYBILL -> "Paybill"
+        PayMethod.TILL -> "Till"
+        PayMethod.POCHI -> "Pochi"
     }
 
     private fun PayMoneyUiState.paybillGuidance(): String =
@@ -567,12 +612,18 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
 
     private fun computeCanPay(state: PayMoneyUiState): Boolean {
         if (!state.detailsValid || !state.amountValid || state.method == null) return false
+        if (state.method !in payMethodsFor(state.activeWallet)) return false
+        if (state.dialStarted) return false
+        val simReady = state.needsPhoneStatePermission || state.hasEligiblePaySim
+        if (!simReady) return false
+        val wallet = state.activeWallet ?: return false
         val probe = buildProbe(state) ?: return false
-        return UssdMenuBuilder.canRepeat(probe)
+        return WalletMenuPlans.canRepeat(wallet, probe)
     }
 
     private fun buildProbe(state: PayMoneyUiState): MpesaTransaction? {
         val method = state.method ?: return null
+        if (method !in payMethodsFor(state.activeWallet)) return null
         val now = System.currentTimeMillis()
         return when (method) {
             PayMethod.PAYBILL -> {
