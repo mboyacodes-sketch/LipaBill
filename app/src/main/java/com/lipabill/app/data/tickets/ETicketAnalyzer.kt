@@ -2,6 +2,7 @@ package com.lipabill.app.data.tickets
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
@@ -40,7 +41,9 @@ object ETicketAnalyzer {
     data class ExtractedTicket(
         val text: String,
         val barcodes: List<ETicketTextParser.FoundBarcode>,
-        val stationHints: List<ETicketTextParser.StationHint>
+        val stationHints: List<ETicketTextParser.StationHint>,
+        /** Positioned lines: PDF text with font sizes, else OCR boxes (pages stacked). */
+        val lines: List<TextLine> = emptyList()
     )
 
     suspend fun analyze(
@@ -50,7 +53,11 @@ object ETicketAnalyzer {
     ): TicketImport {
         val read = extract(context, uri, kind)
         try {
-            return ETicketTextParser.parse(read.text, read.barcodes, read.stationHints, kind)
+            val draft = ETicketTextParser.parse(read.text, read.barcodes, read.stationHints, kind, read.lines)
+            // Carry the real symbology + encoding of the code the draft points at.
+            val source = read.barcodes.firstOrNull { it.value == draft.barcodeValue }
+                ?: return draft
+            return draft.copy(barcodeFormat = source.format, barcodeSpec = source.spec)
         } catch (t: IllegalArgumentException) {
             val msg = t.message.orEmpty()
             if (msg.contains("scannable code", ignoreCase = true) && read.text.length > 40) {
@@ -75,7 +82,8 @@ object ETicketAnalyzer {
             name.endsWith(".pdf", ignoreCase = true) ||
             mime == "application/octet-stream" && name.contains("pdf", ignoreCase = true)
 
-        val pdfText = if (isPdf) extractPdfText(context, uri) else ""
+        val pdfRead = if (isPdf) extractPdfText(context, uri) else PdfRead("", emptyList())
+        val pdfText = pdfRead.text
         Log.d(TAG, "kind=$kind pdfTextChars=${pdfText.length} mime=$mime name=$name")
 
         val bitmaps = loadBitmaps(context, uri, preferPdf = isPdf)
@@ -89,6 +97,8 @@ object ETicketAnalyzer {
             val barcodes = mutableListOf<ETicketTextParser.FoundBarcode>()
             val textParts = mutableListOf<String>()
             val stationHints = mutableListOf<ETicketTextParser.StationHint>()
+            val ocrLines = mutableListOf<TextLine>()
+            var pageTop = 0f
 
             if (pdfText.length >= 40) {
                 textParts += pdfText
@@ -133,7 +143,9 @@ object ETicketAnalyzer {
                 pageOcr?.let {
                     textParts += it.text
                     stationHints += it.stationHints
+                    ocrLines += it.lines.map { l -> l.copy(top = l.top + pageTop, bottom = l.bottom + pageTop) }
                 }
+                pageTop += bitmap.height + 40f
             }
 
             val combined = textParts.filter { it.isNotBlank() }.joinToString("\n")
@@ -147,29 +159,37 @@ object ETicketAnalyzer {
                     "Couldn’t read text from that file. Try a clearer photo or PDF export."
                 )
             }
-            ExtractedTicket(combined, barcodes, stationHints)
+            // PDF text layer is exact; fall back to OCR boxes for photos / scanned PDFs.
+            val lines = pdfRead.lines.takeIf { pdfText.length >= 40 && it.isNotEmpty() } ?: ocrLines
+            ExtractedTicket(combined, barcodes, stationHints, lines)
         } finally {
             bitmaps.forEach { it.recycle() }
         }
     }
 
-    private fun extractPdfText(context: Context, uri: Uri): String {
+    private data class PdfRead(val text: String, val lines: List<TextLine>)
+
+    private fun extractPdfText(context: Context, uri: Uri): PdfRead {
         return try {
             PDFBoxResourceLoader.init(context.applicationContext)
             context.contentResolver.openInputStream(uri)?.use { input ->
                 PDDocument.load(input).use { doc ->
-                    if (doc.numberOfPages < 1) return@use ""
+                    if (doc.numberOfPages < 1) return@use PdfRead("", emptyList())
                     val stripper = PDFTextStripper().apply {
                         startPage = 1
                         endPage = min(doc.numberOfPages, 4)
                         sortByPosition = true
                     }
-                    stripper.getText(doc).orEmpty().trim()
+                    val text = stripper.getText(doc).orEmpty().trim()
+                    val lines = runCatching { PdfTextLines.read(doc) }
+                        .onFailure { Log.w(TAG, "pdf_lines_fail", it) }
+                        .getOrDefault(emptyList())
+                    PdfRead(text, lines)
                 }
-            }.orEmpty()
+            } ?: PdfRead("", emptyList())
         } catch (t: Throwable) {
             Log.w(TAG, "pdf_text_fail", t)
-            ""
+            PdfRead("", emptyList())
         }
     }
 
@@ -333,9 +353,18 @@ object ETicketAnalyzer {
             val image = InputImage.fromBitmap(bitmap, 0)
             val results = scanner.process(image).await()
             results.mapNotNull { b ->
-                val value = b.rawValue?.trim().orEmpty()
-                if (value.isEmpty()) return@mapNotNull null
-                ETicketTextParser.FoundBarcode(value, b.format.toTicketFormat())
+                val value = b.rawValue.orEmpty()
+                if (value.isBlank()) return@mapNotNull null
+                val format = b.format.toTicketFormat()
+                val spec = if (format == TicketBarcodeFormat.QR_CODE ||
+                    format == TicketBarcodeFormat.PDF_417 ||
+                    format == TicketBarcodeFormat.AZTEC
+                ) {
+                    readSpec(bitmap, b.boundingBox, value)
+                } else {
+                    null
+                }
+                ETicketTextParser.FoundBarcode(value, format, spec)
             }
         } catch (t: Throwable) {
             Log.w(TAG, "barcode_fail", t)
@@ -345,9 +374,37 @@ object ETicketAnalyzer {
         }
     }
 
+    /** zxing pass over the code ML Kit found, cropped with margin, for EC level / version. */
+    private fun readSpec(bitmap: Bitmap, box: Rect?, value: String): BarcodeSpec? = try {
+        val region = box?.let {
+            val pad = (maxOf(it.width(), it.height()) * 0.2f).toInt()
+            Rect(
+                (it.left - pad).coerceAtLeast(0),
+                (it.top - pad).coerceAtLeast(0),
+                (it.right + pad).coerceAtMost(bitmap.width),
+                (it.bottom + pad).coerceAtMost(bitmap.height)
+            ).takeIf { r -> r.width() > 8 && r.height() > 8 }
+        }
+        fun inspect(src: Bitmap): BarcodeSpec? {
+            val px = IntArray(src.width * src.height)
+            src.getPixels(px, 0, src.width, 0, 0, src.width, src.height)
+            return BarcodeSpecReader.fromArgb(px, src.width, src.height, value)
+        }
+        val cropped = region?.let { Bitmap.createBitmap(bitmap, it.left, it.top, it.width(), it.height()) }
+        try {
+            cropped?.let(::inspect) ?: inspect(bitmap)
+        } finally {
+            if (cropped != null && cropped != bitmap) cropped.recycle()
+        }
+    } catch (t: Throwable) {
+        Log.w(TAG, "barcode_spec_fail", t)
+        null
+    }
+
     private data class OcrResult(
         val text: String,
-        val stationHints: List<ETicketTextParser.StationHint>
+        val stationHints: List<ETicketTextParser.StationHint>,
+        val lines: List<TextLine> = emptyList()
     )
 
     private suspend fun recognizeTextDetailed(bitmap: Bitmap): OcrResult {
@@ -378,7 +435,21 @@ object ETicketAnalyzer {
                     }
                 }
             }
-            OcrResult(result.text.orEmpty(), hints)
+            // Every OCR line with its box; box height stands in for font size.
+            val lines = result.textBlocks.flatMap { block ->
+                block.lines.mapNotNull { line ->
+                    val b = line.boundingBox ?: return@mapNotNull null
+                    TextLine(
+                        line.text,
+                        b.left.toFloat(),
+                        b.top.toFloat(),
+                        b.right.toFloat(),
+                        b.bottom.toFloat(),
+                        b.height().toFloat()
+                    )
+                }
+            }
+            OcrResult(result.text.orEmpty(), hints, lines)
         } catch (t: Throwable) {
             Log.w(TAG, "ocr_fail", t)
             OcrResult("", emptyList())
