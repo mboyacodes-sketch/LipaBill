@@ -4,7 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.util.Log
+import com.lipabill.app.metrics.AppLog
 
 /**
  * Social profile QR / share links. Shared QRs encode [Target.shareUrl] on
@@ -236,12 +236,12 @@ object SocialLink {
                 context.startActivity(app)
                 true
             } catch (e: ActivityNotFoundException) {
-                Log.w(TAG, "app_missing_${target.platform}", e)
+                AppLog.w(TAG, "app_missing_${target.platform}", e)
                 runCatching {
                     context.startActivity(web)
                     true
                 }.onFailure {
-                    Log.w(TAG, "web_open_failed", it)
+                    AppLog.w(TAG, "web_open_failed", it)
                 }.getOrDefault(false)
             }
         }
@@ -249,7 +249,7 @@ object SocialLink {
             context.startActivity(web)
             true
         }.onFailure {
-            Log.w(TAG, "web_open_failed", it)
+            AppLog.w(TAG, "web_open_failed", it)
         }.getOrDefault(false)
     }
 
