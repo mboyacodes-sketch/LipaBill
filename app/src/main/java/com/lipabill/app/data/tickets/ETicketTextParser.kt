@@ -23,8 +23,10 @@ import java.util.Locale
 object ETicketTextParser {
 
     data class FoundBarcode(
+        /** Raw decoded payload, untrimmed — gate scanners compare it exactly. */
         val value: String,
-        val format: TicketBarcodeFormat
+        val format: TicketBarcodeFormat,
+        val spec: BarcodeSpec? = null
     )
 
     /** Station name with horizontal position from OCR (left = origin on Madaraka tickets). */
@@ -37,9 +39,20 @@ object ETicketTextParser {
         ocrText: String,
         barcodes: List<FoundBarcode>,
         stationHints: List<StationHint> = emptyList(),
-        kind: TicketDocumentKind = TicketDocumentKind.AUTO
+        kind: TicketDocumentKind = TicketDocumentKind.AUTO,
+        /** Positioned lines (PDF / OCR) for layout-aware event parsing; plain text when empty. */
+        lines: List<TextLine> = emptyList()
     ): TicketImport {
         val text = normalizeOcr(ocrText.replace('\u00A0', ' ').trim())
+
+        // A Nairobi–Mombasa flight would otherwise read as an SGR trip or an event.
+        if (kind != TicketDocumentKind.SGR_TICKET && kind != TicketDocumentKind.PKPASS &&
+            EventTicketExtractor.looksLikeFlight(text)
+        ) {
+            throw IllegalArgumentException(
+                "That looks like a flight itinerary. Passes holds event tickets and SGR train tickets."
+            )
+        }
 
         when (kind) {
             TicketDocumentKind.EVENT -> {
@@ -48,7 +61,7 @@ object ETicketTextParser {
                         "No scannable code found. Use a clearer PDF/photo, or paste the ticket code."
                     )
                 val draft = parseSgr(text, barcode, stationHints)
-                    ?: parseGeneric(text, barcode)
+                    ?: parseGeneric(text, barcode, lines)
                 return draft.copy(expectsBoardingPass = false, hasBoardingPass = true)
             }
             TicketDocumentKind.SGR_TICKET -> {
@@ -76,7 +89,7 @@ object ETicketTextParser {
         val sgr = parseSgr(text, barcode, stationHints)
         if (sgr != null) return sgr
 
-        return parseGeneric(text, barcode)
+        return parseGeneric(text, barcode, lines)
     }
 
     /**
@@ -116,9 +129,7 @@ object ETicketTextParser {
     }
 
     private fun pickBarcode(barcodes: List<FoundBarcode>, text: String): FoundBarcode? {
-        val cleaned = barcodes
-            .map { it.copy(value = it.value.trim()) }
-            .filter { it.value.isNotEmpty() }
+        val cleaned = barcodes.filter { it.value.isNotBlank() }
         if (cleaned.isNotEmpty()) {
             val preferred = listOf(
                 TicketBarcodeFormat.QR_CODE,
@@ -216,7 +227,7 @@ object ETicketTextParser {
 
         val booking = ticketNo
             ?: labeled(text, "booking", "booking ref", "booking reference", "pnr", "confirmation")
-            ?: barcode.value.takeIf { it.length in 6..24 && it.all { ch -> ch.isLetterOrDigit() || ch == '-' } }
+            ?: barcode.value.trim().takeIf { it.length in 6..24 && it.all { ch -> ch.isLetterOrDigit() || ch == '-' } }
 
         val startsAt = parseTravelDateTime(text)
         val venue = when {
@@ -266,24 +277,18 @@ object ETicketTextParser {
         }
     }
 
-    private fun parseGeneric(text: String, barcode: FoundBarcode): TicketImport {
-        val title = firstNonEmptyLine(text)
-            ?.take(64)
-            ?.ifBlank { null }
-            ?: "E-ticket"
-        val startsAt = parseTravelDateTime(text)
-        val venue = labeled(text, "venue", "station", "location", "place")
-        val seat = labeled(text, "seat", "coach", "row", "gate")
-        val order = labeled(text, "booking", "pnr", "ticket no", "reference", "confirmation")
+    /** Any event ticket layout: labels, column values, header lines (see EventTicketExtractor). */
+    private fun parseGeneric(text: String, barcode: FoundBarcode, lines: List<TextLine> = emptyList()): TicketImport {
+        val f = EventTicketExtractor.extract(lines.ifEmpty { TextLine.fromPlainText(text) })
         return TicketImport(
-            title = title,
-            venue = venue,
-            startsAtMillis = startsAt,
-            seatOrTier = seat,
+            title = f.title ?: firstNonEmptyLine(text)?.take(64) ?: "E-ticket",
+            venue = f.venue,
+            startsAtMillis = f.startsAtMillis ?: parseTravelDateTime(text),
+            seatOrTier = f.seatLine(),
             barcodeValue = barcode.value,
             barcodeFormat = barcode.format,
-            orderId = order,
-            notes = "Imported e-ticket",
+            orderId = f.orderRef ?: f.ticketNumber,
+            notes = f.toNotes() ?: "Imported e-ticket",
             source = TicketSource.E_TICKET,
             expectsBoardingPass = false,
             hasBoardingPass = true
