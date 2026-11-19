@@ -1,7 +1,6 @@
 package com.lipabill.app.data.repository
 
-import com.lipabill.app.data.model.MpesaTransaction
-import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.testTransaction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -50,16 +49,10 @@ class CounterpartyNameLinkerTest {
         name: String?,
         phone: String?,
         code: String = "A"
-    ) = MpesaTransaction(
-        id = 0,
+    ) = testTransaction(
         code = code,
-        type = TransactionType.SENT,
-        amount = 100.0,
         counterpartyName = name,
         counterpartyPhone = phone,
-        timestampMillis = 1L,
-        balance = null,
-        cost = null,
-        rawBody = ""
+        timestampMillis = 1L
     )
 }
