@@ -5,6 +5,7 @@ import com.lipabill.app.data.model.TransactionType
 import java.text.NumberFormat
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
@@ -41,6 +42,10 @@ fun previousAnalyticsBounds(
     to: LocalDate
 ): Pair<LocalDate, LocalDate>? = when (range) {
     AnalyticsRange.ALL -> null
+    AnalyticsRange.THIS_MONTH -> {
+        val prevMonth = YearMonth.from(from).minusMonths(1)
+        prevMonth.atDay(1) to prevMonth.atEndOfMonth()
+    }
     AnalyticsRange.THIS_YEAR,
     AnalyticsRange.YEAR -> from.minusYears(1) to to.minusYears(1)
     else -> {
@@ -137,19 +142,25 @@ data class MoneyStory(
 
 data class PulseCell(
     val date: LocalDate,
+    /** True when the day belongs to the month (or period) being shown — not a padding day. */
     val inRange: Boolean,
     val isToday: Boolean,
     val inflow: Double,
     val outflow: Double,
     /** Regular payees expected to be paid this day. */
-    val due: List<RegularPayee> = emptyList()
+    val due: List<RegularPayee> = emptyList(),
+    /** After today: shown greyed and not tappable for money detail. */
+    val isFuture: Boolean = false
 ) {
     val isDue: Boolean get() = due.isNotEmpty()
     val hasOutflow: Boolean get() = outflow > 0.005
     val hasInflow: Boolean get() = inflow > 0.005
     val net: Double get() = inflow - outflow
+    /** Past or today, in the month — can show amounts and accept taps. */
+    val isActive: Boolean get() = inRange && !isFuture
     val flow: DayFlow
         get() = when {
+            !isActive -> DayFlow.NONE
             hasInflow && hasOutflow -> if (net >= 0.0) DayFlow.NET_UP else DayFlow.NET_DOWN
             hasInflow -> DayFlow.IN_ONLY
             hasOutflow -> DayFlow.OUT_ONLY
@@ -242,14 +253,41 @@ fun calendarAmountLabel(amount: Double): String {
 }
 
 /**
- * Regular payments expected from today to [days] ahead, plus ones already past their usual
- * date and not seen yet (a regular that stopped altogether drops out of [regulars] on its own).
- * Soonest first.
+ * Coming Up and calendar "due" marks are for bill-like standing payments
+ * (fortnightly / monthly / quarterly) — not weekly shop rhythms that look regular.
  */
-fun upcomingDue(regulars: List<RegularPayee>, today: LocalDate, days: Long = 14): List<RegularPayee> =
-    regulars
-        .filter { !it.nextDue.isAfter(today.plusDays(days)) }
+fun billLikeComingUp(regular: RegularPayee): Boolean = when (regular.cadence) {
+    Cadence.FORTNIGHTLY, Cadence.MONTHLY, Cadence.QUARTERLY -> true
+    Cadence.WEEKLY -> false
+}
+
+/**
+ * Bill-like regulars expected from today to [days] ahead, plus recently overdue ones
+ * (still within one missed cadence cycle). Older misses stay on Regulars but drop out
+ * of Coming Up so the list does not nag forever. Soonest first; capped for the sheet.
+ */
+fun upcomingDue(
+    regulars: List<RegularPayee>,
+    today: LocalDate,
+    days: Long = 14,
+    limit: Int = 8
+): List<RegularPayee> {
+    val horizon = today.plusDays(days)
+    return regulars
+        .asSequence()
+        .filter(::billLikeComingUp)
+        .filter { regular ->
+            val due = regular.nextDue
+            when {
+                due.isAfter(horizon) -> false
+                !due.isBefore(today) -> true
+                else -> ChronoUnit.DAYS.between(due, today) <= regular.cadence.days.toLong()
+            }
+        }
         .sortedWith(compareBy<RegularPayee> { it.nextDue }.thenByDescending { it.typicalAmount })
+        .take(limit)
+        .toList()
+}
 
 private val dueDayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK)
 
@@ -263,15 +301,55 @@ fun dueCopy(due: LocalDate, today: LocalDate): String = when {
 
 fun shouldShowPulse(dayCount: Long): Boolean = dayCount in 1L..31L
 
+/**
+ * Full calendar month from the 1st, Monday-padded, with money filled from the ledger maps.
+ * [activeFrom]/[activeTo] mark which days belong to the selected Insights filter;
+ * future days stay in the grid but are marked [PulseCell.isFuture].
+ */
+fun monthPulseCalendar(
+    month: YearMonth,
+    today: LocalDate,
+    inflowByDate: Map<LocalDate, Double>,
+    outflowByDate: Map<LocalDate, Double>,
+    regulars: List<RegularPayee> = emptyList(),
+    activeFrom: LocalDate = month.atDay(1),
+    activeTo: LocalDate = month.atEndOfMonth()
+): List<PulseCell> {
+    val monthStart = month.atDay(1)
+    val monthEnd = month.atEndOfMonth()
+    val dueByDate = regulars.groupBy { it.nextDue }
+    val start = monthStart.with(DayOfWeek.MONDAY)
+    val end = monthEnd.with(DayOfWeek.SUNDAY)
+    return generateSequence(start) { date ->
+        val next = date.plusDays(1)
+        if (next.isAfter(end)) null else next
+    }.map { date ->
+        val inMonth = !date.isBefore(monthStart) && !date.isAfter(monthEnd)
+        val inFilter = !date.isBefore(activeFrom) && !date.isAfter(activeTo)
+        PulseCell(
+            date = date,
+            inRange = inMonth && inFilter,
+            isToday = date == today,
+            inflow = inflowByDate[date] ?: 0.0,
+            outflow = outflowByDate[date] ?: 0.0,
+            due = dueByDate[date].orEmpty(),
+            isFuture = date.isAfter(today)
+        )
+    }.toList()
+}
+
 fun pulseCalendar(
     from: LocalDate,
     to: LocalDate,
     today: LocalDate,
     inflowByDate: Map<LocalDate, Double>,
     outflowByDate: Map<LocalDate, Double>,
-    regulars: List<RegularPayee> = emptyList()
+    regulars: List<RegularPayee> = emptyList(),
+    requireShortWindow: Boolean = true
 ): List<PulseCell> {
-    if (!shouldShowPulse(ChronoUnit.DAYS.between(from, to) + 1)) return emptyList()
+    if (requireShortWindow && !shouldShowPulse(ChronoUnit.DAYS.between(from, to) + 1)) {
+        return emptyList()
+    }
     val dueByDate = regulars.groupBy { it.nextDue }
     val start = from.with(DayOfWeek.MONDAY)
     val end = to.with(DayOfWeek.SUNDAY)
@@ -285,8 +363,35 @@ fun pulseCalendar(
             isToday = date == today,
             inflow = inflowByDate[date] ?: 0.0,
             outflow = outflowByDate[date] ?: 0.0,
-            due = dueByDate[date].orEmpty()
+            due = dueByDate[date].orEmpty(),
+            isFuture = date.isAfter(today)
         )
+    }.toList()
+}
+
+/** Months the Insights calendar can page across, anchored on [today]. */
+fun pulseMonthSpan(
+    today: LocalDate,
+    inflowByDate: Map<LocalDate, Double>,
+    outflowByDate: Map<LocalDate, Double>,
+    regulars: List<RegularPayee> = emptyList(),
+    pastMonths: Long = 24,
+    futureMonths: Long = 3
+): List<YearMonth> {
+    val todayMonth = YearMonth.from(today)
+    val floor = todayMonth.minusMonths(pastMonths)
+    val ceiling = todayMonth.plusMonths(futureMonths)
+    val ledgerEarliest = (inflowByDate.keys + outflowByDate.keys)
+        .minOrNull()
+        ?.let { YearMonth.from(it) }
+    val dueLatest = regulars.maxOfOrNull { YearMonth.from(it.nextDue) }
+    // Prefer the first ledger month when it is inside the window; cap older ledgers at [floor].
+    val start = if (ledgerEarliest != null) maxOf(floor, ledgerEarliest) else floor
+    val end = if (dueLatest != null) maxOf(ceiling, dueLatest) else ceiling
+    if (start.isAfter(end)) return listOf(todayMonth)
+    return generateSequence(start) { month ->
+        val next = month.plusMonths(1)
+        if (next.isAfter(end)) null else next
     }.toList()
 }
 
