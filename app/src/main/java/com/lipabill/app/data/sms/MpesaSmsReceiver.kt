@@ -37,7 +37,8 @@ class MpesaSmsReceiver : BroadcastReceiver() {
                             body = sms.messageBody.orEmpty(),
                             timestampMillis = sms.timestampMillis,
                             region = app.securePreferences.appRegion,
-                            enabled = app.enabledSources.value
+                            // Enabled rails import even when that wallet's SIM is not in the phone.
+                            enabled = app.usableLedgerSources()
                         )
                     ) {
                         is ConfirmationIngestion.Outcome.Matched -> {
