@@ -246,7 +246,7 @@
 
         <!-- Shares one Wrapped story card image at a time, from cache/wrapped only. -->
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name=".ui.analytics.WrappedFileProvider"
             android:authorities="${applicationId}.wrapped"
             android:exported="false"
             android:grantUriPermissions="true">
