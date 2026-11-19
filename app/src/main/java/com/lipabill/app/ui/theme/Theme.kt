@@ -4,6 +4,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -41,7 +42,6 @@ val ContentMaxWidth = 600.dp
  * Night palette keeps the same navy family as the day screens.
  * Surfaces step from a blue-black canvas to a lifted card. Text is off-white,
  * not pure white. Money green and red are lifted so they stay readable.
- * Passes do not use this palette — they stay on [LipaPalette.Light].
  */
 data class LipaColors(
     val canvas: Color,
@@ -137,21 +137,18 @@ val AvatarPastels = listOf(
     Color(0xFFF5DCDC)
 )
 
-/** Boarding passes, bookings, and event tickets stay paper-colored in dark mode. */
-@Composable
-fun PaperTicket(content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalLipaColors provides LipaPalette.Light, content = content)
-}
-
 fun avatarPastel(seed: Int): Color {
     val i = kotlin.math.abs(seed) % AvatarPastels.size
     return AvatarPastels[i]
 }
 
-private fun LipaColors.toScheme(dark: Boolean) = if (dark) {
-    darkColorScheme(
+/** Material scheme for this palette: light or dark defaults, with LipaBill's roles on top. */
+private fun LipaColors.toScheme(dark: Boolean): ColorScheme =
+    (if (dark) darkColorScheme() else lightColorScheme()).copy(
         primary = accent,
         onPrimary = onAccent,
+        // The scheme builders tint surfaces with `primary`; keep that link after copy().
+        surfaceTint = accent,
         secondary = softBlue,
         onSecondary = ink,
         tertiary = softBlue,
@@ -166,25 +163,6 @@ private fun LipaColors.toScheme(dark: Boolean) = if (dark) {
         error = expense,
         onError = onAccent
     )
-} else {
-    lightColorScheme(
-        primary = accent,
-        onPrimary = onAccent,
-        secondary = softBlue,
-        onSecondary = ink,
-        tertiary = softBlue,
-        onTertiary = ink,
-        background = canvas,
-        onBackground = ink,
-        surface = card,
-        onSurface = ink,
-        surfaceVariant = softBlue,
-        onSurfaceVariant = mute,
-        outline = hairline,
-        error = expense,
-        onError = onAccent
-    )
-}
 
 /** App typeface: Montserrat — geometric sans matching travel-ticket chrome. */
 val GeometricSansFamily = FontFamily(
