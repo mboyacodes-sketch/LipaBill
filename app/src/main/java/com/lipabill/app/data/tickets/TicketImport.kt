@@ -18,7 +18,11 @@ data class TicketImport(
     val source: TicketSource,
     /** SGR — show booking + boarding UI. False for one-shot event tickets. */
     val expectsBoardingPass: Boolean = false,
-    val hasBoardingPass: Boolean = true
+    val hasBoardingPass: Boolean = true,
+    /** How the source code was encoded, when it was read from pixels. */
+    val barcodeSpec: BarcodeSpec? = null,
+    /** Serialized [PassColors] from a Wallet pass. */
+    val passColors: String? = null
 )
 
 fun ParsedPkPass.toTicketImport(): TicketImport = TicketImport(
@@ -30,6 +34,7 @@ fun ParsedPkPass.toTicketImport(): TicketImport = TicketImport(
     barcodeFormat = barcodeFormat,
     orderId = orderId,
     notes = notes,
+    passColors = colors?.serialize(),
     source = TicketSource.PKPASS,
     expectsBoardingPass = false,
     hasBoardingPass = true
