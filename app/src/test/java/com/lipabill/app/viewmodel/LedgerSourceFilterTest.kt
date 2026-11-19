@@ -1,9 +1,8 @@
 package com.lipabill.app.viewmodel
 
+import com.lipabill.app.testTransaction
 import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MoneySource
-import com.lipabill.app.data.model.MpesaTransaction
-import com.lipabill.app.data.model.TransactionType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -69,17 +68,27 @@ class LedgerSourceFilterTest {
         )
     }
 
-    private fun sample(source: MoneySource, code: String) = MpesaTransaction(
-        id = 0,
+    @Test
+    fun settings_catalog_hides_rails_not_enabled_even_with_sms() {
+        val txs = listOf(
+            sample(MoneySource.EQUITY, "E1"),
+            sample(MoneySource.MPESA, "M1"),
+            sample(MoneySource.KCB, "K1")
+        )
+        assertEquals(
+            listOf(MoneySource.MPESA, MoneySource.AIRTEL_MONEY),
+            availableMoneySources(
+                txs,
+                MoneySource.MPESA,
+                listOf(MoneySource.MPESA, MoneySource.AIRTEL_MONEY)
+            )
+        )
+    }
+
+    private fun sample(source: MoneySource, code: String) = testTransaction(
         code = code,
-        type = TransactionType.SENT,
-        amount = 100.0,
         counterpartyName = "Jane",
-        counterpartyPhone = null,
         timestampMillis = 1L,
-        balance = null,
-        cost = null,
-        rawBody = "",
         source = source
     )
 }
