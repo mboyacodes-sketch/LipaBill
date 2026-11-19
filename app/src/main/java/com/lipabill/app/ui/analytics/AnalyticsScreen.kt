@@ -38,6 +38,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,7 +63,7 @@ import com.lipabill.app.data.export.statementSourceBadge
 import com.lipabill.app.data.export.writeLedgerStatementPdf
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.ui.components.PaymentRailRow
-import com.lipabill.app.ui.theme.Accent
+import com.lipabill.app.ui.components.InsightsSkeleton
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Hairline
@@ -97,14 +98,27 @@ fun MetricsScreen(
     onBack: (() -> Unit)? = null,
     onOpenCheckIn: () -> Unit = {},
     onOpenTransactions: () -> Unit = {},
+    onOpenBreakPayment: (Long) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val stats by viewModel.analyticsSummary.collectAsStateWithLifecycle()
+    val plan by viewModel.moneyPlan.collectAsStateWithLifecycle()
+    val insightsRails by viewModel.insightsRails.collectAsStateWithLifecycle()
+    val wrapped by viewModel.wrapped.collectAsStateWithLifecycle()
+    var showWrapped by remember { mutableStateOf(false) }
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.resetInsightsFilters() }
+    }
+    // Home hydrate OR the first Insights aggregate — not just SMS catch-up.
+    if (state.isLoading || !stats.isReady) {
+        InsightsSkeleton(modifier = modifier)
+        return
+    }
     val challenge by viewModel.challenge.collectAsStateWithLifecycle()
     // Fully qualified: the `viewModel` parameter hides the Compose helper of the same name.
     val engageVm: EngagementViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val engage by engageVm.uiState.collectAsStateWithLifecycle()
-    val stats = state.analytics
     val account = state.account
     val mpesa = account == WalletAccount.MPESA
     val emptyPeriod = stats.txnCount == 0
@@ -125,7 +139,7 @@ fun MetricsScreen(
         exportRows.isNotEmpty()
     val statementSourceLabel = statementSourceBadge(
         txs = exportRows,
-        sourceFilter = state.sourceFilter,
+        sourceFilter = insightsRails.singleOrNull(),
         fuliza = account == WalletAccount.FULIZA
     )
     val statementLogo = remember(context) {
@@ -235,7 +249,7 @@ fun MetricsScreen(
                 account = account,
                 showFuliza = state.showFuliza,
                 sources = state.availableSources,
-                selectedSource = state.sourceFilter,
+                selectedSources = insightsRails,
                 onSelectAll = viewModel::selectAllLedgerRails,
                 onSelectSource = viewModel::selectLedgerSource,
                 onSelectFuliza = viewModel::selectFulizaLedger
@@ -248,6 +262,19 @@ fun MetricsScreen(
                 fulizaOutstanding = if (state.showFuliza) state.fulizaOutstanding else null,
                 fulizaDue = state.fulizaDue
             )
+
+            if (stats.hasLedger && mpesa) {
+                PlanCard(
+                    plan = plan,
+                    onSetBudget = viewModel::setBudget,
+                    onSaveGoal = viewModel::saveGoal,
+                    onDeleteGoal = viewModel::deleteGoal
+                )
+            }
+
+            if (stats.hasLedger && mpesa) {
+                WatchingCard(stats.regularChanges, stats.priceTrends)
+            }
 
             if (stats.hasLedger && mpesa &&
                 (stats.regulars.isNotEmpty() || stats.fees.total > 0.0 || stats.habit != null)
@@ -279,12 +306,21 @@ fun MetricsScreen(
                     habit = stats.habit,
                     quietStreak = stats.quietStreak,
                     onStart = viewModel::startSkipChallenge,
-                    onCheckIn = onOpenCheckIn
+                    onCheckIn = onOpenCheckIn,
+                    onOpenBreakPayment = onOpenBreakPayment
                 )
             }
 
             if (stats.hasLedger) {
-                RhythmCard(stats = stats, fuliza = !mpesa)
+                RhythmCard(
+                    stats = stats,
+                    fuliza = !mpesa,
+                    onMonthChange = viewModel::setAnalyticsMonth
+                )
+            }
+
+            if (stats.hasLedger && !emptyPeriod && mpesa) {
+                CategoryChangesCard(stats.categoryChanges)
             }
 
             if (stats.hasLedger && !emptyPeriod) {
@@ -315,6 +351,10 @@ fun MetricsScreen(
                 )
             }
 
+            if (mpesa) {
+                wrapped?.let { story -> WrappedTeaser(story, onOpen = { showWrapped = true }) }
+            }
+
             if (canExportPdf) {
                 ExportBlock(
                     rangeLabel = stats.rangeLabel,
@@ -323,6 +363,11 @@ fun MetricsScreen(
             }
             Spacer(modifier = Modifier.height(Space.section))
         }
+    }
+
+    val story = wrapped
+    if (showWrapped && story != null) {
+        WrappedDialog(story, onDismiss = { showWrapped = false })
     }
 
     if (showDatePicker) {
@@ -375,6 +420,7 @@ private fun PeriodPill(
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             listOf(
+                AnalyticsRange.THIS_MONTH to "Today",
                 AnalyticsRange.DAYS_7 to "Last 7 days",
                 AnalyticsRange.DAYS_30 to "Last 30 days",
                 AnalyticsRange.DAYS_90 to "Last 90 days",
@@ -422,6 +468,7 @@ private fun shortRangeLabel(stats: AnalyticsSummary): String {
     val from = stats.periodFrom
     val to = stats.periodTo
     return when (stats.range) {
+        AnalyticsRange.THIS_MONTH -> "Today"
         AnalyticsRange.DAYS_7,
         AnalyticsRange.DAYS_30,
         AnalyticsRange.DAYS_90,
