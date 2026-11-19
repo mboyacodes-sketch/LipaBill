@@ -6,7 +6,7 @@ package com.lipabill.app.data.model
  */
 enum class MoneySource(val label: String, val addressLikes: List<String>) {
     MPESA("M-Pesa", listOf("%MPESA%", "%M-PESA%")),
-    AIRTEL_MONEY("Airtel Money", listOf("%AIRTEL%")),
+    AIRTEL_MONEY("Airtel Money", listOf("%AIRTELMONEY%", "%AIRTEL%")),
     TKASH("T-Kash", listOf("%TKASH%", "%T-KASH%")),
     EQUITEL("Equitel", listOf("%EQUITEL%")),
     MIXX("Mixx", listOf("%MIXX%", "%TIGO%", "%YAS%")),
@@ -45,6 +45,10 @@ enum class MoneySource(val label: String, val addressLikes: List<String>) {
             else -> false
         }
 
+    /** Secondary party id: phone on wallets, account / till on bank rails. */
+    val partyIdLabel: String
+        get() = if (isWallet) "Phone" else "Account"
+
     companion object {
         fun fromSender(address: String?, region: AppRegion? = null): MoneySource? {
             val mapped = mapSender(address, region) ?: return null
@@ -55,7 +59,7 @@ enum class MoneySource(val label: String, val addressLikes: List<String>) {
         private fun mapSender(address: String?, region: AppRegion?): MoneySource? {
             val n = normalizeSender(address) ?: return null
             if (n == "MPESA") return MPESA
-            airtelMoneyOrNull(n, region)?.let { return it }
+            airtelMoneyOrNull(n)?.let { return it }
             if (isKcbWallet(n)) return KCB
             if (n.contains("IANDM") || n == "IM" || n == "IMBANK") return I_AND_M
             return when (n) {
@@ -86,12 +90,18 @@ enum class MoneySource(val label: String, val addressLikes: List<String>) {
             }
         }
 
-        /** Wallet headers, not Airtel telco promos (`AIRTEL`, `AirtelAlert`). */
-        private fun airtelMoneyOrNull(n: String, region: AppRegion?): MoneySource? {
-            if (n.contains("AIRTELMONEY") || n == "AIRTELMM" || n == "AIRTELMNY" || n == "AIRTELM") {
-                return AIRTEL_MONEY
-            }
-            if (n == "AIRTEL" && region != null && region != AppRegion.KENYA) {
+        /**
+         * Airtel Money wallet headers. Kenya and Uganda both send as `airtelmoney` or
+         * `AIRTEL`; skip alert/info marketing (`AirtelAlert`).
+         */
+        private fun airtelMoneyOrNull(n: String): MoneySource? {
+            if (n.contains("ALERT") || n.contains("INFO")) return null
+            if (n == "AIRTEL" ||
+                n.contains("AIRTELMONEY") ||
+                n == "AIRTELMM" ||
+                n == "AIRTELMNY" ||
+                n == "AIRTELM"
+            ) {
                 return AIRTEL_MONEY
             }
             return null
