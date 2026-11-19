@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the Wrapped share images are exposed, from the app cache. -->
+<paths>
+    <cache-path name="wrapped" path="wrapped/" />
+</paths>
