@@ -274,3 +274,9 @@ private fun StoryCard(page: StoryPage, gradient: List<Color>, modifier: Modifier
         Text("LipaBill", color = StoryMuted.copy(alpha = 0.8f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
+
+/**
+ * Own subclass so the manifest merger keeps this provider apart from the internal build's
+ * OTA FileProvider (same class name would merge the two entries and fail the build).
+ */
+class WrappedFileProvider : FileProvider()
