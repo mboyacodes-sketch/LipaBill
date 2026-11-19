@@ -49,6 +49,10 @@ interface TicketDao {
     @Query("SELECT * FROM tickets WHERE returnBoardingBarcodeValue = :value LIMIT 1")
     suspend fun getByReturnBoardingBarcodeValue(value: String): TicketEntity?
 
+    /** Event (non-rail) tickets, for matching an SMS and a file of the same ticket. */
+    @Query("SELECT * FROM tickets WHERE expectsBoardingPass = 0")
+    suspend fun eventTickets(): List<TicketEntity>
+
     @Query("SELECT * FROM tickets WHERE orderId = :orderId LIMIT 1")
     suspend fun getByOrderId(orderId: String): TicketEntity?
 
