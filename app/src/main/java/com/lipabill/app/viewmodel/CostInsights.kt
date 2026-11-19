@@ -91,6 +91,26 @@ fun payeeKey(tx: MpesaTransaction): String? {
     return foldPayeeName(name)
 }
 
+/** Same identity as [payeeKey] for DAO link rows (no full transaction needed). */
+fun payeeKey(name: String?, phone: String?): String? {
+    phoneKey(phone)?.let { return "tel:$it" }
+    val trimmed = name?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    phoneKey(trimmed)?.let { return "tel:$it" }
+    return foldPayeeName(trimmed)
+}
+
+/** Ids whose folded payee identity matches [key] (case-insensitive). */
+fun idsMatchingPayeeKey(
+    rows: List<com.lipabill.app.data.local.dao.PayeeLinkRow>,
+    key: String
+): List<Long> {
+    if (key.isBlank()) return emptyList()
+    return rows.mapNotNull { row ->
+        val rowKey = payeeKey(row.counterpartyName, row.counterpartyPhone) ?: return@mapNotNull null
+        if (rowKey.equals(key, ignoreCase = true)) row.id else null
+    }
+}
+
 /** Stable merchant key; lives in data, re-exported so Insights tests keep calling this package. */
 fun foldPayeeName(raw: String): String = foldPayeeKey(raw)
 
@@ -155,11 +175,14 @@ private val REGULAR_TYPES = setOf(
     TransactionType.POCHI
 )
 
-/** Whole tokens that mark a company, utility or role — not a person you send money to. */
-private val BUSINESS_TOKENS = setOf(
-    "ltd", "limited", "plc", "llc", "inc", "corp", "company", "co", "holdings",
+/**
+ * Clear corporate / bill cues for Send Money and Pochi.
+ * Place names like "kenya" / "nairobi" alone are not enough — they appear in personal names.
+ */
+private val STRONG_BUSINESS_TOKENS = setOf(
+    "ltd", "limited", "plc", "llc", "inc", "corp", "company", "holdings",
     "bank", "insurance", "assurance", "sacco", "cooperative", "co-operative",
-    "kenya", "nairobi", "safaricom", "airtel", "telkom",
+    "safaricom", "airtel", "telkom",
     "kplc", "nwasco", "sewerage", "water", "power",
     "dstv", "gotv", "showmax", "netflix", "zuku", "jamii", "faiba", "liquid",
     "paybill", "till", "supermarket", "mall", "hotel", "hospital", "clinic",
@@ -181,8 +204,9 @@ private val BUSINESS_BRANDS = setOf(
 
 /**
  * Coming-up / regulars should surface bills and subscriptions (usually month to month),
- * not family and friends. Till and Paybill are businesses; Send Money / Pochi need a
- * business-like name. Phone-keyed sends are people unless the SMS name looks corporate.
+ * not family and friends. Till and Paybill are always businesses. Send Money / Pochi
+ * need a clear corporate cue (Ltd, landlord, brand, known utility) — a phone number,
+ * a digit in the name, or "Kenya"/"Nairobi" alone is not enough.
  */
 fun isBusinessLikeRegular(
     name: String,
@@ -196,13 +220,7 @@ fun isBusinessLikeRegular(
     if (BUSINESS_BRANDS.any { folded == it || folded.startsWith("$it ") }) return true
     if (BUSINESS_PHRASES.any { folded.contains(it) }) return true
     val tokens = folded.split(Regex("[\\s./\\-_]+")).filter { it.isNotBlank() }
-    if (tokens.any { it in BUSINESS_TOKENS }) return true
-    if (folded.any { it.isDigit() }) return true
-    // Human-like: one to four alphabetic name tokens, no business cues (JOHN KAMAU, Mary).
-    if (key.startsWith("tel:")) return false
-    if (tokens.isEmpty() || tokens.size > 4) return false
-    val personLike = tokens.all { part -> part.all { it.isLetter() || it == '\'' } }
-    return !personLike
+    return tokens.any { it in STRONG_BUSINESS_TOKENS }
 }
 
 private fun cadenceFor(medianDays: Long): Cadence? = when (medianDays) {
