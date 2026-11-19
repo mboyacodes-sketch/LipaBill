@@ -32,8 +32,8 @@ android {
         applicationId = "com.lipabill.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 40
-        versionName = "3.1.1"
+        versionCode = 41
+        versionName = "3.1.2"
         // Real devices are arm64; drop x86/x86_64 emulator ABIs from shipped APKs.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
