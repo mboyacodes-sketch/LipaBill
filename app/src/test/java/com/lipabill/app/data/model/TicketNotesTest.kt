@@ -5,19 +5,13 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class TicketNotesTest {
-
     @Test
-    fun first_label_wins() {
-        val notes = "Dep time: 09:00 · Departure time: 10:15 · Seat: 12A"
-        assertEquals("09:00", notes.firstNotesValue("Dep time", "Departure time"))
-        assertEquals("10:15", notes.firstNotesValue("Departure time", "Dep time"))
-        assertNull(notes.firstNotesValue("Gate", "Cabin"))
-    }
-
-    @Test
-    fun labeled_piece_strips_the_prefix() {
-        assertEquals("12A", "Gate B · Seat 12A · Economy".labeledPiece("Seat"))
-        assertEquals("B", "Gate B · Seat 12A".labeledPiece("Gate"))
-        assertNull("Economy".labeledPiece("Seat"))
+    fun setsReplacesAndRemovesSegments() {
+        val notes = "Guest: Jane Doe · Tier: VIP · Ends: 123"
+        assertEquals("Guest: Jane Doe · Ends: 123 · Tier: Early Bird", notes.withNotesValue("Tier", "Early Bird"))
+        assertEquals("Tier: VIP · Ends: 123", notes.withNotesValue("Guest", " "))
+        assertEquals("Guest: A - B", null.withNotesValue("Guest", "A · B"))
+        assertNull("Tier: VIP".withNotesValue("Tier", null))
+        assertEquals("VIP", notes.withNotesValue("Guest", "John").notesValue("Tier"))
     }
 }
