@@ -29,8 +29,10 @@ class FirstRunWizardTest {
                 FirstRunPage.Providers,
                 FirstRunPage.Sms
             ),
-            FirstRunWizard.firstRunPages(AppRegion.UGANDA)
+            // Import-only region: no Send / Pay, so no Phone or Accessibility pages.
+            FirstRunWizard.firstRunPages(AppRegion.TANZANIA)
         )
+        assertEquals(FirstRunWizard.PAGES, FirstRunWizard.firstRunPages(AppRegion.UGANDA))
         assertFalse(FirstRunWizard.PAGES.contains(FirstRunPage.Camera))
         assertFalse(FirstRunWizard.PAGES.contains(FirstRunPage.Notifications))
         assertFalse(FirstRunWizard.PAGES.contains(FirstRunPage.Hibernation))
