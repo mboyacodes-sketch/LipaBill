@@ -261,12 +261,12 @@ fun PayProfileScreen(
         }
     }
     val amount = amountText.toLongOrNull()?.takeIf { it > 0L }
-    val ready = !editing && (
-        recordingPrivacy ||
-            hasDestination(
-                collectKind, simPhone, savedPhone, savedTill, savedBill, savedAccount, payPhoneHidden
-            )
-    )
+    // Demo recording swaps destination digits in the QR only — it must not invent
+    // slides for kinds the user never saved (Edit would open on empty fields).
+    val ready = !editing &&
+        hasDestination(
+            collectKind, simPhone, savedPhone, savedTill, savedBill, savedAccount, payPhoneHidden
+        )
     /** Pay link for one destination kind, with today's amount and rotation setting. */
     fun encodePayLink(kind: PayLink.Kind) = PayLink.encode(
         kind = kind,
@@ -311,13 +311,12 @@ fun PayProfileScreen(
         )
     }
     val paymentSlides = remember(
-        recordingPrivacy, viewPhone, viewTill, viewBill, viewAccount,
+        viewPhone, viewTill, viewBill, viewAccount,
         simPhone, savedPhone, payPhoneHidden, savedTill, savedBill, savedAccount,
         amount, payQrFixed, dayTick
     ) {
         PayLink.Kind.entries.mapNotNull { kind ->
-            if (!recordingPrivacy &&
-                !hasDestination(
+            if (!hasDestination(
                     kind, simPhone, savedPhone, savedTill, savedBill, savedAccount, payPhoneHidden
                 )
             ) {

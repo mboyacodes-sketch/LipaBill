@@ -182,12 +182,7 @@ fun SocialRequestPanel(
     val recordingPrivacy = LocalRecordingPrivacy.current
 
     fun linkedSlides(): List<RequestQrSlide.Social> {
-        if (recordingPrivacy) {
-            return DemoLedger.requestSocialPlatforms.map { entry ->
-                val handle = DemoLedger.requestSocialHandle(entry)
-                RequestQrSlide.Social(SocialLink.Target(entry, handle))
-            }
-        }
+        // Demo recording swaps handles in the QR only — never invent unlinked networks.
         return SocialLink.Platform.entries.mapNotNull { entry ->
             val handle = if (entry == platform) {
                 savedHandle
@@ -195,20 +190,24 @@ fun SocialRequestPanel(
                 prefs.socialHandle(entry.storageKey).orEmpty()
             }
             val clean = SocialLink.canonicalHandle(entry, handle) ?: return@mapNotNull null
-            RequestQrSlide.Social(SocialLink.Target(entry, clean))
+            val shown = if (recordingPrivacy) {
+                DemoLedger.requestSocialHandle(entry)
+            } else {
+                clean
+            }
+            RequestQrSlide.Social(SocialLink.Target(entry, shown))
         }
     }
 
     val socialSlides = remember(platform, savedHandle, listEpoch, recordingPrivacy) { linkedSlides() }
     val target = remember(platform, savedHandle, recordingPrivacy) {
-        if (recordingPrivacy) {
-            return@remember SocialLink.Target(
-                platform,
-                DemoLedger.requestSocialHandle(platform)
-            )
-        }
         val handle = SocialLink.canonicalHandle(platform, savedHandle) ?: return@remember null
-        SocialLink.Target(platform, handle)
+        val shown = if (recordingPrivacy) {
+            DemoLedger.requestSocialHandle(platform)
+        } else {
+            handle
+        }
+        SocialLink.Target(platform, shown)
     }
 
     fun dismissSheet() {
