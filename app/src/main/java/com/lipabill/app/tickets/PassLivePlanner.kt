@@ -27,6 +27,13 @@ data class PassLiveContent(
     val chip: String?,
     /** Start time for a live countdown (within the hour). */
     val countdownTo: Long?,
+    /** Card headline, Uber-style: the coloured part ("25 min"), then the rest (" until it starts"). */
+    val lead: String,
+    val leadRest: String,
+    /** The event's own name, for the card's second line. */
+    val eventName: String,
+    /** Right-hand column: when and where. */
+    val startText: String,
     val progress: LiveProgress,
     val actions: List<LiveAction>,
     /** Where Directions points: the venue as printed, never a code or reference. */
@@ -84,6 +91,24 @@ object PassLivePlanner {
             if (more == 1) append(". 1 more pass today")
             if (more > 1) append(". $more more passes today")
         }
+        val lead = when (stage) {
+            TodayStage.LATER -> {
+                val hours = ((start - nowMillis) / 3_600_000L).coerceAtLeast(1)
+                if (hours == 1L) "1 hour" else "$hours hours"
+            }
+            TodayStage.SOON -> "${((start - nowMillis + 59_999L) / 60_000L).coerceAtLeast(1)} min"
+            TodayStage.LIVE -> "On now"
+            TodayStage.FINISHED -> "Ended"
+            TodayStage.NEEDS_BOARDING_PASS -> "Add boarding pass"
+            TodayStage.CODE_PENDING -> "Entry code"
+        }
+        val leadRest = when (stage) {
+            TodayStage.LATER, TodayStage.SOON -> " until it starts"
+            TodayStage.LIVE -> ", until ${TodayStages.clock(end, zone)}"
+            TodayStage.FINISHED -> " at ${TodayStages.clock(end, zone)}"
+            TodayStage.NEEDS_BOARDING_PASS -> " before you board"
+            TodayStage.CODE_PENDING -> " not here yet"
+        }
         val chip = when (stage) {
             TodayStage.SOON, TodayStage.FINISHED -> null
             TodayStage.LIVE -> "Now"
@@ -129,6 +154,10 @@ object PassLivePlanner {
             body = body,
             chip = chip,
             countdownTo = start.takeIf { stage == TodayStage.SOON },
+            lead = lead,
+            leadRest = leadRest,
+            eventName = name,
+            startText = at,
             progress = progress,
             actions = actions,
             venue = venue,

@@ -112,10 +112,23 @@ class PassLivePlannerTest {
     }
 
     @Test
+    fun the_card_headline_reads_like_a_pickup_countdown() {
+        val later = plan(at(16, 30), pass())!!
+        assertEquals("3 hours", later.lead)
+        assertEquals(" until it starts", later.leadRest)
+        assertEquals("7:30 PM", later.startText)
+        val soon = plan(at(19, 5), pass())!!
+        assertEquals("25 min", soon.lead)
+        val live = plan(at(20, 30), pass())!!
+        assertEquals("On now", live.lead)
+        assertEquals(", until 11:30 PM", live.leadRest)
+    }
+
+    @Test
     fun copy_has_no_dot_chains_or_dashes() {
         listOf(at(15), at(19, 0), at(20, 30), at(23, 45)).forEach { now ->
             val p = plan(now, pass())!!
-            val text = p.title + " " + p.body
+            val text = p.title + " " + p.body + " " + p.lead + p.leadRest
             assertFalse(text, text.contains("·"))
             assertFalse(text, text.contains("—"))
         }
