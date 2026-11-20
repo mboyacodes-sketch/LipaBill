@@ -310,49 +310,117 @@ class SecurePreferences(context: Context) {
 
 
     /**
-     * How this phone's Request QR collects money: `phone`, `till`, or `paybill`.
-     * Only one is active.
+     * One-shot: copy the old global Request destinations onto the region's
+     * primary wallet so multi-MNO phones do not share one QR across every rail.
      */
-    var payCollectKind: String
-        get() = prefs.getString(KEY_PAY_COLLECT_KIND, "phone") ?: "phone"
-        set(value) = prefs.edit().putString(KEY_PAY_COLLECT_KIND, value).apply()
+    fun ensureRequestPayDestPerWallet(region: AppRegion = appRegion) {
+        if (prefs.getBoolean(KEY_PAY_DEST_PER_WALLET, false)) return
+        val into = region.primaryWallet
+        val edit = prefs.edit()
+        fun copyString(legacy: String, scoped: String) {
+            if (prefs.contains(scoped)) return
+            val value = prefs.getString(legacy, null) ?: return
+            edit.putString(scoped, value)
+        }
+        fun copyBool(legacy: String, scoped: String) {
+            if (prefs.contains(scoped)) return
+            if (!prefs.contains(legacy)) return
+            edit.putBoolean(scoped, prefs.getBoolean(legacy, false))
+        }
+        copyString(KEY_PAY_COLLECT_KIND, payDestKey(KEY_PAY_COLLECT_KIND, into))
+        copyString(KEY_PAY_PHONE, payDestKey(KEY_PAY_PHONE, into))
+        copyBool(KEY_PAY_PHONE_HIDDEN, payDestKey(KEY_PAY_PHONE_HIDDEN, into))
+        copyString(KEY_PAY_TILL, payDestKey(KEY_PAY_TILL, into))
+        copyString(KEY_PAY_BILL_BUSINESS, payDestKey(KEY_PAY_BILL_BUSINESS, into))
+        copyString(KEY_PAY_BILL_ACCOUNT, payDestKey(KEY_PAY_BILL_ACCOUNT, into))
+        edit.putBoolean(KEY_PAY_DEST_PER_WALLET, true).apply()
+    }
 
-    /** Phone number this pay code collects. Empty until the user sets it. */
-    var payPhone: String?
-        get() = prefs.getString(KEY_PAY_PHONE, null)?.takeIf { it.isNotBlank() }
-        set(value) = prefs.edit().putString(KEY_PAY_PHONE, value).apply()
+    /** How this wallet's Request QR collects money: `phone`, `till`, or `paybill`. */
+    fun payCollectKind(source: MoneySource): String {
+        ensureRequestPayDestPerWallet()
+        return prefs.getString(payDestKey(KEY_PAY_COLLECT_KIND, source), null) ?: "phone"
+    }
+
+    fun setPayCollectKind(source: MoneySource, value: String) {
+        ensureRequestPayDestPerWallet()
+        prefs.edit().putString(payDestKey(KEY_PAY_COLLECT_KIND, source), value).apply()
+    }
+
+    /** Phone number this wallet's pay code collects. Empty until the user sets it. */
+    fun payPhone(source: MoneySource): String? {
+        ensureRequestPayDestPerWallet()
+        return prefs.getString(payDestKey(KEY_PAY_PHONE, source), null)?.takeIf { it.isNotBlank() }
+    }
+
+    fun setPayPhone(source: MoneySource, value: String?) {
+        ensureRequestPayDestPerWallet()
+        prefs.edit().putString(payDestKey(KEY_PAY_PHONE, source), value).apply()
+    }
 
     /**
-     * When true, Request → Payments hides Send Money even if a SIM number is present
-     * (user deleted that destination). Cleared when they add/save a phone again.
+     * When true, Request → Payments hides Send Money for [source] even if a SIM
+     * number is present. Cleared when they add/save a phone again.
      */
-    var payPhoneHidden: Boolean
-        get() = prefs.getBoolean(KEY_PAY_PHONE_HIDDEN, false)
-        set(value) = prefs.edit().putBoolean(KEY_PAY_PHONE_HIDDEN, value).apply()
+    fun payPhoneHidden(source: MoneySource): Boolean {
+        ensureRequestPayDestPerWallet()
+        return prefs.getBoolean(payDestKey(KEY_PAY_PHONE_HIDDEN, source), false)
+    }
 
-    var payTill: String?
-        get() = prefs.getString(KEY_PAY_TILL, null)?.takeIf { it.isNotBlank() }
-        set(value) = prefs.edit().putString(KEY_PAY_TILL, value).apply()
+    fun setPayPhoneHidden(source: MoneySource, value: Boolean) {
+        ensureRequestPayDestPerWallet()
+        prefs.edit().putBoolean(payDestKey(KEY_PAY_PHONE_HIDDEN, source), value).apply()
+    }
 
-    var payBillBusiness: String?
-        get() = prefs.getString(KEY_PAY_BILL_BUSINESS, null)?.takeIf { it.isNotBlank() }
-        set(value) = prefs.edit().putString(KEY_PAY_BILL_BUSINESS, value).apply()
+    fun payTill(source: MoneySource): String? {
+        ensureRequestPayDestPerWallet()
+        return prefs.getString(payDestKey(KEY_PAY_TILL, source), null)?.takeIf { it.isNotBlank() }
+    }
 
-    var payBillAccount: String?
-        get() = prefs.getString(KEY_PAY_BILL_ACCOUNT, null)?.takeIf { it.isNotBlank() }
-        set(value) = prefs.edit().putString(KEY_PAY_BILL_ACCOUNT, value).apply()
+    fun setPayTill(source: MoneySource, value: String?) {
+        ensureRequestPayDestPerWallet()
+        prefs.edit().putString(payDestKey(KEY_PAY_TILL, source), value).apply()
+    }
 
-    /** Clears a Request → Payments destination (and hides SIM-backed phone when deleted). */
-    fun clearPayDestination(kind: PayLink.Kind) {
+    fun payBillBusiness(source: MoneySource): String? {
+        ensureRequestPayDestPerWallet()
+        return prefs.getString(payDestKey(KEY_PAY_BILL_BUSINESS, source), null)
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    fun setPayBillBusiness(source: MoneySource, value: String?) {
+        ensureRequestPayDestPerWallet()
+        prefs.edit().putString(payDestKey(KEY_PAY_BILL_BUSINESS, source), value).apply()
+    }
+
+    fun payBillAccount(source: MoneySource): String? {
+        ensureRequestPayDestPerWallet()
+        return prefs.getString(payDestKey(KEY_PAY_BILL_ACCOUNT, source), null)
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    fun setPayBillAccount(source: MoneySource, value: String?) {
+        ensureRequestPayDestPerWallet()
+        prefs.edit().putString(payDestKey(KEY_PAY_BILL_ACCOUNT, source), value).apply()
+    }
+
+    /** Demo / seed helper — writes the primary-wallet phone Request destination. */
+    var payPhone: String?
+        get() = payPhone(appRegion.primaryWallet)
+        set(value) = setPayPhone(appRegion.primaryWallet, value)
+
+    /** Clears a Request → Payments destination for [source]. */
+    fun clearPayDestination(source: MoneySource, kind: PayLink.Kind) {
+        ensureRequestPayDestPerWallet()
         when (kind) {
             PayLink.Kind.PHONE -> {
-                payPhone = null
-                payPhoneHidden = true
+                setPayPhone(source, null)
+                setPayPhoneHidden(source, true)
             }
-            PayLink.Kind.TILL -> payTill = null
+            PayLink.Kind.TILL -> setPayTill(source, null)
             PayLink.Kind.PAYBILL -> {
-                payBillBusiness = null
-                payBillAccount = null
+                setPayBillBusiness(source, null)
+                setPayBillAccount(source, null)
             }
         }
     }
@@ -456,7 +524,8 @@ class SecurePreferences(context: Context) {
         private const val KEY_AUTH_TIMEOUT_MS = "auth_timeout_ms"
         private const val KEY_LAST_BACKGROUNDED = "last_backgrounded_at"
         private const val KEY_BACKFILL_DONE = "sms_backfill_done"
-        private const val KEY_CONFIRMATION_PURGE_DONE = "confirmation_filter_purge_v1"
+        /** v2: also drop failure SMS that were stored as deposits after the gate widen. */
+        private const val KEY_CONFIRMATION_PURGE_DONE = "confirmation_filter_purge_v2"
         private const val KEY_AMOUNT_PARSE_REPAIR_DONE = "amount_parse_repair_v2"
         private const val KEY_SAVINGS_CLASSIFY_REPAIR_DONE = "savings_classify_repair_v2"
         private const val KEY_UNKNOWN_PARTY_REPAIR_DONE = "unknown_party_repair_v1"
@@ -500,11 +569,13 @@ class SecurePreferences(context: Context) {
         private const val KEY_PAY_TILL = "pay_till"
         private const val KEY_PAY_BILL_BUSINESS = "pay_bill_business"
         private const val KEY_PAY_BILL_ACCOUNT = "pay_bill_account"
+        private const val KEY_PAY_DEST_PER_WALLET = "pay_dest_per_wallet_v1"
         private const val KEY_PAY_QR_FIXED = "pay_qr_fixed"
         private const val KEY_REQUEST_QR_MODE = "request_qr_mode"
         private const val KEY_SOCIAL_PLATFORM = "social_platform_key"
         private const val KEY_DEMO_SOCIAL_SEEDED = "demo_social_handles_seeded_v2"
         private fun socialHandlePrefKey(platformKey: String) = "social_handle_$platformKey"
+        private fun payDestKey(base: String, source: MoneySource) = "${base}_${source.name}"
         const val DEFAULT_TIMEOUT_MS = 2 * 60 * 1000L
         const val DEFAULT_FONT_SIZE_SP = 12
     }
