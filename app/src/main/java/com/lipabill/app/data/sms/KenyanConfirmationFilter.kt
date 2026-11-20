@@ -47,6 +47,7 @@ object KenyanConfirmationFilter {
         region: AppRegion = AppRegion.DEFAULT
     ): Boolean {
         if (body.isNullOrBlank()) return false
+        if (FailureSms.isFailure(body)) return false
         if (isOtpOrPin(body)) return false
         if (isPromo(body)) return false
         if (!region.matchesCurrency(body)) return false
