@@ -936,11 +936,8 @@ private fun buildPassList(
     hasNotices: Boolean
 ): List<PassListItem> {
     val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
-    val todays = tickets
-        .filter { it.isOnDay(zone, today) && it.effectiveStatus(nowMillis, zone) != TicketStatus.USED }
-        .mapNotNull { t -> TodayStages.stageOf(t, nowMillis, zone)?.let { t to it } }
-        // Unfinished first, soonest start first; finished ones sink.
-        .sortedWith(compareBy({ it.second.stage == TodayStage.FINISHED }, { it.second.startMillis }))
+    // Same order as the live notification, so both lead with the same pass.
+    val todays = TodayStages.onToday(tickets, nowMillis, zone)
     val hero = todays.firstOrNull { it.first.id !in kept }
     val items = mutableListOf<PassListItem>()
     if (todays.isNotEmpty()) {

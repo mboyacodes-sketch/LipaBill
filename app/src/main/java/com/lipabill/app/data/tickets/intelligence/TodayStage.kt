@@ -1,6 +1,7 @@
 package com.lipabill.app.data.tickets.intelligence
 
 import com.lipabill.app.data.model.Ticket
+import com.lipabill.app.data.model.TicketStatus
 import com.lipabill.app.data.model.notesValue
 import com.lipabill.app.data.tickets.EventTicketSms
 import java.time.Instant
@@ -93,8 +94,24 @@ object TodayStages {
             TodayStage.CODE_PENDING -> "Code not out yet"
         }
 
+    /**
+     * Passes on today's calendar that aren't used, with their stage: unfinished first by start,
+     * finished last. The Passes Today card and the live notification both lead with the first.
+     */
+    fun onToday(
+        tickets: List<Ticket>,
+        nowMillis: Long,
+        zone: ZoneId = ZoneId.systemDefault()
+    ): List<Pair<Ticket, TodayStatus>> {
+        val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
+        return tickets
+            .filter { it.isOnDay(zone, today) && it.effectiveStatus(nowMillis, zone) != TicketStatus.USED }
+            .mapNotNull { t -> stageOf(t, nowMillis, zone)?.let { t to it } }
+            .sortedWith(compareBy({ it.second.stage == TodayStage.FINISHED }, { it.second.startMillis }))
+    }
+
     private val CLOCK = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
 
-    private fun clock(millis: Long, zone: ZoneId): String =
+    fun clock(millis: Long, zone: ZoneId): String =
         Instant.ofEpochMilli(millis).atZone(zone).format(CLOCK)
 }
