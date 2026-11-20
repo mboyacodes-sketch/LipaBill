@@ -72,3 +72,11 @@
 -dontwarn org.apache.commons.**
 -dontwarn org.bouncycastle.**
 -dontwarn com.gemalto.jp2.**
+
+# Edge-to-edge: MainActivity and DataAccessRationaleActivity call enableEdgeToEdge() in onCreate.
+# R8 inlines androidx.activity.EdgeToEdge.enable into them and drops the class, so Play Console's
+# bundle check can't see the call and warns "Edge-to-edge may not display for all users".
+# Keeping the method (and so stopping the inline) leaves the call visible in the release dex.
+-keep class androidx.activity.EdgeToEdge {
+    public static *** enable(...);
+}
