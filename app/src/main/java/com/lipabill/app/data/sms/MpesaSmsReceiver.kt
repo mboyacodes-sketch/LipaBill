@@ -37,7 +37,7 @@ class MpesaSmsReceiver : BroadcastReceiver() {
                             body = sms.messageBody.orEmpty(),
                             timestampMillis = sms.timestampMillis,
                             region = app.securePreferences.appRegion,
-                            // Enabled rails import even when that wallet's SIM is not in the phone.
+                            // Enabled rails (region ∩ picks); SIM gates dial only, not SMS.
                             enabled = app.usableLedgerSources()
                         )
                     ) {
