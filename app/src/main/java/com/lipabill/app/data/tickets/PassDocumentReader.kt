@@ -7,6 +7,8 @@ import com.lipabill.app.data.tickets.intelligence.DocumentClassifier
 import com.lipabill.app.data.tickets.intelligence.PassExtraction
 import com.lipabill.app.data.tickets.intelligence.PassFieldReader
 import com.lipabill.app.data.tickets.intelligence.PassIssue
+import com.lipabill.app.data.tickets.intelligence.PassKind
+import com.lipabill.app.data.tickets.intelligence.PassLifecycleResolver
 import com.lipabill.app.data.tickets.intelligence.PassValidator
 import com.lipabill.app.data.tickets.intelligence.ReadEvidence
 
@@ -34,7 +36,7 @@ class PassDocumentReader(private val documents: PassDocumentRepository) {
             val draft = TicketDocumentImporter.import(context, uri, TicketDocumentKind.PKPASS)
             val classification = DocumentClassifier.classify("", hasBarcode = true, hint = TicketDocumentKind.PKPASS)
             val extraction = PassFieldReader.read(draft, ReadEvidence(fromPdfText = false, barcodeFromPixels = false), classification)
-            return PassDraft(draft, null, extraction, PassValidator.validate(draft, classification.kind))
+            return finish(draft, null, extraction, classification.kind, text = "")
         }
 
         val stored = documents.store(uri)
@@ -59,12 +61,7 @@ class PassDocumentReader(private val documents: PassDocumentRepository) {
             classification
         )
         documents.recordExtraction(documentId, extraction)
-        return PassDraft(
-            draft = analyzed.draft,
-            documentId = documentId,
-            extraction = extraction,
-            issues = PassValidator.validate(analyzed.draft, classification.kind)
-        )
+        return finish(analyzed.draft, documentId, extraction, classification.kind, analyzed.read.text)
     }
 
     /**
@@ -95,14 +92,23 @@ class PassDocumentReader(private val documents: PassDocumentRepository) {
                 classification
             )
             documents.recordExtraction(documentId, extraction)
-            PassDraft(
-                draft = analyzed.draft,
-                documentId = documentId,
-                extraction = extraction,
-                issues = PassValidator.validate(analyzed.draft, classification.kind)
-            )
+            finish(analyzed.draft, documentId, extraction, classification.kind, analyzed.read.text)
         } finally {
             opened.file.delete()
         }
+    }
+
+    private fun finish(
+        draft: TicketImport,
+        documentId: String?,
+        extraction: PassExtraction,
+        kind: PassKind,
+        text: String
+    ): PassDraft {
+        val lifecycle = PassLifecycleResolver.resolve(text, draft.startsAtMillis)
+        val withStatus = draft.copy(status = lifecycle.status)
+        val issues = PassValidator.validate(withStatus, kind).toMutableList()
+        lifecycle.issue?.let { if (it !in issues) issues += it }
+        return PassDraft(withStatus, documentId, extraction, issues)
     }
 }

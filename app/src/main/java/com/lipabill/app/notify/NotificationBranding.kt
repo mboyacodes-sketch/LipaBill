@@ -96,6 +96,11 @@ fun Context.postLipaBill(
     /** Lock-screen copy when visibility is private; omit event names and codes. */
     publicTitle: String? = null,
     publicBody: String? = null,
+    /** Stays in the shade until the app clears it (Uber-style live status). */
+    ongoing: Boolean = false,
+    /** Epoch millis for a countdown chronometer when [countdown] is true. */
+    whenMillis: Long? = null,
+    countdown: Boolean = false,
     prepare: (NotificationManagerCompat) -> Unit = {}
 ) {
     if (!canPostNotifications()) return
@@ -113,7 +118,8 @@ fun Context.postLipaBill(
         .setContentTitle(title)
         .setContentText(body)
         .setContentIntent(contentIntent)
-        .setAutoCancel(true)
+        .setAutoCancel(!ongoing)
+        .setOngoing(ongoing)
         .setOnlyAlertOnce(true)
         .setPriority(priority)
         .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
@@ -121,13 +127,20 @@ fun Context.postLipaBill(
         builder.setStyle(NotificationCompat.BigTextStyle().bigText(body))
     }
     if (category != null) builder.setCategory(category)
+    if (whenMillis != null) {
+        builder.setWhen(whenMillis).setShowWhen(true)
+        if (countdown) {
+            builder.setUsesChronometer(true).setChronometerCountDown(true)
+        }
+    }
     if (publicTitle != null || publicBody != null) {
         val public = NotificationCompat.Builder(this, channelId)
             .asLipaBill(this)
             .setContentTitle(publicTitle ?: title)
             .setContentText(publicBody ?: body)
             .setContentIntent(contentIntent)
-            .setAutoCancel(true)
+            .setAutoCancel(!ongoing)
+            .setOngoing(ongoing)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
         builder.setPublicVersion(public)

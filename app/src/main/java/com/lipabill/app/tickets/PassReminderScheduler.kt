@@ -83,15 +83,20 @@ class PassReminderScheduler(
         lastSignature = signature
 
         // Persist events/reminders (back-fill + keep table aligned with the plan).
-        val sync = contextSync ?: return
-        val activeIds = tickets.map { it.id }.toSet()
-        for (ticket in tickets) {
-            sync.syncPass(ticket, nowMillis, zone, leads)
+        val sync = contextSync
+        if (sync != null) {
+            val activeIds = tickets.map { it.id }.toSet()
+            for (ticket in tickets) {
+                sync.syncPass(ticket, nowMillis, zone, leads)
+            }
+            for (name in previous - desired.keys) {
+                val id = name.removePrefix("pass-reminder-").substringBefore('-').toLongOrNull()
+                if (id != null && id !in activeIds) sync.removePass(id)
+            }
         }
-        for (name in previous - desired.keys) {
-            val id = name.removePrefix("pass-reminder-").substringBefore('-').toLongOrNull()
-            if (id != null && id !in activeIds) sync.removePass(id)
-        }
+
+        // Quiet status-bar chip while a pass is on for today (Uber-style live handle).
+        PassLiveNotifier(context).sync(tickets, nowMillis, zone)
     }
 
     private fun migrateLegacyPrefs(wm: WorkManager) {

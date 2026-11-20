@@ -141,11 +141,18 @@ object ETicketTextParser {
             return preferred.firstNotNullOfOrNull { fmt -> cleaned.firstOrNull { it.format == fmt } }
                 ?: cleaned.first()
         }
-        // No barcode image — fall back to printed ticket / booking / serial numbers
+        // No barcode image — fall back to printed ticket / booking / serial numbers.
+        // Event PDFs often say "Entry code:" or "Order:" with no QR image.
         firstMatch(
             text,
             Regex(
-                """(?i)\b(?:booking\s*ref(?:erence)?|ticket\s*(?:no|number|#)?|pnr|confirmation(?:\s*(?:no|number|code))?|ref(?:erence)?)\s*[:.#\-]*\s*([A-Z0-9]{6,14})\b"""
+                """(?i)\b(?:entry\s*code|ticket\s*code)\s*[:.#\-]*\s*([A-Z0-9][A-Z0-9\-]{5,23})\b"""
+            )
+        )?.let { return FoundBarcode(it, TicketBarcodeFormat.QR_CODE) }
+        firstMatch(
+            text,
+            Regex(
+                """(?i)\b(?:booking\s*ref(?:erence)?|ticket\s*(?:no|number|#)?|order(?:\s*(?:no|number|id|#))?|pnr|confirmation(?:\s*(?:no|number|code))?|ref(?:erence)?)\s*[:.#\-]*\s*([A-Z0-9][A-Z0-9\-]{5,23})\b"""
             )
         )?.let { return FoundBarcode(it, TicketBarcodeFormat.QR_CODE) }
 

@@ -105,6 +105,15 @@ data class Ticket(
         return !today.isBefore(eventDay)
     }
 
+    /** True when the pass’s occasion falls on [day] in [zone]. Undated passes never match. */
+    fun isOnDay(
+        zone: ZoneId = ZoneId.systemDefault(),
+        day: java.time.LocalDate = Instant.ofEpochMilli(System.currentTimeMillis()).atZone(zone).toLocalDate()
+    ): Boolean {
+        val millis = occasionMillis ?: return false
+        return Instant.ofEpochMilli(millis).atZone(zone).toLocalDate() == day
+    }
+
     /** Booking saved, outbound boarding not attached yet. */
     val isConfirmationOnly: Boolean get() = expectsBoardingPass && !hasBoardingPass
 
