@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
@@ -33,7 +34,8 @@ import com.lipabill.app.ui.theme.Space
 fun RegionPicker(
     selected: AppRegion,
     onSelect: (AppRegion) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabledRegions: Set<AppRegion> = AppRegion.entries.toSet()
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(Space.gap),
@@ -45,10 +47,12 @@ fun RegionPicker(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 row.forEach { option ->
+                    val enabled = option in enabledRegions
                     RegionCard(
                         region = option,
                         selected = option == selected,
-                        onClick = { onSelect(option) },
+                        enabled = enabled,
+                        onClick = { if (enabled) onSelect(option) },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -62,16 +66,35 @@ fun RegionPicker(
 private fun RegionCard(
     region: AppRegion,
     selected: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(16.dp)
     Column(
         modifier = modifier
+            .alpha(if (enabled) 1f else 0.42f)
             .clip(shape)
-            .background(if (selected) Accent else SoftBlue)
-            .border(1.dp, if (selected) Accent else Hairline, shape)
-            .clickable(role = Role.RadioButton, onClick = onClick)
+            .background(
+                when {
+                    !enabled -> SoftBlue.copy(alpha = 0.55f)
+                    selected -> Accent
+                    else -> SoftBlue
+                }
+            )
+            .border(
+                1.dp,
+                when {
+                    !enabled -> Hairline
+                    selected -> Accent
+                    else -> Hairline
+                },
+                shape
+            )
+            .then(
+                if (enabled) Modifier.clickable(role = Role.RadioButton, onClick = onClick)
+                else Modifier
+            )
             .padding(horizontal = 14.dp, vertical = 14.dp)
     ) {
         Text(
@@ -84,13 +107,21 @@ private fun RegionCard(
         Text(
             text = region.label,
             style = HomeType.rowTitle,
-            color = if (selected) OnAccent else Ink,
+            color = when {
+                !enabled -> Mute
+                selected -> OnAccent
+                else -> Ink
+            },
             maxLines = 1
         )
         Text(
-            text = region.currencyCode,
+            text = if (enabled) region.currencyCode else "No SIM",
             style = HomeType.caption,
-            color = if (selected) OnAccent.copy(alpha = 0.78f) else Mute,
+            color = when {
+                !enabled -> Mute
+                selected -> OnAccent.copy(alpha = 0.78f)
+                else -> Mute
+            },
             maxLines = 1
         )
     }

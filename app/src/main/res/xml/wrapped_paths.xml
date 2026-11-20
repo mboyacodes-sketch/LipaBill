@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Only the Wrapped share images are exposed, from the app cache. -->
+<!-- Cache shares: Wrapped cards and decrypted pass originals (read grant only). -->
 <paths>
     <cache-path name="wrapped" path="wrapped/" />
+    <cache-path name="pass_previews" path="pass_previews/" />
 </paths>

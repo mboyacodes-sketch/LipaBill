@@ -93,6 +93,9 @@ fun Context.postLipaBill(
     priority: Int = NotificationCompat.PRIORITY_DEFAULT,
     category: String? = null,
     bigText: Boolean = false,
+    /** Lock-screen copy when visibility is private; omit event names and codes. */
+    publicTitle: String? = null,
+    publicBody: String? = null,
     prepare: (NotificationManagerCompat) -> Unit = {}
 ) {
     if (!canPostNotifications()) return
@@ -118,6 +121,17 @@ fun Context.postLipaBill(
         builder.setStyle(NotificationCompat.BigTextStyle().bigText(body))
     }
     if (category != null) builder.setCategory(category)
+    if (publicTitle != null || publicBody != null) {
+        val public = NotificationCompat.Builder(this, channelId)
+            .asLipaBill(this)
+            .setContentTitle(publicTitle ?: title)
+            .setContentText(publicBody ?: body)
+            .setContentIntent(contentIntent)
+            .setAutoCancel(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .build()
+        builder.setPublicVersion(public)
+    }
     try {
         manager.notify(notifyId, builder.build())
     } catch (_: SecurityException) {
