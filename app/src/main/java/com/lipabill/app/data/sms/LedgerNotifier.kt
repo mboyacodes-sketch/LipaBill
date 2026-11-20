@@ -23,15 +23,42 @@ class LedgerNotifier(private val context: Context) {
             putExtra(MainActivity.EXTRA_OPEN_RECEIPT_ID, tx.id)
             putExtra(MainActivity.EXTRA_OPEN_RECEIPT_CODE, tx.code)
         }
+        postActivity(
+            notifyId = tx.code.hashCode(),
+            title = title,
+            body = body,
+            contentIntent = open
+        )
+    }
+
+    /** Failure SMS undid a mistaken or unsettled payment — not a deposit card. */
+    fun showFailure(title: String, body: String, notifyId: Int) {
+        val open = context.mainActivityPendingIntent(notifyId) {
+            // Home — there is no receipt row for a voided payment.
+        }
+        postActivity(
+            notifyId = notifyId,
+            title = title,
+            body = body,
+            contentIntent = open
+        )
+    }
+
+    private fun postActivity(
+        notifyId: Int,
+        title: String,
+        body: String,
+        contentIntent: android.app.PendingIntent
+    ) {
         context.postLipaBill(
             channelId = CHANNEL_ID,
             channelName = "Money activity",
             channelDescription = "A confirmation when money activity arrives on this phone.",
             importance = NotificationManager.IMPORTANCE_HIGH,
-            notifyId = tx.code.hashCode(),
+            notifyId = notifyId,
             title = title,
             body = body,
-            contentIntent = open,
+            contentIntent = contentIntent,
             vibrate = true,
             priority = NotificationCompat.PRIORITY_HIGH,
             category = NotificationCompat.CATEGORY_STATUS,

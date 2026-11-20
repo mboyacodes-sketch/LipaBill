@@ -7,6 +7,7 @@ import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.providerCatalog
+import com.lipabill.app.data.model.lockedLedgerSources
 import com.lipabill.app.data.model.toggleLedgerSource
 import com.lipabill.app.data.local.entity.RepeatAttemptEntity
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
@@ -35,7 +36,7 @@ data class SettingsUiState(
     val simLines: List<SimLine> = emptyList(),
     val preferredSimSubscriptionId: Int? = null,
     val needsPhoneStatePermission: Boolean = false,
-    /** Wallets with no active SIM line, and why; shown greyed out in the ledger picker. */
+    /** Wallets with no dial line; caption explains SMS still works without the SIM. */
     val lockedSources: Map<MoneySource, String> = emptyMap()
 )
 
@@ -65,8 +66,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun toggleProvider(source: MoneySource) {
-        // No SIM for this wallet in the phone: disabled, so it can't be switched on.
-        if (source in _ui.value.lockedSources) return
+        // SIM-locked wallets still belong on the ledger (SMS import). Send/Pay stay
+        // dial-gated separately; locked copy under the chip explains the missing line.
         val region = app.appRegion.value
         val next = toggleLedgerSource(
             app.enabledSources.value,
@@ -170,7 +171,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             simLines = lines,
             preferredSimSubscriptionId = selected,
             needsPhoneStatePermission = needsPerm,
-            lockedSources = LineGatedSources.locked(region, lines, phoneAccess = !needsPerm)
+            lockedSources = lockedLedgerSources(region, lines, phoneAccess = !needsPerm)
         )
     }
 }

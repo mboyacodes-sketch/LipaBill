@@ -166,7 +166,8 @@ class MainActivity : AppCompatActivity(),
         setContent {
             val fontSize by app.fontSizeSp.collectAsStateWithLifecycle()
             val darkMode by app.darkMode.collectAsStateWithLifecycle()
-            val recording by app.recordingPrivacy.collectAsStateWithLifecycle()
+            // Read during composition so flipping the Settings toggle recomposes and reapplies the flag.
+            val recording = app.recordingPrivacy.collectAsStateWithLifecycle().value
             SideEffect { applyCaptureProtection(recording) }
             LipaBillTheme(fontSizeSp = fontSize, darkTheme = darkMode) {
                 Surface(

@@ -22,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -143,6 +144,9 @@ fun ProcessingReceiptScreen(
     val attempt by app.repeatRepository.observeById(auditId)
         .collectAsStateWithLifecycle(initialValue = null)
     var matchedTx by remember { mutableStateOf<MpesaTransaction?>(null) }
+    val failedAuditId by PendingPaymentReceipt.failedAuditId
+        .collectAsStateWithLifecycle()
+    val paymentFailed = failedAuditId == auditId
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val recent by app.repository.observeTransactions(limit = 40)
@@ -176,13 +180,13 @@ fun ProcessingReceiptScreen(
     val startedAt = snapshot?.startedAtMillis ?: attempt?.createdAtMillis
         ?: System.currentTimeMillis()
 
-    LaunchedEffect(snapshot, recent, matchedTx) {
-        if (matchedTx != null || snapshot == null) return@LaunchedEffect
+    LaunchedEffect(snapshot, recent, matchedTx, paymentFailed) {
+        if (paymentFailed || matchedTx != null || snapshot == null) return@LaunchedEffect
         matchedTx = PendingPaymentMatcher.findMatch(snapshot, recent)
     }
 
-    LaunchedEffect(matchedTx, attempt?.outcome) {
-        if (matchedTx != null) return@LaunchedEffect
+    LaunchedEffect(matchedTx, attempt?.outcome, paymentFailed) {
+        if (matchedTx != null || paymentFailed) return@LaunchedEffect
         val aborted = when (attempt?.outcome) {
             RepeatOutcome.ABORTED_MISMATCH,
             RepeatOutcome.ABORTED_ERROR,
@@ -203,6 +207,7 @@ fun ProcessingReceiptScreen(
         attempt?.detail == "demo_walkthrough"
 
     val tag: ReceiptTag = when {
+        paymentFailed -> ReceiptTag.FAILED
         matchedTx != null || demoWalkthroughDone -> ReceiptTag.DONE
         attempt?.outcome == RepeatOutcome.ABORTED_MISMATCH ||
             attempt?.outcome == RepeatOutcome.ABORTED_ERROR -> ReceiptTag.INTERRUPTED
@@ -211,7 +216,8 @@ fun ProcessingReceiptScreen(
         else -> ReceiptTag.PROCESSING
     }
 
-    LaunchedEffect(matchedTx?.id, attempt?.outcome, attempt?.detail) {
+    LaunchedEffect(matchedTx?.id, attempt?.outcome, attempt?.detail, paymentFailed) {
+        if (paymentFailed) return@LaunchedEffect
         when {
             matchedTx != null || demoWalkthroughDone -> delay(
                 if (BuildConfig.DEBUG) CONFIRMED_HOLD_DEBUG_MS else CONFIRMED_HOLD_MS
@@ -229,6 +235,7 @@ fun ProcessingReceiptScreen(
 
     val headerTitle = when (tag) {
         ReceiptTag.DONE -> "Confirmed"
+        ReceiptTag.FAILED -> "Failed"
         ReceiptTag.INTERRUPTED -> "Interrupted"
         ReceiptTag.CANCELLED -> "Cancelled"
         ReceiptTag.PROCESSING -> "Payment"
@@ -236,6 +243,8 @@ fun ProcessingReceiptScreen(
     val headerSubtitle = when (tag) {
         ReceiptTag.DONE ->
             "Confirmation received"
+        ReceiptTag.FAILED ->
+            "Confirmation SMS said this payment did not go through"
         ReceiptTag.INTERRUPTED ->
             "Automation stopped — check the payment on your phone"
         ReceiptTag.CANCELLED ->
@@ -392,6 +401,7 @@ fun ProcessingReceiptScreen(
 private enum class ReceiptTag(val label: String) {
     PROCESSING("Processing"),
     DONE("Done"),
+    FAILED("Failed"),
     INTERRUPTED("Interrupted"),
     CANCELLED("Cancelled")
 }
@@ -416,6 +426,7 @@ private fun PaymentCongratsHeader(
                     when (tag) {
                         ReceiptTag.DONE -> Accent
                         ReceiptTag.PROCESSING -> TagProcessingFg
+                        ReceiptTag.FAILED -> TagWarnFg
                         else -> Mute
                     },
                     CircleShape
@@ -434,6 +445,13 @@ private fun PaymentCongratsHeader(
                         imageVector = Icons.Outlined.Check,
                         contentDescription = null,
                         tint = Accent,
+                        modifier = Modifier.size(26.dp)
+                    )
+                ReceiptTag.FAILED ->
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = null,
+                        tint = TagWarnFg,
                         modifier = Modifier.size(26.dp)
                     )
                 else ->
@@ -456,6 +474,7 @@ private fun PaymentCongratsHeader(
                     color = when (tag) {
                         ReceiptTag.DONE -> Accent
                         ReceiptTag.PROCESSING -> TagProcessingFg
+                        ReceiptTag.FAILED -> TagWarnFg
                         else -> Mute
                     },
                     fontSize = 22.sp,
@@ -482,6 +501,7 @@ private fun StatusTagChip(tag: ReceiptTag) {
     val (bg, fg) = when (tag) {
         ReceiptTag.PROCESSING -> TagProcessingBg to TagProcessingFg
         ReceiptTag.DONE -> TagDoneBg to TagDoneFg
+        ReceiptTag.FAILED,
         ReceiptTag.INTERRUPTED,
         ReceiptTag.CANCELLED -> TagWarnBg to TagWarnFg
     }
@@ -606,6 +626,13 @@ private fun PaymentStub(
                         tint = Income,
                         modifier = Modifier.size(40.dp)
                     )
+                ReceiptTag.FAILED ->
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = null,
+                        tint = Expense,
+                        modifier = Modifier.size(40.dp)
+                    )
                 else ->
                     Text("—", color = Mute, fontSize = 18.sp)
             }
@@ -616,11 +643,13 @@ private fun PaymentStub(
                 text = when (tag) {
                     ReceiptTag.DONE -> "Payment complete"
                     ReceiptTag.PROCESSING -> "Awaiting SMS"
+                    ReceiptTag.FAILED -> "Payment failed"
                     ReceiptTag.INTERRUPTED -> "Not completed"
                     ReceiptTag.CANCELLED -> "Cancelled"
                 },
                 color = when (tag) {
                     ReceiptTag.DONE -> Ink
+                    ReceiptTag.FAILED,
                     ReceiptTag.INTERRUPTED,
                     ReceiptTag.CANCELLED -> Expense
                     else -> Ink
@@ -633,6 +662,7 @@ private fun PaymentStub(
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = when {
+                    tag == ReceiptTag.FAILED -> "No money left your wallet for this try"
                     !confirmCode.isNullOrBlank() -> "Ref $confirmCode"
                     waitingOnSms -> "Heading home if the SMS is slow"
                     tag == ReceiptTag.PROCESSING -> "Updates when the SMS arrives"

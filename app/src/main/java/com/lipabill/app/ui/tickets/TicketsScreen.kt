@@ -93,6 +93,7 @@ import com.lipabill.app.metrics.TicketImportResult
 import com.lipabill.app.data.model.TicketSource
 import com.lipabill.app.data.tickets.TicketDocumentKind
 import com.lipabill.app.ui.adapt.LocalWindowForm
+import com.lipabill.app.ui.privacy.pinsExactSeat
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.adapt.WindowWidth
 import com.lipabill.app.ui.theme.Canvas
@@ -1177,8 +1178,7 @@ private fun TodayPassCard(
                     fontSize = 20.sp,
                     lineHeight = 24.sp,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.recordingPrivacyCover()
+                    overflow = TextOverflow.Ellipsis
                 )
                 if (time != null) {
                     Spacer(modifier = Modifier.height(4.dp))
@@ -1198,8 +1198,7 @@ private fun TodayPassCard(
                         style = HomeType.caption,
                         color = OnAccent.copy(alpha = 0.78f),
                         maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.recordingPrivacyCover()
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -1272,8 +1271,7 @@ private fun TicketListRow(
                 style = HomeType.rowTitle,
                 color = if (used) Mute else Ink,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.recordingPrivacyCover()
+                overflow = TextOverflow.Ellipsis
             )
             val subtitle = buildList {
                 ticket.orderId?.takeIf { ticket.isConfirmationOnly }?.let { add("Ref $it") }
@@ -1289,7 +1287,7 @@ private fun TicketListRow(
                 style = HomeType.caption,
                 color = Mute,
                 maxLines = 2,
-                modifier = Modifier.recordingPrivacyCover(subtitle.isNotBlank())
+                modifier = Modifier.recordingPrivacyCover(pinsExactSeat(ticket.seatOrTier))
             )
         }
         Text(
@@ -1381,8 +1379,7 @@ private fun ManualTicketDialog(
                     label = { Text("Event / title") },
                     singleLine = true,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .recordingPrivacyCover(title.isNotBlank()),
+                        .fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Words
                     )
@@ -1404,7 +1401,6 @@ private fun ManualTicketDialog(
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .recordingPrivacyCover(venue.isNotBlank())
                 )
                 OutlinedButton(
                     onClick = {

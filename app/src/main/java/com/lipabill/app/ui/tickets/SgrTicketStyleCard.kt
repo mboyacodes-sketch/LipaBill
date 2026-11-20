@@ -478,8 +478,8 @@ private fun SgrStubCard(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 SgrStubField("Name Passenger", model.passenger, onTicket, onTicketMute, cover = true)
-                SgrStubField("Train", model.train, onTicket, onTicketMute, cover = model.train != "—")
-                SgrStubField("Coach", model.coach, onTicket, onTicketMute, cover = model.coach != "—")
+                SgrStubField("Train", model.train, onTicket, onTicketMute)
+                SgrStubField("Coach", model.coach, onTicket, onTicketMute)
             }
             Column(
                 modifier = Modifier.weight(1f),

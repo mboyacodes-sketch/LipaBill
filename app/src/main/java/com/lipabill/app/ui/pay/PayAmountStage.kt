@@ -80,7 +80,6 @@ internal fun PayAmountEntry(
                 maxLines = 1,
                 modifier = Modifier
                     .weight(1f)
-                    .recordingPrivacyCover()
             )
         }
         when {

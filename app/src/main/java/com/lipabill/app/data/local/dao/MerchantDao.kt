@@ -76,6 +76,21 @@ interface MerchantDao {
         sinceMillis: Long
     ): PendingMerchantPaymentEntity?
 
+    @Query(
+        """
+        SELECT * FROM pending_merchant_payments
+        WHERE consumed = 0
+          AND ABS(amount - :amount) < 0.02
+          AND createdAtMillis >= :sinceMillis
+        ORDER BY createdAtMillis DESC
+        LIMIT 1
+        """
+    )
+    suspend fun findMatchingPendingAnyType(
+        amount: Double,
+        sinceMillis: Long
+    ): PendingMerchantPaymentEntity?
+
     @Query("UPDATE pending_merchant_payments SET consumed = 1 WHERE id = :id")
     suspend fun consumePending(id: Long)
 

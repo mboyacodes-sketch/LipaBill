@@ -194,7 +194,7 @@ fun SettingsScreen(
                 SettingsDivider()
                 SettingsChoiceBlock(
                     title = "Ledger",
-                    hint = "Up to 5 wallets and banks on this picture. Changing this refreshes the ledger."
+                    hint = "Up to 5 wallets and banks. Turn a wallet on for SMS anytime; Send and Pay still need its SIM."
                 ) {
                     ProviderPicker(
                         catalog = state.providerChoices,

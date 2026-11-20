@@ -282,8 +282,7 @@ private fun DemoConfirmPage(
             Text(
                 text = amountLabel,
                 style = HomeType.rowTitle,
-                color = Ink,
-                modifier = Modifier.recordingPrivacyCover(amountLabel.isNotBlank())
+                color = Ink
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
@@ -296,8 +295,7 @@ private fun DemoConfirmPage(
             Text(
                 text = "Demo walkthrough — no USSD dial",
                 style = HomeType.caption,
-                color = Mute,
-                modifier = Modifier.recordingPrivacyCover()
+                color = Mute
             )
         }
         Spacer(modifier = Modifier.height(20.dp))

@@ -18,6 +18,16 @@ fun resolvedLedgerSources(
     return stored.filter { it in catalog }.toSet().ifEmpty { setOf(region.primaryWallet) }
 }
 
+/**
+ * Rails SMS may import: the user's picks that exist in [region].
+ * SIM presence gates dial / balance cards only — bank-first then MNO must still pull.
+ */
+fun importableLedgerSources(
+    region: AppRegion,
+    chosen: Set<MoneySource>
+): Set<MoneySource> =
+    chosen.filterTo(mutableSetOf()) { it in region.sources }
+
 /** Primary wallet, then other wallets, then banks by label. */
 fun catalogSourceComparator(region: AppRegion): Comparator<MoneySource> =
     compareByDescending<MoneySource> { it == region.primaryWallet }
@@ -115,8 +125,15 @@ fun toggleLedgerSource(
         val next = inCatalog - source
         return next.ifEmpty { inCatalog }
     }
-    if (inCatalog.size >= max) return inCatalog
-    return inCatalog + source
+    if (inCatalog.size < max) return inCatalog + source
+    // Cap full: adding a wallet after a bank-only picture displaces a bank so
+    // Settings can turn MNO SMS on without a reinstall. Never drop another wallet.
+    if (!source.isWallet) return inCatalog
+    val bankToDrop = inCatalog
+        .filterNot { it.isWallet }
+        .maxByOrNull { it.label }
+        ?: return inCatalog
+    return inCatalog - bankToDrop + source
 }
 
 /**

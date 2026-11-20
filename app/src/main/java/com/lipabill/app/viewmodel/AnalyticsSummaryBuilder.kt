@@ -183,6 +183,7 @@ internal fun buildAnalyticsSummary(
         hasLedger = txs.isNotEmpty(),
         storyHeadline = story.headline,
         storyDetail = story.detail,
+        storyNamesPayee = story.namesPayee,
         quietDays = quietDays,
         quietStreak = quietStreak,
         busiestLabel = busiest?.let { busiestDayLabel(it.first) },

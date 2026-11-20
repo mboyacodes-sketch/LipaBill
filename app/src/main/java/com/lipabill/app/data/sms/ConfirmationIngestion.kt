@@ -40,6 +40,22 @@ object ConfirmationIngestion {
         return isConfirmationBody(source, body, region)
     }
 
+    /**
+     * Inbox rows worth reading: money confirmations, or failure SMS that can
+     * void a mistaken / unsettled ledger row. Failures are not stored as credits.
+     */
+    fun shouldReadFromInbox(
+        address: String?,
+        body: String?,
+        region: AppRegion = AppRegion.DEFAULT,
+        enabled: Set<MoneySource> = region.sources
+    ): Boolean {
+        if (shouldAccept(address, body, region, enabled)) return true
+        val source = MoneySource.fromSender(address, region) ?: return false
+        if (source !in enabled) return false
+        return FailureSms.isFailure(body)
+    }
+
     private fun isConfirmationBody(
         source: MoneySource,
         body: String?,

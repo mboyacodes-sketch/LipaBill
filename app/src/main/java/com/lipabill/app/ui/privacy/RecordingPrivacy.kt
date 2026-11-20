@@ -22,6 +22,14 @@ import com.lipabill.app.BuildConfig
  * destinations/handles instead of masking. Keyboards stay sharp while the toggle
  * is on. Turn off in Settings to restore capture blocking. Play release builds
  * leave capture blocked.
+ *
+ * What a demo may show vs. what gets covered:
+ * - Covered: who (counterparty, guest and passenger names and their initials, phones,
+ *   accounts, SIM numbers, free-text SMS / notes that carry them), keys (confirmation
+ *   codes, QR and barcodes, booking / order refs), what the user holds (wallet balances,
+ *   available / remaining, Fuliza owed, safe-to-spend) and exact seats (row, seat).
+ * - Shown: amounts of single payments, typed amounts, fees, totals, budgets, goals,
+ *   charts, dates, categories, rails, and event title, venue, gate, section, train, coach.
  */
 object RecordingCapture {
     /** True on debug and internal sideload builds — never on Play release. */
@@ -30,6 +38,11 @@ object RecordingCapture {
 }
 
 val LocalRecordingPrivacy = staticCompositionLocalOf { false }
+
+private val ExactSeat = Regex("""(?i)\b(row|seat)\b""")
+
+/** True when [seatLine] pins a person to one spot (row or seat), not just a gate or section. */
+fun pinsExactSeat(seatLine: String?): Boolean = seatLine != null && ExactSeat.containsMatchIn(seatLine)
 
 @Composable
 fun Modifier.recordingPrivacyCover(

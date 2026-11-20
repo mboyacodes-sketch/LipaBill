@@ -63,7 +63,6 @@ import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.metrics.TicketImportResult
 import com.lipabill.app.ui.permissions.permissionGranted
 import com.lipabill.app.ui.permissions.rememberCameraAccessOffer
-import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.components.DetailSkeleton
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.Expense
@@ -250,10 +249,7 @@ fun TicketDetailScreen(
                     title = {
                         Text(
                             if (isRailDetail) "Boarding Pass" else (current?.title ?: "Ticket"),
-                            style = HomeType.greeting,
-                            modifier = Modifier.recordingPrivacyCover(
-                                !isRailDetail && !current?.title.isNullOrBlank()
-                            )
+                            style = HomeType.greeting
                         )
                     },
                     navigationIcon = {

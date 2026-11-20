@@ -46,7 +46,9 @@ fun MoneyBreakdownLine(
     label: String,
     value: String,
     strong: Boolean = false,
-    valueColor: Color = Ink
+    valueColor: Color = Ink,
+    /** Balance-derived values stay covered while screen recording; costs and totals show. */
+    private: Boolean = false
 ) {
     Row(modifier = Modifier.fillMaxWidth()) {
         Text(label, style = HomeType.caption, color = Mute, modifier = Modifier.weight(1f))
@@ -55,7 +57,7 @@ fun MoneyBreakdownLine(
             style = HomeType.caption,
             fontWeight = if (strong) FontWeight.Bold else FontWeight.SemiBold,
             color = valueColor,
-            modifier = Modifier.recordingPrivacyCover()
+            modifier = Modifier.recordingPrivacyCover(private)
         )
     }
 }

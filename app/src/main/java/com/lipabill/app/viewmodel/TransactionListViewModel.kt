@@ -142,6 +142,7 @@ data class AnalyticsSummary(
     val hasLedger: Boolean = false,
     val storyHeadline: String = "",
     val storyDetail: String? = null,
+    val storyNamesPayee: Boolean = false,
     val quietDays: Int = 0,
     val quietStreak: Int = 0,
     val busiestLabel: String? = null,

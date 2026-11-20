@@ -137,7 +137,9 @@ fun outgoingPayeeSplit(
 
 data class MoneyStory(
     val headline: String,
-    val detail: String?
+    val detail: String?,
+    /** Headline carries a payee's name (covered while screen recording). */
+    val namesPayee: Boolean = false
 )
 
 data class PulseCell(
@@ -460,7 +462,8 @@ fun moneyStory(
     if (topName != null && topShare != null && topShare >= 0.4) {
         return MoneyStory(
             headline = "$topName shaped this stretch.",
-            detail = "The largest share of what went out."
+            detail = "The largest share of what went out.",
+            namesPayee = true
         )
     }
     if (comparable && previousExpense > 0.0 && expense < previousExpense * 0.9) {

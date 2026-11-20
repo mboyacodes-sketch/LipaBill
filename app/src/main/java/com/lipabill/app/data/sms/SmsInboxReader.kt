@@ -78,7 +78,7 @@ class SmsInboxReader(private val context: Context) {
                 if (MoneySource.fromSender(address, region) !in enabled) continue
                 val body = it.getString(bodyIdx).orEmpty()
                 if (body.isBlank()) continue
-                if (!ConfirmationIngestion.shouldAccept(address, body, region, enabled)) continue
+                if (!ConfirmationIngestion.shouldReadFromInbox(address, body, region, enabled)) continue
                 results.add(RawSms(address, body, it.getLong(dateIdx)))
             }
         }
@@ -101,7 +101,11 @@ class SmsInboxReader(private val context: Context) {
                 "%transferred%",
                 "%withdraw%",
                 "%received%",
-                "% sent %"
+                "% sent %",
+                // Failure SMS (void path) — currency likes often catch these too.
+                "%failed%",
+                "%insufficient%",
+                "%unsuccessful%"
             )
             val selection = likes.joinToString(
                 separator = " OR ",

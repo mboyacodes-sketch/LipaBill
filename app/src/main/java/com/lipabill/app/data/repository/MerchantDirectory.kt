@@ -140,6 +140,20 @@ class MerchantDirectory(
     }
 
     /**
+     * A failure SMS for this amount means the dial never settled — drop the pending enrich slot.
+     */
+    suspend fun consumePendingForFailedAmount(amount: Double): Boolean = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        dao.prunePending(now - PENDING_TTL_MS)
+        val pending = dao.findMatchingPendingAnyType(
+            amount = amount,
+            sinceMillis = now - PENDING_TTL_MS
+        ) ?: return@withContext false
+        dao.consumePending(pending.id)
+        true
+    }
+
+    /**
      * Attach a pending Pochi dial (phone known at dial time) to a name-only confirmation SMS.
      */
     private suspend fun enrichPochiIncoming(
