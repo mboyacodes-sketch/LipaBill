@@ -65,7 +65,8 @@ class PassLiveNotifier(private val context: Context) {
             publicBody = "Open LipaBill for details.",
             ongoing = true,
             whenMillis = start?.takeIf { countdown },
-            countdown = countdown
+            countdown = countdown,
+            largeIcon = false
         )
     }
 
