@@ -172,7 +172,7 @@ internal fun HeroCard(
             text = stats.keptHeadline ?: stats.storyHeadline,
             style = HomeType.greeting,
             color = OnAccent,
-            modifier = Modifier.recordingPrivacyCover()
+            modifier = Modifier.recordingPrivacyCover(stats.keptHeadline == null && stats.storyNamesPayee)
         )
         val detail = if (stats.keptHeadline != null) null else stats.storyDetail
         if (detail != null) {
@@ -226,8 +226,7 @@ internal fun HeroCard(
                         text = "${(share * 100).roundToInt()}% of what came in has gone out · " +
                             "reversals netted, fees included",
                         style = HomeType.caption,
-                        color = soft,
-                        modifier = Modifier.recordingPrivacyCover()
+                        color = soft
                     )
                 }
             }
@@ -244,8 +243,7 @@ internal fun HeroFigure(label: String, amount: Double, modifier: Modifier = Modi
             style = HomeType.rowTitle,
             color = OnAccent,
             maxLines = 1,
-            softWrap = false,
-            modifier = Modifier.recordingPrivacyCover()
+            softWrap = false
         )
     }
 }
@@ -309,6 +307,7 @@ internal fun CostingYouCard(
                 title = "Habits",
                 value = habit?.let { "${it.visits} visits" } ?: "—",
                 caption = habit?.name ?: "None yet · period",
+                privateCaption = habit != null,
                 selected = tab == CostTab.HABITS,
                 onClick = { tab = CostTab.HABITS },
                 modifier = Modifier.weight(1f)
@@ -380,8 +379,7 @@ internal fun CostingYouCard(
                 Text(
                     text = "${formatKsh(fees.total)} went on transaction fees this period.",
                     style = HomeType.body,
-                    color = Ink,
-                    modifier = Modifier.recordingPrivacyCover()
+                    color = Ink
                 )
                 if (feeShare != null) {
                     Text("That is $feeShare% of what went out.", style = HomeType.caption, color = Mute)
@@ -390,19 +388,23 @@ internal fun CostingYouCard(
                     Text(
                         text = "Cash withdrawals: ${fees.withdrawCount} · ${formatKsh(fees.withdrawFees)} in fees",
                         style = HomeType.caption,
-                        color = Mute,
-                        modifier = Modifier.recordingPrivacyCover()
+                        color = Mute
                     )
                 }
             }
-            CostTab.HABITS -> Text(
-                text = habit?.let {
-                    "${it.name}: ${it.visits} times this period, ${formatKsh(it.total)} in all."
-                } ?: "No single place shows up often enough in this period.",
-                style = HomeType.body,
-                color = if (habit == null) Mute else Ink,
-                modifier = Modifier.recordingPrivacyCover()
-            )
+            CostTab.HABITS -> if (habit == null) {
+                Text("No single place shows up often enough in this period.", style = HomeType.body, color = Mute)
+            } else {
+                // Name on its own line so recording covers the payee but keeps the figures.
+                Column {
+                    Text(habit.name, style = HomeType.body, color = Ink, modifier = Modifier.recordingPrivacyCover())
+                    Text(
+                        "${habit.visits} times this period, ${formatKsh(habit.total)} in all.",
+                        style = HomeType.body,
+                        color = Ink
+                    )
+                }
+            }
         }
     }
 }
@@ -414,7 +416,8 @@ internal fun CostTile(
     caption: String,
     selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    privateCaption: Boolean = false
 ) {
     val shape = RoundedCornerShape(14.dp)
     Column(
@@ -441,8 +444,7 @@ internal fun CostTile(
             color = Ink,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.recordingPrivacyCover()
+            overflow = TextOverflow.Ellipsis
         )
         Text(
             text = caption,
@@ -450,7 +452,7 @@ internal fun CostTile(
             color = Mute,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.recordingPrivacyCover()
+            modifier = Modifier.recordingPrivacyCover(privateCaption)
         )
     }
 }
@@ -487,8 +489,7 @@ internal fun RegularRow(
                 Text(
                     formatKsh(regular.typicalAmount),
                     style = HomeType.rowTitle,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.recordingPrivacyCover()
+                    fontWeight = FontWeight.Bold
                 )
                 when {
                     regular.essential -> Pill("Essential")
@@ -579,8 +580,7 @@ internal fun FeeTipCard(withdrawCount: Int, withdrawFees: Double, onSee: () -> U
                 text = "You withdrew cash $withdrawCount times this period and paid " +
                     "${formatKsh(withdrawFees)} in fees. Fewer, larger withdrawals usually cost less per shilling.",
                 style = HomeType.body,
-                color = OnPastel,
-                modifier = Modifier.recordingPrivacyCover()
+                color = OnPastel
             )
             Box(
                 modifier = Modifier
@@ -646,14 +646,14 @@ internal fun ChallengeCard(
                 "Skip ${habit.name} this week",
                 style = HomeType.section,
                 color = Ink,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.recordingPrivacyCover()
             )
             Text(
                 text = "You paid them ${habit.visits} times this period, ${formatKsh(habit.total)} in all. " +
                     "Seven days off keeps that money in your wallet.",
                 style = HomeType.body,
-                color = Mute,
-                modifier = Modifier.recordingPrivacyCover()
+                color = Mute
             )
             PrimaryAction(text = "Start", onClick = { onStart(habit.name) })
             return@InsightCard
@@ -703,8 +703,7 @@ internal fun ChallengeCard(
                         formatKsh(kept),
                         style = HomeType.rowTitle,
                         color = Income,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.recordingPrivacyCover()
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -1023,8 +1022,7 @@ internal fun ComingUp(
                 Text(
                     "~" + formatKsh(regular.typicalAmount),
                     style = HomeType.rowTitle,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.recordingPrivacyCover()
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         }
@@ -1192,8 +1190,7 @@ private fun CalendarDayTxnRow(tx: MpesaTransaction, fuliza: Boolean) {
             style = HomeType.rowTitle,
             color = amountColor,
             maxLines = 1,
-            softWrap = false,
-            modifier = Modifier.recordingPrivacyCover()
+            softWrap = false
         )
     }
 }
@@ -1281,8 +1278,7 @@ internal fun PulseDayCell(
                 val received = calendarAmountLabel(cell.inflow)
                 val spent = calendarAmountLabel(cell.outflow)
                 Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.recordingPrivacyCover()
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     if (received.isNotEmpty()) {
                         Text(
@@ -1358,7 +1354,6 @@ internal fun PeriodBars(bars: List<PeriodBar>, fuliza: Boolean) {
                     textAlign = TextAlign.End,
                     modifier = Modifier
                         .width(96.dp)
-                        .recordingPrivacyCover()
                 )
             }
         }
@@ -1406,8 +1401,7 @@ internal fun WhereItWentCard(
                         formatKsh(row.total),
                         style = HomeType.label,
                         fontWeight = FontWeight.Bold,
-                        color = if (dimmed) Mute else Ink,
-                        modifier = Modifier.recordingPrivacyCover()
+                        color = if (dimmed) Mute else Ink
                     )
                 }
                 Box(
@@ -1531,8 +1525,7 @@ internal fun CounterpartyRow(row: CounterpartySpend) {
         Text(
             formatKsh(row.total),
             style = HomeType.rowTitle,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.recordingPrivacyCover()
+            fontWeight = FontWeight.Bold
         )
     }
 }
@@ -1545,6 +1538,7 @@ internal fun CounterpartyRow(row: CounterpartySpend) {
 internal fun RecapCard(
     checkInDone: Boolean,
     finding: String,
+    findingNamesPayee: Boolean,
     badges: List<InsightBadge>,
     onCheckIn: () -> Unit
 ) {
@@ -1573,7 +1567,7 @@ internal fun RecapCard(
                 style = HomeType.body,
                 color = Ink,
                 fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.recordingPrivacyCover()
+                modifier = Modifier.recordingPrivacyCover(checkInDone && findingNamesPayee)
             )
             if (!checkInDone) {
                 TextButton(onClick = onCheckIn) {
@@ -1697,6 +1691,8 @@ internal fun InitialDisc(name: String, fill: Color, tint: Color) {
         fill = fill,
         contentColor = tint,
         size = 40.dp,
-        fontWeight = FontWeight.Bold
+        fontWeight = FontWeight.Bold,
+        // Only payees use this disc, so the initial is covered like the name beside it.
+        privacyCover = true
     )
 }
