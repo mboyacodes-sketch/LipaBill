@@ -60,21 +60,30 @@ object PassLivePlanner {
         val end = status.endMillis
         val stage = status.stage
         val at = TodayStages.clock(start, zone)
-        val title = when (stage) {
-            TodayStage.LATER -> "Pass today · $at"
-            TodayStage.SOON -> "Starts at $at"
-            TodayStage.LIVE -> "Happening now · until ${TodayStages.clock(end, zone)}"
-            TodayStage.FINISHED -> "Finished — mark it used?"
-            TodayStage.NEEDS_BOARDING_PASS -> "Boarding pass needed · $at"
-            TodayStage.CODE_PENDING -> "Code not out yet · $at"
-        }
+        val name = ticket.title.trim().ifBlank { "Your pass" }
         val venue = ticket.venue?.trim()?.takeIf { it.isNotEmpty() }
+        // The event leads, like a ride app leads with the driver; plain sentences, no dot chains.
+        val title = when (stage) {
+            TodayStage.LATER -> name
+            TodayStage.SOON -> "$name starts soon"
+            TodayStage.LIVE -> "$name is on"
+            TodayStage.FINISHED -> "$name has ended"
+            TodayStage.NEEDS_BOARDING_PASS -> "Add your boarding pass"
+            TodayStage.CODE_PENDING -> "Entry code not here yet"
+        }
+        val whenText = when (stage) {
+            TodayStage.LATER -> "${TodayStages.partOfDay(start, zone)} at $at"
+            TodayStage.SOON -> "At $at"
+            TodayStage.LIVE -> "Until ${TodayStages.clock(end, zone)}"
+            TodayStage.FINISHED -> "Ended at ${TodayStages.clock(end, zone)}"
+            TodayStage.NEEDS_BOARDING_PASS, TodayStage.CODE_PENDING -> "$name at $at"
+        }
         val more = today.size - 1
-        val body = listOfNotNull(
-            ticket.title.takeIf { it.isNotBlank() },
-            venue,
-            if (more > 0) "+$more more today" else null
-        ).joinToString(" · ")
+        val body = buildString {
+            append(listOfNotNull(whenText, venue).joinToString(", "))
+            if (more == 1) append(". 1 more pass today")
+            if (more > 1) append(". $more more passes today")
+        }
         val chip = when (stage) {
             TodayStage.SOON, TodayStage.FINISHED -> null
             TodayStage.LIVE -> "Now"

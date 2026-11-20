@@ -57,7 +57,8 @@ class PassLivePlannerTest {
     fun later_today_shows_the_start_in_the_chip_with_show_code_and_directions() {
         val p = plan(at(15), pass())!!
         assertEquals(TodayStage.LATER, p.stage)
-        assertEquals("Pass today · 7:30 PM", p.title)
+        assertEquals("Sample Festival", p.title)
+        assertEquals("Tonight at 7:30 PM, Sample Grounds", p.body)
         assertEquals("7:30 PM", p.chip)
         assertNull(p.countdownTo)
         assertEquals(listOf(LiveAction.SHOW_CODE, LiveAction.DIRECTIONS), p.actions)
@@ -69,7 +70,7 @@ class PassLivePlannerTest {
     fun within_the_hour_the_chip_counts_down_and_the_marker_nears_the_start() {
         val p = plan(at(19, 0), pass())!!
         assertEquals(TodayStage.SOON, p.stage)
-        assertEquals("Starts at 7:30 PM", p.title)
+        assertEquals("Sample Festival starts soon", p.title)
         assertNull(p.chip)
         assertEquals(at(19, 30), p.countdownTo)
         assertEquals(150, p.progress.value) // 2.5 h into the 3 h lead-in
@@ -80,7 +81,8 @@ class PassLivePlannerTest {
     fun during_the_event_it_says_now_and_offers_mark_used() {
         val p = plan(at(20, 30), pass())!!
         assertEquals(TodayStage.LIVE, p.stage)
-        assertEquals("Happening now · until 11:30 PM", p.title)
+        assertEquals("Sample Festival is on", p.title)
+        assertEquals("Until 11:30 PM, Sample Grounds", p.body)
         assertEquals("Now", p.chip)
         assertEquals(listOf(LiveAction.SHOW_CODE, LiveAction.MARK_USED), p.actions)
     }
@@ -89,6 +91,7 @@ class PassLivePlannerTest {
     fun finished_asks_to_mark_used_with_a_full_bar() {
         val p = plan(at(23, 45), pass())!!
         assertEquals(TodayStage.FINISHED, p.stage)
+        assertEquals("Sample Festival has ended", p.title)
         assertEquals(listOf(LiveAction.MARK_USED), p.actions)
         assertEquals(p.progress.max, p.progress.value)
     }
@@ -96,7 +99,8 @@ class PassLivePlannerTest {
     @Test
     fun blocked_passes_point_at_the_fix() {
         val booking = plan(at(6), pass(startsAt = at(8), boarding = true))!!
-        assertEquals("Boarding pass needed · 8:00 AM", booking.title)
+        assertEquals("Add your boarding pass", booking.title)
+        assertEquals("Sample Festival at 8:00 AM, Sample Grounds", booking.body)
         assertEquals(LiveAction.ADD_BOARDING_PASS, booking.actions.first())
         val pending = plan(at(15), pass(code = EventTicketSms.PENDING_PREFIX + "REF1"))!!
         assertEquals(LiveAction.ADD_CODE, pending.actions.first())
@@ -105,6 +109,16 @@ class PassLivePlannerTest {
     @Test
     fun no_venue_means_no_directions() {
         assertFalse(LiveAction.DIRECTIONS in plan(at(15), pass(venue = null))!!.actions)
+    }
+
+    @Test
+    fun copy_has_no_dot_chains_or_dashes() {
+        listOf(at(15), at(19, 0), at(20, 30), at(23, 45)).forEach { now ->
+            val p = plan(now, pass())!!
+            val text = p.title + " " + p.body
+            assertFalse(text, text.contains("·"))
+            assertFalse(text, text.contains("—"))
+        }
     }
 
     @Test
@@ -122,7 +136,7 @@ class PassLivePlannerTest {
         val late = pass(id = 2, startsAt = at(22))
         val p = plan(at(15), late, early)!!
         assertEquals(1L, p.ticketId)
-        assertTrue(p.body.endsWith("+1 more today"))
+        assertTrue(p.body.endsWith(". 1 more pass today"))
     }
 
     @Test

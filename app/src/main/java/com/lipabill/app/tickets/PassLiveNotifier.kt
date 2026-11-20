@@ -130,10 +130,10 @@ class PassLiveNotifier(private val context: Context) {
         .build()
 
     private fun label(action: LiveAction): String = when (action) {
-        LiveAction.SHOW_CODE -> "Show code"
-        LiveAction.MARK_USED -> "Mark used"
+        LiveAction.SHOW_CODE -> "Show ticket"
+        LiveAction.MARK_USED -> "Mark as used"
         LiveAction.ADD_BOARDING_PASS -> "Add boarding pass"
-        LiveAction.ADD_CODE -> "Add code"
+        LiveAction.ADD_CODE -> "Add entry code"
         LiveAction.DIRECTIONS -> "Directions"
     }
 
