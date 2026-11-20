@@ -350,6 +350,9 @@ class LipaBillApp : Application() {
                 ledgerNotifier.show(tx)
                 postMoneyMoments(tx)
             },
+            onPaymentFailure = { title, body, notifyId ->
+                ledgerNotifier.showFailure(title, body, notifyId)
+            },
             usableSources = ::usableLedgerSources
         )
         refreshSimLines()
