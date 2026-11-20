@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.ConfirmationNumber
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Payments
@@ -106,6 +107,7 @@ fun SettingsScreen(
     onRequestAccessibilityConsent: () -> Unit = {},
     onOptInFuliza: () -> Unit = {},
     onCheckForUpdate: () -> Unit = {},
+    onReplayFirstRun: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -179,15 +181,19 @@ fun SettingsScreen(
             SettingsSection("Picture", Icons.Outlined.AccountBalanceWallet) {
                 SettingsChoiceBlock(
                     title = "Country",
-                    hint = if (state.region.canSendPay) {
-                        "Ledger for ${state.region.label}. Send and Pay stay on M-Pesa."
-                    } else {
-                        "Ledger for ${state.region.label}. Send and Pay are Kenya M-Pesa for now."
+                    hint = when {
+                        state.simRegions.isNotEmpty() ->
+                            "Only countries on this phone’s SIMs. Ledger for ${state.region.label}."
+                        state.region.canSendPay ->
+                            "Ledger for ${state.region.label}. Send and Pay stay on M-Pesa."
+                        else ->
+                            "Ledger for ${state.region.label}. Send and Pay are Kenya M-Pesa for now."
                     }
                 ) {
                     RegionPicker(
                         selected = state.region,
                         onSelect = viewModel::setRegion,
+                        enabledRegions = state.selectableRegions,
                         modifier = Modifier.padding(bottom = Space.card)
                     )
                 }
@@ -294,6 +300,78 @@ fun SettingsScreen(
                 }
             }
 
+            SettingsSection("Passes", Icons.Outlined.ConfirmationNumber) {
+                val leads = state.passReminderLeadTimes
+                SettingsChoiceBlock(
+                    title = "Evening before",
+                    hint = "Day before the pass."
+                ) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(Space.gap),
+                        verticalArrangement = Arrangement.spacedBy(Space.gap),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = Space.card)
+                    ) {
+                        listOf(-1 to "Off", 18 to "6 PM", 20 to "8 PM").forEach { (hour, label) ->
+                            LipaChoiceChip(
+                                label = label,
+                                selected = leads.dayBeforeHour == hour,
+                                onClick = {
+                                    viewModel.setPassReminderLeadTimes(leads.copy(dayBeforeHour = hour))
+                                }
+                            )
+                        }
+                    }
+                }
+                SettingsDivider()
+                SettingsChoiceBlock(
+                    title = "Ahead of time",
+                    hint = "Hours before the start."
+                ) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(Space.gap),
+                        verticalArrangement = Arrangement.spacedBy(Space.gap),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = Space.card)
+                    ) {
+                        listOf(-1 to "Off", 12 to "12 h", 24 to "24 h", 48 to "48 h").forEach { (hours, label) ->
+                            LipaChoiceChip(
+                                label = label,
+                                selected = leads.hoursBefore == hours,
+                                onClick = {
+                                    viewModel.setPassReminderLeadTimes(leads.copy(hoursBefore = hours))
+                                }
+                            )
+                        }
+                    }
+                }
+                SettingsDivider()
+                SettingsChoiceBlock(
+                    title = "Morning of",
+                    hint = "Early events use two hours earlier."
+                ) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(Space.gap),
+                        verticalArrangement = Arrangement.spacedBy(Space.gap),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = Space.card)
+                    ) {
+                        listOf(-1 to "Off", 6 to "6 AM", 8 to "8 AM").forEach { (hour, label) ->
+                            LipaChoiceChip(
+                                label = label,
+                                selected = leads.morningHour == hour,
+                                onClick = {
+                                    viewModel.setPassReminderLeadTimes(leads.copy(morningHour = hour))
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
             SettingsSection("Security", Icons.Outlined.Shield) {
                 SettingsChoiceBlock(
                     title = "Lock after",
@@ -359,6 +437,13 @@ fun SettingsScreen(
                         subtitle = "On by default for debug. Clears capture protection, blurs ledger PII, and shows dummy Request codes.",
                         checked = state.recordingPrivacy,
                         onCheckedChange = viewModel::setRecordingPrivacy
+                    )
+                    SettingsDivider()
+                    SettingsNavRow(
+                        title = "Replay setup wizard",
+                        subtitle = "Opens the first-run flow again. Ledger and settings stay as they are.",
+                        showChevron = true,
+                        onClick = onReplayFirstRun
                     )
                 }
             }
@@ -549,7 +634,7 @@ private fun SimChoices(
                 Text("Payment SIM", style = HomeType.rowTitle, color = Ink)
                 Spacer(modifier = Modifier.height(Space.tight))
                 Text(
-                    PaymentDialResolver.missingPaySimMessage(region),
+                    PaymentDialResolver.payUnavailableMessage(region, enabledSources),
                     style = HomeType.caption,
                     color = Expense
                 )

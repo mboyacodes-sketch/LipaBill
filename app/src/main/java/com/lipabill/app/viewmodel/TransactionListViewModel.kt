@@ -21,6 +21,7 @@ import com.lipabill.app.engage.SpendCategory
 import com.lipabill.app.engage.resolveSpendCategory
 import com.lipabill.app.ui.util.formatActivityTime
 import com.lipabill.app.ui.util.inCategoryOrder
+import com.lipabill.app.ussd.PaymentWallet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
@@ -424,11 +425,14 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             active = rails.activeWallet,
             choices = rails.balanceWallets,
             pillPick = pillPick,
-            primary = region.primaryWallet
+            primary = region.primaryWallet,
+            enabled = sources
         )
+        val dialWalletOn = PaymentWallet.forRegion(region)
+            .any { it.ledgerSource in sources }
         return WalletBase(
             sourced = sourced,
-            mpesaBalance = balances[balanceSource],
+            mpesaBalance = balanceSource?.let { balances[it] },
             balanceWallet = balanceSource,
             balanceWallets = rails.balanceWallets,
             walletCards = walletCards(region, rails.balanceWallets, balanceSource, rails.lines, balances),
@@ -438,8 +442,8 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             sourceFilter = activeSource,
             sourceFilters = activeSources,
             availableSources = availableSources,
-            showSendPay = region.canSendPay,
-            showFuliza = region.hasFuliza
+            showSendPay = region.canSendPay && dialWalletOn,
+            showFuliza = region.hasFuliza && MoneySource.MPESA in sources
         )
     }
 

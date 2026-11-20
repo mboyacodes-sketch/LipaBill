@@ -79,6 +79,15 @@ enum class AppRegion(
 
         fun fromIso(iso: String?): AppRegion = fromIsoOrNull(iso) ?: DEFAULT
 
+        /** Home-network MCC → country. Used when a SIM omits countryIso. */
+        fun fromMccOrNull(mcc: Int?): AppRegion? = when (mcc) {
+            639 -> KENYA
+            640 -> TANZANIA
+            641 -> UGANDA
+            635 -> RWANDA
+            else -> null
+        }
+
         private val SOURCES: Map<AppRegion, Set<MoneySource>> = mapOf(
             KENYA to setOf(
                 MoneySource.MPESA,

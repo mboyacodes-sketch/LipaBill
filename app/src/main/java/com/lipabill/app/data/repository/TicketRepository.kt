@@ -14,6 +14,8 @@ import com.lipabill.app.data.model.TicketSource
 import com.lipabill.app.data.model.TicketStatus
 import com.lipabill.app.data.model.notesValue
 import com.lipabill.app.data.tickets.BookingConfirmationParser
+import com.lipabill.app.data.tickets.PassContextSync
+import com.lipabill.app.data.tickets.PassReminderLeadTimes
 import com.lipabill.app.data.tickets.TicketImport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -22,7 +24,12 @@ import kotlinx.coroutines.withContext
 import java.util.Locale
 
 class TicketRepository(
-    private val dao: TicketDao
+    private val dao: TicketDao,
+    /** Runs after a pass is deleted — its stored documents go with it. */
+    private val onDeleted: suspend (Long) -> Unit = {},
+    /** Keeps context_events / reminders in step with the pass (Phase 2). */
+    private val contextSync: PassContextSync? = null,
+    private val leadTimes: () -> PassReminderLeadTimes = { PassReminderLeadTimes.DEFAULT }
 ) {
 
     fun observeAll(): Flow<List<Ticket>> =
@@ -95,7 +102,7 @@ class TicketRepository(
                 boardingNotes = boardingNotes?.trim()?.ifBlank { null },
                 passColors = passColors
             )
-        )
+        ).also { id -> syncContext(id) }
     }
 
     suspend fun existingTicketId(barcodeValue: String, orderId: String?): Long? = withContext(Dispatchers.IO) {
@@ -157,6 +164,7 @@ class TicketRepository(
                 passColors = existing.passColors ?: draft.passColors
             )
         )
+        syncContext(existing.id)
         return existing.id
     }
 
@@ -231,19 +239,31 @@ class TicketRepository(
             )
         }
         dao.update(updated)
+        syncContext(ticketId)
         ticketId
     }
 
     suspend fun markUsed(id: Long) = withContext(Dispatchers.IO) {
         dao.updateStatus(id, TicketStatus.USED)
+        syncContext(id)
     }
 
     suspend fun setEventStartsAt(id: Long, startsAtMillis: Long?) = withContext(Dispatchers.IO) {
         dao.updateStartsAt(id, startsAtMillis)
+        syncContext(id)
     }
 
     suspend fun delete(id: Long) = withContext(Dispatchers.IO) {
         dao.deleteById(id)
+        contextSync?.removePass(id)
+        onDeleted(id)
+    }
+
+    private suspend fun syncContext(ticketId: Long?) {
+        if (ticketId == null || ticketId == 0L) return
+        val sync = contextSync ?: return
+        val ticket = dao.getById(ticketId)?.toDomain() ?: return
+        sync.syncPass(ticket, leadTimes = leadTimes())
     }
 
     private suspend fun codeInUse(payload: String, exceptId: Long? = null): Boolean {

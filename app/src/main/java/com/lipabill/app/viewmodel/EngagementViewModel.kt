@@ -351,8 +351,19 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    /**
+     * Starts [templateId]. If another challenge is already running, it is cancelled first
+     * so Challenges → Start is never a dead control.
+     */
     fun startChallenge(templateId: String = ChallengeTemplates.foodDelivery3Days.id) {
         viewModelScope.launch {
+            val current = uiState.value.card
+            if (current?.kind == ChallengeCardKind.ACTIVE && current.templateId == templateId) {
+                return@launch
+            }
+            if (current?.kind == ChallengeCardKind.ACTIVE) {
+                app.engagement.cancelActive()
+            }
             app.engagement.startChallenge(templateId) ?: return@launch
             val end = app.engagement.evaluate()
             if (end != null) app.engagementScheduler.scheduleChallengeEnd(end)
@@ -365,7 +376,10 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
         val templateId = uiState.value.card?.templateId ?: ChallengeTemplates.foodDelivery3Days.id
         viewModelScope.launch {
             app.engagement.cancelActive()
-            startChallenge(templateId)
+            app.engagement.startChallenge(templateId) ?: return@launch
+            val end = app.engagement.evaluate()
+            if (end != null) app.engagementScheduler.scheduleChallengeEnd(end)
+            else app.engagementScheduler.scheduleChallengeSweep()
         }
     }
 

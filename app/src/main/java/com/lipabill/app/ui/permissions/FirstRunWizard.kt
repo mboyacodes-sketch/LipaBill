@@ -18,6 +18,8 @@ enum class FirstRunPage {
     Hibernation
 }
 
+data class IntroSlide(val title: String, val body: String)
+
 object FirstRunWizard {
     /** First run is ledger (region + providers + SMS) then Send/Pay access when the country supports it. */
     fun firstRunPages(region: AppRegion = AppRegion.DEFAULT): List<FirstRunPage> = buildList {
@@ -58,9 +60,55 @@ object FirstRunWizard {
         else -> listOf(start)
     }
 
-    const val WELCOME_TITLE = "Your money has a story"
+    const val WELCOME_TITLE = "Your money.\nOne clear story."
     const val WELCOME_BODY =
-        "See it clearly, then send, pay, or show a pass. Encrypted on this phone, not in a LipaBill cloud."
+        "Wallets and banks in one place, from the texts you already get. Then send, pay, or show a pass."
+
+    /** "Kenya and Uganda" — every region where Send/Pay can dial. */
+    private val SEND_PAY_COUNTRIES: String = AppRegion.entries.filter { it.canSendPay }
+        .map { it.label }
+        .let { names ->
+            if (names.size <= 1) names.joinToString() else
+                names.dropLast(1).joinToString(", ") + " and " + names.last()
+        }
+
+    /** Welcome is a three-slide intro; slide one carries [WELCOME_TITLE]. */
+    val INTRO_SLIDES: List<IntroSlide> = listOf(
+        IntroSlide(WELCOME_TITLE, WELCOME_BODY),
+        IntroSlide(
+            "Send money.\nSkip the stress.",
+            "Send and pay in $SEND_PAY_COUNTRIES in a few taps, on the right SIM. " +
+                "Your PIN is never stored."
+        ),
+        IntroSlide(
+            "Small steps.\nBigger plans.",
+            "Set a money plan, keep passes close, and see what your money became."
+        )
+    )
+
+    /** Sits where a login link would — LipaBill has no account to sign in to. */
+    const val INTRO_FOOTER = "Encrypted on this phone, not in a LipaBill cloud."
+
+    /** Small caps label above each setup title. Permission asks can all be skipped. */
+    fun eyebrow(page: FirstRunPage): String = when (page) {
+        FirstRunPage.Welcome -> ""
+        FirstRunPage.Region -> "Your starting point"
+        FirstRunPage.Providers -> "Your picture"
+        else -> "Optional"
+    }
+
+    /** "02 / 05" for setup pages; Welcome is not counted. */
+    fun stepLabel(pages: List<FirstRunPage>, page: FirstRunPage): String {
+        val steps = pages.filter { it != FirstRunPage.Welcome }
+        val n = steps.indexOf(page) + 1
+        return String.format(java.util.Locale.ROOT, "%02d / %02d", n, steps.size)
+    }
+
+    fun stepProgress(pages: List<FirstRunPage>, page: FirstRunPage): Float {
+        val steps = pages.filter { it != FirstRunPage.Welcome }
+        if (steps.isEmpty()) return 0f
+        return (steps.indexOf(page) + 1).toFloat() / steps.size
+    }
 
     const val REGION_TITLE = "Where is this phone?"
     const val REGION_BODY =
@@ -69,8 +117,7 @@ object FirstRunWizard {
 
     const val PROVIDERS_TITLE = "Who should be in the picture?"
     const val PROVIDERS_BODY =
-        "Wallets first, then banks — up to 5 at a time. LipaBill keeps those confirmation SMS on this phone. " +
-            "You can change this in Settings."
+        "Up to 5 wallets and banks. Confirmation SMS stays on this phone — change anytime in Settings."
 
     const val PHONE_TITLE = "Phone for Send and Pay"
     const val PHONE_BODY =

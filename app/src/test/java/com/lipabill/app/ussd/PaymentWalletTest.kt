@@ -298,6 +298,20 @@ class PaymentWalletTest {
             "Insert an Airtel or MTN Uganda SIM to pay.",
             PaymentDialResolver.missingPaySimMessage(AppRegion.UGANDA)
         )
+        assertEquals(
+            "Turn on M-Pesa or Airtel Money in Ledger to Send and Pay.",
+            PaymentDialResolver.payUnavailableMessage(
+                AppRegion.KENYA,
+                setOf(com.lipabill.app.data.model.MoneySource.KCB)
+            )
+        )
+        assertEquals(
+            "Insert a Safaricom or Airtel Kenya SIM to pay.",
+            PaymentDialResolver.payUnavailableMessage(
+                AppRegion.KENYA,
+                setOf(com.lipabill.app.data.model.MoneySource.MPESA)
+            )
+        )
     }
 
     private fun sim(id: Int, carrier: String, mcc: Int, mnc: Int) = SimLine(
