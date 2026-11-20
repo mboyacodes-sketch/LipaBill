@@ -1,6 +1,6 @@
 package com.lipabill.app.ui.engage
 
-import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CreditCardOff
@@ -53,7 +52,6 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -85,6 +83,7 @@ import com.lipabill.app.ui.theme.OnPastel
 import com.lipabill.app.ui.theme.asPillLabel
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.util.formatKsh
+import com.lipabill.app.ui.util.sharePlainText
 import com.lipabill.app.viewmodel.ChallengeOption
 import com.lipabill.app.viewmodel.ChallengeSubject
 import com.lipabill.app.viewmodel.HabitsUiState
@@ -661,6 +660,7 @@ internal fun badgeTitle(badge: HabitBadge): String = stringResource(
 internal fun ChallengesPage(
     habits: HabitsUiState,
     canStart: Boolean,
+    hasActiveChallenge: Boolean = false,
     onStart: (String) -> Unit,
     onStartDiy: (categoryId: String, days: Int, capCents: Long) -> Unit,
     onDuoInvite: () -> Unit
@@ -680,7 +680,7 @@ internal fun ChallengesPage(
     val featured = filtered.firstOrNull { it.suggested } ?: filtered.firstOrNull()
     val rest = filtered.filterNot { it.templateId == featured?.templateId }
     Column(verticalArrangement = Arrangement.spacedBy(HabitsTokens.sectionGap)) {
-        if (!canStart) {
+        if (hasActiveChallenge) {
             Text(stringResource(R.string.challenges_busy), style = HomeType.body, color = Mute)
         }
         FlowRow(
@@ -840,70 +840,70 @@ private fun CompactChallengeCard(
 @Composable
 private fun DuoCard(onInvite: () -> Unit) {
     val context = LocalContext.current
-    val resources = LocalResources.current
-    Row(
+    val shareText = stringResource(R.string.challenges_duo_share)
+    val inviteLabel = stringResource(R.string.challenges_duo_invite)
+    val shareFailed = stringResource(R.string.challenges_duo_share_failed)
+    fun inviteFriend() {
+        onInvite()
+        if (!context.sharePlainText(inviteLabel, shareText)) {
+            Toast.makeText(context, shareFailed, Toast.LENGTH_SHORT).show()
+        }
+    }
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(HabitsTokens.CardShape)
             .background(CardWhite)
             .border(1.dp, Hairline, HabitsTokens.CardShape)
-            .padding(18.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(18.dp)
     ) {
-        Box {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(SoftBlue),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    stringResource(R.string.challenges_duo_you),
-                    style = HomeType.caption,
-                    color = Accent,
-                    fontWeight = FontWeight.Bold
-                )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(SoftBlue),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        stringResource(R.string.challenges_duo_you),
+                        style = HomeType.caption,
+                        color = Accent,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .padding(start = 28.dp)
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(ActionMetrics)
+                        .border(2.dp, CardWhite, CircleShape)
+                        .clickable(onClick = ::inviteFriend),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        stringResource(R.string.challenges_duo_plus),
+                        style = HomeType.caption,
+                        color = OnPastel,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
-            Box(
-                modifier = Modifier
-                    .padding(start = 28.dp)
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(ActionMetrics)
-                    .border(2.dp, CardWhite, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    stringResource(R.string.challenges_duo_plus),
-                    style = HomeType.caption,
-                    color = OnPastel,
-                    fontWeight = FontWeight.Bold
-                )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.challenges_duo_title), style = HomeType.rowTitle, color = Ink)
+                Text(stringResource(R.string.challenges_duo_body), style = HomeType.caption, color = Mute)
             }
         }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(stringResource(R.string.challenges_duo_title), style = HomeType.rowTitle, color = Ink)
-            Text(stringResource(R.string.challenges_duo_body), style = HomeType.caption, color = Mute)
-        }
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .border(1.dp, Accent, CircleShape)
-                .clickable {
-                    onInvite()
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, resources.getString(R.string.challenges_duo_share))
-                    }
-                    context.startActivity(Intent.createChooser(send, null))
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Outlined.Add, contentDescription = stringResource(R.string.challenges_duo_invite), tint = Accent)
-        }
+        Spacer(modifier = Modifier.height(14.dp))
+        PillButton(
+            label = inviteLabel,
+            filled = true,
+            onClick = ::inviteFriend,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
