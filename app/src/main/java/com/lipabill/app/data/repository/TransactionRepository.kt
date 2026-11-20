@@ -325,7 +325,14 @@ class TransactionRepository(
         val enabled = usableSources(region, securePreferences.enabledLedgerSources(region))
         // Nothing enabled for this country: leave the high-water mark alone.
         if (enabled.isEmpty()) return 0
-        val fullHistory = forceFullHistory || !securePreferences.walletRailsInboxScanDone
+        // Bank-only (or any subset) full pass leaves older SMS for later rails behind
+        // the high-water mark — re-read when enabled includes a rail never fully scanned.
+        val fullHistory = InboxScan.needsFullHistory(
+            forceFullHistory = forceFullHistory,
+            walletRailsScanDone = securePreferences.walletRailsInboxScanDone,
+            enabled = enabled,
+            alreadyScanned = securePreferences.inboxFullyScannedSources()
+        )
         val since = if (fullHistory) {
             null
         } else {
@@ -433,6 +440,7 @@ class TransactionRepository(
         securePreferences.markInboxCaughtUp(newestSeen)
         if (fullHistory) {
             securePreferences.walletRailsInboxScanDone = true
+            securePreferences.markInboxFullyScanned(enabled)
         }
         if (inserted > 0) {
             linkPhonesByName()
