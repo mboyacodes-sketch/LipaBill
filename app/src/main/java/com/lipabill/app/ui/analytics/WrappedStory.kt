@@ -50,6 +50,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import com.lipabill.app.ui.LipaChoiceChip
 import com.lipabill.app.ui.LipaPillButton
+import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.util.formatKsh
 import com.lipabill.app.viewmodel.MonthlyWrapped
@@ -104,7 +105,14 @@ private val StoryGradients = listOf(
 private val StoryAccent = Color(0xFFC5F04A)
 private val StoryMuted = Color(0xFFD4DEEA)
 
-private data class StoryPage(val eyebrow: String, val headline: String, val figure: String?, val detail: String?)
+private data class StoryPage(
+    val eyebrow: String,
+    val headline: String,
+    val figure: String?,
+    val detail: String?,
+    /** Headline is a payee's name (covered while screen recording). */
+    val namesPayee: Boolean = false
+)
 
 private fun pages(w: MonthlyWrapped, showAmounts: Boolean): List<StoryPage> {
     fun money(value: Double) = if (showAmounts) formatKsh(value) else "KSh ••••"
@@ -127,7 +135,7 @@ private fun pages(w: MonthlyWrapped, showAmounts: Boolean): List<StoryPage> {
             )
         )
         w.topMerchant?.let {
-            add(StoryPage("YOUR TOP SPOT", it.name, "${it.visits} visits", "${money(it.total)} over the month"))
+            add(StoryPage("YOUR TOP SPOT", it.name, "${it.visits} visits", "${money(it.total)} over the month", namesPayee = true))
         }
         w.biggestCategory?.let {
             add(StoryPage("MOST OF IT WENT TO", it.label, "${w.biggestCategoryShare}%", "of everything you spent"))
@@ -265,7 +273,14 @@ private fun StoryCard(page: StoryPage, gradient: List<Color>, modifier: Modifier
     ) {
         Text(page.eyebrow, color = StoryAccent, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp)
         Spacer(modifier = Modifier.weight(1f))
-        Text(page.headline, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold, lineHeight = 36.sp)
+        Text(
+            page.headline,
+            color = Color.White,
+            fontSize = 30.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 36.sp,
+            modifier = Modifier.recordingPrivacyCover(page.namesPayee)
+        )
         page.figure?.let {
             Text(it, color = StoryAccent, fontSize = 44.sp, fontWeight = FontWeight.Black, lineHeight = 50.sp)
         }
