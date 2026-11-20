@@ -228,8 +228,7 @@ private fun BudgetRow(status: BudgetStatus, onEdit: () -> Unit) {
                 "${formatKsh(status.spent)} of ${formatKsh(status.limit)}",
                 style = HomeType.label,
                 fontWeight = FontWeight.Bold,
-                color = Ink,
-                modifier = Modifier.recordingPrivacyCover()
+                color = Ink
             )
         }
         ProgressTrack(status.usedFraction, color)
@@ -259,8 +258,7 @@ private fun GoalRow(progress: GoalProgress, onEdit: () -> Unit) {
                 "${formatKsh(progress.saved)} of ${formatKsh(progress.goal.target)}",
                 style = HomeType.label,
                 fontWeight = FontWeight.Bold,
-                color = Ink,
-                modifier = Modifier.recordingPrivacyCover()
+                color = Ink
             )
         }
         ProgressTrack(progress.fraction, if (progress.done) Income else Accent)
@@ -288,8 +286,7 @@ internal fun CategoryChangesCard(changes: List<CategoryChange>) {
                     Text(
                         "${formatKsh(change.now)} · was ${formatKsh(change.before)}",
                         style = HomeType.caption,
-                        color = Mute,
-                        modifier = Modifier.recordingPrivacyCover()
+                        color = Mute
                     )
                 }
                 Text(
@@ -464,8 +461,14 @@ internal fun WatchingCard(changes: List<RegularChange>, trends: List<PriceTrend>
                 )
             }
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(line, style = HomeType.label, fontWeight = FontWeight.Bold, color = color)
-                Text(detail, style = HomeType.caption, color = Mute, modifier = Modifier.recordingPrivacyCover())
+                Text(
+                    line,
+                    style = HomeType.label,
+                    fontWeight = FontWeight.Bold,
+                    color = color,
+                    modifier = Modifier.recordingPrivacyCover()
+                )
+                Text(detail, style = HomeType.caption, color = Mute)
             }
         }
         if (changes.isNotEmpty() && trends.isNotEmpty()) HorizontalDivider(color = Canvas)
@@ -473,12 +476,11 @@ internal fun WatchingCard(changes: List<RegularChange>, trends: List<PriceTrend>
             val up = trend.percent > 0
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(trend.name, style = HomeType.label, color = Ink)
+                    Text(trend.name, style = HomeType.label, color = Ink, modifier = Modifier.recordingPrivacyCover())
                     Text(
                         "${formatKsh(trend.recentAverage)} a visit · was ${formatKsh(trend.earlierAverage)} since ${trend.since.format(MonthYear)}",
                         style = HomeType.caption,
-                        color = Mute,
-                        modifier = Modifier.recordingPrivacyCover()
+                        color = Mute
                     )
                 }
                 Text(
