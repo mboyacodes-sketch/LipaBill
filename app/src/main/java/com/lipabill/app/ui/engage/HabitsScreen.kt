@@ -116,7 +116,8 @@ fun HabitsScreen(
             else -> page = HabitsPage.HOME
         }
     }
-    val canStart = state.card?.kind != ChallengeCardKind.ACTIVE
+    // Start stays tappable even with an active challenge — startChallenge switches.
+    val canStart = true
     val startFromPage: (String) -> Unit = { templateId ->
         viewModel.startChallenge(templateId)
         page = HabitsPage.HOME
@@ -220,6 +221,7 @@ fun HabitsScreen(
                             HabitsPage.CHALLENGES -> ChallengesPage(
                                 habits = habits,
                                 canStart = canStart,
+                                hasActiveChallenge = state.card?.kind == ChallengeCardKind.ACTIVE,
                                 onStart = startFromPage,
                                 onStartDiy = { categoryId, days, capCents ->
                                     viewModel.startDiy(categoryId, days, capCents)

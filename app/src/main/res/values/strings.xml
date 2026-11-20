@@ -120,7 +120,7 @@
     <string name="pattern_airtime_body">%1$d top-ups in 30 days, about %2$s each. One bundle may cost less.</string>
     <string name="challenges_title">Challenges</string>
     <string name="challenges_suggested">Picked from your ledger</string>
-    <string name="challenges_busy">Finish or end the current challenge to start another.</string>
+    <string name="challenges_busy">You already have one running — Start switches to the new challenge.</string>
     <string name="challenges_filter_for_you">For you</string>
     <string name="challenges_filter_spend">Spend less</string>
     <string name="challenges_filter_fees">Fees</string>
@@ -137,6 +137,7 @@
     <string name="challenges_duo_you">You</string>
     <string name="challenges_duo_plus">+1</string>
     <string name="challenges_duo_share">Join me on a LipaBill challenge. We only share days kept — never amounts.</string>
+    <string name="challenges_duo_share_failed">Couldn’t open share. Try again from Messages or WhatsApp.</string>
     <string name="challenge_option_food">%1$d days without food delivery</string>
     <string name="challenge_option_fuliza">%1$d days without Fuliza</string>
     <string name="challenge_option_payee">%1$d days without %2$s</string>
