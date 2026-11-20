@@ -9,6 +9,7 @@ import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import com.lipabill.app.metrics.AppLog
+import com.google.mlkit.common.MlKitException
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -37,27 +38,59 @@ object ETicketAnalyzer {
 
     private const val TAG = "LipaBill.ETicket"
 
+    /**
+     * ML Kit models are unbundled: Play Services fetches them after install. Until then reads
+     * fail with UNAVAILABLE, which should not be reported as a blurry photo.
+     */
+    @Volatile
+    private var modelsUnavailable = false
+
+    private fun noteFailure(t: Throwable) {
+        if (t is MlKitException && t.errorCode == MlKitException.UNAVAILABLE) modelsUnavailable = true
+    }
+
     /** Text and barcodes read from a ticket file, before any parsing. */
     data class ExtractedTicket(
         val text: String,
         val barcodes: List<ETicketTextParser.FoundBarcode>,
         val stationHints: List<ETicketTextParser.StationHint>,
         /** Positioned lines: PDF text with font sizes, else OCR boxes (pages stacked). */
-        val lines: List<TextLine> = emptyList()
+        val lines: List<TextLine> = emptyList(),
+        /** The PDF's own text layer was usable (exact), rather than OCR alone. */
+        val fromPdfText: Boolean = false
     )
 
     suspend fun analyze(
         context: Context,
         uri: Uri,
-        kind: TicketDocumentKind = TicketDocumentKind.AUTO
-    ): TicketImport {
-        val read = extract(context, uri, kind)
+        kind: TicketDocumentKind = TicketDocumentKind.AUTO,
+        /** Stored MIME when [uri] is a decrypted cache file without a content type. */
+        mimeType: String? = null
+    ): TicketImport = analyzeDetailed(context, uri, kind, mimeType).draft
+
+    /** A parsed draft plus the raw read behind it, so review can weigh each field. */
+    data class AnalyzedTicket(
+        val draft: TicketImport,
+        val read: ExtractedTicket
+    ) {
+        /** The draft's code was decoded from a pixel, not typed out in the text. */
+        val codeFromPixels: Boolean
+            get() = read.barcodes.any { it.value == draft.barcodeValue }
+    }
+
+    suspend fun analyzeDetailed(
+        context: Context,
+        uri: Uri,
+        kind: TicketDocumentKind = TicketDocumentKind.AUTO,
+        mimeType: String? = null
+    ): AnalyzedTicket {
+        val read = extract(context, uri, kind, mimeType)
         try {
             val draft = ETicketTextParser.parse(read.text, read.barcodes, read.stationHints, kind, read.lines)
             // Carry the real symbology + encoding of the code the draft points at.
             val source = read.barcodes.firstOrNull { it.value == draft.barcodeValue }
-                ?: return draft
-            return draft.copy(barcodeFormat = source.format, barcodeSpec = source.spec)
+                ?: return AnalyzedTicket(draft, read)
+            return AnalyzedTicket(draft.copy(barcodeFormat = source.format, barcodeSpec = source.spec), read)
         } catch (t: IllegalArgumentException) {
             val msg = t.message.orEmpty()
             if (msg.contains("scannable code", ignoreCase = true) && read.text.length > 40) {
@@ -74,20 +107,24 @@ object ETicketAnalyzer {
     suspend fun extract(
         context: Context,
         uri: Uri,
-        kind: TicketDocumentKind = TicketDocumentKind.AUTO
+        kind: TicketDocumentKind = TicketDocumentKind.AUTO,
+        /** Prefer this when [uri] is `file://` (contentResolver often has no type). */
+        mimeType: String? = null
     ): ExtractedTicket = withContext(Dispatchers.IO) {
-        val mime = context.contentResolver.getType(uri)?.lowercase().orEmpty()
+        val mime = mimeType?.lowercase()?.takeIf { it.isNotBlank() }
+            ?: context.contentResolver.getType(uri)?.lowercase().orEmpty()
         val name = displayName(context, uri).orEmpty()
         val isPdf = mime == "application/pdf" ||
             name.endsWith(".pdf", ignoreCase = true) ||
             mime == "application/octet-stream" && name.contains("pdf", ignoreCase = true)
 
+        modelsUnavailable = false
         val pdfRead = if (isPdf) extractPdfText(context, uri) else PdfRead("", emptyList())
         val pdfText = pdfRead.text
         // Lengths / kind only — never log file names (can embed passenger or PNR text).
         AppLog.d(TAG, "kind=$kind pdfTextChars=${pdfText.length} mime=$mime")
 
-        val bitmaps = loadBitmaps(context, uri, preferPdf = isPdf)
+        val bitmaps = loadBitmaps(context, uri, preferPdf = isPdf, mimeHint = mime)
         if (bitmaps.isEmpty() && pdfText.length < 40) {
             throw IllegalArgumentException(
                 "Couldn’t open that file. Use a PDF or a clear photo of the ticket."
@@ -157,12 +194,17 @@ object ETicketAnalyzer {
             )
             if (combined.length < 20 && barcodes.isEmpty()) {
                 throw IllegalArgumentException(
-                    "Couldn’t read text from that file. Try a clearer photo or PDF export."
+                    if (modelsUnavailable) {
+                        "The ticket reader is still being set up on this phone. Connect to the " +
+                            "internet once, then try again. PDF tickets with text work now."
+                    } else {
+                        "Couldn’t read text from that file. Try a clearer photo or PDF export."
+                    }
                 )
             }
             // PDF text layer is exact; fall back to OCR boxes for photos / scanned PDFs.
             val lines = pdfRead.lines.takeIf { pdfText.length >= 40 && it.isNotEmpty() } ?: ocrLines
-            ExtractedTicket(combined, barcodes, stationHints, lines)
+            ExtractedTicket(combined, barcodes, stationHints, lines, fromPdfText = pdfText.length >= 40)
         } finally {
             bitmaps.forEach { it.recycle() }
         }
@@ -194,8 +236,15 @@ object ETicketAnalyzer {
         }
     }
 
-    private fun loadBitmaps(context: Context, uri: Uri, preferPdf: Boolean): List<Bitmap> {
-        val mime = context.contentResolver.getType(uri)?.lowercase().orEmpty()
+    private fun loadBitmaps(
+        context: Context,
+        uri: Uri,
+        preferPdf: Boolean,
+        mimeHint: String = ""
+    ): List<Bitmap> {
+        val mime = mimeHint.ifBlank {
+            context.contentResolver.getType(uri)?.lowercase().orEmpty()
+        }
         val name = displayName(context, uri)?.lowercase().orEmpty()
         return when {
             preferPdf || mime == "application/pdf" || name.endsWith(".pdf") ->
@@ -203,7 +252,7 @@ object ETicketAnalyzer {
             mime.startsWith("image/") ||
                 name.endsWith(".jpg") || name.endsWith(".jpeg") ||
                 name.endsWith(".png") || name.endsWith(".webp") ||
-                name.endsWith(".heic") -> listOfNotNull(decodeImage(context, uri))
+                name.endsWith(".heic") || name.endsWith(".img") -> listOfNotNull(decodeImage(context, uri))
             else -> {
                 decodeImage(context, uri)?.let { listOf(it) }
                     ?: renderPdf(context, uri)
@@ -369,6 +418,7 @@ object ETicketAnalyzer {
             }
         } catch (t: Throwable) {
             AppLog.w(TAG, "barcode_fail", t)
+            noteFailure(t)
             emptyList()
         } finally {
             scanner.close()
@@ -453,6 +503,7 @@ object ETicketAnalyzer {
             OcrResult(result.text.orEmpty(), hints, lines)
         } catch (t: Throwable) {
             AppLog.w(TAG, "ocr_fail", t)
+            noteFailure(t)
             OcrResult("", emptyList())
         } finally {
             recognizer.close()

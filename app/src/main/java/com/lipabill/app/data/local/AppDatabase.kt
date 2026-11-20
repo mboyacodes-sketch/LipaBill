@@ -11,15 +11,21 @@ import androidx.room.TypeConverters
 import androidx.security.crypto.EncryptedFile
 import androidx.security.crypto.MasterKey
 import com.lipabill.app.data.local.dao.ChallengeDao
+import com.lipabill.app.data.local.dao.ContextDao
 import com.lipabill.app.data.local.dao.MerchantDao
+import com.lipabill.app.data.local.dao.PassDocumentDao
 import com.lipabill.app.data.local.dao.RepeatAttemptDao
 import com.lipabill.app.data.local.dao.TicketDao
 import com.lipabill.app.data.local.dao.TransactionDao
 import com.lipabill.app.data.local.entity.ChallengeAchievementEntity
 import com.lipabill.app.data.local.entity.ChallengeEntity
 import com.lipabill.app.data.local.entity.CheckInStreakEntity
+import com.lipabill.app.data.local.entity.ContextEventEntity
+import com.lipabill.app.data.local.entity.DocumentExtractionEntity
 import com.lipabill.app.data.local.entity.MerchantEntity
+import com.lipabill.app.data.local.entity.PassDocumentEntity
 import com.lipabill.app.data.local.entity.PendingMerchantPaymentEntity
+import com.lipabill.app.data.local.entity.ReminderEntity
 import com.lipabill.app.data.local.entity.RepeatAttemptEntity
 import com.lipabill.app.data.local.entity.TicketEntity
 import com.lipabill.app.data.local.entity.TransactionEntity
@@ -38,9 +44,13 @@ import java.security.SecureRandom
         ChallengeEntity::class,
         ChallengeAchievementEntity::class,
         WeeklyCheckInEntity::class,
-        CheckInStreakEntity::class
+        CheckInStreakEntity::class,
+        PassDocumentEntity::class,
+        DocumentExtractionEntity::class,
+        ContextEventEntity::class,
+        ReminderEntity::class
     ],
-    version = 15,
+    version = 17,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -50,6 +60,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun merchantDao(): MerchantDao
     abstract fun ticketDao(): TicketDao
     abstract fun challengeDao(): ChallengeDao
+    abstract fun passDocumentDao(): PassDocumentDao
+    abstract fun contextDao(): ContextDao
 
     companion object {
         private const val TAG = "LipaBill.Db"

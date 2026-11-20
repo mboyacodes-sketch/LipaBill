@@ -11,6 +11,7 @@ import com.lipabill.app.data.model.defaultLedgerSources
 import com.lipabill.app.data.model.parseStoredSources
 import com.lipabill.app.data.model.resolvedLedgerSources
 import com.lipabill.app.data.model.serializeLedgerSources
+import com.lipabill.app.data.tickets.PassReminderLeadTimes
 import com.lipabill.app.pay.PayLink
 import com.lipabill.app.social.SocialLink
 import com.lipabill.app.ui.privacy.RecordingCapture
@@ -203,6 +204,15 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_FIRST_RUN_SETUP_DONE, false)
         set(value) = prefs.edit().putBoolean(KEY_FIRST_RUN_SETUP_DONE, value).apply()
 
+    /**
+     * Debug / sideload only. When true, first-run stays incomplete across process
+     * death so Settings → Replay setup wizard is not skipped by the existing-install
+     * migration. Cleared when the wizard finishes.
+     */
+    var replayFirstRunPending: Boolean
+        get() = prefs.getBoolean(KEY_REPLAY_FIRST_RUN_PENDING, false)
+        set(value) = prefs.edit().putBoolean(KEY_REPLAY_FIRST_RUN_PENDING, value).apply()
+
     /** When true, non-confirmation SMS rows have been purged from Room. */
     var confirmationFilterPurgeDone: Boolean
         get() = prefs.getBoolean(KEY_CONFIRMATION_PURGE_DONE, false)
@@ -307,6 +317,29 @@ class SecurePreferences(context: Context) {
     var darkMode: Boolean
         get() = prefs.getBoolean(KEY_DARK_MODE, false)
         set(value) = prefs.edit().putBoolean(KEY_DARK_MODE, value).apply()
+
+    /**
+     * When pass reminders fire. `-1` turns that slot off.
+     * Defaults: evening before at 18:00, 24 hours ahead, morning at 08:00.
+     */
+    var passReminderLeadTimes: PassReminderLeadTimes
+        get() {
+            val day = prefs.getInt(KEY_PASS_REMINDER_DAY_BEFORE_HOUR, 18)
+            val hours = prefs.getInt(KEY_PASS_REMINDER_HOURS_BEFORE, 24)
+            val morning = prefs.getInt(KEY_PASS_REMINDER_MORNING_HOUR, 8)
+            return PassReminderLeadTimes(
+                dayBeforeHour = if (day == -1 || day in 0..23) day else 18,
+                hoursBefore = if (hours == -1 || hours in setOf(12, 24, 48)) hours else 24,
+                morningHour = if (morning == -1 || morning in 5..11) morning else 8
+            )
+        }
+        set(value) {
+            prefs.edit()
+                .putInt(KEY_PASS_REMINDER_DAY_BEFORE_HOUR, value.dayBeforeHour)
+                .putInt(KEY_PASS_REMINDER_HOURS_BEFORE, value.hoursBefore)
+                .putInt(KEY_PASS_REMINDER_MORNING_HOUR, value.morningHour)
+                .apply()
+        }
 
 
     /**
@@ -532,6 +565,9 @@ class SecurePreferences(context: Context) {
         private const val KEY_BANK_DIRECTION_REPAIR_DONE = "bank_direction_repair_v2"
         private const val KEY_BANK_DETAIL_REPAIR_DONE = "bank_detail_repair_v1"
         private const val KEY_DARK_MODE = "dark_mode"
+        private const val KEY_PASS_REMINDER_DAY_BEFORE_HOUR = "pass_reminder_day_before_hour"
+        private const val KEY_PASS_REMINDER_HOURS_BEFORE = "pass_reminder_hours_before"
+        private const val KEY_PASS_REMINDER_MORNING_HOUR = "pass_reminder_morning_hour"
         private const val KEY_ESSENTIAL_PAYEES = "essential_payees"
         private const val KEY_WATCHED_PAYEES = "watched_payees"
         private const val KEY_EARNED_BADGES = "earned_badges"
@@ -558,6 +594,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_RECORDING_PRIVACY = "recording_privacy"
         private const val KEY_HIBERNATION_PROMPT_SHOWN = "hibernation_prompt_shown"
         private const val KEY_FIRST_RUN_SETUP_DONE = "first_run_setup_done"
+        private const val KEY_REPLAY_FIRST_RUN_PENDING = "replay_first_run_pending"
         private const val KEY_APP_REGION = "app_region"
         private const val KEY_ENABLED_SOURCES = "enabled_ledger_sources_v1"
         private const val KEY_LEDGER_RAILS_WIDENED = "ledger_rails_widened_v1"

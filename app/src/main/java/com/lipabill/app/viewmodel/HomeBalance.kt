@@ -23,18 +23,23 @@ internal fun balanceWalletChoices(
 
 /**
  * Whose balance the pill shows. Pill pick wins (independent of history chips); then the
- * active dial wallet while it is still a choice; then the first enabled MNO / primary.
+ * active dial wallet while it is still a choice; then the first SIM-linked wallet.
+ * When nothing is dialable yet, prefer an enabled wallet (waiting for its SIM), else a
+ * bank from [enabled] — never invent M-Pesa for a bank-only picture.
  */
 internal fun resolveBalanceSource(
     active: MoneySource?,
     choices: List<MoneySource>,
     pillPick: MoneySource?,
-    primary: MoneySource
-): MoneySource =
+    primary: MoneySource,
+    enabled: Set<MoneySource>
+): MoneySource? =
     pillPick?.takeIf { it in choices }
         ?: active?.takeIf { it in choices }
         ?: choices.firstOrNull()
-        ?: primary
+        ?: primary.takeIf { it in enabled }
+        ?: enabled.firstOrNull { it.isWallet }
+        ?: enabled.sortedBy { it.label }.firstOrNull()
 
 /**
  * Balance a Send/Pay/Repeat sheet shows: the wallet it will dial, never another SIM's figure.
@@ -68,11 +73,15 @@ data class WalletCardUi(
 internal fun walletCards(
     region: AppRegion,
     choices: List<MoneySource>,
-    shown: MoneySource,
+    shown: MoneySource?,
     lines: List<SimLine>,
     balances: Map<MoneySource, Double>
 ): List<WalletCardUi> {
-    val sources = if (shown in choices) choices else listOf(shown)
+    val sources = when {
+        shown != null && shown in choices -> choices
+        shown != null -> listOf(shown)
+        else -> choices
+    }
     return sources.map { source ->
         val line = lines.firstOrNull { LineGatedSources.sourceFor(region, it) == source }
         WalletCardUi(

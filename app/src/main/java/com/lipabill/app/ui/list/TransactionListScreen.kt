@@ -500,7 +500,8 @@ fun TransactionListScreen(
                                     onAccountSelected = viewModel::setWalletAccount,
                                     onOpenProfile = onOpenProfile,
                                     showFuliza = state.showFuliza,
-                                    walletPick = walletPick
+                                    walletPick = walletPick,
+                                    showWalletCard = state.showSendPay
                                 )
                                 HomeSourceFilter(
                                     account = state.account,
@@ -529,6 +530,7 @@ fun TransactionListScreen(
                             onOpenProfile = onOpenProfile,
                             showFuliza = state.showFuliza,
                             walletPick = walletPick,
+                            showWalletCard = state.showSendPay,
                             modifier = Modifier.padding(horizontal = pageMargin)
                         )
                         HomeSourceFilter(
@@ -706,6 +708,7 @@ private fun HomeExpandedPane(
                 onOpenProfile = onOpenProfile,
                 showFuliza = showFuliza,
                 walletPick = walletPick,
+                showWalletCard = showSendPay,
                 modifier = Modifier.padding(horizontal = pageMargin)
             )
             HomeSourceFilter(
@@ -891,7 +894,7 @@ private data class BalanceWalletPick(
     val onSelect: (MoneySource) -> Unit = {}
 )
 
-/** The wallet card deck with the safe-to-spend line under it. */
+/** The wallet card deck with the safe-to-spend line under it. MNO-only for now. */
 @Composable
 private fun BalanceSection(
     balance: Double?,
@@ -901,8 +904,11 @@ private fun BalanceSection(
     modifier: Modifier = Modifier,
     showFuliza: Boolean = true,
     fulizaDue: LocalDate? = null,
-    walletPick: BalanceWalletPick = BalanceWalletPick()
+    walletPick: BalanceWalletPick = BalanceWalletPick(),
+    /** False when Ledger has no dialable MNO — hide the card until Send/Pay can link. */
+    showWalletCard: Boolean = true
 ) {
+    if (!showWalletCard) return
     Column(modifier = modifier) {
         WalletDeck(balance, account, onAccountSelected, onOpenProfile, Modifier, showFuliza, fulizaDue, walletPick)
         SafeToSpendLine(

@@ -59,6 +59,25 @@ class PassReminderPlanTest {
         assertEquals(emptyList<PlannedPassReminder>(), planPassReminders(start, now, nairobi))
     }
 
+    @Test
+    fun lead_times_can_turn_slots_off_or_shift_them() {
+        val now = at(2026, 10, 10, 12, 0)
+        val start = at(2026, 10, 12, 19, 30)
+        val planned = planPassReminders(
+            start,
+            now,
+            nairobi,
+            PassReminderLeadTimes(dayBeforeHour = -1, hoursBefore = 12, morningHour = 6)
+        )
+        assertEquals(
+            listOf(
+                PassReminderKind.MORNING_OF to at(2026, 10, 12, 6, 0),
+                PassReminderKind.HOURS_24 to at(2026, 10, 12, 7, 30)
+            ),
+            planned.map { it.kind to it.atMillis }
+        )
+    }
+
     private fun at(year: Int, month: Int, day: Int, hour: Int, minute: Int): Long =
         LocalDateTime.of(year, month, day, hour, minute).atZone(nairobi).toInstant().toEpochMilli()
 }

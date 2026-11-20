@@ -1,10 +1,18 @@
 package com.lipabill.app.ui.tickets
 
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,7 +49,14 @@ import com.lipabill.app.data.model.firstNotesValue
 import com.lipabill.app.data.model.notesValue
 import com.lipabill.app.data.model.withNotesValue
 import com.lipabill.app.data.tickets.EventPresets
+import com.lipabill.app.data.tickets.TicketDocumentKind
 import com.lipabill.app.data.tickets.TicketImport
+import com.lipabill.app.data.tickets.intelligence.ExtractedField
+import com.lipabill.app.data.tickets.intelligence.ExtractionSource
+import com.lipabill.app.data.tickets.intelligence.PassExtraction
+import com.lipabill.app.data.tickets.intelligence.PassField
+import com.lipabill.app.data.tickets.intelligence.PassKind
+import com.lipabill.app.data.tickets.intelligence.PassValidator
 import com.lipabill.app.ui.LipaChoiceChip
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.theme.Expense
@@ -59,13 +74,34 @@ import com.lipabill.app.ui.util.formatEventSchedule
  * known upcoming event ([EventPresets]) gets that event's blanks filled in, and a one-tap chip
  * does the same for a QR-only ticket.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TicketReviewDialog(
     draft: TicketImport,
-    onSave: (TicketImport) -> Unit,
-    onCancel: () -> Unit
+    onSave: (TicketImport, TicketDocumentKind) -> Unit,
+    onCancel: () -> Unit,
+    /** How each field was read; flags the ones worth a second look. */
+    extraction: PassExtraction? = null,
+    /** Kind chosen when adding; overridden when classification asks the user. */
+    initialKind: TicketDocumentKind = TicketDocumentKind.EVENT,
+    /** Draws the original file small, so fields can be checked against it. */
+    loadPreview: (suspend () -> Bitmap?)? = null
 ) {
+    val preview by produceState<Bitmap?>(null, draft) { value = loadPreview?.invoke() }
     val context = LocalContext.current
+    val guessedKind = when (extraction?.classification?.kind) {
+        PassKind.RAIL -> TicketDocumentKind.SGR_TICKET
+        else -> TicketDocumentKind.EVENT
+    }
+    var confirmedKind by remember(initialKind, guessedKind) {
+        mutableStateOf(
+            when {
+                initialKind == TicketDocumentKind.EVENT ||
+                    initialKind == TicketDocumentKind.SGR_TICKET -> initialKind
+                else -> guessedKind
+            }
+        )
+    }
     // Recognised event: fill its blanks up front; printed values on the ticket stay.
     val recognised = remember { EventPresets.match(draft.title, draft.venue, draft.notes) }
     val prefilled = remember { recognised?.let { EventPresets.applyTo(draft, it) } ?: draft }
@@ -76,6 +112,7 @@ fun TicketReviewDialog(
     var tier by remember { mutableStateOf(draft.notes.firstNotesValue("Tier").orEmpty()) }
     var guest by remember { mutableStateOf(draft.notes.firstNotesValue("Guest", "Attendee", "Name").orEmpty()) }
     val hasCode = draft.barcodeValue.isNotBlank()
+    val needsKindPick = extraction?.classification?.needsUserConfirmation == true
     // Sparse rule: code + date + (name or venue). Gate, seat and tier are optional.
     val canSave = hasCode && startsAt != null && (title.isNotBlank() || venue.isNotBlank())
 
@@ -120,6 +157,20 @@ fun TicketReviewDialog(
                     color = Mute,
                     fontSize = 13.sp
                 )
+                preview?.let { bitmap ->
+                    // The original carries the entry code and the holder's name.
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Your original ticket",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 180.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Hairline)
+                            .recordingPrivacyCover(true)
+                    )
+                }
                 val presets = EventPresets.upcoming()
                 if (presets.isNotEmpty() && (title.isBlank() || venue.isBlank() || startsAt == null)) {
                     Text("Quick fill", color = Mute, fontSize = 12.sp)
@@ -144,8 +195,40 @@ fun TicketReviewDialog(
                         fontSize = 12.sp
                     )
                 }
-                ReviewField("Event", title, required = venue.isBlank(), onChange = { title = it })
-                ReviewField("Venue", venue, required = title.isBlank(), onChange = { venue = it })
+                if (needsKindPick) {
+                    Text(
+                        "What kind of pass is this?",
+                        color = Expense,
+                        fontSize = 12.sp
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        LipaChoiceChip(
+                            label = "Event",
+                            selected = confirmedKind == TicketDocumentKind.EVENT,
+                            onClick = { confirmedKind = TicketDocumentKind.EVENT }
+                        )
+                        LipaChoiceChip(
+                            label = "SGR",
+                            selected = confirmedKind == TicketDocumentKind.SGR_TICKET,
+                            onClick = { confirmedKind = TicketDocumentKind.SGR_TICKET }
+                        )
+                    }
+                }
+                fun check(field: PassField, current: String, original: String?) =
+                    extraction?.needsReview(field) == true && current == original.orEmpty()
+                ReviewField(
+                    "Event", title, required = venue.isBlank(),
+                    check = check(PassField.TITLE, title, extraction?.fields?.get(PassField.TITLE)?.value),
+                    onChange = { title = it }
+                )
+                ReviewField(
+                    "Venue", venue, required = title.isBlank(),
+                    check = check(PassField.VENUE, venue, draft.venue),
+                    onChange = { venue = it }
+                )
                 DateRow(
                     startsAt = startsAt,
                     notes = draft.notes,
@@ -155,11 +238,20 @@ fun TicketReviewDialog(
                 )
                 ReviewField("Ticket type", tier, required = false, onChange = { tier = it })
                 ReviewField("Guest", guest, required = false, private = true, onChange = { guest = it })
-                CodeRow(hasCode)
+                CodeRow(hasCode, extraction?.fields?.get(PassField.BARCODE))
+                // Non-blocking checks (date in the past, end before start, code still pending).
+                val validateKind = if (confirmedKind == TicketDocumentKind.SGR_TICKET) {
+                    PassKind.RAIL
+                } else {
+                    PassKind.EVENT
+                }
+                PassValidator.validate(build(), validateKind)
+                    .filterNot { it.blocking }
+                    .forEach { issue -> Text(issue.message, color = Expense, fontSize = 12.sp) }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(build()) }, enabled = canSave) {
+            TextButton(onClick = { onSave(build(), confirmedKind) }, enabled = canSave) {
                 Text("Save pass", fontFamily = GeometricSansFamily)
             }
         },
@@ -175,6 +267,8 @@ private fun ReviewField(
     value: String,
     required: Boolean,
     private: Boolean = false,
+    /** Read with low confidence and not yet edited. */
+    check: Boolean = false,
     onChange: (String) -> Unit
 ) {
     val missing = value.isBlank()
@@ -184,15 +278,19 @@ private fun ReviewField(
         label = { Text(if (required) "$label (required)" else label) },
         singleLine = true,
         isError = required && missing,
-        supportingText = if (missing) {
-            {
-                Text(
-                    if (required) "Not found on the ticket. Please add it." else "Not found on the ticket.",
-                    color = if (required) Expense else Mute
-                )
+        supportingText = when {
+            missing -> {
+                {
+                    Text(
+                        if (required) "Not found on the ticket. Please add it." else "Not found on the ticket.",
+                        color = if (required) Expense else Mute
+                    )
+                }
             }
-        } else {
-            null
+            check -> {
+                { Text("Hard to read on the ticket. Check it.", color = Expense) }
+            }
+            else -> null
         },
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
         modifier = Modifier
@@ -240,7 +338,10 @@ private fun DateRow(startsAt: Long?, notes: String?, onPick: () -> Unit) {
 }
 
 @Composable
-private fun CodeRow(hasCode: Boolean) {
+private fun CodeRow(hasCode: Boolean, code: ExtractedField? = null) {
+    // Never show the code itself here: it is the ticket. Say only how sure the read is.
+    val typedOut = hasCode && code != null && code.source != ExtractionSource.BARCODE &&
+        code.source != ExtractionSource.WALLET_PASS
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
             if (hasCode) Icons.Outlined.CheckCircle else Icons.Outlined.ErrorOutline,
@@ -250,7 +351,11 @@ private fun CodeRow(hasCode: Boolean) {
         )
         Spacer(modifier = Modifier.width(10.dp))
         Text(
-            if (hasCode) "Entry code found" else "No entry code found on this ticket",
+            when {
+                !hasCode -> "No entry code found on this ticket"
+                typedOut -> "Entry code read from the printed text. Check it on the pass after saving."
+                else -> "Entry code found"
+            },
             color = if (hasCode) Ink else Expense,
             fontSize = 13.sp
         )
