@@ -508,8 +508,7 @@ private fun PassCard(model: EventPassModel, qrBitmap: ImageBitmap?, isUsed: Bool
                 fontSize = 23.sp,
                 lineHeight = 27.sp,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.recordingPrivacyCover()
+                overflow = TextOverflow.Ellipsis
             )
             model.venue?.let { venue ->
                 Spacer(modifier = Modifier.height(4.dp))
@@ -521,7 +520,6 @@ private fun PassCard(model: EventPassModel, qrBitmap: ImageBitmap?, isUsed: Bool
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
-                        .recordingPrivacyCover()
                         .then(
                             if (model.mapsQuery != null) {
                                 Modifier.clickable(onClickLabel = "Open in Maps") {
@@ -962,8 +960,8 @@ internal fun Ticket.toEventPassModel(home: AppRegion = AppRegion.DEFAULT): Event
         doors?.takeIf { it != schedule.time }?.let { add(PassField("Doors", it)) }
         tier?.let { add(PassField("Zone", it)) }
         attendee?.let { add(PassField("Guest", shortName(it), private = true)) }
-        gate?.let { add(PassField("Gate", it, private = true)) }
-        section?.let { add(PassField("Section", it, private = true)) }
+        gate?.let { add(PassField("Gate", it)) }
+        section?.let { add(PassField("Section", it)) }
         row?.let { add(PassField("Row", it, private = true)) }
         seat?.let { add(PassField("Seat", it, private = true)) }
         price?.let { add(PassField("Paid", it)) }
