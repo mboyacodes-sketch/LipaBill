@@ -30,6 +30,7 @@ class MpesaSmsReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 var matched = false
+                var handledFailure = false
                 messages.forEach { sms ->
                     when (
                         val outcome = ConfirmationIngestion.acceptOutcome(
@@ -46,7 +47,18 @@ class MpesaSmsReceiver : BroadcastReceiver() {
                             AppMetrics.smsIngest("matched")
                             app.repository.upsert(outcome.tx)
                         }
-                        ConfirmationIngestion.Outcome.Skipped -> Unit
+                        ConfirmationIngestion.Outcome.Skipped -> {
+                            val body = sms.messageBody.orEmpty()
+                            if (FailureSms.isFailure(body) &&
+                                app.repository.handlePaymentFailure(
+                                    address = sms.displayOriginatingAddress.orEmpty(),
+                                    body = body,
+                                    timestampMillis = sms.timestampMillis
+                                )
+                            ) {
+                                handledFailure = true
+                            }
+                        }
                         is ConfirmationIngestion.Outcome.ParseFailed -> {
                             // Format quirks are common — analytics only, no Crashlytics flood.
                             AppMetrics.smsIngest("parse_error")
@@ -55,6 +67,8 @@ class MpesaSmsReceiver : BroadcastReceiver() {
                 }
                 if (matched) {
                     app.repository.linkPhonesByName()
+                }
+                if (matched || handledFailure) {
                     app.smsInboxSyncWatcher.syncQuietNow()
                 }
             } catch (error: Exception) {
