@@ -9,6 +9,18 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import com.lipabill.app.data.tickets.intelligence.DuplicateBookingRefRule
+import com.lipabill.app.data.tickets.intelligence.OverlappingEventsRule
+import com.lipabill.app.data.tickets.intelligence.TodayStage
+import com.lipabill.app.data.tickets.intelligence.TodayStages
+import com.lipabill.app.data.tickets.intelligence.TodayStatus
+import com.lipabill.app.ui.theme.LipaPalette
+import com.lipabill.app.ui.theme.LocalLipaColors
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -311,28 +323,32 @@ fun TicketsScreen(
         } else {
             var category by remember { mutableStateOf<PassCategory?>(null) }
             val zone = remember { ZoneId.systemDefault() }
-            val today = remember { LocalDate.now(zone) }
+            // Ticks so the Today pill ("Starts in 25 min") and its stage stay current.
+            val now by produceState(System.currentTimeMillis()) {
+                while (true) {
+                    delay(30_000L)
+                    value = System.currentTimeMillis()
+                }
+            }
+            val minute = now / 60_000L
+            // "Keep" on a finished card folds it into Also today for the rest of the visit.
+            var kept by remember { mutableStateOf(emptySet<Long>()) }
             val counts = PassCategory.entries.associateWith { cat ->
                 visibleTickets.count { it.passCategory() == cat }
             }
             LaunchedEffect(counts) {
                 if (category != null && (counts[category] ?: 0) == 0) category = null
             }
-            val entries = remember(visibleTickets, category, today) {
-                buildPassList(visibleTickets, category, zone, today)
-            }
-            val upcomingCount = visibleTickets.count {
-                it.effectiveStatus() != TicketStatus.USED
-            }
-            val todayCount = visibleTickets.count {
-                it.isOnDay(zone, today) && it.effectiveStatus() != TicketStatus.USED
-            }
-            val usedCount = visibleTickets.size - upcomingCount
-            // Due soon, past due, overlaps and twin bookings — news the list itself can't show.
+            // Overlaps and twin bookings — news the list itself can't show.
             val notices = remember(visibleTickets) {
-                evaluateContextRules(visibleTickets, System.currentTimeMillis())
-                    .distinctBy { it.ruleId to it.ticketIds.toSet() }
-                    .take(3)
+                evaluateContextRules(
+                    visibleTickets,
+                    System.currentTimeMillis(),
+                    rules = listOf(OverlappingEventsRule, DuplicateBookingRefRule)
+                ).distinctBy { it.ruleId to it.ticketIds.toSet() }.take(2)
+            }
+            val entries = remember(visibleTickets, category, minute, kept, notices) {
+                buildPassList(visibleTickets, category, zone, now, kept, hasNotices = notices.isNotEmpty())
             }
             val window = LocalWindowForm.current.width
             val columns = when (window) {
@@ -341,73 +357,79 @@ fun TicketsScreen(
                 WindowWidth.Expanded -> GridCells.Adaptive(400.dp)
             }
             val sidePad = if (window == WindowWidth.Compact) Space.page else 24.dp
-            Column(
+            LazyVerticalGrid(
+                columns = columns,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
+                    .padding(padding),
+                contentPadding = PaddingValues(
+                    start = sidePad,
+                    end = sidePad,
+                    top = Space.gap,
+                    bottom = 88.dp
+                ),
+                horizontalArrangement = Arrangement.spacedBy(Space.block),
+                verticalArrangement = Arrangement.spacedBy(Space.block)
             ) {
-                PassStoryStrip(
-                    todayCount = todayCount,
-                    upcomingCount = upcomingCount,
-                    usedCount = usedCount,
-                    modifier = Modifier.padding(horizontal = sidePad, vertical = Space.gap)
-                )
-                notices.forEach { finding ->
-                    PassFindingNotice(
-                        finding = finding,
-                        onOpen = { finding.ticketIds.firstOrNull()?.let(onOpenTicket) },
-                        modifier = Modifier.padding(horizontal = sidePad, vertical = Space.tight)
-                    )
-                }
-                PassCategoryChips(
-                    selected = category,
-                    counts = counts,
-                    onSelect = { category = it },
-                    modifier = Modifier.padding(horizontal = sidePad, vertical = Space.gap)
-                )
-                LazyVerticalGrid(
-                    columns = columns,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(
-                        start = sidePad,
-                        end = sidePad,
-                        bottom = 88.dp
-                    ),
-                    horizontalArrangement = Arrangement.spacedBy(Space.block),
-                    verticalArrangement = Arrangement.spacedBy(Space.block)
-                ) {
-                    items(
-                        items = entries,
-                        key = { it.key },
-                        span = { entry ->
-                            if (entry is PassListItem.Pass) {
-                                GridItemSpan(1)
-                            } else {
-                                GridItemSpan(maxLineSpan)
+                items(
+                    items = entries,
+                    key = { it.key },
+                    span = { entry ->
+                        if (entry is PassListItem.Pass) GridItemSpan(1) else GridItemSpan(maxLineSpan)
+                    }
+                ) { entry ->
+                    when (entry) {
+                        is PassListItem.Section -> PassSectionHeader(
+                            title = entry.title,
+                            trailing = entry.trailing
+                        )
+                        is PassListItem.TodayHero -> PassSwipeToDelete(
+                            onRequestDelete = { pendingDeleteId = entry.ticket.id }
+                        ) {
+                            TodayPassHero(
+                                ticket = entry.ticket,
+                                status = entry.status,
+                                onOpen = { onOpenTicket(entry.ticket.id) },
+                                onMarkUsed = { viewModel.markUsed(entry.ticket.id) },
+                                onKeep = { kept = kept + entry.ticket.id }
+                            )
+                        }
+                        is PassListItem.AlsoToday -> PassSwipeToDelete(
+                            onRequestDelete = { pendingDeleteId = entry.ticket.id }
+                        ) {
+                            AlsoTodayRow(
+                                ticket = entry.ticket,
+                                status = entry.status,
+                                onClick = { onOpenTicket(entry.ticket.id) }
+                            )
+                        }
+                        is PassListItem.NextUp -> NextUpCard(
+                            ticket = entry.ticket,
+                            nowMillis = now,
+                            zone = zone,
+                            onClick = { onOpenTicket(entry.ticket.id) }
+                        )
+                        PassListItem.Notices -> Column(verticalArrangement = Arrangement.spacedBy(Space.tight)) {
+                            notices.forEach { finding ->
+                                PassFindingNotice(
+                                    finding = finding,
+                                    onOpen = { finding.ticketIds.firstOrNull()?.let(onOpenTicket) }
+                                )
                             }
                         }
-                    ) { entry ->
-                        when (entry) {
-                            is PassListItem.Section -> PassSectionHeader(
-                                title = entry.title,
-                                count = entry.count
+                        PassListItem.Filters -> PassCategoryChips(
+                            selected = category,
+                            counts = counts,
+                            onSelect = { category = it },
+                            modifier = Modifier.padding(top = Space.gap)
+                        )
+                        is PassListItem.Pass -> PassSwipeToDelete(
+                            onRequestDelete = { pendingDeleteId = entry.ticket.id }
+                        ) {
+                            TicketListRow(
+                                ticket = entry.ticket,
+                                onClick = { onOpenTicket(entry.ticket.id) }
                             )
-                            is PassListItem.TodayHero -> PassSwipeToDelete(
-                                onRequestDelete = { pendingDeleteId = entry.ticket.id }
-                            ) {
-                                TodayPassCard(
-                                    ticket = entry.ticket,
-                                    onClick = { onOpenTicket(entry.ticket.id) }
-                                )
-                            }
-                            is PassListItem.Pass -> PassSwipeToDelete(
-                                onRequestDelete = { pendingDeleteId = entry.ticket.id }
-                            ) {
-                                TicketListRow(
-                                    ticket = entry.ticket,
-                                    onClick = { onOpenTicket(entry.ticket.id) }
-                                )
-                            }
                         }
                     }
                 }
@@ -653,49 +675,6 @@ private fun PassPathCard(
 }
 
 @Composable
-private fun PassStoryStrip(
-    todayCount: Int,
-    upcomingCount: Int,
-    usedCount: Int,
-    modifier: Modifier = Modifier
-) {
-    val icon = when {
-        todayCount > 0 -> Icons.Outlined.CalendarMonth
-        upcomingCount > 0 -> Icons.Outlined.ConfirmationNumber
-        else -> Icons.Outlined.Check
-    }
-    val title = when {
-        todayCount > 0 -> "Today is the day"
-        upcomingCount > 0 -> "Ready at the gate"
-        else -> "Already shown"
-    }
-    val detail = when {
-        todayCount > 0 && todayCount == 1 -> "One pass to show at the gate."
-        todayCount > 1 -> "$todayCount passes today."
-        upcomingCount == 1 -> "One upcoming pass."
-        upcomingCount > 1 -> "$upcomingCount upcoming."
-        usedCount == 1 -> "The night or trip that already happened."
-        else -> "The nights and trips that already happened."
-    }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(CardWhite)
-            .padding(horizontal = Space.card, vertical = Space.card)
-    ) {
-        AccentGlyphBadge(icon, size = 36.dp)
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = HomeType.section, color = Ink)
-            Spacer(modifier = Modifier.height(Space.tight))
-            Text(detail, style = HomeType.caption, color = Mute)
-        }
-    }
-}
-
-@Composable
 private fun EmptyEventPreview(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -911,12 +890,30 @@ private fun Ticket.passCategory(): PassCategory = when {
 private sealed interface PassListItem {
     val key: String
 
-    data class Section(val title: String, val count: Int) : PassListItem {
+    data class Section(val title: String, val trailing: String?) : PassListItem {
         override val key: String = "section-$title"
     }
 
-    data class TodayHero(val ticket: Ticket) : PassListItem {
+    /** The next pass on today's calendar — the one card that matters at the gate. */
+    data class TodayHero(val ticket: Ticket, val status: TodayStatus) : PassListItem {
         override val key: String = "today-${ticket.id}"
+    }
+
+    data class AlsoToday(val ticket: Ticket, val status: TodayStatus) : PassListItem {
+        override val key: String = "also-${ticket.id}"
+    }
+
+    /** Nothing on today: the next dated pass, in place of the old summary strip. */
+    data class NextUp(val ticket: Ticket) : PassListItem {
+        override val key: String = "next-${ticket.id}"
+    }
+
+    data object Notices : PassListItem {
+        override val key: String = "notices"
+    }
+
+    data object Filters : PassListItem {
+        override val key: String = "filters"
     }
 
     data class Pass(val ticket: Ticket) : PassListItem {
@@ -924,34 +921,64 @@ private sealed interface PassListItem {
     }
 }
 
+private val TODAY_HEADER = DateTimeFormatter.ofPattern("EEE d MMM", Locale.ENGLISH)
+
+/**
+ * Today (never filtered) → Next up when nothing is on today → notices → filters →
+ * Upcoming → Used. Filters only narrow the lists below them.
+ */
 private fun buildPassList(
     tickets: List<Ticket>,
     category: PassCategory?,
     zone: ZoneId,
-    today: LocalDate
+    nowMillis: Long,
+    kept: Set<Long>,
+    hasNotices: Boolean
 ): List<PassListItem> {
-    val pool = tickets.filter { category == null || it.passCategory() == category }
-    val heroes = pool
-        .filter { it.isOnDay(zone, today) && it.effectiveStatus() != TicketStatus.USED }
-        .sortedBy { it.occasionMillis ?: Long.MAX_VALUE }
-    val heroIds = heroes.map { it.id }.toSet()
-    val rest = pool.filter { it.id !in heroIds }
-    val order = compareBy<Ticket>(
-        { it.effectiveStatus() == TicketStatus.USED },
-        { it.occasionMillis == null },
-        { it.occasionMillis ?: Long.MAX_VALUE }
-    )
+    val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
+    val todays = tickets
+        .filter { it.isOnDay(zone, today) && it.effectiveStatus(nowMillis, zone) != TicketStatus.USED }
+        .mapNotNull { t -> TodayStages.stageOf(t, nowMillis, zone)?.let { t to it } }
+        // Unfinished first, soonest start first; finished ones sink.
+        .sortedWith(compareBy({ it.second.stage == TodayStage.FINISHED }, { it.second.startMillis }))
+    val hero = todays.firstOrNull { it.first.id !in kept }
     val items = mutableListOf<PassListItem>()
-    if (heroes.isNotEmpty()) {
-        items += PassListItem.Section("Today", heroes.size)
-        heroes.forEach { items += PassListItem.TodayHero(it) }
+    if (todays.isNotEmpty()) {
+        val trailing = if (todays.size == 1) "1 pass" else "${todays.size} passes"
+        items += PassListItem.Section("Today · ${today.format(TODAY_HEADER)}", trailing)
+        hero?.let { items += PassListItem.TodayHero(it.first, it.second) }
+        todays.filter { it !== hero }.forEach { items += PassListItem.AlsoToday(it.first, it.second) }
     }
-    PassCategory.entries.forEach { cat ->
-        if (category != null && category != cat) return@forEach
-        val rows = rest.filter { it.passCategory() == cat }.sortedWith(order)
-        if (rows.isEmpty()) return@forEach
-        items += PassListItem.Section(cat.label, rows.size)
-        rows.forEach { items += PassListItem.Pass(it) }
+    val todayIds = todays.map { it.first.id }.toSet()
+    val rest = tickets.filter { it.id !in todayIds }
+    if (todays.isEmpty()) {
+        rest.filter { t ->
+            val start = t.occasionMillis
+            start != null && start > nowMillis && t.effectiveStatus(nowMillis, zone) == TicketStatus.ACTIVE
+        }.minByOrNull { it.occasionMillis ?: Long.MAX_VALUE }?.let { items += PassListItem.NextUp(it) }
+    }
+    if (hasNotices) items += PassListItem.Notices
+    items += PassListItem.Filters
+    val pool = rest.filter { category == null || it.passCategory() == category }
+    val upcoming = pool
+        .filter { it.effectiveStatus(nowMillis, zone) != TicketStatus.USED }
+        .sortedWith(
+            compareBy<Ticket>(
+                { it.effectiveStatus(nowMillis, zone) == TicketStatus.PAST_DUE },
+                { it.occasionMillis == null },
+                { it.occasionMillis ?: Long.MAX_VALUE }
+            )
+        )
+    val used = pool
+        .filter { it.effectiveStatus(nowMillis, zone) == TicketStatus.USED }
+        .sortedByDescending { it.occasionMillis ?: it.createdAtMillis }
+    if (upcoming.isNotEmpty()) {
+        items += PassListItem.Section("Upcoming · ${upcoming.size}", null)
+        upcoming.forEach { items += PassListItem.Pass(it) }
+    }
+    if (used.isNotEmpty()) {
+        items += PassListItem.Section("Used · ${used.size}", null)
+        used.forEach { items += PassListItem.Pass(it) }
     }
     return items
 }
@@ -973,7 +1000,7 @@ private fun PassCategoryChips(
         PassCategory.entries.forEach { cat ->
             if ((counts[cat] ?: 0) > 0) {
                 PassChip(
-                    cat.label,
+                    "${cat.label} · ${counts[cat]}",
                     selected = selected == cat,
                     icon = cat.icon,
                     onClick = { onSelect(cat) }
@@ -1020,32 +1047,25 @@ private fun PassChip(
 @Composable
 private fun PassSectionHeader(
     title: String,
-    count: Int
+    trailing: String?
 ) {
-    val icon = when (title) {
-        "Today" -> Icons.Outlined.CalendarMonth
-        PassCategory.SGR.label -> Icons.Outlined.Train
-        else -> Icons.Outlined.ConfirmationNumber
-    }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = Space.block, bottom = Space.gap)
+            .padding(top = Space.block, bottom = Space.tight)
+            .semantics(mergeDescendants = true) { heading() }
     ) {
-        AccentGlyphBadge(icon, size = 36.dp)
-        Spacer(modifier = Modifier.width(12.dp))
         Text(
-            text = title,
-            style = HomeType.section,
-            color = Ink,
+            text = title.uppercase(Locale.ENGLISH),
+            style = HomeType.label,
+            color = Mute,
+            letterSpacing = 1.2.sp,
             modifier = Modifier.weight(1f)
         )
-        Text(
-            text = count.toString(),
-            style = HomeType.caption,
-            color = Mute
-        )
+        if (trailing != null) {
+            Text(text = trailing, style = HomeType.caption, color = Mute)
+        }
     }
 }
 
@@ -1099,145 +1119,362 @@ private fun PassSwipeToDelete(
     }
 }
 
+/** Warning and live tones for the Today card and badges; each has a dark-mode pair. */
+private object PassTone {
+    private val dark: Boolean
+        @Composable @ReadOnlyComposable get() = LocalLipaColors.current == LipaPalette.Dark
+    val warnFill: Color
+        @Composable @ReadOnlyComposable get() = if (dark) Color(0xFF3A2A10) else Color(0xFFFFF7E6)
+    val warnEdge: Color
+        @Composable @ReadOnlyComposable get() = if (dark) Color(0xFF8A5A14) else Color(0xFFF5C26B)
+    val warnInk: Color
+        @Composable @ReadOnlyComposable get() = if (dark) Color(0xFFF5C26B) else Color(0xFF92400E)
+    val warnPill: Color
+        @Composable @ReadOnlyComposable get() = if (dark) Color(0xFF4A3415) else Color(0xFFFDE7C2)
+    val onWarnButton: Color
+        @Composable @ReadOnlyComposable get() = if (dark) Color(0xFF1F2937) else Color.White
+    val liveFill: Color
+        @Composable @ReadOnlyComposable get() = if (dark) Color(0xFF1E3A2A) else Color(0xFFDCEFE3)
+    val liveInk: Color
+        @Composable @ReadOnlyComposable get() = if (dark) Color(0xFF86EFAC) else Color(0xFF14532D)
+    val liveDot: Color
+        @Composable @ReadOnlyComposable get() = if (dark) Color(0xFF4ADE80) else Color(0xFF15803D)
+    val Soon = Color(0xFFF5B544)
+    val OnSoon = Color(0xFF1F2937)
+    /** The gate button stays white on navy in both themes. */
+    val GateButton = Color.White
+    val OnGateButton = Color(0xFF111827)
+}
+
+/**
+ * The one card that matters today. Its look and buttons follow [TodayStage]:
+ * navy while it's ahead or on, white once finished, amber when it can't be used yet.
+ */
 @Composable
-private fun TodayPassCard(
+private fun TodayPassHero(
     ticket: Ticket,
-    onClick: () -> Unit
+    status: TodayStatus,
+    onOpen: () -> Unit,
+    onMarkUsed: () -> Unit,
+    onKeep: () -> Unit
 ) {
-    val schedule = formatEventSchedule(ticket.occasionMillis, ticket.notes)
-    val time = schedule.time
-    val place = listOfNotNull(
-        ticket.venue?.takeIf { it.isNotBlank() },
-        ticket.seatOrTier?.takeIf { it.isNotBlank() }
-    ).joinToString(" · ")
-    val zoned = ticket.occasionMillis?.let {
-        Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())
+    val stage = status.stage
+    val navy = stage != TodayStage.FINISHED && !stage.isBlocked
+    val shape = RoundedCornerShape(24.dp)
+    val fill = when {
+        stage.isBlocked -> PassTone.warnFill
+        stage == TodayStage.FINISHED -> CardWhite
+        else -> Accent
     }
-    val dayNumber = zoned?.dayOfMonth?.toString()
-    val month = zoned?.format(DateTimeFormatter.ofPattern("MMM", Locale.ENGLISH))?.uppercase(Locale.ENGLISH)
-    val countdown = ticket.occasionMillis?.let { start ->
-        val minutes = (start - System.currentTimeMillis()) / 60_000L
-        when {
-            minutes < 0 -> null
-            minutes < 60 -> "Starting soon"
-            minutes < 120 -> "In 1 hour"
-            minutes < 18 * 60 -> "In ${minutes / 60} hours"
-            else -> null
-        }
+    val edge = when {
+        stage == TodayStage.SOON -> PassTone.Soon
+        stage.isBlocked -> PassTone.warnEdge
+        stage == TodayStage.FINISHED -> Hairline
+        else -> null
+    }
+    val ink = if (navy) OnAccent else Ink
+    val soft = if (navy) OnAccent.copy(alpha = 0.82f) else Mute
+    val schedule = formatEventSchedule(ticket.occasionMillis, ticket.notes)
+    val venue = ticket.venue?.takeIf { it.isNotBlank() }
+    val seat = ticket.seatOrTier?.takeIf { it.isNotBlank() }
+    val subtitle = when (stage) {
+        TodayStage.LIVE -> listOfNotNull(schedule.time?.let { "Started $it" }, venue).joinToString(" · ")
+        TodayStage.FINISHED -> "Did you go? Mark it used to tidy Passes."
+        TodayStage.NEEDS_BOARDING_PASS -> "Booking saved. Add the boarding pass before you reach the gate."
+        TodayStage.CODE_PENDING -> "Saved from the SMS. Add the entry code when it arrives."
+        else -> venue.orEmpty()
     }
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(16.dp, RoundedCornerShape(28.dp), spotColor = Accent.copy(alpha = 0.35f))
-            .clip(RoundedCornerShape(28.dp))
-            .background(Accent)
-            .clickable(onClick = onClick)
+            .shadow(if (navy) 14.dp else 0.dp, shape, spotColor = Accent.copy(alpha = 0.3f))
+            .clip(shape)
+            .background(fill)
+            .then(if (edge != null) Modifier.border(if (stage == TodayStage.SOON) 3.dp else 1.dp, edge, shape) else Modifier)
+            .clickable(onClickLabel = "Open pass", onClick = onOpen)
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 14.dp, end = 18.dp, top = 14.dp, bottom = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(CardWhite)
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            StagePill(stage, status.pill)
+            Spacer(modifier = Modifier.weight(1f))
+            Icon(
+                imageVector = ticket.passCategory().icon,
+                contentDescription = null,
+                tint = soft,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(ticket.passCategory().label, style = HomeType.caption, color = soft)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            val showsClock = stage == TodayStage.LATER || stage == TodayStage.SOON || stage.isBlocked
+            if (showsClock && schedule.time != null) {
                 Text(
-                    text = "TODAY",
-                    style = HomeType.label,
-                    color = Accent,
-                    letterSpacing = 1.1.sp
-                )
-                Text(
-                    text = dayNumber ?: "—",
-                    color = Ink,
+                    text = schedule.time,
+                    color = ink,
                     fontFamily = GeometricSansFamily,
                     fontWeight = FontWeight.SemiBold,
-                    fontSize = 32.sp,
-                    lineHeight = 34.sp
+                    fontSize = 40.sp,
+                    lineHeight = 44.sp
                 )
-                if (month != null) {
-                    Text(
-                        text = month,
-                        style = HomeType.label,
-                        color = Mute,
-                        letterSpacing = 0.8.sp
-                    )
-                }
             }
-            Spacer(modifier = Modifier.size(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AccentGlyphBadge(
-                        icon = ticket.passCategory().icon,
-                        fill = OnAccent.copy(alpha = 0.16f),
-                        tint = OnAccent,
-                        size = 22.dp
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = ticket.title,
+                color = ink,
+                fontFamily = GeometricSansFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 20.sp,
+                lineHeight = 24.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (subtitle.isNotBlank()) {
                     Text(
-                        text = ticket.passCategory().label,
+                        text = subtitle,
                         style = HomeType.caption,
-                        color = OnAccent.copy(alpha = 0.72f)
-                    )
-                    if (countdown != null) {
-                        Spacer(modifier = Modifier.weight(1f))
-                        Text(
-                            text = countdown,
-                            style = HomeType.caption,
-                            color = OnAccent
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = ticket.title,
-                    color = OnAccent,
-                    fontFamily = GeometricSansFamily,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 20.sp,
-                    lineHeight = 24.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (time != null) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = time,
-                        color = OnAccent,
-                        fontFamily = GeometricSansFamily,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 16.sp,
-                        lineHeight = 20.sp
+                        color = soft,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                 }
-                if (place.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(4.dp))
+                // Seat pins a person to a spot: covered while the screen is recorded.
+                if (seat != null && (stage == TodayStage.LATER || stage == TodayStage.SOON)) {
                     Text(
-                        text = place,
+                        text = if (subtitle.isNotBlank()) " · $seat" else seat,
                         style = HomeType.caption,
-                        color = OnAccent.copy(alpha = 0.78f),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        color = soft,
+                        maxLines = 1,
+                        modifier = Modifier.recordingPrivacyCover(pinsExactSeat(seat))
                     )
                 }
             }
         }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(OnAccent.copy(alpha = 0.18f))
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            when (stage) {
+                TodayStage.LATER -> HeroButton(
+                    "Show code", onOpen, PassTone.GateButton, PassTone.OnGateButton,
+                    modifier = Modifier.weight(1f)
+                )
+                TodayStage.SOON -> HeroButton(
+                    "Show code", onOpen, PassTone.GateButton, PassTone.OnGateButton,
+                    tall = true, modifier = Modifier.weight(1f)
+                )
+                TodayStage.LIVE -> {
+                    HeroButton(
+                        "Show code", onOpen, PassTone.GateButton, PassTone.OnGateButton,
+                        modifier = Modifier.weight(1f)
+                    )
+                    HeroButton("Mark used", onMarkUsed, Color.Transparent, OnAccent, border = OnAccent.copy(alpha = 0.4f))
+                }
+                TodayStage.FINISHED -> {
+                    HeroButton("Mark used", onMarkUsed, Accent, OnAccent, modifier = Modifier.weight(1f))
+                    HeroButton("Keep", onKeep, Color.Transparent, Ink, border = Hairline)
+                }
+                TodayStage.NEEDS_BOARDING_PASS, TodayStage.CODE_PENDING -> {
+                    HeroButton(
+                        if (stage == TodayStage.NEEDS_BOARDING_PASS) "Add boarding pass" else "Add code",
+                        onOpen, PassTone.warnInk, PassTone.onWarnButton,
+                        modifier = Modifier.weight(1f)
+                    )
+                    HeroButton("Open", onOpen, Color.Transparent, PassTone.warnInk, border = PassTone.warnEdge)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StagePill(stage: TodayStage, label: String) {
+    val (bg, fg) = when (stage) {
+        TodayStage.LATER -> OnAccent.copy(alpha = 0.16f) to OnAccent
+        TodayStage.SOON -> PassTone.Soon to PassTone.OnSoon
+        TodayStage.LIVE -> PassTone.liveFill to PassTone.liveInk
+        TodayStage.FINISHED -> Canvas to Ink
+        TodayStage.NEEDS_BOARDING_PASS, TodayStage.CODE_PENDING -> PassTone.warnPill to PassTone.warnInk
+    }
+    val dot = when (stage) {
+        TodayStage.SOON -> PassTone.OnSoon
+        TodayStage.LIVE -> PassTone.liveDot
+        else -> null
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .background(bg)
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+    ) {
+        if (dot != null) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(dot)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+        }
+        if (stage.isBlocked) {
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription = null,
+                tint = fg,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+        }
+        Text(text = label, style = HomeType.label, color = fg, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun HeroButton(
+    label: String,
+    onClick: () -> Unit,
+    fill: Color,
+    content: Color,
+    modifier: Modifier = Modifier,
+    border: Color? = null,
+    tall: Boolean = false
+) {
+    val shape = RoundedCornerShape(16.dp)
+    Box(
+        modifier = modifier
+            .height(if (tall) 52.dp else 48.dp)
+            .clip(shape)
+            .background(fill)
+            .then(if (border != null) Modifier.border(1.dp, border, shape) else Modifier)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
         Text(
-            text = "Open pass",
-            style = HomeType.label,
-            color = OnAccent,
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)
+            text = label,
+            style = HomeType.rowTitle,
+            color = content,
+            fontWeight = if (tall) FontWeight.Bold else FontWeight.SemiBold,
+            maxLines = 1
+        )
+    }
+}
+
+/** Second and later passes today: one compact row each under the hero. */
+@Composable
+private fun AlsoTodayRow(
+    ticket: Ticket,
+    status: TodayStatus,
+    onClick: () -> Unit
+) {
+    val time = formatEventSchedule(ticket.occasionMillis, ticket.notes).time
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(2.dp, RoundedCornerShape(18.dp), spotColor = Color.Black.copy(alpha = 0.06f))
+            .clip(RoundedCornerShape(18.dp))
+            .background(CardWhite)
+            .clickable(onClick = onClick)
+            .padding(horizontal = Space.card, vertical = Space.cardH),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AccentGlyphBadge(icon = ticket.passCategory().icon, size = 40.dp)
+        Spacer(modifier = Modifier.size(Space.block))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = if (status.stage.isBlocked) "Also today · ${status.pill}" else "Also today",
+                style = HomeType.caption,
+                color = if (status.stage.isBlocked) PassTone.warnInk else Mute
+            )
+            Text(
+                text = listOfNotNull(ticket.title, time).joinToString(" · "),
+                style = HomeType.rowTitle,
+                color = Ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = Mute
+        )
+    }
+}
+
+/** Nothing on today: the next dated pass, with how far off it is. */
+@Composable
+private fun NextUpCard(
+    ticket: Ticket,
+    nowMillis: Long,
+    zone: ZoneId,
+    onClick: () -> Unit
+) {
+    val start = ticket.occasionMillis ?: return
+    val day = Instant.ofEpochMilli(start).atZone(zone)
+    val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
+    val days = java.time.temporal.ChronoUnit.DAYS.between(today, day.toLocalDate())
+    val when_ = if (days <= 1L) "tomorrow" else "in $days days"
+    val schedule = formatEventSchedule(start, ticket.notes)
+    val detail = listOfNotNull(
+        day.format(DateTimeFormatter.ofPattern("EEE", Locale.ENGLISH)) +
+            (schedule.time?.let { " $it" } ?: ""),
+        ticket.venue?.takeIf { it.isNotBlank() }
+    ).joinToString(" · ")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(CardWhite)
+            .border(1.dp, Hairline, RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier
+                .width(52.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(SoftBlue)
+                .padding(vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = day.format(DateTimeFormatter.ofPattern("MMM", Locale.ENGLISH)).uppercase(Locale.ENGLISH),
+                style = HomeType.label,
+                color = Accent,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = day.dayOfMonth.toString(),
+                color = Accent,
+                fontFamily = GeometricSansFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+                lineHeight = 24.sp
+            )
+        }
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "NEXT UP · ${when_.uppercase(Locale.ENGLISH)}",
+                style = HomeType.label,
+                color = Mute,
+                letterSpacing = 1.sp
+            )
+            Text(
+                text = ticket.title,
+                style = HomeType.section,
+                color = Ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (detail.isNotBlank()) {
+                Text(detail, style = HomeType.caption, color = Mute, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = Mute
         )
     }
 }
@@ -1247,20 +1484,15 @@ private fun TicketListRow(
     ticket: Ticket,
     onClick: () -> Unit
 ) {
-    val used = !ticket.isConfirmationOnly && ticket.effectiveStatus() == TicketStatus.USED
-    val statusColor = when {
-        ticket.isConfirmationOnly -> SoftBlue
-        used -> Mute
-        else -> when (ticket.effectiveStatus()) {
-            TicketStatus.ACTIVE -> Income
-            TicketStatus.USED -> Mute
-            TicketStatus.PAST_DUE -> Expense
-        }
-    }
-    val badge = when {
-        ticket.isConfirmationOnly -> "Awaiting pass"
-        EventTicketSms.isPending(ticket.barcodeValue) -> "Awaiting QR"
-        else -> ticket.effectiveStatus().label()
+    val status = ticket.effectiveStatus()
+    val used = !ticket.isConfirmationOnly && status == TicketStatus.USED
+    val pending = EventTicketSms.isPending(ticket.barcodeValue)
+    val (badge, badgeFill, badgeInk) = when {
+        ticket.isConfirmationOnly -> Triple("Needs pass", PassTone.warnPill, PassTone.warnInk)
+        used -> Triple("Used", Mute.copy(alpha = 0.18f), Mute)
+        pending -> Triple("Code pending", SoftBlue, Accent)
+        status == TicketStatus.PAST_DUE -> Triple("Past due", Expense.copy(alpha = 0.16f), Expense)
+        else -> Triple("Ready", Income.copy(alpha = 0.16f), Income)
     }
     val rowIcon = when {
         ticket.isConfirmationOnly -> Icons.Outlined.Sms
@@ -1317,10 +1549,10 @@ private fun TicketListRow(
         Text(
             text = badge,
             style = HomeType.label,
-            color = if (ticket.isConfirmationOnly) Ink else statusColor,
+            color = badgeInk,
             modifier = Modifier
                 .clip(RoundedCornerShape(12.dp))
-                .background(statusColor.copy(alpha = 0.18f))
+                .background(badgeFill)
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         )
     }

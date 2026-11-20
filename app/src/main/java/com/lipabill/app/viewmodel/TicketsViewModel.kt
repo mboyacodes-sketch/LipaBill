@@ -144,6 +144,11 @@ class TicketsViewModel(
         const val SGR_MARKER = "Imported SGR ticket"
     }
 
+    /** From the Today card: a finished or live pass marked used without opening it. */
+    fun markUsed(id: Long) {
+        viewModelScope.launch { app.ticketRepository.markUsed(id) }
+    }
+
     fun delete(id: Long) {
         viewModelScope.launch { app.ticketRepository.delete(id) }
     }
