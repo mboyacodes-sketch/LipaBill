@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.NearMe
 import androidx.compose.material3.DropdownMenu
@@ -216,7 +217,8 @@ fun EventPassContent(
     contentPadding: PaddingValues,
     onBack: () -> Unit,
     onMarkUsed: () -> Unit,
-    onChangeDate: (() -> Unit)?
+    onChangeDate: (() -> Unit)?,
+    onViewOriginal: (() -> Unit)? = null
 ) {
     val appContext = LocalContext.current.applicationContext
     val home = remember {
@@ -227,7 +229,7 @@ fun EventPassContent(
     CompositionLocalProvider(LocalPassPalette provides palette) {
         EventPassBody(
             ticket, model, qrBitmap, status, canMarkUsed, contentPadding,
-            onBack, onMarkUsed, onChangeDate
+            onBack, onMarkUsed, onChangeDate, onViewOriginal
         )
     }
 }
@@ -242,7 +244,8 @@ private fun EventPassBody(
     contentPadding: PaddingValues,
     onBack: () -> Unit,
     onMarkUsed: () -> Unit,
-    onChangeDate: (() -> Unit)?
+    onChangeDate: (() -> Unit)?,
+    onViewOriginal: (() -> Unit)?
 ) {
     val context = LocalContext.current
     val isUsed = status == TicketStatus.USED
@@ -286,7 +289,8 @@ private fun EventPassBody(
                 onDirections = model.mapsQuery?.let { q -> { openVenueInMapsSearch(context, q) } },
                 onMarkUsed = onMarkUsed,
                 onChangeDate = onChangeDate,
-                hasDate = ticket.startsAtMillis != null
+                hasDate = ticket.startsAtMillis != null,
+                onViewOriginal = onViewOriginal
             )
         }
     }
@@ -760,12 +764,14 @@ private fun PassActions(
     onDirections: (() -> Unit)?,
     onMarkUsed: () -> Unit,
     onChangeDate: (() -> Unit)?,
-    hasDate: Boolean
+    hasDate: Boolean,
+    onViewOriginal: (() -> Unit)? = null
 ) {
     data class Action(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val run: () -> Unit)
     val actions = buildList {
         onDirections?.let { add(Action("Directions", Icons.Outlined.NearMe, it)) }
         if (canMarkUsed) add(Action("Mark as used", Icons.Outlined.Check, onMarkUsed))
+        onViewOriginal?.let { add(Action("View original", Icons.Outlined.Description, it)) }
         if (size < 2 && onChangeDate != null) {
             add(Action(if (hasDate) "Change date" else "Set date", Icons.Outlined.Event, onChangeDate))
         }

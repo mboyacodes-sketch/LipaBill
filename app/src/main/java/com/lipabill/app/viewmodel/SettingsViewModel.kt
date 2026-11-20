@@ -12,6 +12,8 @@ import com.lipabill.app.data.model.regionsPresentOnSims
 import com.lipabill.app.data.model.selectableAppRegions
 import com.lipabill.app.data.model.toggleLedgerSource
 import com.lipabill.app.data.local.entity.RepeatAttemptEntity
+import com.lipabill.app.data.tickets.PassReminderLeadTimes
+import com.lipabill.app.tickets.PassReminderScheduler
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
 import com.lipabill.app.ussd.AccessibilityHelper
 import com.lipabill.app.ussd.LineGatedSources
@@ -34,6 +36,7 @@ data class SettingsUiState(
     val recordingPrivacy: Boolean = false,
     val darkMode: Boolean = false,
     val repeatEnabled: Boolean = true,
+    val passReminderLeadTimes: PassReminderLeadTimes = PassReminderLeadTimes.DEFAULT,
     val lipaBillA11yEnabled: Boolean = false,
     val simLines: List<SimLine> = emptyList(),
     val preferredSimSubscriptionId: Int? = null,
@@ -114,6 +117,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         refresh()
     }
 
+    fun setPassReminderLeadTimes(times: PassReminderLeadTimes) {
+        app.securePreferences.passReminderLeadTimes = times
+        PassReminderScheduler(
+            getApplication(),
+            app.passContextSync,
+            { app.securePreferences.passReminderLeadTimes }
+        ).requestImmediateRecheck()
+        refresh()
+    }
+
     suspend fun prepareFulizaOptIn(): RepeatTransactionCoordinator.PreparedRepeat =
         app.repeatCoordinator.prepareFulizaOptIn()
 
@@ -176,6 +189,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             recordingPrivacy = app.securePreferences.recordingPrivacy,
             darkMode = app.securePreferences.darkMode,
             repeatEnabled = app.securePreferences.repeatFeatureEnabled,
+            passReminderLeadTimes = app.securePreferences.passReminderLeadTimes,
             lipaBillA11yEnabled = AccessibilityHelper.isLipaBillServiceEnabled(ctx),
             simLines = lines,
             preferredSimSubscriptionId = selected,

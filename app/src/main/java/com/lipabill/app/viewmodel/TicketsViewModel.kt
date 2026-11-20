@@ -2,6 +2,7 @@ package com.lipabill.app.viewmodel
 
 import com.lipabill.app.data.tickets.EventTicketSms
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -13,6 +14,9 @@ import com.lipabill.app.data.model.TicketSource
 import com.lipabill.app.data.model.TicketStatus
 import com.lipabill.app.data.tickets.BookingConfirmationParser
 import com.lipabill.app.data.tickets.TicketDocumentImporter
+import com.lipabill.app.data.tickets.PassDocumentReader
+import com.lipabill.app.data.tickets.PassDraft
+import com.lipabill.app.data.tickets.intelligence.PassFieldReader
 import com.lipabill.app.data.tickets.TicketDocumentKind
 import com.lipabill.app.data.tickets.BarcodeSpec
 import com.lipabill.app.data.tickets.TicketImport
@@ -69,20 +73,46 @@ class TicketsViewModel(
             hasBoardingPass = true
         )
 
-    /** Reads a ticket file into a draft without saving (the review step edits it). */
+    private val reader = PassDocumentReader(app.passDocuments)
+
+    /**
+     * Reads a ticket file into a draft without saving (the review step edits it). The original
+     * is kept, encrypted; a file already saved as a pass throws [AlreadySavedException].
+     */
     suspend fun readDocument(
         context: Context,
         uri: Uri,
         kind: TicketDocumentKind
-    ): TicketImport = withContext(Dispatchers.IO) {
-        TicketDocumentImporter.import(context, uri, kind)
+    ): PassDraft = withContext(Dispatchers.IO) {
+        reader.read(context, uri, kind)
     }
 
-    /** Saves a draft read by [readDocument] (after review, for PDF / photo event tickets). */
+    /** The original file, drawn small for the review step. */
+    suspend fun preview(read: PassDraft, maxWidth: Int): Bitmap? =
+        read.documentId?.let { app.passDocuments.thumbnail(it, maxWidth) }
+
+    /** Review was cancelled: the stored original goes unless a pass already uses it. */
+    fun discardDocument(read: PassDraft) {
+        val id = read.documentId ?: return
+        viewModelScope.launch { app.passDocuments.discardDraft(id) }
+    }
+
+    /**
+     * Saves a reviewed draft. The pass, its original file and the reading (with the user's
+     * corrections marked as theirs) are linked in one transaction.
+     */
     suspend fun saveImport(
         draft: TicketImport,
-        kind: TicketDocumentKind
+        kind: TicketDocumentKind,
+        read: PassDraft? = null
     ): Long? = withContext(Dispatchers.IO) {
+        val extraction = read?.let { PassFieldReader.withEdits(it.extraction, draft) }
+        app.passDocuments.saveWithDocument(read?.documentId, extraction) {
+            saveDraft(draft, kind)
+        }
+    }
+
+    private suspend fun saveDraft(draft: TicketImport, kind: TicketDocumentKind): Long? =
         when (kind) {
             // Event tickets join a pass already saved for the same ticket (e.g. from its SMS).
             TicketDocumentKind.EVENT, TicketDocumentKind.PKPASS -> {
@@ -90,11 +120,28 @@ class TicketsViewModel(
                     draft.copy(expectsBoardingPass = false, hasBoardingPass = true)
                 ) ?: throw IllegalArgumentException("That ticket is already saved.")
             }
+            // Picked as SGR in review: save a rail pass (booking + boarding on one code), marked the
+            // way parsed SGR tickets are so the Passes list shows it with travel chrome.
+            TicketDocumentKind.SGR_TICKET -> {
+                val notes = draft.notes.orEmpty()
+                val railNotes = if (notes.contains(SGR_MARKER, ignoreCase = true)) {
+                    notes
+                } else {
+                    listOf(notes, SGR_MARKER).filter { it.isNotBlank() }.joinToString(" · ")
+                }
+                app.ticketRepository.addOrMerge(
+                    draft.copy(expectsBoardingPass = true, hasBoardingPass = true, notes = railNotes)
+                ) ?: throw IllegalArgumentException("That ticket is already saved.")
+            }
             else -> {
                 app.ticketRepository.addOrMerge(draft)
                     ?: throw IllegalArgumentException("That ticket is already saved.")
             }
         }
+
+    private companion object {
+        /** Same marker [com.lipabill.app.data.tickets.ETicketTextParser] writes on SGR tickets. */
+        const val SGR_MARKER = "Imported SGR ticket"
     }
 
     fun delete(id: Long) {
@@ -105,7 +152,7 @@ class TicketsViewModel(
 
 class TicketDetailViewModel(
     private val app: LipaBillApp,
-    ticketId: Long
+    private val ticketId: Long
 ) : ViewModel() {
 
     private val _isLoading = MutableStateFlow(true)
@@ -114,6 +161,45 @@ class TicketDetailViewModel(
     val ticket: StateFlow<Ticket?> = app.ticketRepository.observeById(ticketId)
         .onEach { _isLoading.value = false }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val _hasOriginal = MutableStateFlow(false)
+    val hasOriginal: StateFlow<Boolean> = _hasOriginal.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            _hasOriginal.value = app.passDocuments.firstForTicket(ticketId) != null
+        }
+    }
+
+    /** Opens the stored original via FileProvider; the temp copy is deleted in [onCleared]. */
+    fun viewOriginal(onOpened: (android.net.Uri, String) -> Unit, onMissing: () -> Unit) {
+        viewModelScope.launch {
+            val opened = app.passDocuments.openOriginalForTicket(ticketId)
+            if (opened == null) {
+                onMissing()
+                return@launch
+            }
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                app,
+                "${app.packageName}.wrapped",
+                opened.file
+            )
+            openedCopy?.takeIf { it != opened.file }?.delete()
+            openedCopy = opened.file
+            onOpened(uri, opened.mimeType)
+        }
+    }
+
+    /**
+     * Plaintext copy handed to the viewer app. Kept while this pass is on screen (the viewer reads
+     * it after we pause), deleted once the user leaves the pass. App start sweeps any leftover.
+     */
+    private var openedCopy: java.io.File? = null
+
+    override fun onCleared() {
+        openedCopy?.delete()
+        openedCopy = null
+    }
 
     fun markUsed() {
         val id = ticket.value?.id ?: return
@@ -132,13 +218,28 @@ class TicketDetailViewModel(
     ): Boolean =
         withContext(Dispatchers.IO) {
             val current = ticket.value ?: return@withContext false
-            // Keep the detected symbology (QR / PDF417 / Aztec) and its encoding spec.
-            val draft = TicketDocumentImporter.import(context, uri, TicketDocumentKind.SGR_TICKET)
-                .copy(
-                    expectsBoardingPass = true,
-                    hasBoardingPass = true
-                )
-            app.ticketRepository.attachBoardingPass(current.id, draft, leg) != null
+            // Keep the original next to the pass (encrypted). A failed keep never blocks the attach.
+            val stored = runCatching { app.passDocuments.store(uri) }.getOrNull()
+            val attached = try {
+                // Keep the detected symbology (QR / PDF417 / Aztec) and its encoding spec.
+                val draft = TicketDocumentImporter.import(context, uri, TicketDocumentKind.SGR_TICKET)
+                    .copy(
+                        expectsBoardingPass = true,
+                        hasBoardingPass = true
+                    )
+                app.ticketRepository.attachBoardingPass(current.id, draft, leg) != null
+            } catch (t: Throwable) {
+                stored?.takeUnless { it.duplicate }?.let { app.passDocuments.discardDraft(it.document.id) }
+                throw t
+            }
+            if (stored != null && stored.document.ticketId == null) {
+                if (attached) {
+                    app.passDocuments.linkToTicket(stored.document.id, current.id)
+                } else {
+                    app.passDocuments.discardDraft(stored.document.id)
+                }
+            }
+            attached
         }
 
     suspend fun attachBoardingPassScan(

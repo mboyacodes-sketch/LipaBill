@@ -88,6 +88,7 @@ fun TicketDetailScreen(
 ) {
     val ticket by viewModel.ticket.collectAsStateWithLifecycle()
     val ticketLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val hasOriginal by viewModel.hasOriginal.collectAsStateWithLifecycle()
     if (ticketLoading || ticket == null) {
         DetailSkeleton()
         return
@@ -100,6 +101,23 @@ fun TicketDetailScreen(
     var showAttachScanner by remember { mutableStateOf(false) }
     var attachLeg by remember { mutableStateOf<BoardingLeg?>(null) }
     var showBoardingQrDialog by remember { mutableStateOf(false) }
+
+    fun openOriginal() {
+        viewModel.viewOriginal(
+            onOpened = { uri, mime ->
+                runCatching {
+                    context.startActivity(
+                        android.content.Intent(android.content.Intent.ACTION_VIEW)
+                            .setDataAndType(uri, mime)
+                            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    )
+                }.onFailure {
+                    error = "Couldn’t open the original file."
+                }
+            },
+            onMissing = { error = "No original file is saved for this pass." }
+        )
+    }
 
     // Gate scan: only boost brightness / keep-awake for active tickets.
     val boostScanBrightness = ticket?.effectiveStatus() == TicketStatus.ACTIVE
@@ -339,6 +357,15 @@ fun TicketDetailScreen(
                         onViewBoardingQr = { showBoardingQrDialog = true }
                     )
 
+                    if (hasOriginal) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        TextButton(
+                            onClick = { openOriginal() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("View original", color = Mute)
+                        }
+                    }
                     if (!isUsed && (!current.hasBoardingPass || current.canMarkUsedFromEventDay())) {
                         Spacer(modifier = Modifier.height(16.dp))
                         if (!current.hasBoardingPass) {
@@ -410,6 +437,11 @@ fun TicketDetailScreen(
                             viewModel.setEventStartsAt(it)
                         }
                     }
+                } else {
+                    null
+                },
+                onViewOriginal = if (hasOriginal) {
+                    { openOriginal() }
                 } else {
                     null
                 }

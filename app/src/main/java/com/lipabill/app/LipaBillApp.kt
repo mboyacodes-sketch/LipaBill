@@ -18,6 +18,7 @@ import com.lipabill.app.data.repository.EngagementRepository
 import com.lipabill.app.data.repository.MerchantDirectory
 import com.lipabill.app.data.repository.MerchantSnapshotStore
 import com.lipabill.app.data.repository.RepeatAttemptRepository
+import com.lipabill.app.data.repository.PassDocumentRepository
 import com.lipabill.app.data.repository.TicketRepository
 import com.lipabill.app.data.repository.TransactionRepository
 import com.lipabill.app.data.sms.LedgerNotifier
@@ -50,6 +51,7 @@ import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.metrics.TicketImportResult
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
 import com.lipabill.app.ui.privacy.RecordingCapture
+import com.lipabill.app.data.tickets.PassContextSync
 import com.lipabill.app.tickets.PassReminderScheduler
 import com.lipabill.app.ussd.LineGatedSources
 import com.lipabill.app.ussd.PaymentDialResolver
@@ -83,6 +85,14 @@ class LipaBillApp : Application() {
     lateinit var repeatCoordinator: RepeatTransactionCoordinator
         private set
     lateinit var ticketRepository: TicketRepository
+        private set
+
+    /** Original ticket files (encrypted) and what was read from them. */
+    lateinit var passDocuments: PassDocumentRepository
+        private set
+
+    /** Pass-derived events and WorkManager reminder rows. */
+    lateinit var passContextSync: PassContextSync
         private set
     lateinit var smsInboxSyncWatcher: SmsInboxSyncWatcher
         private set
@@ -366,7 +376,14 @@ class LipaBillApp : Application() {
             // Foreground checks below still refresh the lines.
         }
         repeatRepository = RepeatAttemptRepository(db.repeatAttemptDao())
-        ticketRepository = TicketRepository(db.ticketDao())
+        passDocuments = PassDocumentRepository(this, db)
+        passContextSync = PassContextSync(db.contextDao())
+        ticketRepository = TicketRepository(
+            dao = db.ticketDao(),
+            onDeleted = { id -> passDocuments.deleteForTicket(id) },
+            contextSync = passContextSync,
+            leadTimes = { securePreferences.passReminderLeadTimes }
+        )
         repeatCoordinator = RepeatTransactionCoordinator(
             appContext = this,
             securePreferences = securePreferences,
@@ -392,9 +409,16 @@ class LipaBillApp : Application() {
             refreshLedger()
         }
         engagementScheduler.ensureScheduled()
+        val passReminders = PassReminderScheduler(
+            this,
+            passContextSync,
+            { securePreferences.passReminderLeadTimes }
+        )
+        passReminders.ensureDailyRecheck()
+        appScope.launch { runCatching { passDocuments.pruneDrafts() } }
         appScope.launch {
             ticketRepository.observeAll().collect { tickets ->
-                runCatching { PassReminderScheduler(this@LipaBillApp).sync(tickets) }
+                runCatching { passReminders.sync(tickets) }
             }
         }
 

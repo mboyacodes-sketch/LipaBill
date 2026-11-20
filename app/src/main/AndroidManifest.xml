@@ -193,6 +193,15 @@
                     android:scheme="content"
                     android:mimeType="application/vnd.apple.pkpasses" />
             </intent-filter>
+            <!-- Ticket PDFs and photos shared from mail / WhatsApp / Files. SEND only: no VIEW,
+                 so LipaBill is not an "Open with" choice for every photo on the phone.
+                 Each file is read on-device and goes through review before it is saved. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
             <!-- content:// shares typed as zip whose name ends in .pkpass. Any
                  provider authority (host="*") so the path rules actually apply. Paths must
                  start with "/" for Play's deep-link checker; pathPattern stops at dots so
@@ -274,6 +283,17 @@
             android:permission="android.permission.BROADCAST_SMS">
             <intent-filter>
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Re-plan pass reminders after clock/timezone changes or an app update. -->
+        <receiver
+            android:name=".tickets.PassReminderRecheckReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 
