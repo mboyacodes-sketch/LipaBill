@@ -5,6 +5,7 @@ import com.lipabill.app.BuildConfig
 import com.lipabill.app.data.DemoLedger
 import com.lipabill.app.data.local.dao.TransactionDao
 import com.lipabill.app.data.local.entity.TransactionEntity
+import com.lipabill.app.data.model.ActiveRegion
 import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
@@ -13,10 +14,13 @@ import com.lipabill.app.data.parser.KenyanConfirmationParser
 import com.lipabill.app.data.parser.MpesaSmsParser
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.sms.ConfirmationIngestion
+import com.lipabill.app.data.sms.FailureLedgerMatch
+import com.lipabill.app.data.sms.FailureSms
 import com.lipabill.app.data.sms.InboxScan
 import com.lipabill.app.data.sms.LedgerNotifier
 import com.lipabill.app.data.sms.MpesaSmsFilter
 import com.lipabill.app.data.sms.SmsInboxReader
+import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.ussd.PendingPaymentReceipt
 import com.lipabill.app.ussd.UssdMenuBuilder
 import com.lipabill.app.viewmodel.idsMatchingPayeeKey
@@ -55,6 +59,7 @@ class TransactionRepository(
     private val securePreferences: SecurePreferences,
     private val merchantDirectory: MerchantDirectory,
     private val onNewTransaction: (MpesaTransaction) -> Unit = {},
+    private val onPaymentFailure: (title: String, body: String, notifyId: Int) -> Unit = { _, _, _ -> },
     var afterInsert: (suspend () -> Unit)? = null,
     /** Narrows the user's picks to what may be imported now (region ∩ enabled; SIM is dial-only). */
     private val usableSources: (AppRegion, Set<MoneySource>) -> Set<MoneySource> = { _, chosen -> chosen }
@@ -203,6 +208,61 @@ class TransactionRepository(
 
     suspend fun rememberMerchantPayment(tx: MpesaTransaction, amount: Double) {
         merchantDirectory.rememberOutgoing(tx, amount)
+    }
+
+    /**
+     * Failure SMS for a payment that never settled: void a matching recent ledger row,
+     * consume a pending dial enrich slot, and mark an open processing receipt Failed.
+     * @return true when something was corrected or the open receipt was marked failed.
+     */
+    suspend fun handlePaymentFailure(
+        address: String?,
+        body: String,
+        timestampMillis: Long
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!FailureSms.isFailure(body)) return@withContext false
+        val region = securePreferences.appRegion
+        val amount = FailureSms.extractAmount(body, region) ?: return@withContext false
+        val source = MoneySource.fromSender(address, region)
+        val partyDigits = FailureSms.extractPartyDigits(body)
+        var acted = false
+
+        val open = PendingPaymentReceipt.peekOpen()
+        if (open != null &&
+            FailureLedgerMatch.matchesOpenPayment(amount, partyDigits, open, timestampMillis)
+        ) {
+            PendingPaymentReceipt.markFailed(open.auditId)
+            acted = true
+        }
+
+        if (merchantDirectory.consumePendingForFailedAmount(amount)) {
+            acted = true
+        }
+
+        val candidates = dao.ledgerSince(timestampMillis - FailureLedgerMatch.TTL_MS)
+            .map { it.toDomain() }
+        val voidTarget = FailureLedgerMatch.findVoidCandidate(
+            amount = amount,
+            source = source,
+            partyDigits = partyDigits,
+            candidates = candidates,
+            failureAtMillis = timestampMillis
+        )
+        if (voidTarget != null && voidTarget.id > 0L) {
+            dao.deleteByIds(listOf(voidTarget.id))
+            acted = true
+        }
+
+        if (acted && LedgerNotifier.isFresh(timestampMillis)) {
+            val label = source?.label ?: "Payment"
+            val amountText = "${ActiveRegion.current.currencySymbol} ${formatKes(amount)}"
+            onPaymentFailure(
+                "$label · failed",
+                "$amountText did not go through",
+                body.hashCode()
+            )
+        }
+        acted
     }
 
     /**
@@ -378,6 +438,10 @@ class TransactionRepository(
             }
             // Bank settlement twin of an already-stored Lipa-na-KCB merchant receipt.
             if (settlementTwin && ConfirmationIngestion.sharesKnownReceipt(sms.body, known)) {
+                continue
+            }
+            if (FailureSms.isFailure(sms.body)) {
+                handlePaymentFailure(sms.address, sms.body, sms.dateMillis)
                 continue
             }
             val parsed = ConfirmationIngestion.acceptAndParse(
