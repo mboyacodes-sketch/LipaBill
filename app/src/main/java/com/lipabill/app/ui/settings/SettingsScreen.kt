@@ -634,7 +634,7 @@ private fun SimChoices(
                 Text("Payment SIM", style = HomeType.rowTitle, color = Ink)
                 Spacer(modifier = Modifier.height(Space.tight))
                 Text(
-                    PaymentDialResolver.missingPaySimMessage(region),
+                    PaymentDialResolver.payUnavailableMessage(region, enabledSources),
                     style = HomeType.caption,
                     color = Expense
                 )

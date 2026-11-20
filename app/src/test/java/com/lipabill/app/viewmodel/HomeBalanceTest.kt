@@ -66,7 +66,8 @@ class HomeBalanceTest {
                 active = MoneySource.MPESA,
                 choices = choices,
                 pillPick = MoneySource.AIRTEL_MONEY,
-                primary = MoneySource.MPESA
+                primary = MoneySource.MPESA,
+                enabled = enabled
             )
         )
         // Airtel turned off in Settings: fall back to dial / primary.
@@ -76,7 +77,8 @@ class HomeBalanceTest {
                 active = MoneySource.AIRTEL_MONEY,
                 choices = listOf(MoneySource.MPESA),
                 pillPick = MoneySource.AIRTEL_MONEY,
-                primary = MoneySource.MPESA
+                primary = MoneySource.MPESA,
+                enabled = setOf(MoneySource.MPESA, MoneySource.KCB)
             )
         )
     }
@@ -89,7 +91,44 @@ class HomeBalanceTest {
                 active = MoneySource.MPESA,
                 choices = listOf(MoneySource.MPESA, MoneySource.AIRTEL_MONEY),
                 pillPick = MoneySource.AIRTEL_MONEY,
-                primary = MoneySource.MPESA
+                primary = MoneySource.MPESA,
+                enabled = enabled
+            )
+        )
+    }
+
+    @Test
+    fun bankOnlyShowsBankNotMpesa() {
+        assertEquals(
+            MoneySource.KCB,
+            resolveBalanceSource(
+                active = null,
+                choices = emptyList(),
+                pillPick = null,
+                primary = MoneySource.MPESA,
+                enabled = setOf(MoneySource.KCB)
+            )
+        )
+        val cards = walletCards(
+            AppRegion.KENYA,
+            emptyList(),
+            MoneySource.KCB,
+            listOf(safaricom),
+            mapOf(MoneySource.KCB to 5.0)
+        )
+        assertEquals(listOf(MoneySource.KCB), cards.map { it.source })
+    }
+
+    @Test
+    fun enabledWalletWithoutSimStillShowsWaitingCard() {
+        assertEquals(
+            MoneySource.MPESA,
+            resolveBalanceSource(
+                active = null,
+                choices = emptyList(),
+                pillPick = null,
+                primary = MoneySource.MPESA,
+                enabled = setOf(MoneySource.MPESA, MoneySource.KCB)
             )
         )
     }
