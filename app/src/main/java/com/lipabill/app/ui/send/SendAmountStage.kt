@@ -264,8 +264,7 @@ internal fun SendAmountEntry(
                     style = SheetHeroAmountStyle,
                     fontWeight = FontWeight.Bold,
                     color = if (amountInput.isEmpty()) Mute else Ink,
-                    maxLines = 1,
-                    modifier = Modifier.recordingPrivacyCover()
+                    maxLines = 1
                 )
             }
         }
@@ -289,7 +288,8 @@ internal fun SendAmountEntry(
                     label = "Remaining balance",
                     value = formatKsh(remaining.coerceAtLeast(0.0)),
                     strong = true,
-                    valueColor = if (remaining < 0) Expense else Ink
+                    valueColor = if (remaining < 0) Expense else Ink,
+                    private = true
                 )
             }
         }
