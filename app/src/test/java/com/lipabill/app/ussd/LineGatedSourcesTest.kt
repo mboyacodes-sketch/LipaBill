@@ -2,7 +2,9 @@ package com.lipabill.app.ussd
 
 import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MoneySource
+import com.lipabill.app.data.model.lockedLedgerSources
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -63,9 +65,22 @@ class LineGatedSourcesTest {
 
     @Test
     fun noSimKeepsOnlyBanks() {
+        // Dial / card usable set — SMS import uses importableLedgerSources (not SIM-gated).
         assertEquals(
             setOf(MoneySource.KCB, MoneySource.EQUITY),
             LineGatedSources.usable(AppRegion.KENYA, chosen, emptyList())
+        )
+    }
+
+    @Test
+    fun dial_usable_without_sim_is_stricter_than_sms_import() {
+        // Regression guard for bank→MNO: dial may drop MPESA; SMS must still import it.
+        assertFalse(MoneySource.MPESA in LineGatedSources.usable(AppRegion.KENYA, chosen, emptyList()))
+        assertTrue(
+            MoneySource.MPESA in com.lipabill.app.data.model.importableLedgerSources(
+                AppRegion.KENYA,
+                chosen
+            )
         )
     }
 
@@ -114,4 +129,20 @@ class LineGatedSourcesTest {
         val noAccess = LineGatedSources.locked(AppRegion.KENYA, emptyList(), phoneAccess = false)
         assertTrue(noAccess.getValue(MoneySource.MPESA).startsWith("Allow phone access"))
     }
+
+    @Test
+    fun ledger_lock_hints_say_sms_still_works() {
+        val hints = lockedLedgerSources(AppRegion.KENYA, emptyList(), phoneAccess = true)
+        assertTrue(hints.getValue(MoneySource.MPESA).contains("SMS still imports"))
+        assertTrue(hints.getValue(MoneySource.MPESA).contains("Send and Pay"))
+        val noPhone = lockedLedgerSources(AppRegion.KENYA, emptyList(), phoneAccess = false)
+        assertTrue(noPhone.getValue(MoneySource.MPESA).contains("SMS still imports"))
+    }
+
+    @Test
+    fun dial_lock_copy_stays_strict_for_send_pay() {
+        val locked = LineGatedSources.locked(AppRegion.KENYA, emptyList(), phoneAccess = true)
+        assertEquals("T-Kash needs an active Telkom SIM in this phone.", locked[MoneySource.TKASH])
+    }
+
 }
