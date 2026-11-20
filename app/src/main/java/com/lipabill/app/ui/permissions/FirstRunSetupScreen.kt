@@ -1,16 +1,21 @@
 package com.lipabill.app.ui.permissions
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,66 +27,72 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AutoGraph
-import androidx.compose.material.icons.outlined.ConfirmationNumber
-import androidx.compose.material.icons.outlined.NorthEast
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.lipabill.app.R
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.sp
 import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.RegionGuess
-import com.lipabill.app.data.model.detectAppRegion
-import com.lipabill.app.data.model.hint
 import com.lipabill.app.data.model.defaultLedgerSources
+import com.lipabill.app.data.model.detectAppRegion
 import com.lipabill.app.data.model.groupedProviderCatalog
-import com.lipabill.app.data.model.providerCatalog
+import com.lipabill.app.data.model.hint
 import com.lipabill.app.data.model.lockedLedgerSources
+import com.lipabill.app.data.model.providerCatalog
+import com.lipabill.app.data.model.regionsPresentOnSims
+import com.lipabill.app.data.model.selectableAppRegions
 import com.lipabill.app.data.model.toggleLedgerSource
-import com.lipabill.app.ussd.LineGatedSources
-import com.lipabill.app.ussd.SimLineHelper
 import com.lipabill.app.ui.ProviderPicker
-import com.lipabill.app.ui.RegionPicker
-import com.lipabill.app.ui.components.LipaBillMark
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Canvas
+import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
+import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ussd.SimLineHelper
 import kotlinx.coroutines.launch
 
 /** Pager turn for first-run / consent — about half the default spring settle. */
 private const val PAGE_TURN_MS = 180
 
 /**
- * Consent wizard. Welcome → Region → Providers → SMS → (Kenya: Phone → Accessibility).
+ * Consent wizard. Welcome (three-slide intro) → Region → Providers → SMS →
+ * (Kenya: Phone → Accessibility). Setup pages share one layout: back arrow,
+ * progress track, eyebrow, title, option cards, pill CTA, step footer.
  * Later visits skip Welcome: payment access is still a cluster; Camera,
  * Notifications, and Hibernation open as one page when needed.
  */
@@ -114,6 +125,10 @@ fun FirstRunSetupScreen(
 ) {
     val context = LocalContext.current
     val regionGuess = remember { context.detectAppRegion() }
+    val simRegions = remember { context.regionsPresentOnSims() }
+    val selectableRegions = remember(region, simRegions) {
+        selectableAppRegions(simRegions, region)
+    }
     var userChoseRegion by remember { mutableStateOf(false) }
     // Primary + one other MNO + common banks — not M-Pesa alone under the 5-rail cap.
     var selectedProviders by remember(region) {
@@ -183,7 +198,22 @@ fun FirstRunSetupScreen(
     }
 
     val page = pages[pager.currentPage]
+    val intro = rememberPagerState(pageCount = { FirstRunWizard.INTRO_SLIDES.size })
+    val regionIndex = pages.indexOf(FirstRunPage.Region).coerceAtLeast(0)
+    fun back() {
+        if (pager.currentPage > 0) goTo(pager.currentPage - 1) else if (!firstRun) onFinished()
+    }
+    if (firstRun) {
+        BackHandler(enabled = pager.currentPage > 0 || intro.currentPage > 0) {
+            if (page == FirstRunPage.Welcome) {
+                scope.launch { intro.animateScrollToPage(intro.currentPage - 1) }
+            } else {
+                back()
+            }
+        }
+    }
     val chrome = disclosureChrome()
+    val onIntro = page == FirstRunPage.Welcome
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -191,57 +221,48 @@ fun FirstRunSetupScreen(
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(top = chrome.top, bottom = chrome.bottom)
     ) {
-        Box(
+        // Intro brings its own Skip, dots and CTA; setup pages share this chrome.
+        if (!onIntro) {
+            WizardTopBar(
+                progress = FirstRunWizard.stepProgress(pages, page),
+                showBack = pager.currentPage > 0 || !firstRun,
+                onBack = ::back,
+                side = chrome.side
+            )
+        }
+        HorizontalPager(
+            state = pager,
+            userScrollEnabled = false,
             modifier = Modifier
-                .weight(if (page == FirstRunPage.Welcome) 0.72f else 1f)
+                .weight(1f)
                 .fillMaxWidth()
-        ) {
-            if (page == FirstRunPage.Welcome) {
-                LipaBillMark(
-                    size = 96.dp,
-                    modifier = Modifier.align(Alignment.Center)
+        ) { index ->
+            if (pages[index] == FirstRunPage.Welcome) {
+                FirstRunIntro(
+                    pager = intro,
+                    region = region,
+                    onContinue = {
+                        if (intro.currentPage < intro.pageCount - 1) {
+                            scope.launch {
+                                intro.animateScrollToPage(
+                                    intro.currentPage + 1,
+                                    animationSpec = tween(durationMillis = PAGE_TURN_MS)
+                                )
+                            }
+                        } else {
+                            goTo(regionIndex)
+                        }
+                    },
+                    onSkip = { goTo(regionIndex) }
                 )
             } else {
-                Illustration(
-                    art = wizardArt(page),
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = chrome.side, vertical = chrome.art)
-                )
-            }
-            TextButton(
-                onClick = {
-                    if (page == FirstRunPage.Welcome) {
-                        goTo(pages.indexOf(FirstRunPage.Region).coerceAtLeast(0))
-                    } else {
-                        next()
-                    }
-                },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(end = (chrome.side - 16.dp).coerceAtLeast(8.dp))
-            ) {
-                Text("Skip", color = Mute)
-            }
-        }
-        Column(
-            modifier = Modifier
-                .weight(if (page == FirstRunPage.Welcome) 1.35f else 1f)
-                .fillMaxWidth()
-                .padding(horizontal = chrome.side)
-        ) {
-            HorizontalPager(
-                state = pager,
-                userScrollEnabled = false,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) { index ->
                 WizardPageBody(
                     page = pages[index],
                     region = region,
                     regionGuess = regionGuess,
+                    selectableRegions = selectableRegions,
                     onRegionSelected = { picked ->
+                        if (picked !in selectableRegions) return@WizardPageBody
                         userChoseRegion = true
                         onRegionSelected(picked)
                     },
@@ -261,62 +282,120 @@ fun FirstRunSetupScreen(
                     accessibilityEnabled = accessibilityEnabled,
                     accessibilityNote = accessibilityNote,
                     cameraGranted = cameraGranted,
-                    notificationsGranted = notificationsGranted
+                    notificationsGranted = notificationsGranted,
+                    side = chrome.side
                 )
             }
-            PageDots(
-                count = pages.size,
-                selected = pager.currentPage,
+        }
+        if (!onIntro) {
+            Column(
                 modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .padding(vertical = Space.block)
-            )
-            WizardActions(
-                page = page,
-                region = region,
-                providersPicked = selectedProviders.isNotEmpty(),
-                smsGranted = smsGranted,
-                permanentlyDenied = permanentlyDenied,
-                showRestrictedSettingsHelp = showRestrictedSettingsHelp,
-                phoneReady = phoneGranted && simGranted,
-                accessibilityEnabled = accessibilityEnabled,
-                onRequestSms = onRequestSms,
-                onOpenSmsSettings = onOpenSmsSettings,
-                onRequestPhone = onRequestPhone,
-                onAgreeAccessibility = onAgreeAccessibility,
-                cameraGranted = cameraGranted,
-                notificationsGranted = notificationsGranted,
-                onRequestCamera = onRequestCamera,
-                onRequestNotifications = onRequestNotifications,
-                onSkipNotifications = {
-                    onSkipNotifications()
-                    next()
-                },
-                onSkipHibernation = {
-                    onSkipHibernation()
-                    next()
-                },
-                onOpenHibernationSettings = onOpenHibernationSettings,
-                onPrevious = { goTo(pager.currentPage - 1) },
-                onNext = { next() },
-                onFinished = onFinished,
-                firstRun = firstRun,
-                canGoPrevious = pager.currentPage > 0,
-                isLastPage = pager.currentPage == pages.lastIndex
+                    .fillMaxWidth()
+                    .padding(horizontal = chrome.side)
+                    .padding(top = Space.block)
+            ) {
+                WizardActions(
+                    page = page,
+                    region = region,
+                    providersPicked = selectedProviders.isNotEmpty(),
+                    smsGranted = smsGranted,
+                    permanentlyDenied = permanentlyDenied,
+                    showRestrictedSettingsHelp = showRestrictedSettingsHelp,
+                    phoneReady = phoneGranted && simGranted,
+                    accessibilityEnabled = accessibilityEnabled,
+                    onRequestSms = onRequestSms,
+                    onOpenSmsSettings = onOpenSmsSettings,
+                    onRequestPhone = onRequestPhone,
+                    onAgreeAccessibility = onAgreeAccessibility,
+                    cameraGranted = cameraGranted,
+                    notificationsGranted = notificationsGranted,
+                    onRequestCamera = onRequestCamera,
+                    onRequestNotifications = onRequestNotifications,
+                    onSkipNotifications = {
+                        onSkipNotifications()
+                        next()
+                    },
+                    onSkipHibernation = {
+                        onSkipHibernation()
+                        next()
+                    },
+                    onOpenHibernationSettings = onOpenHibernationSettings,
+                    onNext = { next() },
+                    onFinished = onFinished,
+                    firstRun = firstRun,
+                    isLastPage = pager.currentPage == pages.lastIndex
+                )
+                StepFooter(
+                    step = FirstRunWizard.stepLabel(pages, page),
+                    onSkip = when (page) {
+                        FirstRunPage.Notifications -> ({
+                            onSkipNotifications()
+                            next()
+                        })
+                        FirstRunPage.Hibernation -> ({
+                            onSkipHibernation()
+                            next()
+                        })
+                        else -> ({ next() })
+                    }
+                )
+            }
+        }
+    }
+}
+
+/** Back arrow over a thin progress track, as on every setup page. */
+@Composable
+private fun WizardTopBar(
+    progress: Float,
+    showBack: Boolean,
+    onBack: () -> Unit,
+    side: Dp
+) {
+    val fill by animateFloatAsState(progress.coerceIn(0f, 1f), tween(PAGE_TURN_MS * 2), label = "progress")
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .padding(horizontal = (side - 12.dp).coerceAtLeast(4.dp))
+                .height(48.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            if (showBack) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Ink
+                    )
+                }
+            }
+        }
+        Box(
+            modifier = Modifier
+                .padding(horizontal = side)
+                .fillMaxWidth()
+                .height(4.dp)
+                .clip(CircleShape)
+                .background(Hairline)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fill)
+                    .fillMaxHeight()
+                    .clip(CircleShape)
+                    .background(Accent)
             )
         }
     }
 }
 
-private fun wizardArt(page: FirstRunPage): Int = when (page) {
-    FirstRunPage.Welcome,
-    FirstRunPage.Region,
-    FirstRunPage.Providers,
-    FirstRunPage.Camera -> R.drawable.ill_wizard_welcome
-    FirstRunPage.Sms, FirstRunPage.Notifications -> R.drawable.ill_wizard_sms
-    FirstRunPage.Phone, FirstRunPage.Hibernation ->
-        R.drawable.ill_wizard_phone
-    FirstRunPage.Accessibility -> R.drawable.ill_wizard_accessibility
+@Composable
+private fun questionTitle() = MaterialTheme.typography.displayLarge.let {
+    it.copy(
+        fontSize = it.fontSize * 0.9f,
+        lineHeight = it.fontSize * 0.9f * 1.18f,
+        fontWeight = FontWeight.SemiBold
+    )
 }
 
 @Composable
@@ -324,6 +403,7 @@ private fun WizardPageBody(
     page: FirstRunPage,
     region: AppRegion = AppRegion.DEFAULT,
     regionGuess: RegionGuess? = null,
+    selectableRegions: Set<AppRegion> = AppRegion.entries.toSet(),
     onRegionSelected: (AppRegion) -> Unit = {},
     selectedProviders: Set<MoneySource> = emptySet(),
     lockedProviders: Map<MoneySource, String> = emptyMap(),
@@ -335,7 +415,8 @@ private fun WizardPageBody(
     accessibilityEnabled: Boolean,
     accessibilityNote: String? = null,
     cameraGranted: Boolean = false,
-    notificationsGranted: Boolean = false
+    notificationsGranted: Boolean = false,
+    side: Dp = 24.dp
 ) {
     val (title, body) = when (page) {
         FirstRunPage.Welcome ->
@@ -344,81 +425,111 @@ private fun WizardPageBody(
             FirstRunWizard.REGION_TITLE to FirstRunWizard.REGION_BODY
         FirstRunPage.Providers ->
             FirstRunWizard.PROVIDERS_TITLE to FirstRunWizard.PROVIDERS_BODY
-        FirstRunPage.Sms -> FirstRunWizard.SMS_TITLE to if (smsGranted) {
-            "SMS is allowed. Where it went can now fill on this phone."
-        } else {
-            FirstRunWizard.smsBody(showRestrictedSettingsHelp)
-        }
-        FirstRunPage.Phone -> FirstRunWizard.PHONE_TITLE to if (phoneReady) {
-            "Phone and SIM are allowed. Send and Pay can place the call you confirm."
-        } else {
-            FirstRunWizard.PHONE_BODY
-        }
+        FirstRunPage.Sms -> FirstRunWizard.SMS_TITLE to FirstRunWizard.smsBody(showRestrictedSettingsHelp)
+        FirstRunPage.Phone -> FirstRunWizard.PHONE_TITLE to FirstRunWizard.PHONE_BODY
         FirstRunPage.Accessibility ->
             FirstRunWizard.ACCESSIBILITY_TITLE to FirstRunWizard.ACCESSIBILITY_BODY
-        FirstRunPage.Camera -> FirstRunWizard.CAMERA_TITLE to if (cameraGranted) {
-            "Camera is allowed. Ticket and pay codes can be scanned."
-        } else {
-            FirstRunWizard.CAMERA_BODY
-        }
-        FirstRunPage.Notifications -> FirstRunWizard.NOTIFICATIONS_TITLE to if (notificationsGranted) {
-            "Alerts are allowed on this phone."
-        } else {
-            FirstRunWizard.NOTIFICATIONS_BODY
-        }
+        FirstRunPage.Camera -> FirstRunWizard.CAMERA_TITLE to FirstRunWizard.CAMERA_BODY
+        FirstRunPage.Notifications ->
+            FirstRunWizard.NOTIFICATIONS_TITLE to FirstRunWizard.NOTIFICATIONS_BODY
         FirstRunPage.Hibernation ->
             FirstRunWizard.HIBERNATION_TITLE to FirstRunWizard.HIBERNATION_BODY
     }
-    val accessibilityPage = page == FirstRunPage.Accessibility
+    // Granted / state lines sit in the info note under the content.
+    val note: String? = when (page) {
+        FirstRunPage.Region -> when {
+            selectableRegions.size < AppRegion.entries.size ->
+                "Only countries on this phone’s SIMs."
+            else -> regionGuess?.takeIf { it.region == region }?.hint()
+        }
+        FirstRunPage.Providers ->
+            lockedProviders.values.distinct().joinToString("\n").ifBlank { null }
+        FirstRunPage.Sms -> if (smsGranted) {
+            "SMS is allowed. Where it went can now fill on this phone."
+        } else {
+            null
+        }
+        FirstRunPage.Phone -> if (phoneReady) {
+            "Phone and SIM are allowed. Send and Pay can place the call you confirm."
+        } else {
+            null
+        }
+        FirstRunPage.Accessibility -> if (accessibilityEnabled) {
+            "“${AccessibilityServiceDisclosure.SERVICE_LABEL}” is on."
+        } else {
+            null
+        }
+        FirstRunPage.Camera -> if (cameraGranted) {
+            "Camera is allowed. Ticket and pay codes can be scanned."
+        } else {
+            null
+        }
+        FirstRunPage.Notifications -> if (notificationsGranted) {
+            "Alerts are allowed on this phone."
+        } else {
+            null
+        }
+        else -> null
+    }
+    // Region + rails stay one viewport; other pages may scroll for long copy.
+    val fitOnePage = page == FirstRunPage.Region || page == FirstRunPage.Providers
+    val topGap = if (fitOnePage) Space.block else Space.section
+    val titleGap = if (fitOnePage) Space.block else Space.block * 2
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 8.dp, vertical = disclosureChrome().copy),
-        horizontalAlignment = if (accessibilityPage) Alignment.Start else Alignment.CenterHorizontally
+            .then(
+                if (fitOnePage) Modifier
+                else Modifier.verticalScroll(rememberScrollState())
+            )
+            .padding(horizontal = side)
+            .padding(top = disclosureChrome().copy + topGap)
     ) {
         Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            color = Ink,
-            textAlign = if (accessibilityPage) TextAlign.Start else TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 8.dp)
+            text = FirstRunWizard.eyebrow(page).uppercase(),
+            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.4.sp),
+            color = Mute
         )
-        Spacer(modifier = Modifier.height(Space.block))
-        if (accessibilityPage) {
-            AccessibilityDisclosurePoints(
-                bodyPrefix = accessibilityNote,
-                modifier = Modifier.padding(horizontal = 8.dp)
-            )
+        Spacer(modifier = Modifier.height(titleGap))
+        Text(text = title, style = questionTitle(), color = Ink)
+        Spacer(modifier = Modifier.height(titleGap))
+        if (page == FirstRunPage.Accessibility) {
+            AccessibilityDisclosurePoints(bodyPrefix = accessibilityNote)
         } else {
             Text(
                 text = body,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Mute,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 8.dp)
+                style = if (fitOnePage) {
+                    MaterialTheme.typography.bodyMedium
+                } else {
+                    MaterialTheme.typography.bodyLarge
+                },
+                color = Mute
             )
-        }
-        if (page == FirstRunPage.Welcome) {
-            Spacer(modifier = Modifier.height(Space.section))
-            WelcomeBeats()
         }
         if (page == FirstRunPage.Region) {
             Spacer(modifier = Modifier.height(Space.section))
-            RegionPicker(
-                selected = region,
-                onSelect = onRegionSelected
+            OptionGrid(
+                items = AppRegion.entries,
+                selected = { it == region },
+                enabled = { it in selectableRegions },
+                onClick = onRegionSelected,
+                role = Role.RadioButton,
+                lead = { option ->
+                    Text(
+                        text = option.flagEmoji,
+                        fontFamily = FontFamily.Default,
+                        fontSize = 20.sp
+                    )
+                },
+                title = { it.label },
+                caption = { option ->
+                    when {
+                        option !in selectableRegions -> "No SIM for this country"
+                        option.canSendPay -> "History, send and pay"
+                        else -> "History and passes"
+                    }
+                }
             )
-            if (regionGuess?.region == region) {
-                Spacer(modifier = Modifier.height(Space.block))
-                Text(
-                    text = regionGuess.hint(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Mute,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                )
-            }
         }
         if (page == FirstRunPage.Providers) {
             Spacer(modifier = Modifier.height(Space.section))
@@ -427,141 +538,251 @@ private fun WizardPageBody(
                 groups = groupedProviderCatalog(region),
                 selected = selectedProviders,
                 onToggle = onToggleProvider,
-                locked = lockedProviders
+                locked = lockedProviders,
+                modifier = Modifier
+                    .weight(1f, fill = true)
+                    .fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(Space.block))
+            Text(
+                text = "Pick up to 5, or skip for now.",
+                style = MaterialTheme.typography.labelMedium,
+                color = Mute
             )
         }
         if (page == FirstRunPage.Sms && showRestrictedSettingsHelp && !smsGranted) {
-            Spacer(modifier = Modifier.height(Space.section))
+            Spacer(modifier = Modifier.height(Space.section * 2))
             RestrictedSettingsSteps()
         }
         if (page == FirstRunPage.Sms && permanentlyDenied && !showRestrictedSettingsHelp && !smsGranted) {
-            Spacer(modifier = Modifier.height(Space.section))
-            Text(
+            Spacer(modifier = Modifier.height(Space.section * 2))
+            InfoNote(
                 text = "Permission was denied. Enable SMS in App info → Permissions.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-                textAlign = TextAlign.Center
+                color = MaterialTheme.colorScheme.error
             )
         }
-        if (page == FirstRunPage.Accessibility && accessibilityEnabled) {
-            Spacer(modifier = Modifier.height(Space.block))
-            Text(
-                text = "“${AccessibilityServiceDisclosure.SERVICE_LABEL}” is on.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Accent,
-                textAlign = TextAlign.Center
-            )
+        if (note != null) {
+            Spacer(modifier = Modifier.height(if (fitOnePage) Space.block else Space.section * 2))
+            InfoNote(text = note)
         }
-        Spacer(modifier = Modifier.height(Space.section))
+        if (!fitOnePage) {
+            Spacer(modifier = Modifier.height(Space.section))
+        }
     }
 }
 
-private data class WelcomeBeat(
-    val n: String,
-    val title: String,
-    val body: String,
-    val icon: ImageVector
-)
+/** Two-up selectable cards with a corner check, like the reference's "do first" grid. */
+@Composable
+private fun <T> OptionGrid(
+    items: List<T>,
+    selected: (T) -> Boolean,
+    onClick: (T) -> Unit,
+    role: Role,
+    lead: @Composable (T) -> Unit,
+    title: (T) -> String,
+    caption: (T) -> String?,
+    enabled: (T) -> Boolean = { true }
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(Space.block * 2)) {
+        items.chunked(2).forEach { row ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(Space.block * 2),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min)
+            ) {
+                row.forEach { item ->
+                    val canSelect = enabled(item)
+                    OptionCard(
+                        selected = selected(item),
+                        enabled = canSelect,
+                        onClick = { if (canSelect) onClick(item) },
+                        role = role,
+                        lead = { lead(item) },
+                        title = title(item),
+                        caption = caption(item),
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    )
+                }
+                if (row.size == 1) Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
 
 @Composable
-private fun WelcomeBeats() {
-    val beats = listOf(
-        WelcomeBeat(
-            n = "01",
-            title = "See the story",
-            body = "Where it went, from the texts you already get.",
-            icon = Icons.Outlined.AutoGraph
-        ),
-        WelcomeBeat(
-            n = "02",
-            title = "Then move",
-            body = "Send and pay in Kenya. Show a pass anywhere.",
-            icon = Icons.Outlined.NorthEast
-        ),
-        WelcomeBeat(
-            n = "03",
-            title = "What it became",
-            body = "The trip, the night out, a QR so someone can pay you.",
-            icon = Icons.Outlined.ConfirmationNumber
-        )
+private fun OptionCard(
+    selected: Boolean,
+    onClick: () -> Unit,
+    role: Role,
+    lead: @Composable () -> Unit,
+    title: String,
+    caption: String?,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    val shape = RoundedCornerShape(18.dp)
+    val edge by animateColorAsState(
+        when {
+            !enabled -> Hairline
+            selected -> Accent
+            else -> Hairline
+        },
+        label = "optionEdge"
+    )
+    val leadFill by animateColorAsState(
+        when {
+            !enabled -> SoftBlue.copy(alpha = 0.45f)
+            selected -> Accent.copy(alpha = 0.14f)
+            else -> SoftBlue
+        },
+        label = "optionLead"
     )
     Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(Space.block)
+        modifier = modifier
+            .clip(shape)
+            .background(CardWhite)
+            .border(if (selected && enabled) 1.5.dp else 1.dp, edge, shape)
+            .then(
+                if (enabled) Modifier.selectable(selected = selected, role = role, onClick = onClick)
+                else Modifier
+            )
+            .padding(14.dp)
+            .then(if (enabled) Modifier else Modifier.alpha(0.55f))
     ) {
-        beats.forEachIndexed { index, beat ->
-            if (index > 0) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(Hairline)
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+        Row(verticalAlignment = Alignment.Top) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(leadFill),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(SoftBlue),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = beat.icon,
-                        contentDescription = null,
-                        tint = Accent,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "${beat.n}  ${beat.title}",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = Ink
-                    )
-                    Text(
-                        text = beat.body,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Mute
-                    )
-                }
+                lead()
             }
+            Spacer(modifier = Modifier.weight(1f))
+            if (enabled) CheckDot(selected)
+        }
+        Spacer(modifier = Modifier.height(Space.section))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = if (enabled) Ink else Mute,
+            maxLines = 1
+        )
+        if (caption != null) {
+            Text(
+                text = caption,
+                style = MaterialTheme.typography.labelMedium,
+                color = Mute
+            )
         }
     }
 }
 
 @Composable
-private fun Illustration(art: Int, modifier: Modifier = Modifier) {
-    Image(
-        painter = painterResource(art),
-        contentDescription = null,
-        modifier = modifier,
-        contentScale = ContentScale.Fit
-    )
+private fun CheckDot(on: Boolean) {
+    Box(
+        modifier = Modifier
+            .size(20.dp)
+            .clip(CircleShape)
+            .background(if (on) Accent else Color.Transparent)
+            .border(1.dp, if (on) Accent else Hairline, CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        if (on) {
+            Icon(
+                Icons.Filled.Check,
+                contentDescription = null,
+                tint = OnAccent,
+                modifier = Modifier.size(13.dp)
+            )
+        }
+    }
+}
+
+/** Grey note with an info glyph — status, hints, and why we ask. */
+@Composable
+private fun InfoNote(text: String, color: Color = Mute) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(SoftBlue.copy(alpha = 0.55f))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Icon(
+            Icons.Outlined.Info,
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier
+                .padding(top = 1.dp)
+                .size(16.dp)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(text = text, style = MaterialTheme.typography.bodyMedium, color = color)
+    }
+}
+
+/** Brand pill CTA — Accent on OnAccent, matching Request / Habits actions. */
+@Composable
+internal fun WizardPrimaryButton(text: String, onClick: () -> Unit, enabled: Boolean = true) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        shape = CircleShape,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Accent,
+            contentColor = OnAccent,
+            disabledContainerColor = Accent.copy(alpha = 0.35f),
+            disabledContentColor = OnAccent
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+    ) {
+        Text(text, style = MaterialTheme.typography.titleMedium)
+    }
 }
 
 @Composable
-private fun PageDots(count: Int, selected: Int, modifier: Modifier = Modifier) {
+private fun WizardSecondaryButton(text: String, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        shape = CircleShape,
+        border = BorderStroke(1.dp, Hairline),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+    ) {
+        Text(text, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+/** "02 / 05 · Skip for now" under the CTA. */
+@Composable
+private fun StepFooter(step: String, onSkip: () -> Unit) {
     Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = Space.block),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        repeat(count) { i ->
-            val on = i == selected
-            val color by animateColorAsState(if (on) Accent else Hairline, label = "dot")
-            Box(
-                modifier = Modifier
-                    .height(8.dp)
-                    .width(if (on) 18.dp else 8.dp)
-                    .clip(RoundedCornerShape(99.dp))
-                    .background(color)
-            )
-        }
+        Text(text = "$step  ·", style = MaterialTheme.typography.labelMedium, color = Mute)
+        Text(
+            text = "Skip for now",
+            style = MaterialTheme.typography.labelMedium,
+            color = Ink,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onSkip)
+                .padding(horizontal = 6.dp, vertical = Space.gap * 2)
+        )
     }
 }
 
@@ -586,180 +807,82 @@ private fun WizardActions(
     onSkipNotifications: () -> Unit,
     onSkipHibernation: () -> Unit,
     onOpenHibernationSettings: () -> Unit,
-    onPrevious: () -> Unit,
     onNext: () -> Unit,
     onFinished: () -> Unit,
     firstRun: Boolean = true,
-    canGoPrevious: Boolean = true,
     isLastPage: Boolean = false
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp)
-    ) {
+    val doneLabel = if (isLastPage) {
+        if (firstRun) "Get started" else "Done"
+    } else {
+        "Next"
+    }
+    val gap = Space.block * 2
+    Column(modifier = Modifier.fillMaxWidth()) {
         when (page) {
-            FirstRunPage.Welcome -> {
-                Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
-                    Text("Next")
-                }
-            }
-            FirstRunPage.Region -> {
-                Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
-                    Text("Continue with ${region.label}")
-                }
-            }
-            FirstRunPage.Providers -> {
-                Button(
-                    onClick = onNext,
-                    enabled = providersPicked,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Keep these on the picture")
-                }
-            }
+            FirstRunPage.Welcome -> WizardPrimaryButton("Next", onNext)
+            FirstRunPage.Region -> WizardPrimaryButton("Continue with ${region.label}", onNext)
+            FirstRunPage.Providers ->
+                WizardPrimaryButton("Keep these on the picture", onNext, enabled = providersPicked)
             FirstRunPage.Sms -> {
                 if (smsGranted) {
-                    Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
-                        Text("Next")
-                    }
+                    WizardPrimaryButton("Next", onNext)
                 } else if (showRestrictedSettingsHelp) {
-                    Button(onClick = onOpenSmsSettings, modifier = Modifier.fillMaxWidth()) {
-                        Text("Open App info")
-                    }
-                    Spacer(modifier = Modifier.height(Space.gap))
-                    OutlinedButton(onClick = onRequestSms, modifier = Modifier.fillMaxWidth()) {
-                        Text("I've unlocked — Allow SMS")
-                    }
+                    WizardPrimaryButton("Open App info", onOpenSmsSettings)
+                    Spacer(modifier = Modifier.height(gap))
+                    WizardSecondaryButton("I've unlocked — Allow SMS", onRequestSms)
                 } else if (permanentlyDenied) {
-                    Button(onClick = onOpenSmsSettings, modifier = Modifier.fillMaxWidth()) {
-                        Text("Open system Settings")
-                    }
+                    WizardPrimaryButton("Open system Settings", onOpenSmsSettings)
                 } else {
-                    Button(onClick = onRequestSms, modifier = Modifier.fillMaxWidth()) {
-                        Text("Allow SMS access")
-                    }
+                    WizardPrimaryButton("Allow SMS access", onRequestSms)
                 }
                 if (!smsGranted) {
-                    Spacer(modifier = Modifier.height(Space.gap))
-                    OutlinedButton(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
-                        Text("Continue without SMS")
-                    }
+                    Spacer(modifier = Modifier.height(gap))
+                    WizardSecondaryButton("Continue without SMS", onNext)
                 }
             }
             FirstRunPage.Phone -> {
                 if (phoneReady) {
-                    Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
-                        Text("Next")
-                    }
+                    WizardPrimaryButton("Next", onNext)
                 } else {
-                    Button(onClick = onRequestPhone, modifier = Modifier.fillMaxWidth()) {
-                        Text("Allow phone")
-                    }
-                    Spacer(modifier = Modifier.height(Space.gap))
-                    OutlinedButton(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
-                        Text("Not now")
-                    }
+                    WizardPrimaryButton("Allow phone", onRequestPhone)
+                    Spacer(modifier = Modifier.height(gap))
+                    WizardSecondaryButton("Not now", onNext)
                 }
             }
             FirstRunPage.Accessibility -> {
+                val leave = if (isLastPage) onFinished else onNext
                 if (!accessibilityEnabled) {
-                    Button(onClick = onAgreeAccessibility, modifier = Modifier.fillMaxWidth()) {
-                        Text(AccessibilityServiceDisclosure.AGREE)
-                    }
-                    Spacer(modifier = Modifier.height(Space.gap))
-                    OutlinedButton(
-                        onClick = if (isLastPage) onFinished else onNext,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(AccessibilityServiceDisclosure.CONTINUE_WITHOUT)
-                    }
+                    WizardPrimaryButton(AccessibilityServiceDisclosure.AGREE, onAgreeAccessibility)
+                    Spacer(modifier = Modifier.height(gap))
+                    WizardSecondaryButton(AccessibilityServiceDisclosure.CONTINUE_WITHOUT, leave)
                 } else {
-                    Button(
-                        onClick = if (isLastPage) onFinished else onNext,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            if (isLastPage) {
-                                if (firstRun) "Get started" else "Done"
-                            } else {
-                                "Next"
-                            }
-                        )
-                    }
+                    WizardPrimaryButton(doneLabel, leave)
                 }
             }
             FirstRunPage.Camera -> OptionalAccessActions(
                 granted = cameraGranted,
                 allowLabel = PermissionLesson.Camera.allowLabel,
-                isLastPage = isLastPage,
-                firstRun = firstRun,
+                doneLabel = doneLabel,
                 onAllow = onRequestCamera,
                 onSkip = onNext,
-                onNext = onNext,
-                onFinished = onFinished
+                onDone = if (isLastPage) onFinished else onNext
             )
             FirstRunPage.Notifications -> OptionalAccessActions(
                 granted = notificationsGranted,
                 allowLabel = PermissionLesson.Notifications.allowLabel,
-                isLastPage = isLastPage,
-                firstRun = firstRun,
+                doneLabel = doneLabel,
                 onAllow = onRequestNotifications,
                 onSkip = onSkipNotifications,
-                onNext = onNext,
-                onFinished = onFinished
+                onDone = if (isLastPage) onFinished else onNext
             )
             FirstRunPage.Hibernation -> {
-                Button(
-                    onClick = {
-                        onOpenHibernationSettings()
-                        onSkipHibernation()
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(PermissionLesson.Hibernation.allowLabel)
-                }
-                Spacer(modifier = Modifier.height(Space.gap))
-                OutlinedButton(
-                    onClick = onSkipHibernation,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Not now")
-                }
-            }
-        }
-        if (page != FirstRunPage.Welcome) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = Space.block, start = 4.dp, end = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (canGoPrevious) {
-                    Text(
-                        text = "Previous",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = Mute,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(onClick = onPrevious)
-                            .padding(horizontal = Space.block, vertical = Space.gap)
-                    )
-                } else {
-                    Spacer(modifier = Modifier.width(1.dp))
-                }
-                if (!isLastPage && page != FirstRunPage.Hibernation) {
-                    Text(
-                        text = "Next",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = Accent,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(onClick = onNext)
-                            .padding(horizontal = Space.block, vertical = Space.gap)
-                    )
-                }
+                WizardPrimaryButton(PermissionLesson.Hibernation.allowLabel, {
+                    onOpenHibernationSettings()
+                    onSkipHibernation()
+                })
+                Spacer(modifier = Modifier.height(gap))
+                WizardSecondaryButton("Not now", onSkipHibernation)
             }
         }
     }
@@ -769,67 +892,50 @@ private fun WizardActions(
 private fun OptionalAccessActions(
     granted: Boolean,
     allowLabel: String,
-    isLastPage: Boolean,
-    firstRun: Boolean,
+    doneLabel: String,
     onAllow: () -> Unit,
     onSkip: () -> Unit,
-    onNext: () -> Unit,
-    onFinished: () -> Unit
+    onDone: () -> Unit
 ) {
     if (granted) {
-        Button(
-            onClick = if (isLastPage) onFinished else onNext,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                if (isLastPage) {
-                    if (firstRun) "Get started" else "Done"
-                } else {
-                    "Next"
-                }
-            )
-        }
+        WizardPrimaryButton(doneLabel, onDone)
     } else {
-        Button(onClick = onAllow, modifier = Modifier.fillMaxWidth()) {
-            Text(allowLabel)
-        }
-        Spacer(modifier = Modifier.height(Space.gap))
-        OutlinedButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
-            Text("Not now")
-        }
+        WizardPrimaryButton(allowLabel, onAllow)
+        Spacer(modifier = Modifier.height(Space.block * 2))
+        WizardSecondaryButton("Not now", onSkip)
     }
 }
 
 @Composable
-private fun AccessibilityDisclosurePoints(
-    bodyPrefix: String? = null,
-    modifier: Modifier = Modifier
-) {
-    Column(modifier = modifier.fillMaxWidth()) {
+private fun AccessibilityDisclosurePoints(bodyPrefix: String? = null) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         if (!bodyPrefix.isNullOrBlank()) {
             Text(
                 text = bodyPrefix.trim(),
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 color = Ink,
                 fontWeight = FontWeight.Medium
             )
-            Spacer(modifier = Modifier.height(Space.block))
+            Spacer(modifier = Modifier.height(Space.block * 2))
         }
         AccessibilityServiceDisclosure.STANDARD_POINTS.forEach { point ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 10.dp)
+                    .padding(bottom = 10.dp),
+                verticalAlignment = Alignment.Top
             ) {
-                Text(
-                    text = "•",
-                    color = Accent,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.width(16.dp)
+                Box(
+                    modifier = Modifier
+                        .padding(top = 7.dp)
+                        .size(5.dp)
+                        .clip(CircleShape)
+                        .background(Ink)
                 )
+                Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = point,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     color = Mute
                 )
             }
@@ -847,23 +953,31 @@ private fun RestrictedSettingsSteps() {
     )
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(Space.gap)
+        verticalArrangement = Arrangement.spacedBy(Space.block * 2)
     ) {
         steps.forEachIndexed { index, step ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "${index + 1}.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(Space.gap))
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(SoftBlue),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "${index + 1}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Ink
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = step,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = Ink,
                     modifier = Modifier.weight(1f)
                 )
             }

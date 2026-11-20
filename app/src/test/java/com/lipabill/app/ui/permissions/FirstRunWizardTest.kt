@@ -96,8 +96,8 @@ class FirstRunWizardTest {
     @Test
     fun providers_page_is_wallets_then_banks() {
         assertEquals("Who should be in the picture?", FirstRunWizard.PROVIDERS_TITLE)
-        assertTrue(FirstRunWizard.PROVIDERS_BODY.contains("Wallets first"))
-        assertTrue(FirstRunWizard.PROVIDERS_BODY.contains("up to 5"))
+        // Wallets-then-banks order is the grouped grid's job; the copy states the cap.
+        assertTrue(FirstRunWizard.PROVIDERS_BODY.contains("Up to 5"))
         assertTrue(FirstRunWizard.PROVIDERS_BODY.contains("Settings"))
     }
 
@@ -108,6 +108,32 @@ class FirstRunWizardTest {
         assertTrue(FirstRunWizard.WELCOME_BODY.contains("send", ignoreCase = true))
         assertFalse(FirstRunWizard.WELCOME_BODY.contains("AccessibilityService"))
         assertFalse(FirstRunWizard.WELCOME_BODY.contains("READ_SMS"))
+    }
+
+    @Test
+    fun welcome_is_a_three_slide_intro_led_by_the_story() {
+        assertEquals(3, FirstRunWizard.INTRO_SLIDES.size)
+        assertEquals(FirstRunWizard.WELCOME_TITLE, FirstRunWizard.INTRO_SLIDES.first().title)
+        FirstRunWizard.INTRO_SLIDES.forEach { slide ->
+            assertTrue(slide.body.length < 160)
+            assertFalse(slide.body.contains("AccessibilityService"))
+        }
+        assertFalse(FirstRunWizard.INTRO_FOOTER.contains("Log in", ignoreCase = true))
+        // Send slide names every Send/Pay country and none of the import-only ones.
+        val send = FirstRunWizard.INTRO_SLIDES[1].body
+        assertTrue(send.contains("Kenya and Uganda"))
+        assertFalse(send.contains("Tanzania"))
+    }
+
+    @Test
+    fun setup_steps_count_pages_after_welcome() {
+        val pages = FirstRunWizard.PAGES
+        assertEquals("01 / 05", FirstRunWizard.stepLabel(pages, FirstRunPage.Region))
+        assertEquals("05 / 05", FirstRunWizard.stepLabel(pages, FirstRunPage.Accessibility))
+        assertEquals(1f, FirstRunWizard.stepProgress(pages, FirstRunPage.Accessibility), 0.0001f)
+        val later = FirstRunWizard.laterPages(FirstRunPage.Phone)
+        assertEquals("02 / 03", FirstRunWizard.stepLabel(later, FirstRunPage.Phone))
+        assertEquals("Optional", FirstRunWizard.eyebrow(FirstRunPage.Sms))
     }
 
     @Test

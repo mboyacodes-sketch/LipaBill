@@ -203,6 +203,15 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_FIRST_RUN_SETUP_DONE, false)
         set(value) = prefs.edit().putBoolean(KEY_FIRST_RUN_SETUP_DONE, value).apply()
 
+    /**
+     * Debug / sideload only. When true, first-run stays incomplete across process
+     * death so Settings → Replay setup wizard is not skipped by the existing-install
+     * migration. Cleared when the wizard finishes.
+     */
+    var replayFirstRunPending: Boolean
+        get() = prefs.getBoolean(KEY_REPLAY_FIRST_RUN_PENDING, false)
+        set(value) = prefs.edit().putBoolean(KEY_REPLAY_FIRST_RUN_PENDING, value).apply()
+
     /** When true, non-confirmation SMS rows have been purged from Room. */
     var confirmationFilterPurgeDone: Boolean
         get() = prefs.getBoolean(KEY_CONFIRMATION_PURGE_DONE, false)
@@ -558,6 +567,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_RECORDING_PRIVACY = "recording_privacy"
         private const val KEY_HIBERNATION_PROMPT_SHOWN = "hibernation_prompt_shown"
         private const val KEY_FIRST_RUN_SETUP_DONE = "first_run_setup_done"
+        private const val KEY_REPLAY_FIRST_RUN_PENDING = "replay_first_run_pending"
         private const val KEY_APP_REGION = "app_region"
         private const val KEY_ENABLED_SOURCES = "enabled_ledger_sources_v1"
         private const val KEY_LEDGER_RAILS_WIDENED = "ledger_rails_widened_v1"
