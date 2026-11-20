@@ -12,6 +12,7 @@ import com.lipabill.app.data.model.ActiveRegion
 import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.resolvedLedgerSources
+import com.lipabill.app.data.model.importableLedgerSources
 import com.lipabill.app.data.prefs.SecurePreferences
 import com.lipabill.app.data.repository.EngagementRepository
 import com.lipabill.app.data.repository.MerchantDirectory
@@ -206,17 +207,14 @@ class LipaBillApp : Application() {
     val simLines: StateFlow<List<SimLine>> = _simLines.asStateFlow()
 
     /**
-     * Sources the ledger may import: the user's picks for [region], minus wallets whose SIM
-     * is not in this phone (only SIM-linked wallets are active). Banks always count.
+     * Sources the ledger may import: the user's picks for [region] that exist in that
+     * country's catalog. SIM presence gates Send/Pay dial only — SMS still imports for
+     * every enabled rail (bank-first then MNO must still pull older wallet SMS).
      */
     fun usableLedgerSources(
         region: AppRegion = _appRegion.value,
         chosen: Set<MoneySource> = _enabledSources.value
-    ): Set<MoneySource> = LineGatedSources.usable(
-        region,
-        chosen.filterTo(mutableSetOf()) { it in region.sources },
-        _simLines.value
-    )
+    ): Set<MoneySource> = importableLedgerSources(region, chosen)
 
     /**
      * Re-reads the active SIMs. When a chosen wallet's line shows up that the last check
