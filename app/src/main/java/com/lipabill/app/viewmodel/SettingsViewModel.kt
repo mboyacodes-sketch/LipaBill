@@ -8,6 +8,8 @@ import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.providerCatalog
 import com.lipabill.app.data.model.lockedLedgerSources
+import com.lipabill.app.data.model.regionsPresentOnSims
+import com.lipabill.app.data.model.selectableAppRegions
 import com.lipabill.app.data.model.toggleLedgerSource
 import com.lipabill.app.data.local.entity.RepeatAttemptEntity
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
@@ -37,7 +39,11 @@ data class SettingsUiState(
     val preferredSimSubscriptionId: Int? = null,
     val needsPhoneStatePermission: Boolean = false,
     /** Wallets with no dial line; caption explains SMS still works without the SIM. */
-    val lockedSources: Map<MoneySource, String> = emptyMap()
+    val lockedSources: Map<MoneySource, String> = emptyMap(),
+    /** Countries with a SIM on this phone; empty means the picker is not gated. */
+    val simRegions: Set<AppRegion> = emptySet(),
+    /** Regions the Country picker may select (SIM-backed + current). */
+    val selectableRegions: Set<AppRegion> = AppRegion.entries.toSet()
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -61,6 +67,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setRegion(region: AppRegion) {
+        val allowed = _ui.value.selectableRegions
+        if (region !in allowed) return
         app.setAppRegion(region, rescan = true)
         refresh()
     }
@@ -158,6 +166,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }?.subscriptionId
             ?: PaymentDialResolver.resolve(region, lines, preferred, enabled = enabled)
                 ?.subscriptionId
+        val simRegions = ctx.regionsPresentOnSims()
         return SettingsUiState(
             region = region,
             enabledSources = enabled,
@@ -171,7 +180,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             simLines = lines,
             preferredSimSubscriptionId = selected,
             needsPhoneStatePermission = needsPerm,
-            lockedSources = lockedLedgerSources(region, lines, phoneAccess = !needsPerm)
+            lockedSources = lockedLedgerSources(region, lines, phoneAccess = !needsPerm),
+            simRegions = simRegions,
+            selectableRegions = selectableAppRegions(simRegions, region)
         )
     }
 }
