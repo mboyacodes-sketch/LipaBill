@@ -197,7 +197,8 @@ fun TransactionReceiptPopup(
                             size = 44.dp,
                             border = Accent,
                             textStyle = HomeType.section.copy(fontSize = 18.sp),
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Medium,
+                            privacyCover = !tx.counterpartyName.isNullOrBlank()
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
@@ -339,7 +340,8 @@ fun TransactionReceiptPopup(
                             else -> "Total received"
                         },
                         value = formatKes(if (fuliza) tx.balance else tx.amount),
-                        emphasize = true
+                        emphasize = true,
+                        coverValue = fuliza
                     )
                 }
 
