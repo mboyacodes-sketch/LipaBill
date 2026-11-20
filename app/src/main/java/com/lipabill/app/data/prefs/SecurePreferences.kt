@@ -133,6 +133,7 @@ class SecurePreferences(context: Context) {
             .putLong(KEY_INBOX_HIGH_WATER, 0L)
             .putBoolean(KEY_BACKFILL_DONE, false)
             .putBoolean(KEY_WALLET_RAILS_INBOX_SCAN, false)
+            .remove(KEY_INBOX_FULLY_SCANNED_SOURCES)
             .apply()
     }
 
@@ -427,6 +428,20 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_WALLET_RAILS_INBOX_SCAN, false)
         set(value) = prefs.edit().putBoolean(KEY_WALLET_RAILS_INBOX_SCAN, value).apply()
 
+    /**
+     * Rails covered by a completed full inbox pass. Enabling a rail that is not
+     * in this set (bank-only → MNO) must re-read older SMS, not only the tip.
+     */
+    fun inboxFullyScannedSources(): Set<MoneySource> =
+        parseStoredSources(prefs.getString(KEY_INBOX_FULLY_SCANNED_SOURCES, null)).orEmpty()
+
+    fun markInboxFullyScanned(sources: Set<MoneySource>) {
+        val next = inboxFullyScannedSources() + sources
+        prefs.edit()
+            .putString(KEY_INBOX_FULLY_SCANNED_SOURCES, serializeLedgerSources(next))
+            .apply()
+    }
+
     fun markInboxCaughtUp(highWaterMillis: Long) {
         val next = maxOf(inboxHighWaterMillis, highWaterMillis)
         prefs.edit()
@@ -465,6 +480,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_INBOX_HIGH_WATER = "inbox_high_water_millis"
         // v2: bank formats (NCBA, Equity, StanChart, Absa) and Lipa-na-KCB order widened; re-read once.
         private const val KEY_WALLET_RAILS_INBOX_SCAN = "wallet_rails_inbox_scan_v2"
+        private const val KEY_INBOX_FULLY_SCANNED_SOURCES = "inbox_fully_scanned_sources_v1"
         private const val KEY_REPEAT_ENABLED = "repeat_feature_enabled"
         private const val KEY_A11Y_ONBOARDING_SEEN = "a11y_onboarding_seen"
         private const val KEY_A11Y_PREFERRED_ON = "a11y_preferred_on"
