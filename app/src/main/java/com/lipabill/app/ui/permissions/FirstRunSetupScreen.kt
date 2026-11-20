@@ -61,6 +61,7 @@ import com.lipabill.app.data.model.hint
 import com.lipabill.app.data.model.defaultLedgerSources
 import com.lipabill.app.data.model.groupedProviderCatalog
 import com.lipabill.app.data.model.providerCatalog
+import com.lipabill.app.data.model.lockedLedgerSources
 import com.lipabill.app.data.model.toggleLedgerSource
 import com.lipabill.app.ussd.LineGatedSources
 import com.lipabill.app.ussd.SimLineHelper
@@ -123,7 +124,7 @@ fun FirstRunSetupScreen(
         if (!simGranted) {
             emptyMap()
         } else {
-            LineGatedSources.locked(region, SimLineHelper.listActiveLines(context, region), phoneAccess = true)
+            lockedLedgerSources(region, SimLineHelper.listActiveLines(context, region), phoneAccess = true)
         }
     }
     LaunchedEffect(firstRun, regionGuess) {
