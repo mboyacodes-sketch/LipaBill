@@ -72,4 +72,44 @@ class KenyanConfirmationFilterTest {
             )
         )
     }
+
+    @Test
+    fun coop_failed_mpesa_deposit_is_rejected() {
+        assertTrue(
+            FailureSms.isFailure(
+                "Transaction FAILED. Dear Fred, your M-PESA to Account Deposit of KES 50000.00 " +
+                    "from 0110173557 could not be completed."
+            )
+        )
+        assertFalse(
+            KenyanConfirmationFilter.isMoneyConfirmation(
+                "Transaction FAILED. Dear Fred, your M-PESA to Account Deposit of KES 50000.00 " +
+                    "from 0110173557 could not be completed."
+            )
+        )
+    }
+
+    @Test
+    fun mpesa_insufficient_funds_pay_is_rejected() {
+        assertFalse(
+            KenyanConfirmationFilter.isMoneyConfirmation(
+                "Failed. Insufficient funds in your M-PESA account to pay Ksh50,000.00 to COOP."
+            )
+        )
+        assertTrue(
+            FailureSms.isFailure(
+                "Insufficient funds in M-PESA account to pay Ksh50,000.00."
+            )
+        )
+    }
+
+    @Test
+    fun real_bank_deposit_without_failure_wording_is_accepted() {
+        assertTrue(
+            KenyanConfirmationFilter.isMoneyConfirmation(
+                "Dear Customer, KES 5,000.00 has been deposited to Acc. ending with 1234 " +
+                    "from JANE DOE. Available bal is KES 12,000.00. Ref FT99ABC."
+            )
+        )
+    }
 }
