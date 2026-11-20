@@ -42,6 +42,7 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ConfirmationNumber
 import androidx.compose.material.icons.outlined.Event
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Sms
 import androidx.compose.material.icons.outlined.Train
 import androidx.compose.material3.AlertDialog
@@ -91,6 +92,12 @@ import com.lipabill.app.OpenedPass
 import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.metrics.TicketImportResult
 import com.lipabill.app.data.model.TicketSource
+import com.lipabill.app.data.tickets.AlreadySavedException
+import com.lipabill.app.data.tickets.intelligence.ContextFinding
+import com.lipabill.app.data.tickets.intelligence.DuplicateBookingRefRule
+import com.lipabill.app.data.tickets.intelligence.OverlappingEventsRule
+import com.lipabill.app.data.tickets.intelligence.evaluateContextRules
+import com.lipabill.app.data.tickets.PassDraft
 import com.lipabill.app.data.tickets.TicketDocumentKind
 import com.lipabill.app.ui.adapt.LocalWindowForm
 import com.lipabill.app.ui.privacy.pinsExactSeat
@@ -174,13 +181,14 @@ fun TicketsScreen(
         if (importing) return
         importing = true
         try {
-            val draft = viewModel.readDocument(context, uri, kind)
+            val read = viewModel.readDocument(context, uri, kind)
+            val draft = read.draft
             // PDF / photo event tickets: let the user check what was read before saving.
             if (draft.source == TicketSource.E_TICKET && !draft.expectsBoardingPass) {
-                reviewDraft = ReviewDraft(draft, kind, source)
+                reviewDraft = ReviewDraft(read, kind, source)
                 return
             }
-            val id = viewModel.saveImport(draft, kind)
+            val id = viewModel.saveImport(draft, kind, read)
             if (id == null) {
                 AppMetrics.ticketImport(source, TicketImportResult.Duplicate)
                 error = "That ticket is already saved, or has no usable code."
@@ -190,6 +198,12 @@ fun TicketsScreen(
                 pendingDocumentKind = TicketDocumentKind.AUTO
                 onOpenTicket(id)
             }
+        } catch (t: AlreadySavedException) {
+            // Same file as a saved pass: show that pass rather than an error.
+            AppMetrics.ticketImport(source, TicketImportResult.Duplicate)
+            addMode = null
+            pendingDocumentKind = TicketDocumentKind.AUTO
+            onOpenTicket(t.ticketId)
         } catch (t: Throwable) {
             if (t is CancellationException) throw t
             AppMetrics.ticketImportFailure(source, t)
@@ -316,6 +330,14 @@ fun TicketsScreen(
                 it.isOnDay(zone, today) && it.effectiveStatus() != TicketStatus.USED
             }
             val usedCount = visibleTickets.size - upcomingCount
+            // Overlaps and twin bookings are news the list itself can't show.
+            val notices = remember(visibleTickets) {
+                evaluateContextRules(
+                    visibleTickets,
+                    System.currentTimeMillis(),
+                    rules = listOf(OverlappingEventsRule, DuplicateBookingRefRule)
+                ).distinctBy { it.ruleId to it.ticketIds.toSet() }.take(2)
+            }
             val window = LocalWindowForm.current.width
             val columns = when (window) {
                 WindowWidth.Compact -> GridCells.Fixed(1)
@@ -334,6 +356,13 @@ fun TicketsScreen(
                     usedCount = usedCount,
                     modifier = Modifier.padding(horizontal = sidePad, vertical = Space.gap)
                 )
+                notices.forEach { finding ->
+                    PassFindingNotice(
+                        finding = finding,
+                        onOpen = { finding.ticketIds.firstOrNull()?.let(onOpenTicket) },
+                        modifier = Modifier.padding(horizontal = sidePad, vertical = Space.tight)
+                    )
+                }
                 PassCategoryChips(
                     selected = category,
                     counts = counts,
@@ -475,16 +504,20 @@ fun TicketsScreen(
 
     reviewDraft?.let { review ->
         TicketReviewDialog(
-            draft = review.draft,
+            draft = review.read.draft,
+            extraction = review.read.extraction,
+            initialKind = review.kind,
+            loadPreview = { viewModel.preview(review.read, maxWidth = 720) },
             onCancel = {
                 AppMetrics.ticketImport(review.source, TicketImportResult.Cancelled)
+                viewModel.discardDocument(review.read)
                 reviewDraft = null
             },
-            onSave = { edited ->
+            onSave = { edited, kind ->
                 reviewDraft = null
                 scope.launch {
                     try {
-                        val id = viewModel.saveImport(edited, review.kind)
+                        val id = viewModel.saveImport(edited, kind, review.read)
                         if (id == null) {
                             AppMetrics.ticketImport(review.source, TicketImportResult.Duplicate)
                             error = "That ticket is already saved, or has no usable code."
@@ -1445,9 +1478,39 @@ val EventStage: Color
     @ReadOnlyComposable
     get() = Accent
 
+/** One rule finding over the pass list. Copy never names a code or booking reference. */
+@Composable
+private fun PassFindingNotice(
+    finding: ContextFinding,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SoftBlue)
+            .clickable(onClickLabel = "Open the first pass", onClick = onOpen)
+            .padding(horizontal = Space.card, vertical = Space.block),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Outlined.Info,
+            contentDescription = null,
+            tint = Ink,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(Space.block))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(finding.title, style = HomeType.rowTitle, color = Ink)
+            Text(finding.body, style = HomeType.caption, color = Mute)
+        }
+    }
+}
+
 /** A read ticket waiting on the user's review before it's saved. */
 private data class ReviewDraft(
-    val draft: com.lipabill.app.data.tickets.TicketImport,
+    val read: PassDraft,
     val kind: TicketDocumentKind,
     val source: String
 )

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.ConfirmationNumber
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Payments
@@ -293,6 +294,78 @@ fun SettingsScreen(
                                 selected = choice.sp == selected.sp,
                                 onClick = { viewModel.setFontSizeSp(choice.sp) },
                                 modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            SettingsSection("Passes", Icons.Outlined.ConfirmationNumber) {
+                val leads = state.passReminderLeadTimes
+                SettingsChoiceBlock(
+                    title = "Evening before",
+                    hint = "Day before the pass."
+                ) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(Space.gap),
+                        verticalArrangement = Arrangement.spacedBy(Space.gap),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = Space.card)
+                    ) {
+                        listOf(-1 to "Off", 18 to "6 PM", 20 to "8 PM").forEach { (hour, label) ->
+                            LipaChoiceChip(
+                                label = label,
+                                selected = leads.dayBeforeHour == hour,
+                                onClick = {
+                                    viewModel.setPassReminderLeadTimes(leads.copy(dayBeforeHour = hour))
+                                }
+                            )
+                        }
+                    }
+                }
+                SettingsDivider()
+                SettingsChoiceBlock(
+                    title = "Ahead of time",
+                    hint = "Hours before the start."
+                ) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(Space.gap),
+                        verticalArrangement = Arrangement.spacedBy(Space.gap),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = Space.card)
+                    ) {
+                        listOf(-1 to "Off", 12 to "12 h", 24 to "24 h", 48 to "48 h").forEach { (hours, label) ->
+                            LipaChoiceChip(
+                                label = label,
+                                selected = leads.hoursBefore == hours,
+                                onClick = {
+                                    viewModel.setPassReminderLeadTimes(leads.copy(hoursBefore = hours))
+                                }
+                            )
+                        }
+                    }
+                }
+                SettingsDivider()
+                SettingsChoiceBlock(
+                    title = "Morning of",
+                    hint = "Early events use two hours earlier."
+                ) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(Space.gap),
+                        verticalArrangement = Arrangement.spacedBy(Space.gap),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = Space.card)
+                    ) {
+                        listOf(-1 to "Off", 6 to "6 AM", 8 to "8 AM").forEach { (hour, label) ->
+                            LipaChoiceChip(
+                                label = label,
+                                selected = leads.morningHour == hour,
+                                onClick = {
+                                    viewModel.setPassReminderLeadTimes(leads.copy(morningHour = hour))
+                                }
                             )
                         }
                     }

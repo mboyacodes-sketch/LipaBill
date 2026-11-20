@@ -206,6 +206,7 @@ val jacocoExcludes = listOf(
     "**/data/tickets/PkPassParser*",
     "**/data/tickets/PkPassIntents*",
     "**/data/tickets/TicketDocumentImporter*",
+    "**/data/tickets/PassDocumentReader*",
     "**/ussd/*Service*",
     "**/ussd/*Helper*",
     "**/ussd/*Coordinator*",

@@ -209,6 +209,82 @@ object AppDatabaseMigrations {
         }
     }
 
+    /**
+     * Original ticket files and what was read from them. New tables only — `tickets` is untouched,
+     * so every saved pass carries over as-is.
+     */
+    val MIGRATION_15_16 = object : Migration(15, 16) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `pass_documents` (" +
+                    "`id` TEXT NOT NULL, `ticketId` INTEGER, `storedName` TEXT NOT NULL, " +
+                    "`mimeType` TEXT NOT NULL, `fileSizeBytes` INTEGER NOT NULL, " +
+                    "`sha256` TEXT NOT NULL, `importedAtMillis` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`id`))"
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_pass_documents_sha256` " +
+                    "ON `pass_documents` (`sha256`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_pass_documents_ticketId` " +
+                    "ON `pass_documents` (`ticketId`)"
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `document_extractions` (" +
+                    "`id` TEXT NOT NULL, `documentId` TEXT NOT NULL, `documentType` TEXT NOT NULL, " +
+                    "`fieldsJson` TEXT NOT NULL, `confidence` REAL NOT NULL, " +
+                    "`extractionVersion` INTEGER NOT NULL, `createdAtMillis` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`id`))"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_document_extractions_documentId` " +
+                    "ON `document_extractions` (`documentId`)"
+            )
+        }
+    }
+
+    /**
+     * Context Intelligence: pass-derived events and WorkManager reminder rows.
+     * Existing passes are back-filled by [com.lipabill.app.tickets.PassReminderScheduler].
+     */
+    val MIGRATION_16_17 = object : Migration(16, 17) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `context_events` (" +
+                    "`id` TEXT NOT NULL, `type` TEXT NOT NULL, `sourceType` TEXT NOT NULL, " +
+                    "`sourceId` TEXT NOT NULL, `scheduledAt` INTEGER NOT NULL, " +
+                    "`timezoneId` TEXT NOT NULL, `status` TEXT NOT NULL, PRIMARY KEY(`id`))"
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_context_events_sourceType_sourceId_type` " +
+                    "ON `context_events` (`sourceType`, `sourceId`, `type`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_context_events_scheduledAt` " +
+                    "ON `context_events` (`scheduledAt`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_context_events_status` " +
+                    "ON `context_events` (`status`)"
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `reminders` (" +
+                    "`id` TEXT NOT NULL, `eventId` TEXT NOT NULL, `fireAt` INTEGER NOT NULL, " +
+                    "`state` TEXT NOT NULL, `workName` TEXT NOT NULL, PRIMARY KEY(`id`))"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_reminders_eventId` ON `reminders` (`eventId`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_reminders_fireAt` ON `reminders` (`fireAt`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_reminders_state` ON `reminders` (`state`)"
+            )
+        }
+    }
+
     /** Migrations that preserve data. Add new ones at the end of this list. */
     val ALL: Array<Migration> = arrayOf(
         MIGRATION_8_9,
@@ -217,6 +293,8 @@ object AppDatabaseMigrations {
         MIGRATION_11_12,
         MIGRATION_12_13,
         MIGRATION_13_14,
-        MIGRATION_14_15
+        MIGRATION_14_15,
+        MIGRATION_15_16,
+        MIGRATION_16_17
     )
 }
