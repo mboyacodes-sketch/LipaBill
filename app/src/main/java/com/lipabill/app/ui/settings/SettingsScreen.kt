@@ -336,7 +336,7 @@ fun SettingsScreen(
                             .fillMaxWidth()
                             .padding(bottom = Space.card)
                     ) {
-                        listOf(-1 to "Off", 12 to "12 h", 24 to "24 h", 48 to "48 h").forEach { (hours, label) ->
+                        listOf(-1 to "Off", 2 to "2 h", 12 to "12 h", 24 to "24 h", 48 to "48 h").forEach { (hours, label) ->
                             LipaChoiceChip(
                                 label = label,
                                 selected = leads.hoursBefore == hours,

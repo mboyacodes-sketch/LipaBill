@@ -1,9 +1,11 @@
 package com.lipabill.app.data.tickets.intelligence
 
 import com.lipabill.app.data.model.TicketSource
+import com.lipabill.app.data.model.TicketStatus
 import com.lipabill.app.data.tickets.EventTicketSms
 import com.lipabill.app.data.tickets.TicketDocumentKind
 import com.lipabill.app.data.tickets.TicketImport
+import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -191,6 +193,42 @@ class PassIntelligenceTest {
         assertTrue(PassIssue.ENDS_BEFORE_START in ends)
         // An event with no end time is fine.
         assertFalse(PassIssue.ENDS_BEFORE_START in PassValidator.validate(draft(), PassKind.EVENT, now))
+    }
+
+    @Test
+    fun lifecycle_marks_cancelled_as_used() {
+        val life = PassLifecycleResolver.resolve(
+            "SAMPLE EVENT PASS\nStatus: CANCELLED\nVenue: Test Hall",
+            startsAtMillis = now + day,
+            nowMillis = now
+        )
+        assertEquals(TicketStatus.USED, life.status)
+        assertEquals(PassIssue.CANCELLED, life.issue)
+    }
+
+    @Test
+    fun lifecycle_marks_started_passes_past_due_and_today() {
+        val zone = ZoneOffset.UTC
+        val past = PassLifecycleResolver.resolve(
+            "SAMPLE EVENT PASS",
+            startsAtMillis = now - 3_600_000L,
+            nowMillis = now,
+            zone = zone
+        )
+        assertEquals(TicketStatus.PAST_DUE, past.status)
+        assertEquals(PassIssue.ALREADY_STARTED, past.issue)
+
+        // Same calendar day, still ahead → active + due-today note.
+        val laterToday = now + 2L * 3_600_000L
+        val today = PassLifecycleResolver.resolve(
+            "SAMPLE EVENT PASS",
+            startsAtMillis = laterToday,
+            nowMillis = now,
+            zone = zone
+        )
+        assertEquals(TicketStatus.ACTIVE, today.status)
+        assertTrue(today.isToday)
+        assertEquals(PassIssue.DUE_TODAY, today.issue)
     }
 
     @Test

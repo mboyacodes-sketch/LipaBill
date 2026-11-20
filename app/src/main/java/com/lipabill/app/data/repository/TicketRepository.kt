@@ -64,7 +64,8 @@ class TicketRepository(
         boardingStartsAtMillis: Long? = null,
         boardingSeatOrTier: String? = null,
         boardingNotes: String? = null,
-        passColors: String? = null
+        passColors: String? = null,
+        status: TicketStatus = TicketStatus.ACTIVE
     ): Long? = withContext(Dispatchers.IO) {
         val payload = barcodeValue.trim()
         if (payload.isEmpty()) return@withContext null
@@ -89,7 +90,7 @@ class TicketRepository(
                 barcodeValue = payload,
                 orderId = ref,
                 source = source,
-                status = TicketStatus.ACTIVE,
+                status = status,
                 notes = notes?.trim()?.ifBlank { null },
                 expectsBoardingPass = expectsBoardingPass,
                 hasBoardingPass = hasBoardingPass,
@@ -190,7 +191,8 @@ class TicketRepository(
             boardingStartsAtMillis = draft.startsAtMillis.takeIf { boarding },
             boardingSeatOrTier = draft.seatOrTier.takeIf { boarding },
             boardingNotes = draft.notes.takeIf { boarding },
-            passColors = draft.passColors
+            passColors = draft.passColors,
+            status = draft.status
         )
     }
 

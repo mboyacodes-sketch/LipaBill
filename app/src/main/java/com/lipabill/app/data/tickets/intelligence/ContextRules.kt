@@ -97,7 +97,7 @@ object OverlappingEventsRule : ContextRule {
     }
 }
 
-/** Every rule. Passes shows overlap + duplicate notices; the rest are for Insights later. */
+/** Every rule. Passes shows due-soon, past-due, overlap and duplicate notices. */
 val DEFAULT_CONTEXT_RULES: List<ContextRule> = listOf(
     UpcomingPassRule,
     PastDuePassRule,

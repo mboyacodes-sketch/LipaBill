@@ -56,6 +56,7 @@ import com.lipabill.app.data.tickets.intelligence.ExtractionSource
 import com.lipabill.app.data.tickets.intelligence.PassExtraction
 import com.lipabill.app.data.tickets.intelligence.PassField
 import com.lipabill.app.data.tickets.intelligence.PassKind
+import com.lipabill.app.data.tickets.intelligence.PassLifecycleResolver
 import com.lipabill.app.data.tickets.intelligence.PassValidator
 import com.lipabill.app.ui.LipaChoiceChip
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
@@ -129,13 +130,15 @@ fun TicketReviewDialog(
             .withNotesValue("Tier", tier)
             .withNotesValue("Guest", guest)
             .withNotesValue("Ends", newEnds?.toString())
-        return draft.copy(
+        val edited = draft.copy(
             // A venue-only ticket is still a pass: name it after the venue.
             title = title.trim().ifBlank { "Event at ${venue.trim().substringBefore(',')}" },
             venue = venue.trim().ifBlank { null },
             startsAtMillis = startsAt,
             notes = notes
         )
+        // Date edits (and cancelled wording the user typed) re-decide Active / Past due / Used.
+        return edited.copy(status = PassLifecycleResolver.resolveDraft(edited).status)
     }
 
     AlertDialog(
@@ -245,7 +248,10 @@ fun TicketReviewDialog(
                 } else {
                     PassKind.EVENT
                 }
-                PassValidator.validate(build(), validateKind)
+                val edited = build()
+                val lifecycleIssue = PassLifecycleResolver.resolveDraft(edited).issue
+                (PassValidator.validate(edited, validateKind) + listOfNotNull(lifecycleIssue))
+                    .distinct()
                     .filterNot { it.blocking }
                     .forEach { issue -> Text(issue.message, color = Expense, fontSize = 12.sp) }
             }

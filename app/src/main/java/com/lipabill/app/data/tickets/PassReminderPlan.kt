@@ -32,7 +32,7 @@ data class PassReminderLeadTimes(
 ) {
     init {
         require(dayBeforeHour == -1 || dayBeforeHour in 0..23)
-        require(hoursBefore == -1 || hoursBefore in setOf(12, 24, 48))
+        require(hoursBefore == -1 || hoursBefore in setOf(2, 12, 24, 48))
         require(morningHour == -1 || morningHour in 5..11)
     }
 
