@@ -346,6 +346,8 @@ fun MetricsScreen(
                     finding = stats.keptHeadline
                         ?: stats.habit?.let { "${it.name} came up ${it.visits} times." }
                         ?: stats.storyHeadline,
+                    findingNamesPayee = stats.keptHeadline == null &&
+                        (stats.habit != null || stats.storyNamesPayee),
                     badges = stats.badges,
                     onCheckIn = onOpenCheckIn
                 )
