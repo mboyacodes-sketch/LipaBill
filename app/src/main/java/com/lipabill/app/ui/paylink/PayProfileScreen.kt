@@ -71,6 +71,7 @@ import com.lipabill.app.R
 import com.lipabill.app.data.DemoLedger
 import com.lipabill.app.pay.PayLink
 import com.lipabill.app.social.SocialLink
+import com.lipabill.app.ussd.PaymentWallet
 import com.lipabill.app.ussd.SimLineHelper
 import com.lipabill.app.ui.privacy.LocalRecordingPrivacy
 import com.lipabill.app.ui.components.ConsumeSnackbarMessage
@@ -99,6 +100,7 @@ import com.lipabill.app.ui.util.sanitizePayAccount
 import com.lipabill.app.ui.util.sanitizePayPhone
 import com.lipabill.app.ui.util.sanitizeWholeShillings
 import com.lipabill.app.ui.util.sharePlainText
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 
 private enum class RequestQrMode {
@@ -116,6 +118,12 @@ fun PayProfileScreen(
     val prefs = app.securePreferences
     val snackbar = remember { SnackbarHostState() }
     val lifecycleOwner = LocalLifecycleOwner.current
+    val activeWallet by app.activeDialWallet.collectAsStateWithLifecycle()
+    val requestSource = activeWallet?.ledgerSource ?: prefs.appRegion.primaryWallet
+    val walletLabel = activeWallet?.badge ?: requestSource.label
+    LaunchedEffect(Unit) {
+        prefs.ensureRequestPayDestPerWallet(prefs.appRegion)
+    }
     var requestMode by remember {
         mutableStateOf(
             if (prefs.requestQrMode.equals("socials", ignoreCase = true)) {
@@ -126,17 +134,27 @@ fun PayProfileScreen(
         )
     }
     var socialPlatformKey by remember { mutableStateOf(prefs.socialPlatformKey) }
-    var collectKind by remember {
-        mutableStateOf(prefs.payCollectKind.toPayKind())
+    var collectKind by remember(requestSource) {
+        mutableStateOf(prefs.payCollectKind(requestSource).toPayKind())
     }
-    var simPhone by remember {
-        mutableStateOf(context.mpesaSimPhone(prefs.preferredSimSubscriptionId))
+    var simPhone by remember(requestSource) {
+        mutableStateOf(context.walletSimPhone(activeWallet, prefs.preferredSimSubscriptionId))
     }
-    var savedPhone by remember { mutableStateOf(prefs.payPhone.orEmpty()) }
-    var payPhoneHidden by remember { mutableStateOf(prefs.payPhoneHidden) }
-    var savedTill by remember { mutableStateOf(prefs.payTill.orEmpty()) }
-    var savedBill by remember { mutableStateOf(prefs.payBillBusiness.orEmpty()) }
-    var savedAccount by remember { mutableStateOf(prefs.payBillAccount.orEmpty()) }
+    var savedPhone by remember(requestSource) {
+        mutableStateOf(prefs.payPhone(requestSource).orEmpty())
+    }
+    var payPhoneHidden by remember(requestSource) {
+        mutableStateOf(prefs.payPhoneHidden(requestSource))
+    }
+    var savedTill by remember(requestSource) {
+        mutableStateOf(prefs.payTill(requestSource).orEmpty())
+    }
+    var savedBill by remember(requestSource) {
+        mutableStateOf(prefs.payBillBusiness(requestSource).orEmpty())
+    }
+    var savedAccount by remember(requestSource) {
+        mutableStateOf(prefs.payBillAccount(requestSource).orEmpty())
+    }
     // Empty state first; Add / missing kind opens the form.
     var editing by remember { mutableStateOf(false) }
     var collectKindBeforeEdit by remember { mutableStateOf<PayLink.Kind?>(null) }
@@ -162,15 +180,16 @@ fun PayProfileScreen(
     val scroll = rememberScrollState()
     val focusManager = LocalFocusManager.current
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, activeWallet) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                simPhone = context.mpesaSimPhone(prefs.preferredSimSubscriptionId)
+                simPhone = context.walletSimPhone(activeWallet, prefs.preferredSimSubscriptionId)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
     // Prefer a number the user saved; otherwise the payment SIM.
     val phone = when {
         payPhoneHidden -> ""
@@ -206,6 +225,22 @@ fun PayProfileScreen(
             PayLink.Kind.TILL -> savedTill to ""
             PayLink.Kind.PAYBILL -> savedBill to savedAccount
         }
+    }
+
+    LaunchedEffect(requestSource) {
+        // Switching the home wallet must not leak another MNO's Request QR.
+        collectKind = prefs.payCollectKind(requestSource).toPayKind()
+        simPhone = context.walletSimPhone(activeWallet, prefs.preferredSimSubscriptionId)
+        savedPhone = prefs.payPhone(requestSource).orEmpty()
+        payPhoneHidden = prefs.payPhoneHidden(requestSource)
+        savedTill = prefs.payTill(requestSource).orEmpty()
+        savedBill = prefs.payBillBusiness(requestSource).orEmpty()
+        savedAccount = prefs.payBillAccount(requestSource).orEmpty()
+        editing = false
+        collectKindBeforeEdit = null
+        fieldError = null
+        val (primary, account) = draftsForKind(collectKind, blankIfUnset = false)
+        setPaymentDrafts(primary, account)
     }
 
     ConsumeSnackbarMessage(notice, snackbar) { notice = null }
@@ -295,7 +330,7 @@ fun PayProfileScreen(
 
     fun applyPaymentSlide(slide: RequestQrSlide.Payment) {
         collectKind = slide.kind
-        prefs.payCollectKind = slide.kind.storageKey()
+        prefs.setPayCollectKind(requestSource, slide.kind.storageKey())
         editing = false
         collectKindBeforeEdit = null
         val (primary, account) = draftsForKind(slide.kind, blankIfUnset = false)
@@ -320,7 +355,7 @@ fun PayProfileScreen(
             else -> {
                 // Stay on empty state with a sensible default kind.
                 collectKind = PayLink.Kind.PHONE
-                prefs.payCollectKind = "phone"
+                prefs.setPayCollectKind(requestSource, "phone")
                 setPaymentDrafts("", "")
             }
         }
@@ -346,7 +381,7 @@ fun PayProfileScreen(
     }
 
     fun deletePaymentDestination(kind: PayLink.Kind) {
-        prefs.clearPayDestination(kind)
+        prefs.clearPayDestination(requestSource, kind)
         when (kind) {
             PayLink.Kind.PHONE -> {
                 savedPhone = ""
@@ -371,12 +406,12 @@ fun PayProfileScreen(
         if (remaining.isNotEmpty()) {
             val next = remaining.first()
             collectKind = next
-            prefs.payCollectKind = next.storageKey()
+            prefs.setPayCollectKind(requestSource, next.storageKey())
             val (primary, account) = draftsForKind(next, blankIfUnset = false)
             setPaymentDrafts(primary, account)
         } else {
             collectKind = PayLink.Kind.PHONE
-            prefs.payCollectKind = "phone"
+            prefs.setPayCollectKind(requestSource, "phone")
             setPaymentDrafts("", "")
         }
     }
@@ -417,8 +452,8 @@ fun PayProfileScreen(
                     fieldError = "Enter a Safaricom or Airtel number."
                     return
                 }
-                prefs.payPhone = saved
-                prefs.payPhoneHidden = false
+                prefs.setPayPhone(requestSource, saved)
+                prefs.setPayPhoneHidden(requestSource, false)
                 savedPhone = saved
                 payPhoneHidden = false
                 setPaymentDrafts(saved, "")
@@ -429,7 +464,7 @@ fun PayProfileScreen(
                     fieldError = "Enter a till number (5+ digits)."
                     return
                 }
-                prefs.payTill = till
+                prefs.setPayTill(requestSource, till)
                 savedTill = till
                 setPaymentDrafts(till, "")
             }
@@ -448,14 +483,14 @@ fun PayProfileScreen(
                     fieldError = "Enter the account / shop code."
                     return
                 }
-                prefs.payBillBusiness = business
-                prefs.payBillAccount = account
+                prefs.setPayBillBusiness(requestSource, business)
+                prefs.setPayBillAccount(requestSource, account)
                 savedBill = business
                 savedAccount = account
                 setPaymentDrafts(business, account)
             }
         }
-        prefs.payCollectKind = collectKind.storageKey()
+        prefs.setPayCollectKind(requestSource, collectKind.storageKey())
         collectKindBeforeEdit = null
         editing = false
         primaryFocused = false
@@ -595,7 +630,7 @@ fun PayProfileScreen(
                                 textAlign = TextAlign.Center
                             )
                             Text(
-                                text = "Codes people can scan",
+                                text = "$walletLabel · codes people can scan",
                                 style = HomeType.caption,
                                 color = Mute,
                                 textAlign = TextAlign.Center
@@ -974,7 +1009,7 @@ fun PayProfileScreen(
                                         )
                                     },
                                     title = "Get paid with a QR",
-                                    body = "Add your phone, till, or paybill once. Anyone who scans can pay you — they confirm, then enter their PIN.",
+                                    body = "Add a $walletLabel phone, till, or paybill. It stays on this wallet — other MNOs keep their own codes.",
                                     cta = "Add payment details",
                                     onCta = ::startAddPayment
                                 )
@@ -1149,11 +1184,19 @@ private fun PayLink.Kind.storageKey(): String = when (this) {
     PayLink.Kind.PAYBILL -> "paybill"
 }
 
-private fun Context.mpesaSimPhone(preferredSubscriptionId: Int): String? {
-    val region = (applicationContext as? LipaBillApp)?.securePreferences?.appRegion
+/** SIM number for the Request wallet in focus (not every active MNO). */
+private fun Context.walletSimPhone(
+    wallet: PaymentWallet?,
+    preferredSubscriptionId: Int
+): String? {
+    val region = wallet?.region
+        ?: (applicationContext as? LipaBillApp)?.securePreferences?.appRegion
         ?: com.lipabill.app.data.model.ActiveRegion.current
     val lines = SimLineHelper.listActiveLines(this, region)
-    val line = SimLineHelper.payLine(region, lines, preferredSubscriptionId) ?: return null
+    val line = when {
+        wallet != null -> lines.firstOrNull { it.payWalletFor(region) == wallet }
+        else -> SimLineHelper.payLine(region, lines, preferredSubscriptionId)
+    } ?: return null
     return PayLink.canonicalPhone(line.numberHint)
 }
 
