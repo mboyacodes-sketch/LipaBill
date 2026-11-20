@@ -106,6 +106,7 @@ fun SettingsScreen(
     onRequestAccessibilityConsent: () -> Unit = {},
     onOptInFuliza: () -> Unit = {},
     onCheckForUpdate: () -> Unit = {},
+    onReplayFirstRun: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -179,15 +180,19 @@ fun SettingsScreen(
             SettingsSection("Picture", Icons.Outlined.AccountBalanceWallet) {
                 SettingsChoiceBlock(
                     title = "Country",
-                    hint = if (state.region.canSendPay) {
-                        "Ledger for ${state.region.label}. Send and Pay stay on M-Pesa."
-                    } else {
-                        "Ledger for ${state.region.label}. Send and Pay are Kenya M-Pesa for now."
+                    hint = when {
+                        state.simRegions.isNotEmpty() ->
+                            "Only countries on this phone’s SIMs. Ledger for ${state.region.label}."
+                        state.region.canSendPay ->
+                            "Ledger for ${state.region.label}. Send and Pay stay on M-Pesa."
+                        else ->
+                            "Ledger for ${state.region.label}. Send and Pay are Kenya M-Pesa for now."
                     }
                 ) {
                     RegionPicker(
                         selected = state.region,
                         onSelect = viewModel::setRegion,
+                        enabledRegions = state.selectableRegions,
                         modifier = Modifier.padding(bottom = Space.card)
                     )
                 }
@@ -359,6 +364,13 @@ fun SettingsScreen(
                         subtitle = "On by default for debug. Clears capture protection, blurs ledger PII, and shows dummy Request codes.",
                         checked = state.recordingPrivacy,
                         onCheckedChange = viewModel::setRecordingPrivacy
+                    )
+                    SettingsDivider()
+                    SettingsNavRow(
+                        title = "Replay setup wizard",
+                        subtitle = "Opens the first-run flow again. Ledger and settings stay as they are.",
+                        showChevron = true,
+                        onClick = onReplayFirstRun
                     )
                 }
             }

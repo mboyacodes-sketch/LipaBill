@@ -1158,6 +1158,7 @@ private fun AuthenticatedApp(
                 BoundWizard(
                     firstRun = true,
                     onFinished = {
+                        app.securePreferences.replayFirstRunPending = false
                         app.securePreferences.firstRunSetupDone = true
                         AppMetrics.firstRunCompleted()
                         smsGranted = hasSmsPermission()
@@ -1371,7 +1372,15 @@ private fun AuthenticatedApp(
                     onRequestPhoneStatePermission = { requestPhoneStateWithGuide() },
                     onRequestAccessibilityConsent = { openConsent(FirstRunPage.Accessibility) },
                     onOptInFuliza = { runFulizaOptIn() },
-                    onCheckForUpdate = { AppUpdates.check(activity, manual = true) }
+                    onCheckForUpdate = { AppUpdates.check(activity, manual = true) },
+                    onReplayFirstRun = {
+                        app.securePreferences.replayFirstRunPending = true
+                        app.securePreferences.firstRunSetupDone = false
+                        navController.navigate(Route.FirstRunSetup.path) {
+                            popUpTo(navController.graph.id) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
                 )
             }
         }

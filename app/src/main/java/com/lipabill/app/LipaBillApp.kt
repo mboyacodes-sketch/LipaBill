@@ -324,7 +324,9 @@ class LipaBillApp : Application() {
         ActiveRegion.current = _appRegion.value
         ActiveRegion.enabledSources = _enabledSources.value
         // Existing installs already past first launch — don't force the new setup wizard.
+        // Skip when a developer replay is in progress.
         if (!securePreferences.firstRunSetupDone &&
+            !securePreferences.replayFirstRunPending &&
             (securePreferences.smsBackfillDone ||
                 securePreferences.preferredSimSubscriptionId >= 0 ||
                 securePreferences.accessibilityOnboardingSeen)
