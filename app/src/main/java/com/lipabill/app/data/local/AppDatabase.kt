@@ -75,49 +75,26 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var instance: AppDatabase? = null
 
+        /**
+         * Builds the database without opening it; the SQLCipher open (and its failure
+         * policy) runs on Room's executor at the first query — see [DeferredCipherFactory].
+         */
         fun getInstance(context: Context): AppDatabase {
             return instance ?: synchronized(this) {
-                instance ?: openOrRecreate(context.applicationContext).also { instance = it }
+                instance ?: build(context.applicationContext).also { instance = it }
             }
         }
 
-        /**
-         * Opens the SQLCipher DB. On **app updates**, never wipe existing files — a
-         * failed open surfaces as an error so we do not silently delete transactions.
-         * Wipe + recreate is only allowed on a fresh install (or Clear storage), when
-         * Auto Backup may have restored cipher files without the Keystore wrap key.
-         */
-        private fun openOrRecreate(context: Context): AppDatabase {
-            val first = tryBuild(context)
-            return try {
-                first.openHelper.writableDatabase
-                first
-            } catch (t: Throwable) {
-                AppLog.w(TAG, "cipher_open_failed", t)
-                runCatching { first.close() }
-                if (!isFreshInstall(context)) {
-                    AppLog.e(
-                        TAG,
-                        "cipher_open_failed_on_update — preserving DB/passphrase " +
-                            "(uninstall or Clear storage is required to reset)"
-                    )
-                    // Retry once without rotating passphrase; then surface the failure.
-                    val retry = tryBuild(context)
-                    retry.openHelper.writableDatabase
-                    return retry
+        private fun build(context: Context): AppDatabase {
+            val factory = DeferredCipherFactory(
+                passphrase = { getOrCreatePassphrase(context) },
+                isFreshInstall = { isFreshInstall(context) },
+                wipeCipherArtifacts = { wipeCipherArtifacts(context) },
+                cipherFactory = { passphrase ->
+                    System.loadLibrary("sqlcipher")
+                    SupportOpenHelperFactory(passphrase)
                 }
-                AppLog.w(TAG, "cipher_open_failed_on_fresh_install_recreating", t)
-                wipeCipherArtifacts(context)
-                val fresh = tryBuild(context)
-                fresh.openHelper.writableDatabase
-                fresh
-            }
-        }
-
-        private fun tryBuild(context: Context): AppDatabase {
-            System.loadLibrary("sqlcipher")
-            val passphrase = getOrCreatePassphrase(context)
-            val factory = SupportOpenHelperFactory(passphrase)
+            )
             return Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
                 .openHelperFactory(factory)
                 .addMigrations(*AppDatabaseMigrations.ALL)
