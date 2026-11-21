@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -126,7 +127,7 @@ fun TransactionReceiptPopup(
     var editing by remember(tx.id) { mutableStateOf(false) }
     var draftName by remember(tx.id) { mutableStateOf(tx.counterpartyName.orEmpty()) }
     var draftCategory by remember(tx.id) { mutableStateOf(spendCategory) }
-    var linkedCount by remember(tx.id) { mutableStateOf(1) }
+    var linkedCount by remember(tx.id) { mutableIntStateOf(1) }
     var saving by remember { mutableStateOf(false) }
 
     LaunchedEffect(tx.id, editing, spendCategory) {
