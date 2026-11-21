@@ -105,6 +105,7 @@ fun SettingsScreen(
     onBack: (() -> Unit)? = null,
     onRequestPhoneStatePermission: () -> Unit = {},
     onRequestAccessibilityConsent: () -> Unit = {},
+    onRequestOemSurvival: () -> Unit = {},
     onOptInFuliza: () -> Unit = {},
     onCheckForUpdate: () -> Unit = {},
     onReplayFirstRun: () -> Unit = {},
@@ -200,7 +201,11 @@ fun SettingsScreen(
                 SettingsDivider()
                 SettingsChoiceBlock(
                     title = "Ledger",
-                    hint = "Up to 5 wallets and banks. Turn a wallet on for SMS anytime; Send and Pay still need its SIM."
+                    hint = if (state.needsPhoneStatePermission) {
+                        "Allow phone access to match wallets to the SIMs in this phone. Banks anytime. Up to 5."
+                    } else {
+                        "Wallets match SIMs in this phone (numbers when available). Banks anytime. Up to 5."
+                    }
                 ) {
                     ProviderPicker(
                         catalog = state.providerChoices,
@@ -208,6 +213,7 @@ fun SettingsScreen(
                         selected = state.enabledSources,
                         onToggle = viewModel::toggleProvider,
                         locked = state.lockedSources,
+                        numberHints = state.walletNumberHints,
                         modifier = Modifier.padding(bottom = Space.card)
                     )
                 }
@@ -241,6 +247,13 @@ fun SettingsScreen(
                                 onRequestAccessibilityConsent()
                             }
                         }
+                    )
+                    SettingsDivider()
+                    SettingsNavRow(
+                        title = "Keep payments ready",
+                        subtitle = "Battery and Never sleeping apps — stops this phone from pausing payment fill.",
+                        action = "Open",
+                        onClick = onRequestOemSurvival
                     )
                     SettingsDivider()
                     SettingsSwitchRow(

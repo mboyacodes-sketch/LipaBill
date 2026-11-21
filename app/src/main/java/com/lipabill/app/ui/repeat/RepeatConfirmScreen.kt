@@ -56,8 +56,13 @@ fun RepeatConfirmScreen(
     var showConfirm by remember { mutableStateOf(false) }
 
     val tx = state.transaction
-    val needsSimSetup = state.simLines.count { it.isPayEligible(state.region) } > 1 &&
-        !state.hasSavedSimPreference
+    val needsSimSetup = when {
+        state.requiresExplicitLinePick ->
+            state.sessionPickedSubscriptionId == null
+        else ->
+            state.simLines.count { it.isPayEligible(state.region) } > 1 &&
+                !state.hasSavedSimPreference
+    }
     val missingPaySim = !state.needsPhoneStatePermission &&
         state.simLines.isNotEmpty() &&
         !state.hasEligiblePaySim
@@ -68,6 +73,7 @@ fun RepeatConfirmScreen(
     val setupAction = when {
         state.needsPhoneStatePermission -> "Allow"
         missingPaySim -> null
+        needsSimSetup && state.requiresExplicitLinePick -> "Pick SIM"
         needsSimSetup -> "Set SIM"
         !state.featureEnabled -> "Copy details"
         !state.accessibilityEnabled -> "Enable"
@@ -83,6 +89,8 @@ fun RepeatConfirmScreen(
             state.missingPaySimMessage.ifBlank {
                 "A matching SIM for ${state.region.label} is required to send."
             }
+        needsSimSetup && state.requiresExplicitLinePick ->
+            state.explicitLinePickMessage ?: "Pick which SIM pays."
         needsSimSetup ->
             "Set your default payment SIM in Settings first."
         !state.featureEnabled ->
@@ -139,7 +147,10 @@ fun RepeatConfirmScreen(
                         activeWallet = state.activeWallet,
                         missingMessage = state.missingPaySimMessage,
                         onSelect = viewModel::selectPayLine,
-                        balances = walletBalances
+                        balances = walletBalances,
+                        requiresExplicitPick = state.requiresExplicitLinePick,
+                        explicitPickMessage = state.explicitLinePickMessage,
+                        sessionPickedSubscriptionId = state.sessionPickedSubscriptionId
                     )
                 }
             },

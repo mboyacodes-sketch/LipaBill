@@ -29,6 +29,8 @@ import com.lipabill.app.data.sms.SmsInboxSyncWatcher
 import com.lipabill.app.engage.EngagementScheduler
 import com.lipabill.app.engage.SpendCategory
 import kotlinx.coroutines.flow.first
+import com.lipabill.app.engage.RecurringChoice
+import com.lipabill.app.engage.RecurringPatterns
 import com.lipabill.app.viewmodel.InsightMarks
 import com.lipabill.app.viewmodel.balanceWalletChoices
 import com.lipabill.app.viewmodel.buildMoneyPlan
@@ -204,6 +206,12 @@ class LipaBillApp : Application() {
     private val _watchedPayees = MutableStateFlow<Set<String>>(emptySet())
     val watchedPayees: StateFlow<Set<String>> = _watchedPayees.asStateFlow()
 
+    private val _recurringPatternChoices =
+        MutableStateFlow<Map<String, RecurringChoice>>(emptyMap())
+    /** Confirm / dismiss for potential recurring payments (prefs only — no ledger writes). */
+    val recurringPatternChoices: StateFlow<Map<String, RecurringChoice>> =
+        _recurringPatternChoices.asStateFlow()
+
     private val _earnedBadges = MutableStateFlow<Set<String>>(emptySet())
     val earnedBadges: StateFlow<Set<String>> = _earnedBadges.asStateFlow()
 
@@ -326,6 +334,8 @@ class LipaBillApp : Application() {
         _budgets.value = parseBudgets(securePreferences.categoryBudgets)
         _goals.value = parseGoals(securePreferences.savingsGoals)
         _watchedPayees.value = securePreferences.watchedPayees
+        _recurringPatternChoices.value =
+            RecurringPatterns.parseChoices(securePreferences.recurringPatternChoices)
         _earnedBadges.value = securePreferences.earnedBadges
         _appRegion.value = securePreferences.appRegion
         // Primary-only installs (old first-run) → multi-rail default so other MNO/bank SMS import.
@@ -521,6 +531,25 @@ class LipaBillApp : Application() {
         val next = if (watched) _watchedPayees.value + key else _watchedPayees.value - key
         securePreferences.watchedPayees = next
         _watchedPayees.value = next
+    }
+
+    /**
+     * Persist confirm / dismiss for a detected recurring payee. [choice] null clears.
+     * Never writes ledger / TransactionDao rows.
+     */
+    fun setRecurringChoice(key: String, choice: RecurringChoice?) {
+        if (key.isBlank()) return
+        val next = _recurringPatternChoices.value.toMutableMap()
+        if (choice == null || choice == RecurringChoice.Pending) {
+            next.remove(key)
+        } else {
+            next[key] = choice
+        }
+        securePreferences.recurringPatternChoices = RecurringPatterns.serializeChoices(next)
+        _recurringPatternChoices.value = next
+        if (choice == RecurringChoice.Confirmed) {
+            setPayeeWatched(key, true)
+        }
     }
 
     fun recordBadges(ids: Set<String>) {

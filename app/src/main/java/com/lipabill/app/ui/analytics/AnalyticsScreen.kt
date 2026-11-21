@@ -273,7 +273,12 @@ fun MetricsScreen(
             }
 
             if (stats.hasLedger && mpesa) {
-                WatchingCard(stats.regularChanges, stats.priceTrends)
+                WatchingCard(
+                    changes = stats.regularChanges,
+                    trends = stats.priceTrends,
+                    potentialRecurring = stats.potentialRecurring,
+                    onRecurringChoice = viewModel::setRecurringChoice
+                )
             }
 
             if (stats.hasLedger && mpesa &&

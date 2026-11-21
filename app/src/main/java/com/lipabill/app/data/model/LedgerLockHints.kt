@@ -4,18 +4,19 @@ import com.lipabill.app.ussd.LineGatedSources
 import com.lipabill.app.ussd.SimLine
 
 /**
- * Ledger picker captions for wallets with no dial line.
- * SMS can still be turned on; Send/Pay need the SIM — so bank-only first-run
- * setups can enable an MNO later without a reinstall.
+ * Ledger picker captions for wallets with no matching SIM when phone access is on.
+ * Those chips stay off; banks remain free. Without phone access, nothing is locked yet.
  */
 fun lockedLedgerSources(
     region: AppRegion,
     lines: List<SimLine>,
     phoneAccess: Boolean
-): Map<MoneySource, String> =
-    LineGatedSources.locked(region, lines, phoneAccess).mapValues { (source, _) ->
-        ledgerLockHint(region, source, phoneAccess)
+): Map<MoneySource, String> {
+    if (!phoneAccess) return emptyMap()
+    return LineGatedSources.locked(region, lines, phoneAccess = true).mapValues { (source, _) ->
+        ledgerLockHint(region, source, phoneAccess = true)
     }
+}
 
 fun ledgerLockHint(
     region: AppRegion,
@@ -24,8 +25,26 @@ fun ledgerLockHint(
 ): String {
     val network = LineGatedSources.networkName(region, source)
     return if (phoneAccess) {
-        "SMS still imports without this SIM. Send and Pay need an active $network line."
+        "Needs a $network SIM in this phone."
     } else {
-        "SMS still imports. Allow phone access for $network Send and Pay."
+        "Allow phone access so LipaBill can match $network."
     }
+}
+
+/** Last-four (or two lines) from SIMs that carry each wallet — for picker chips. */
+fun simWalletNumberHints(
+    region: AppRegion,
+    lines: List<SimLine>
+): Map<MoneySource, String> {
+    val bySource = linkedMapOf<MoneySource, MutableList<String>>()
+    for (line in lines) {
+        val source = LineGatedSources.sourceFor(region, line) ?: continue
+        val last4 = line.numberHint
+            ?.filter(Char::isDigit)
+            ?.takeLast(4)
+            ?.takeIf { it.length == 4 }
+            ?: continue
+        bySource.getOrPut(source) { mutableListOf() }.add("…$last4")
+    }
+    return bySource.mapValues { (_, parts) -> parts.distinct().joinToString(" / ") }
 }

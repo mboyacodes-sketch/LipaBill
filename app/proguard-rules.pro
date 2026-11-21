@@ -73,10 +73,11 @@
 -dontwarn org.bouncycastle.**
 -dontwarn com.gemalto.jp2.**
 
-# Edge-to-edge: MainActivity and DataAccessRationaleActivity call enableEdgeToEdge() in onCreate.
-# R8 inlines androidx.activity.EdgeToEdge.enable into them and drops the class, so Play Console's
-# bundle check can't see the call and warns "Edge-to-edge may not display for all users".
-# Keeping the method (and so stopping the inline) leaves the call visible in the release dex.
--keep class androidx.activity.EdgeToEdge {
-    public static *** enable(...);
+# Play Console static-scans the AAB for Window.setStatusBarColor / setNavigationBarColor.
+# Material BottomSheetDialog still calls EdgeToEdgeUtils setters (no-op on API 35+, but the
+# invokevirtual stays in dex and triggers the deprecated edge-to-edge warning). Treat them as
+# side-effect-free so R8 drops the call sites; themes already use transparent bar colors.
+-assumenosideeffects class com.google.android.material.internal.EdgeToEdgeUtils {
+    public static void setStatusBarColor(android.view.Window, int);
+    public static void setNavigationBarColor(android.view.Window, int);
 }

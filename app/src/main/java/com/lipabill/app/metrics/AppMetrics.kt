@@ -141,6 +141,48 @@ object AppMetrics {
         log("setup_blocked", bundleOf("blocker" to blocker.key))
     }
 
+    /**
+     * Accessibility survival health — closed params only (no PII).
+     * [trigger]: resume | payment | settings
+     */
+    fun a11yHealth(
+        preferred: Boolean,
+        secureOn: Boolean,
+        bound: Boolean,
+        batteryIgnoring: Boolean,
+        unusedAppStatus: String,
+        manufacturer: String,
+        model: String,
+        sdk: Int,
+        oemFamily: String,
+        coach: String,
+        trigger: String
+    ) {
+        val safeTrigger = trigger.take(16)
+        val safeCoach = coach.take(16)
+        AppCrashReporting.setKey("a11y_preferred", if (preferred) "1" else "0")
+        AppCrashReporting.setKey("a11y_secure", if (secureOn) "1" else "0")
+        AppCrashReporting.setKey("a11y_bound", if (bound) "1" else "0")
+        AppCrashReporting.setKey("a11y_coach", safeCoach)
+        AppCrashReporting.breadcrumb("a11y:$safeTrigger:$safeCoach")
+        log(
+            "a11y_health",
+            bundleOf(
+                "preferred" to preferred,
+                "secure_on" to secureOn,
+                "bound" to bound,
+                "battery_ignoring" to batteryIgnoring,
+                "unused_app" to unusedAppStatus.take(16),
+                "mfr" to manufacturer.take(24),
+                "model" to model.take(24),
+                "sdk" to sdk,
+                "oem" to oemFamily.take(16),
+                "coach" to safeCoach,
+                "trigger" to safeTrigger
+            )
+        )
+    }
+
     fun permissionResult(kind: PermissionKind, granted: Boolean) =
         log("permission_result", bundleOf("kind" to kind.key, "granted" to granted))
 
@@ -321,6 +363,12 @@ class UssdMenuMismatch : Exception()
 /** Marker for Crashlytics grouping when USSD inject / driver fails mid-script. */
 class UssdStepFailed : Exception()
 
+/** Marker when the AccessibilityService is interrupted mid-session (OEM / system). */
+class AccessibilityServiceInterrupted : Exception()
+
+/** Marker when the AccessibilityService unbinds (sleep / force-stop / grant clear). */
+class AccessibilityServiceUnbound : Exception()
+
 /** choose | type | unexpected | other — never labels or typed values. */
 internal fun ussdActionKindCode(raw: String): String = when (raw.trim().lowercase()) {
     "choose" -> "choose"
@@ -359,6 +407,7 @@ internal fun paymentReasonCode(raw: String): String {
         "dial_failed",
         "inject_failed",
         "menu_mismatch",
+        "insufficient_funds",
         "service_interrupted",
         "session_timeout",
         "stall_timeout",
@@ -384,6 +433,7 @@ internal fun paymentReasonCode(raw: String): String {
             key.contains("call_phone") -> "call_permission"
             key.contains("other_accessibility") -> "other_a11y"
             key.contains("could_not_type") || key.contains("inject") -> "inject_failed"
+            key.contains("insufficient") -> "insufficient_funds"
             else -> "other"
         }
     }

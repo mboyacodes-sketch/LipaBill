@@ -15,20 +15,27 @@ enum class FirstRunPage {
     Accessibility,
     Camera,
     Notifications,
-    Hibernation
+    Hibernation,
+    /** OEM battery / Never-sleeping — keep Accessibility bound after Device Care sleep. */
+    OemSurvival
 }
 
 data class IntroSlide(val title: String, val body: String)
 
 object FirstRunWizard {
-    /** First run is ledger (region + providers + SMS) then Send/Pay access when the country supports it. */
+    /**
+     * First run: region, then SIM access (when Send/Pay exists) so Providers can match
+     * wallets to the MNOs in the phone, then SMS and Accessibility.
+     */
     fun firstRunPages(region: AppRegion = AppRegion.DEFAULT): List<FirstRunPage> = buildList {
         add(FirstRunPage.Welcome)
         add(FirstRunPage.Region)
+        if (region.canSendPay) {
+            add(FirstRunPage.Phone)
+        }
         add(FirstRunPage.Providers)
         add(FirstRunPage.Sms)
         if (region.canSendPay) {
-            add(FirstRunPage.Phone)
             add(FirstRunPage.Accessibility)
         }
     }
@@ -41,7 +48,8 @@ object FirstRunWizard {
         FirstRunPage.entries.filter {
             it != FirstRunPage.Welcome &&
                 it != FirstRunPage.Region &&
-                it != FirstRunPage.Providers
+                it != FirstRunPage.Providers &&
+                it != FirstRunPage.OemSurvival
         }
 
     private val PAYMENT_PAGES: List<FirstRunPage> = listOf(
@@ -57,7 +65,10 @@ object FirstRunWizard {
         FirstRunPage.Sms,
         FirstRunPage.Phone,
         FirstRunPage.Accessibility -> PAYMENT_PAGES
-        else -> listOf(start)
+        FirstRunPage.OemSurvival,
+        FirstRunPage.Hibernation,
+        FirstRunPage.Camera,
+        FirstRunPage.Notifications -> listOf(start)
     }
 
     const val WELCOME_TITLE = "Your money.\nOne clear story."
@@ -94,6 +105,7 @@ object FirstRunWizard {
         FirstRunPage.Welcome -> ""
         FirstRunPage.Region -> "Your starting point"
         FirstRunPage.Providers -> "Your picture"
+        FirstRunPage.OemSurvival -> "Stay ready"
         else -> "Optional"
     }
 
@@ -117,12 +129,12 @@ object FirstRunWizard {
 
     const val PROVIDERS_TITLE = "Who should be in the picture?"
     const val PROVIDERS_BODY =
-        "Up to 5 wallets and banks. Confirmation SMS stays on this phone — change anytime in Settings."
+        "Wallets match the SIMs in this phone. Banks anytime. Up to 5 — change in Settings."
 
     const val PHONE_TITLE = "Phone for Send and Pay"
     const val PHONE_BODY =
-        "Send and Pay place a Safaricom M-Pesa call on the right SIM after you confirm. " +
-            "Call history is not read, and your PIN is not stored."
+        "LipaBill checks which SIMs are in this phone and which numbers they carry, " +
+            "then places the payment call you confirm. Call history is not read, and your PIN is not stored."
 
     val SMS_TITLE: String = SmsPermissionDisclosure.TITLE
     val ACCESSIBILITY_TITLE: String = AccessibilityServiceDisclosure.TITLE
@@ -133,6 +145,8 @@ object FirstRunWizard {
     val NOTIFICATIONS_BODY: String = PermissionLesson.Notifications.body
     val HIBERNATION_TITLE: String = PermissionLesson.Hibernation.title
     val HIBERNATION_BODY: String = PermissionLesson.Hibernation.body
+    val OEM_SURVIVAL_TITLE: String = PermissionLesson.OemSurvival.title
+    val OEM_SURVIVAL_BODY: String get() = OemSurvivalHelper.coachBody()
 
     fun smsBody(showRestrictedSettingsHelp: Boolean): String =
         SmsPermissionDisclosure.body(showRestrictedSettingsHelp)

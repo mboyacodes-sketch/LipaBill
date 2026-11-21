@@ -246,7 +246,13 @@ fun ProcessingReceiptScreen(
         ReceiptTag.FAILED ->
             "Confirmation SMS said this payment did not go through"
         ReceiptTag.INTERRUPTED ->
-            "Automation stopped — check the payment on your phone"
+            when {
+                attempt?.detail?.contains("insufficient", ignoreCase = true) == true ||
+                    attempt?.detail == "insufficient_funds" ->
+                    "Not enough on this line — try the other SIM if you have one"
+                else ->
+                    "Automation stopped — check the payment on your phone"
+            }
         ReceiptTag.CANCELLED ->
             "This payment was cancelled"
         ReceiptTag.PROCESSING -> when (attempt?.outcome) {

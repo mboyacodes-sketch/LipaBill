@@ -45,18 +45,23 @@ fun clipLedgerSources(
 }
 
 /**
- * First-run / upgrade default rails: primary wallet, one other MNO wallet when present,
+ * First-run / upgrade default rails: wallets that match SIMs in the phone when known,
  * then common banks — so SMS history is not M-Pesa-only under the 5-rail cap.
+ *
+ * [onPhoneWallets] null = SIM lines unknown (no phone access yet) → old mix.
+ * Non-null (even empty) = only those wallets are eligible; banks still fill the rest.
  */
 fun defaultLedgerSources(
     region: AppRegion,
-    max: Int = MAX_ENABLED_LEDGER_SOURCES
+    max: Int = MAX_ENABLED_LEDGER_SOURCES,
+    onPhoneWallets: Set<MoneySource>? = null
 ): Set<MoneySource> {
     val catalog = region.sources
     val primary = region.primaryWallet
-    val otherWallets = catalog
-        .filter { it.isWallet && it != primary }
-        .sortedBy { it.label }
+    val walletPool = catalog
+        .filter { it.isWallet }
+        .filter { onPhoneWallets == null || it in onPhoneWallets }
+        .sortedWith(catalogSourceComparator(region))
     // Local retail banks first (only those in [catalog] apply), then shared names.
     val bankPriority = listOf(
         MoneySource.CENTENARY,
@@ -75,17 +80,20 @@ fun defaultLedgerSources(
     val banks = bankPriority.filter { it in catalog } +
         catalog.filter { !it.isWallet && it !in bankPriority }.sortedBy { it.label }
     val picks = ArrayList<MoneySource>(max)
-    if (primary in catalog) picks += primary
-    otherWallets.firstOrNull()?.let { picks += it }
+    for (wallet in walletPool) {
+        if (picks.size >= max) break
+        picks += wallet
+    }
     for (bank in banks) {
         if (picks.size >= max) break
         picks += bank
     }
-    for (wallet in otherWallets.drop(1)) {
-        if (picks.size >= max) break
-        picks += wallet
+    return picks.toSet().ifEmpty {
+        when {
+            primary in catalog && (onPhoneWallets == null || primary in onPhoneWallets) -> setOf(primary)
+            else -> banks.take(1).toSet().ifEmpty { setOf(primary) }
+        }
     }
-    return picks.toSet().ifEmpty { setOf(primary) }
 }
 
 fun parseStoredSources(raw: String?): Set<MoneySource>? {

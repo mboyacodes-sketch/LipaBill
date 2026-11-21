@@ -29,6 +29,8 @@ interface PaymentLineState {
     val activeWallet: PaymentWallet? get() = lines.activeWallet
     val hasEligiblePaySim: Boolean get() = lines.hasEligiblePaySim
     val missingPaySimMessage: String get() = lines.missingPaySimMessage
+    val requiresExplicitLinePick: Boolean get() = lines.requiresExplicitLinePick
+    val explicitLinePickMessage: String? get() = lines.explicitLinePickMessage
 }
 
 /** What a sheet shows before the first line check finishes. */
