@@ -207,16 +207,26 @@ class PassIntelligenceTest {
     }
 
     @Test
-    fun lifecycle_marks_started_passes_past_due_and_today() {
+    fun lifecycle_keeps_started_today_active_and_past_days_past_due() {
         val zone = ZoneOffset.UTC
-        val past = PassLifecycleResolver.resolve(
+        // Started an hour ago, same day: still the pass at the gate.
+        val started = PassLifecycleResolver.resolve(
             "SAMPLE EVENT PASS",
             startsAtMillis = now - 3_600_000L,
             nowMillis = now,
             zone = zone
         )
-        assertEquals(TicketStatus.PAST_DUE, past.status)
-        assertEquals(PassIssue.ALREADY_STARTED, past.issue)
+        assertEquals(TicketStatus.ACTIVE, started.status)
+        assertEquals(PassIssue.ALREADY_STARTED, started.issue)
+
+        val yesterday = PassLifecycleResolver.resolve(
+            "SAMPLE EVENT PASS",
+            startsAtMillis = now - 24L * 3_600_000L,
+            nowMillis = now,
+            zone = zone
+        )
+        assertEquals(TicketStatus.PAST_DUE, yesterday.status)
+        assertEquals(PassIssue.DAY_PASSED, yesterday.issue)
 
         // Same calendar day, still ahead → active + due-today note.
         val laterToday = now + 2L * 3_600_000L

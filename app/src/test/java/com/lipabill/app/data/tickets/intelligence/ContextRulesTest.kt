@@ -32,8 +32,8 @@ class ContextRulesTest {
     @Test
     fun past_due_skips_used() {
         val tickets = listOf(
-            ticket(1, startsAt = now - 10_000L),
-            ticket(2, startsAt = now - 10_000L, status = TicketStatus.USED)
+            ticket(1, startsAt = now - 2L * 24L * 3_600_000L),
+            ticket(2, startsAt = now - 2L * 24L * 3_600_000L, status = TicketStatus.USED)
         )
         val findings = PastDuePassRule.evaluate(tickets, now)
         assertEquals(listOf(1L), findings.flatMap { it.ticketIds })
@@ -68,7 +68,7 @@ class ContextRulesTest {
         val tickets = listOf(
             ticket(1, startsAt = now + 3_600_000L, orderId = "DUP"),
             ticket(2, startsAt = now + 3_600_000L + 30L * 60L * 1000L, orderId = "DUP"),
-            ticket(3, startsAt = now - 60_000L)
+            ticket(3, startsAt = now - 2L * 24L * 3_600_000L)
         )
         val findings = evaluateContextRules(tickets, now)
         assertTrue(findings.any { it.ruleId == "upcoming" })
