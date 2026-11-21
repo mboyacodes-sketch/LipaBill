@@ -42,18 +42,23 @@ class TodayStageTest {
     @Test
     fun walks_through_the_day() {
         assertEquals(TodayStage.LATER, stage(pass(), at(16, 30))?.stage)
-        assertEquals("Tonight · in 3 h", stage(pass(), at(16, 30))?.pill)
+        assertEquals("Tonight", stage(pass(), at(16, 30))?.label)
+        assertEquals("in 3 hours", stage(pass(), at(16, 30))?.relative)
         assertEquals(TodayStage.SOON, stage(pass(), at(19, 5))?.stage)
-        assertEquals("Starts in 25 min", stage(pass(), at(19, 5))?.pill)
+        assertEquals("Starting soon", stage(pass(), at(19, 5))?.label)
+        assertEquals("in 25 min", stage(pass(), at(19, 5))?.relative)
         assertEquals(TodayStage.LIVE, stage(pass(), at(20, 0))?.stage)
-        assertEquals("Happening now · until 11:30 PM", stage(pass(), at(20, 0))?.pill)
+        assertEquals("On now", stage(pass(), at(20, 0))?.label)
+        assertEquals("until 11:30 PM", stage(pass(), at(20, 0))?.relative)
         assertEquals(TodayStage.FINISHED, stage(pass(), at(23, 45))?.stage)
     }
 
     @Test
-    fun daytime_passes_say_today_not_tonight() {
-        val noon = pass(startsAt = at(13))
-        assertEquals("Today · in 4 h", stage(noon, at(9))?.pill)
+    fun the_label_follows_the_part_of_day() {
+        assertEquals("This morning", stage(pass(startsAt = at(9)), at(6))?.label)
+        assertEquals("This afternoon", stage(pass(startsAt = at(14)), at(9))?.label)
+        assertEquals("in 5 hours", stage(pass(startsAt = at(14)), at(9))?.relative)
+        assertEquals("in 1 hour", stage(pass(startsAt = at(14)), at(12, 30))?.relative)
     }
 
     @Test

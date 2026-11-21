@@ -34,8 +34,10 @@ enum class TodayStage {
 
 data class TodayStatus(
     val stage: TodayStage,
-    /** Short live label for the card's pill ("Starts in 25 min"). Never a code or reference. */
-    val pill: String,
+    /** Plain heading for the card: "Tonight", "Starting soon", "On now". Never a code or reference. */
+    val label: String,
+    /** Time relative to now: "in 3 hours", "in 25 min", "until 11:30 PM". */
+    val relative: String,
     val startMillis: Long,
     val endMillis: Long
 )
@@ -74,25 +76,48 @@ object TodayStages {
             start - nowMillis <= SOON_WINDOW_MS -> TodayStage.SOON
             else -> TodayStage.LATER
         }
-        return TodayStatus(stage, pill(stage, start, end, nowMillis, zone), start, end)
+        return TodayStatus(
+            stage = stage,
+            label = label(stage, start, zone),
+            relative = relative(stage, start, end, nowMillis, zone),
+            startMillis = start,
+            endMillis = end
+        )
     }
 
-    internal fun pill(stage: TodayStage, start: Long, end: Long, nowMillis: Long, zone: ZoneId): String =
+    internal fun label(stage: TodayStage, start: Long, zone: ZoneId): String = when (stage) {
+        TodayStage.LATER -> partOfDay(start, zone)
+        TodayStage.SOON -> "Starting soon"
+        TodayStage.LIVE -> "On now"
+        TodayStage.FINISHED -> "Ended"
+        TodayStage.NEEDS_BOARDING_PASS -> "Boarding pass not added"
+        TodayStage.CODE_PENDING -> "Entry code not here yet"
+    }
+
+    internal fun relative(stage: TodayStage, start: Long, end: Long, nowMillis: Long, zone: ZoneId): String =
         when (stage) {
             TodayStage.LATER -> {
                 val hours = ((start - nowMillis) / 3_600_000L).coerceAtLeast(1)
-                val evening = Instant.ofEpochMilli(start).atZone(zone).hour >= 17
-                "${if (evening) "Tonight" else "Today"} · in $hours h"
+                if (hours == 1L) "in 1 hour" else "in $hours hours"
             }
             TodayStage.SOON -> {
                 val minutes = ((start - nowMillis + 59_999L) / 60_000L).coerceAtLeast(1)
-                "Starts in $minutes min"
+                "in $minutes min"
             }
-            TodayStage.LIVE -> "Happening now · until ${clock(end, zone)}"
-            TodayStage.FINISHED -> "Finished · ${clock(end, zone)}"
-            TodayStage.NEEDS_BOARDING_PASS -> "Boarding pass needed"
-            TodayStage.CODE_PENDING -> "Code not out yet"
+            TodayStage.LIVE -> "until ${clock(end, zone)}"
+            TodayStage.FINISHED -> "at ${clock(end, zone)}"
+            TodayStage.NEEDS_BOARDING_PASS, TodayStage.CODE_PENDING -> "at ${clock(start, zone)}"
         }
+
+    /** "This morning", "This afternoon" or "Tonight", from the start's local hour. */
+    fun partOfDay(start: Long, zone: ZoneId): String {
+        val hour = Instant.ofEpochMilli(start).atZone(zone).hour
+        return when {
+            hour < 12 -> "This morning"
+            hour < 17 -> "This afternoon"
+            else -> "Tonight"
+        }
+    }
 
     /**
      * Passes on today's calendar that aren't used, with their stage: unfinished first by start,
