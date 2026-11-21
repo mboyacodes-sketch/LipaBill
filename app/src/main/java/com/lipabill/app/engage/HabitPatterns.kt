@@ -40,7 +40,7 @@ data class CatchUp(
     val outCents: Long,
     /** Distinct new shops paid while away (not seen in the prior 30 days). */
     val newRegulars: Int = 0,
-    /** Essentials bill label with a recent cadence, e.g. KPLC. */
+    /** Bill label with a recent cadence, e.g. KPLC (from RecurringPatterns). */
     val nextBillLabel: String? = null
 )
 
@@ -167,7 +167,13 @@ object HabitPatterns {
         .toList()
 
     /** What happened while Habits was closed for [CATCH_UP_DAYS] or more. Null on a first visit. */
-    fun catchUp(transactions: List<ChallengeTransaction>, lastVisit: Long, now: Long): CatchUp? {
+    fun catchUp(
+        transactions: List<ChallengeTransaction>,
+        lastVisit: Long,
+        now: Long,
+        recurringChoices: Map<String, RecurringChoice> = emptyMap(),
+        essentials: Set<String> = emptySet()
+    ): CatchUp? {
         if (lastVisit <= 0L || now - lastVisit < CATCH_UP_DAYS * DAY) return null
         val since = transactions.filter { it.timestampMillis in lastVisit..now }
         if (since.isEmpty()) return null
@@ -190,37 +196,36 @@ object HabitPatterns {
             payments = since.size,
             outCents = since.sumOf { WeeklySummaryBuilder.signedSpendCents(it) }.coerceAtLeast(0L),
             newRegulars = newRegulars,
-            nextBillLabel = nextBillLabel(transactions, now)
+            nextBillLabel = nextBillLabel(
+                transactions,
+                now,
+                recurringChoices = recurringChoices,
+                essentials = essentials
+            )
         )
     }
 
-    /** Essentials payee seen at least twice in 90 days with a roughly monthly gap. */
-    private fun nextBillLabel(transactions: List<ChallengeTransaction>, now: Long): String? {
+    /**
+     * Next bill short label from [RecurringPatterns] (same cadence detector as Insights).
+     * [recurringChoices] / [essentials] come from prefs when Habits opens.
+     */
+    fun nextBillLabel(
+        transactions: List<ChallengeTransaction>,
+        now: Long,
+        recurringChoices: Map<String, RecurringChoice> = emptyMap(),
+        essentials: Set<String> = emptySet(),
+        zone: ZoneId = ZoneId.systemDefault()
+    ): String? {
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
         val window = transactions.filter { it.timestampMillis in (now - WINDOW_DAYS * DAY)..now }
-        val groups = window
-            .asSequence()
-            .filter { it.amountCents > 0L && !it.counterpartyName.isNullOrBlank() }
-            .filter { CategoryMatcher.matches(CategoryRules.everydayEssentials, it.counterpartyName) }
-            .groupBy { payeeKey(it.counterpartyName!!) }
-        for ((_, rows) in groups.entries.sortedByDescending { it.value.size }) {
-            if (rows.size < 2) continue
-            val times = rows.map { it.timestampMillis }.sorted()
-            val gaps = times.zipWithNext { a, b -> (b - a) / DAY }
-            if (gaps.any { it in 20L..40L }) {
-                val name = rows.maxBy { it.timestampMillis }.counterpartyName!!.trim()
-                return billShortLabel(name)
-            }
-        }
-        return null
-    }
-
-    private fun billShortLabel(name: String): String {
-        val key = payeeKey(name)
-        return when {
-            "kplc" in key || "kenya power" in key -> "KPLC"
-            "water" in key || "sewerage" in key -> "Water"
-            else -> name.split(" ").firstOrNull()?.take(12) ?: name.take(12)
-        }
+        val patterns = RecurringPatterns.detectFromChallenge(
+            rows = window,
+            today = today,
+            zone = zone,
+            choices = recurringChoices,
+            essentials = essentials
+        )
+        return RecurringPatterns.nextBillLabel(patterns, today)
     }
 
     /**

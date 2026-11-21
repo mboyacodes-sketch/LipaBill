@@ -61,6 +61,7 @@ fun FirstRunPage.toConsentRoute(): String = when (this) {
     FirstRunPage.Camera -> RouteConsent.CAMERA
     FirstRunPage.Notifications -> RouteConsent.NOTIFICATIONS
     FirstRunPage.Hibernation -> RouteConsent.HIBERNATION
+    FirstRunPage.OemSurvival -> RouteConsent.OEM_SURVIVAL
     FirstRunPage.Welcome,
     FirstRunPage.Region,
     FirstRunPage.Providers -> RouteConsent.SMS
@@ -74,6 +75,7 @@ object RouteConsent {
     const val CAMERA = "camera"
     const val NOTIFICATIONS = "notifications"
     const val HIBERNATION = "hibernation"
+    const val OEM_SURVIVAL = "oem_survival"
 
     fun pageOf(raw: String?): FirstRunPage = when (raw) {
         PHONE -> FirstRunPage.Phone
@@ -81,6 +83,7 @@ object RouteConsent {
         CAMERA -> FirstRunPage.Camera
         NOTIFICATIONS -> FirstRunPage.Notifications
         HIBERNATION -> FirstRunPage.Hibernation
+        OEM_SURVIVAL -> FirstRunPage.OemSurvival
         else -> FirstRunPage.Sms
     }
 }

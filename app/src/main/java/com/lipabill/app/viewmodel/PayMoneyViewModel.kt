@@ -71,7 +71,9 @@ data class PayMoneyUiState(
     val dialStarted: Boolean = false,
     val statusMessage: String? = null,
     /** What the user should do next on the details step (null when ready). */
-    val guidanceMessage: String? = null
+    val guidanceMessage: String? = null,
+    /** From-picker choice this sheet session (required for same-MNO dual-SIM). */
+    val sessionPickedSubscriptionId: Int? = null
 ) : PaymentLineState
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -149,7 +151,18 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
             state.simLines,
             subscriptionId
         ) ?: return
+        _ui.update { it.copy(sessionPickedSubscriptionId = subscriptionId) }
         refreshGates()
+    }
+
+    fun applySiblingRetry(subscriptionId: Int) {
+        selectPayLine(subscriptionId)
+        _ui.update {
+            it.copy(
+                dialStarted = false,
+                statusMessage = "Switched to the other line — confirm again."
+            ).revalidate()
+        }
     }
 
     fun selectMethod(method: PayMethod) {
@@ -199,6 +212,8 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
     fun resetSession() {
         clearMethod()
         amountResume.clear()
+        com.lipabill.app.ussd.SiblingLineRetry.clear()
+        _ui.update { it.copy(sessionPickedSubscriptionId = null) }
     }
 
     /**
@@ -437,19 +452,25 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
     fun startDial(prepared: RepeatTransactionCoordinator.PreparedRepeat): Boolean {
         refreshGates()
         val state = uiState.value
+        if (state.requiresExplicitLinePick && state.sessionPickedSubscriptionId == null) {
+            return false
+        }
+        val dialSubId = state.sessionPickedSubscriptionId ?: state.selectedSubscriptionId
         val started = coordinator.startPaymentDial(
             prepared,
             app.securePreferences,
             state.region,
             state.simLines,
-            state.selectedSubscriptionId,
+            dialSubId,
             preferredSource = state.activeWallet?.ledgerSource
         ) ?: return false
+        com.lipabill.app.ussd.SiblingLineRetry.noteTried(started.subscriptionId)
         _ui.update {
             it.copy(
                 dialStarted = true,
                 statusMessage = started.status,
-                lines = it.lines.after(started)
+                lines = it.lines.after(started),
+                sessionPickedSubscriptionId = started.subscriptionId
             )
         }
         return true
@@ -538,6 +559,9 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
         if (!needsPhoneStatePermission && !hasEligiblePaySim) {
             return missingPaySimMessage.ifBlank { "A matching SIM is required to pay." }
         }
+        if (requiresExplicitLinePick && sessionPickedSubscriptionId == null) {
+            return explicitLinePickMessage ?: "Pick which SIM pays."
+        }
         if (detailsOk) return null
         return when (method) {
             null -> {
@@ -616,6 +640,7 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
         if (state.dialStarted) return false
         val simReady = state.needsPhoneStatePermission || state.hasEligiblePaySim
         if (!simReady) return false
+        if (state.requiresExplicitLinePick && state.sessionPickedSubscriptionId == null) return false
         val wallet = state.activeWallet ?: return false
         val probe = buildProbe(state) ?: return false
         return WalletMenuPlans.canRepeat(wallet, probe)

@@ -42,6 +42,7 @@ import com.lipabill.app.ui.components.WalletMark
 import com.lipabill.app.ui.sheet.MoneyFlowSheetHeader
 import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
+import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Expense
 import com.lipabill.app.ui.theme.Hairline
@@ -74,6 +75,7 @@ private fun availableLine(region: AppRegion, source: MoneySource?, balances: Map
 /**
  * "From" row on Send, Pay and Repeat: the wallet that will dial and its balance.
  * With two or more dialable lines, Change opens a dropdown overlay (does not push the sheet).
+ * Same-MNO dual-SIM sets [requiresExplicitPick] so Confirm waits until a line is chosen.
  * On-device MNO wallets only; banks never appear here.
  */
 @Composable
@@ -85,7 +87,10 @@ fun PayWalletPicker(
     missingMessage: String,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    balances: Map<MoneySource, Double> = emptyMap()
+    balances: Map<MoneySource, Double> = emptyMap(),
+    requiresExplicitPick: Boolean = false,
+    explicitPickMessage: String? = null,
+    sessionPickedSubscriptionId: Int? = null
 ) {
     if (eligibleLines.isEmpty()) {
         Text(
@@ -101,13 +106,21 @@ fun PayWalletPicker(
         )
         return
     }
-    val line = eligibleLines.firstOrNull { it.subscriptionId == selectedSubscriptionId }
+    val awaitingPick = requiresExplicitPick && sessionPickedSubscriptionId == null
+    val displaySubId = sessionPickedSubscriptionId ?: selectedSubscriptionId
+    val line = eligibleLines.firstOrNull { it.subscriptionId == displaySubId }
         ?: eligibleLines.first()
     val wallet = activeWallet ?: line.payWalletFor(region)
     val switchable = eligibleLines.size > 1
-    var open by remember { mutableStateOf(false) }
+    var open by remember(awaitingPick) { mutableStateOf(awaitingPick && switchable) }
     val density = LocalDensity.current
     var menuWidth by remember { mutableStateOf(0.dp) }
+    val subtitle = when {
+        awaitingPick ->
+            explicitPickMessage ?: "Two lines — pick which pays."
+        else ->
+            availableLine(region, wallet?.ledgerSource, balances) ?: line.label
+    }
 
     Box(
         modifier = modifier
@@ -117,7 +130,7 @@ fun PayWalletPicker(
             }
             .clip(FromCardShape)
             .background(CardWhite)
-            .border(1.dp, Hairline, FromCardShape)
+            .border(1.dp, if (awaitingPick) SoftBlue else Hairline, FromCardShape)
     ) {
         Row(
             modifier = Modifier
@@ -147,7 +160,11 @@ fun PayWalletPicker(
             wallet?.let { WalletMark(it.ledgerSource, size = 32.dp) }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = wallet?.badge ?: line.label,
+                    text = if (awaitingPick) {
+                        wallet?.networkName?.let { "Pick $it line" } ?: "Pick payment line"
+                    } else {
+                        wallet?.badge ?: line.label
+                    },
                     style = HomeType.rowTitle,
                     fontWeight = FontWeight.SemiBold,
                     color = Ink,
@@ -155,9 +172,9 @@ fun PayWalletPicker(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = availableLine(region, wallet?.ledgerSource, balances) ?: line.label,
+                    text = subtitle,
                     style = HomeType.caption,
-                    color = Mute,
+                    color = if (awaitingPick) Accent else Mute,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.recordingPrivacyCover()
@@ -187,7 +204,7 @@ fun PayWalletPicker(
             WalletOptions(
                 region = region,
                 lines = eligibleLines,
-                selectedSubscriptionId = line.subscriptionId,
+                selectedSubscriptionId = if (awaitingPick) null else line.subscriptionId,
                 balances = balances,
                 onSelect = {
                     open = false
@@ -277,7 +294,10 @@ fun MoneySheetWalletBlock(
     missingMessage: String,
     onSelect: (Int) -> Unit,
     showPicker: Boolean,
-    balances: Map<MoneySource, Double> = emptyMap()
+    balances: Map<MoneySource, Double> = emptyMap(),
+    requiresExplicitPick: Boolean = false,
+    explicitPickMessage: String? = null,
+    sessionPickedSubscriptionId: Int? = null
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(Space.gap)) {
         MoneyFlowSheetHeader(title = title)
@@ -289,7 +309,10 @@ fun MoneySheetWalletBlock(
                 activeWallet = activeWallet,
                 missingMessage = missingMessage,
                 onSelect = onSelect,
-                balances = balances
+                balances = balances,
+                requiresExplicitPick = requiresExplicitPick,
+                explicitPickMessage = explicitPickMessage,
+                sessionPickedSubscriptionId = sessionPickedSubscriptionId
             )
         }
     }

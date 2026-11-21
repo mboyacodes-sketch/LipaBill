@@ -9,14 +9,14 @@ import org.junit.Test
 class FirstRunWizardTest {
 
     @Test
-    fun first_run_is_welcome_region_sms_phone_accessibility() {
+    fun first_run_is_welcome_region_phone_providers_sms_accessibility() {
         assertEquals(
             listOf(
                 FirstRunPage.Welcome,
                 FirstRunPage.Region,
+                FirstRunPage.Phone,
                 FirstRunPage.Providers,
                 FirstRunPage.Sms,
-                FirstRunPage.Phone,
                 FirstRunPage.Accessibility
             ),
             FirstRunWizard.PAGES
@@ -53,6 +53,7 @@ class FirstRunWizardTest {
         )
         assertFalse(FirstRunWizard.LATER_PAGES.contains(FirstRunPage.Region))
         assertFalse(FirstRunWizard.LATER_PAGES.contains(FirstRunPage.Providers))
+        assertFalse(FirstRunWizard.LATER_PAGES.contains(FirstRunPage.OemSurvival))
     }
 
     @Test
@@ -177,7 +178,8 @@ class FirstRunWizardTest {
     fun phone_page_does_not_bundle_sms_or_accessibility() {
         assertFalse(FirstRunWizard.PHONE_BODY.contains("SMS", ignoreCase = false))
         assertFalse(FirstRunWizard.PHONE_BODY.contains("AccessibilityService"))
-        assertTrue(FirstRunWizard.PHONE_BODY.contains("M-Pesa", ignoreCase = true))
+        assertTrue(FirstRunWizard.PHONE_BODY.contains("SIM", ignoreCase = true))
+        assertTrue(FirstRunWizard.PHONE_BODY.contains("numbers", ignoreCase = true))
     }
 
     @Test

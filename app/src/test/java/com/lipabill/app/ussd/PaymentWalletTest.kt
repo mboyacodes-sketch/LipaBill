@@ -217,6 +217,39 @@ class PaymentWalletTest {
     }
 
     @Test
+    fun dual_safaricom_requires_explicit_line_pick() {
+        val lines = listOf(
+            sim(1, "Safaricom", 639, 2),
+            sim(2, "Safaricom", 639, 2)
+        )
+        assertTrue(PaymentDialResolver.requiresExplicitLinePick(AppRegion.KENYA, lines))
+        val groups = PaymentDialResolver.sameWalletSiblingGroups(AppRegion.KENYA, lines)
+        assertEquals(1, groups.size)
+        assertEquals(PaymentWallet.SAFARICOM_MPESA, groups.single().wallet)
+        assertEquals(listOf(1, 2), groups.single().lines.map { it.subscriptionId })
+        assertEquals(
+            "Two Safaricom lines — pick which pays.",
+            PaymentDialResolver.explicitLinePickMessage(PaymentWallet.SAFARICOM_MPESA)
+        )
+        val sibling = PaymentDialResolver.unusedSibling(
+            AppRegion.KENYA,
+            lines,
+            triedSubscriptionId = 1
+        )
+        assertEquals(2, sibling!!.subscriptionId)
+    }
+
+    @Test
+    fun safaricom_plus_airtel_does_not_require_explicit_pick() {
+        val lines = listOf(
+            sim(1, "Safaricom", 639, 2),
+            sim(2, "Airtel", 639, 3)
+        )
+        assertFalse(PaymentDialResolver.requiresExplicitLinePick(AppRegion.KENYA, lines))
+        assertTrue(PaymentDialResolver.sameWalletSiblingGroups(AppRegion.KENYA, lines).isEmpty())
+    }
+
+    @Test
     fun settings_enabled_wallets_gate_send_pay_lines() {
         val lines = listOf(
             sim(1, "Safaricom", 639, 2),

@@ -11,10 +11,9 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import com.lipabill.app.ui.theme.LipaEdgeToEdge
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
@@ -42,7 +41,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
-import android.graphics.Color as AndroidColor
 import android.view.WindowManager
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -70,6 +68,12 @@ import com.lipabill.app.update.AppUpdates
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
 import com.lipabill.app.ui.permissions.FirstRunPage
 import com.lipabill.app.ui.permissions.HibernationExemptionPrompt
+import com.lipabill.app.ui.permissions.unusedAppRestrictionOf
+import com.lipabill.app.ui.permissions.readUnusedAppRestrictions
+import com.lipabill.app.ui.permissions.OemSurvivalPrompt
+import com.lipabill.app.ui.permissions.OemSurvivalHelper
+import com.lipabill.app.ui.permissions.AccessibilityHealthProbe
+import com.lipabill.app.ui.permissions.A11yCoachKind
 import com.lipabill.app.ui.permissions.FirstRunSetupScreen
 import com.lipabill.app.ui.permissions.consentPageFor
 import com.lipabill.app.ui.permissions.missingPaymentAccess
@@ -142,20 +146,10 @@ class MainActivity : AppCompatActivity(),
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Before super.onCreate so Android 14 and earlier match the edge-to-edge
-        // layout Android 15 enforces for targetSdk 35+.
+        // layout Android 15 enforces for targetSdk 35+. Avoids deprecated
+        // Window.setStatusBarColor / SHORT_EDGES that Play Console flags.
         val night = (application as LipaBillApp).darkMode.value
-        val barStyle = if (night) {
-            SystemBarStyle.dark(AndroidColor.TRANSPARENT)
-        } else {
-            SystemBarStyle.light(
-                scrim = AndroidColor.TRANSPARENT,
-                darkScrim = AndroidColor.TRANSPARENT
-            )
-        }
-        enableEdgeToEdge(
-            statusBarStyle = barStyle,
-            navigationBarStyle = barStyle
-        )
+        LipaEdgeToEdge.enable(window, lightIcons = !night)
         super.onCreate(savedInstanceState)
         applyCaptureProtection()
         hideOtherAppOverlays()
@@ -470,6 +464,11 @@ private fun AuthenticatedApp(
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) ==
             PackageManager.PERMISSION_GRANTED
 
+    fun hasPhoneNumbersPermission(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_NUMBERS) ==
+                PackageManager.PERMISSION_GRANTED
+
     fun hasCameraPermission(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
             PackageManager.PERMISSION_GRANTED
@@ -497,6 +496,7 @@ private fun AuthenticatedApp(
     var pendingDialTxId by remember { mutableStateOf<Long?>(null) }
     var phoneStateRefreshKey by remember { mutableStateOf(0) }
     var showAccessibilityReenable by remember { mutableStateOf(false) }
+    var showOemSurvival by remember { mutableStateOf(false) }
     var dismissedA11yReenableThisSession by remember { mutableStateOf(false) }
     // Android 15–24 only: sideloaded SMS needs "Allow restricted settings".
     // Android 25+ uses the normal permission / App info route.
@@ -534,13 +534,34 @@ private fun AuthenticatedApp(
             // Some updates leave Accessibility off. Coach only on release/Play builds —
             // debug installs restore via adb (scripts/install-play-debug.sh) so UI work
             // isn't interrupted every push.
-            val needsReenable =
-                AccessibilityPreferred.syncFromSystem(context, app.securePreferences)
-            if (!BuildConfig.DEBUG &&
-                !dismissedA11yReenableThisSession &&
-                needsReenable
-            ) {
-                showAccessibilityReenable = true
+            AccessibilityPreferred.syncFromSystem(context, app.securePreferences)
+            // OEM health: distinguish grant cleared vs unbound (Samsung sleep).
+            scope.launch {
+                val unused = unusedAppRestrictionOf(readUnusedAppRestrictions(context))
+                val health = AccessibilityHealthProbe.snapshot(
+                    context,
+                    app.securePreferences,
+                    unused
+                )
+                AppMetrics.a11yHealth(
+                    preferred = health.preferred,
+                    secureOn = health.secureOn,
+                    bound = health.bound,
+                    batteryIgnoring = health.batteryIgnoring,
+                    unusedAppStatus = health.unusedAppStatus,
+                    manufacturer = health.manufacturer,
+                    model = health.model,
+                    sdk = health.sdk,
+                    oemFamily = OemSurvivalHelper.oemFamilyKey(),
+                    coach = health.coachKind.name.lowercase(),
+                    trigger = "resume"
+                )
+                if (BuildConfig.DEBUG || dismissedA11yReenableThisSession) return@launch
+                when (health.coachKind) {
+                    A11yCoachKind.GrantCleared -> showAccessibilityReenable = true
+                    A11yCoachKind.Unbound -> showOemSurvival = true
+                    A11yCoachKind.None -> Unit
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -591,7 +612,18 @@ private fun AuthenticatedApp(
         dismissedA11yReenableThisSession = true
         openConsent(
             FirstRunPage.Accessibility,
-            note = "Android turns LipaBill’s Accessibility Service off after each update."
+            note = AccessibilityHealthProbe.resumeNoteFor(A11yCoachKind.GrantCleared)
+        )
+    }
+
+    LaunchedEffect(showOemSurvival) {
+        if (!showOemSurvival) return@LaunchedEffect
+        showOemSurvival = false
+        dismissedA11yReenableThisSession = true
+        OemSurvivalHelper.markPromptShown(app.securePreferences)
+        openConsent(
+            FirstRunPage.OemSurvival,
+            note = AccessibilityHealthProbe.resumeNoteFor(A11yCoachKind.Unbound)
         )
     }
 
@@ -642,6 +674,46 @@ private fun AuthenticatedApp(
         app.securePreferences.accessibilityOnboardingSeen = true
         AccessibilityPreferred.markUserTurningOn(app.securePreferences)
         AccessibilityHelper.openAppAccessibilityDetails(context)
+    }
+
+    /** Opens Accessibility toggle or OEM survival based on live health. */
+    fun openA11yCoachForPayment() {
+        scope.launch {
+            val unused = unusedAppRestrictionOf(readUnusedAppRestrictions(context))
+            var health = AccessibilityHealthProbe.snapshot(
+                context,
+                app.securePreferences,
+                unused
+            )
+            if (!health.bound && health.secureOn) {
+                AccessibilityHealthProbe.awaitBindIfListed(context)
+                health = AccessibilityHealthProbe.snapshot(
+                    context,
+                    app.securePreferences,
+                    unused
+                )
+            }
+            AppMetrics.a11yHealth(
+                preferred = health.preferred,
+                secureOn = health.secureOn,
+                bound = health.bound,
+                batteryIgnoring = health.batteryIgnoring,
+                unusedAppStatus = health.unusedAppStatus,
+                manufacturer = health.manufacturer,
+                model = health.model,
+                sdk = health.sdk,
+                oemFamily = OemSurvivalHelper.oemFamilyKey(),
+                coach = health.coachKind.name.lowercase(),
+                trigger = "payment"
+            )
+            if (health.bound) return@launch
+            val kind = if (health.secureOn) A11yCoachKind.Unbound else A11yCoachKind.GrantCleared
+            AppMetrics.setupBlocked(SetupBlocker.NoAccessibility)
+            openConsent(
+                AccessibilityHealthProbe.consentPageFor(kind),
+                note = AccessibilityHealthProbe.resumeNoteFor(kind)
+            )
+        }
     }
 
     fun requestPhoneStateWithGuide() {
@@ -828,6 +900,7 @@ private fun AuthenticatedApp(
         val draft = PendingPaymentReceipt.takeRestoreDraft() ?: return
         PendingPaymentReceipt.clear()
         activity.intent?.removeExtra(MainActivity.EXTRA_RETURN_TO_AMOUNT_AFTER_PIN_CANCEL)
+        val siblingRetry = com.lipabill.app.ussd.SiblingLineRetry.consumePendingRetry()
         instantHomeReturn = true
         navigateHome()
         when (draft.flow) {
@@ -838,6 +911,7 @@ private fun AuthenticatedApp(
                     name = draft.counterpartyName,
                     amountInput = draft.amountInput()
                 )
+                siblingRetry?.let { sendVm.applySiblingRetry(it) }
                 showSendSheet(preserveState = true)
             }
             PendingPaymentReceipt.Flow.PAY -> {
@@ -862,6 +936,7 @@ private fun AuthenticatedApp(
                     pochiName = draft.counterpartyName
                         .takeIf { method == PayMethod.POCHI }
                 )
+                siblingRetry?.let { payVm.applySiblingRetry(it) }
                 showPaySheet(preserveState = true)
             }
             PendingPaymentReceipt.Flow.REPEAT -> {
@@ -961,6 +1036,8 @@ private fun AuthenticatedApp(
             refresh: () -> Unit,
             readState: () -> Pair<Boolean, Boolean>,
             needsSimSetup: () -> Boolean,
+            /** When set, toast this and stay on the sheet (same-MNO pick) instead of Settings. */
+            simSetupStayMessage: () -> String? = { null },
             dial: () -> Unit
         ) {
             refresh()
@@ -972,23 +1049,68 @@ private fun AuthenticatedApp(
                 ).show()
                 return
             }
-            // Live check — VM snapshot can lag OEM AccessibilityManager after Agree.
-            val accessibilityEnabled = AccessibilityHelper.isLipaBillServiceEnabled(context)
+            // Live check — wait briefly for OEM rebind when Secure still lists us.
             val needsPhoneState = readState().second
-            when {
-                !accessibilityEnabled -> {
-                    AppMetrics.setupBlocked(SetupBlocker.NoAccessibility)
-                    openConsent(FirstRunPage.Accessibility)
+            scope.launch {
+                val unused = unusedAppRestrictionOf(readUnusedAppRestrictions(context))
+                var health = AccessibilityHealthProbe.snapshot(
+                    context,
+                    app.securePreferences,
+                    unused
+                )
+                if (!health.bound && health.secureOn) {
+                    AccessibilityHealthProbe.awaitBindIfListed(context)
+                    health = AccessibilityHealthProbe.snapshot(
+                        context,
+                        app.securePreferences,
+                        unused
+                    )
                 }
-                needsPhoneState -> {
-                    AppMetrics.setupBlocked(SetupBlocker.NoSim)
-                    requestPhoneStateWithGuide()
+                AppMetrics.a11yHealth(
+                    preferred = health.preferred,
+                    secureOn = health.secureOn,
+                    bound = health.bound,
+                    batteryIgnoring = health.batteryIgnoring,
+                    unusedAppStatus = health.unusedAppStatus,
+                    manufacturer = health.manufacturer,
+                    model = health.model,
+                    sdk = health.sdk,
+                    oemFamily = OemSurvivalHelper.oemFamilyKey(),
+                    coach = health.coachKind.name.lowercase(),
+                    trigger = "payment"
+                )
+                when {
+                    !health.bound && !AccessibilityHelper.isLipaBillServiceEnabled(context) -> {
+                        AppMetrics.setupBlocked(SetupBlocker.NoAccessibility)
+                        val kind = if (health.secureOn) A11yCoachKind.Unbound else A11yCoachKind.GrantCleared
+                        openConsent(
+                            AccessibilityHealthProbe.consentPageFor(kind),
+                            note = AccessibilityHealthProbe.resumeNoteFor(kind)
+                        )
+                    }
+                    !health.bound && health.secureOn -> {
+                        // Listed but still unbound after wait — survival coach.
+                        AppMetrics.setupBlocked(SetupBlocker.NoAccessibility)
+                        openConsent(
+                            FirstRunPage.OemSurvival,
+                            note = AccessibilityHealthProbe.resumeNoteFor(A11yCoachKind.Unbound)
+                        )
+                    }
+                    needsPhoneState -> {
+                        AppMetrics.setupBlocked(SetupBlocker.NoSim)
+                        requestPhoneStateWithGuide()
+                    }
+                    needsSimSetup() -> {
+                        AppMetrics.setupBlocked(SetupBlocker.NoSim)
+                        val stay = simSetupStayMessage()
+                        if (stay != null) {
+                            Toast.makeText(context, stay, Toast.LENGTH_LONG).show()
+                        } else {
+                            navController.navigate(Route.Settings.path)
+                        }
+                    }
+                    else -> dial()
                 }
-                needsSimSetup() -> {
-                    AppMetrics.setupBlocked(SetupBlocker.NoSim)
-                    navController.navigate(Route.Settings.path)
-                }
-                else -> dial()
             }
         }
         mainActivity.sendConfirmHandler = {
@@ -1003,7 +1125,20 @@ private fun AuthenticatedApp(
                     },
                     needsSimSetup = {
                         val s = sendVm.uiState.value
-                        s.simLines.size > 1 && !s.hasSavedSimPreference
+                        when {
+                            s.requiresExplicitLinePick ->
+                                s.sessionPickedSubscriptionId == null
+                            else ->
+                                s.simLines.size > 1 && !s.hasSavedSimPreference
+                        }
+                    },
+                    simSetupStayMessage = {
+                        val s = sendVm.uiState.value
+                        if (s.requiresExplicitLinePick && s.sessionPickedSubscriptionId == null) {
+                            s.explicitLinePickMessage ?: "Pick which SIM pays."
+                        } else {
+                            null
+                        }
                     },
                     dial = { runStepUpAndDial(sendVm) }
                 )
@@ -1021,7 +1156,20 @@ private fun AuthenticatedApp(
                     },
                     needsSimSetup = {
                         val s = payVm.uiState.value
-                        s.simLines.size > 1 && !s.hasSavedSimPreference
+                        when {
+                            s.requiresExplicitLinePick ->
+                                s.sessionPickedSubscriptionId == null
+                            else ->
+                                s.simLines.size > 1 && !s.hasSavedSimPreference
+                        }
+                    },
+                    simSetupStayMessage = {
+                        val s = payVm.uiState.value
+                        if (s.requiresExplicitLinePick && s.sessionPickedSubscriptionId == null) {
+                            s.explicitLinePickMessage ?: "Pick which SIM pays."
+                        } else {
+                            null
+                        }
                     },
                     dial = { runStepUpAndDial(payVm) }
                 )
@@ -1110,6 +1258,7 @@ private fun AuthenticatedApp(
                 val need = buildList {
                     if (!hasCallPermission()) add(Manifest.permission.CALL_PHONE)
                     if (!hasPhoneStatePermission()) add(Manifest.permission.READ_PHONE_STATE)
+                    if (!hasPhoneNumbersPermission()) add(Manifest.permission.READ_PHONE_NUMBERS)
                 }
                 if (need.isNotEmpty()) {
                     callPermissionLauncher.launch(need.toTypedArray())
@@ -1124,8 +1273,18 @@ private fun AuthenticatedApp(
                 notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             },
             onSkipNotifications = { onNotificationsDismissed() },
-            onSkipHibernation = { app.securePreferences.hibernationPromptShown = true },
+            onSkipHibernation = {
+                app.securePreferences.hibernationPromptShown = true
+                app.securePreferences.hibernationLastPromptAt = System.currentTimeMillis()
+            },
             onOpenHibernationSettings = { openHibernationSettings() },
+            onSkipOemSurvival = {
+                OemSurvivalHelper.markPromptShown(app.securePreferences)
+            },
+            onOpenOemSurvivalSettings = {
+                OemSurvivalHelper.markPromptShown(app.securePreferences)
+                OemSurvivalHelper.openSurvivalSettings(context)
+            },
             startPage = startPage,
             firstRun = firstRun,
             accessibilityNote = note,
@@ -1325,7 +1484,7 @@ private fun AuthenticatedApp(
             AdaptiveFrame { RepeatConfirmScreen(
                 viewModel = repeatVm,
                 onBack = { navigateHome() },
-                onNeedAccessibility = { openConsent(FirstRunPage.Accessibility) },
+                onNeedAccessibility = { openA11yCoachForPayment() },
                 onManualFallback = {
                     navController.navigate(Route.RepeatManual(id).path)
                 },
@@ -1371,6 +1530,10 @@ private fun AuthenticatedApp(
                     onBack = { navigateHome() },
                     onRequestPhoneStatePermission = { requestPhoneStateWithGuide() },
                     onRequestAccessibilityConsent = { openConsent(FirstRunPage.Accessibility) },
+                onRequestOemSurvival = {
+                    OemSurvivalHelper.markPromptShown(app.securePreferences)
+                    openConsent(FirstRunPage.OemSurvival)
+                },
                     onOptInFuliza = { runFulizaOptIn() },
                     onCheckForUpdate = { AppUpdates.check(activity, manual = true) },
                     onReplayFirstRun = {
@@ -1443,8 +1606,19 @@ private fun AuthenticatedApp(
     HibernationExemptionPrompt(
         enabled = onHome &&
             !showAccessibilityReenable &&
+            !showOemSurvival &&
             navBackStackEntry?.destination?.route != Route.Consent.pattern,
         onNeedConsent = { openConsent(FirstRunPage.Hibernation) }
+    )
+    OemSurvivalPrompt(
+        enabled = onHome &&
+            !showAccessibilityReenable &&
+            !showOemSurvival &&
+            !BuildConfig.DEBUG &&
+            navBackStackEntry?.destination?.route != Route.Consent.pattern,
+        onNeedConsent = {
+            showOemSurvival = true
+        }
     )
 }
 

@@ -2,7 +2,6 @@ package com.lipabill.app.ui.sheet
 
 import android.app.Dialog
 import android.content.Context
-import android.os.Build
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -13,7 +12,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.core.view.WindowCompat
 import androidx.core.view.children
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.Fragment
@@ -25,6 +23,7 @@ import com.lipabill.app.ui.adapt.ProvideWindowWidth
 import com.lipabill.app.ui.adapt.moneySheetHeightFraction
 import com.lipabill.app.ui.privacy.RecordingCapture
 import com.lipabill.app.ui.theme.LipaBillTheme
+import com.lipabill.app.ui.theme.LipaEdgeToEdge
 
 /** Adaptive ~90% height Pay/Send sheet, flush to the bottom edge. */
 fun DialogFragment.expandedSheetDialog(): Dialog =
@@ -139,10 +138,6 @@ fun BottomSheetDialog.expandForComposeContent() {
     }
 }
 
-/**
- * Dialogs are not a ComponentActivity, so they cannot call enableEdgeToEdge().
- * Light icons when the app is in dark mode.
- */
 private fun secureMoneyWindow(window: Window?, context: Context) {
     if (window == null) return
     val recording = (context.applicationContext as? LipaBillApp)?.recordingPrivacy?.value == true
@@ -153,18 +148,9 @@ private fun secureMoneyWindow(window: Window?, context: Context) {
     }
 }
 
+/** Dialog windows are not ComponentActivity — use [LipaEdgeToEdge] directly. */
 private fun enableSheetEdgeToEdge(window: Window, dark: Boolean) {
-    WindowCompat.setDecorFitsSystemWindows(window, false)
-    WindowCompat.getInsetsController(window, window.decorView).apply {
-        isAppearanceLightStatusBars = !dark
-        isAppearanceLightNavigationBars = !dark
-    }
-    if (Build.VERSION.SDK_INT >= 30) {
-        window.attributes = window.attributes.apply {
-            layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-        }
-    }
+    LipaEdgeToEdge.enable(window, lightIcons = !dark)
     // In-app keyboards only — do not resize the sheet for the system IME.
     window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
 }

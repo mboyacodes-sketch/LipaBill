@@ -36,11 +36,42 @@ class UnusedAppRestrictionsTest {
     }
 
     @Test
-    fun a_previous_answer_is_not_asked_again() {
+    fun a_previous_answer_is_not_asked_again_without_grant_clear() {
         assertFalse(
             shouldAskToDisableHibernation(
                 UnusedAppRestriction.Enabled,
                 alreadyAsked = true
+            )
+        )
+    }
+
+    @Test
+    fun grant_cleared_allows_rare_reask_after_cooldown() {
+        assertTrue(
+            shouldAskToDisableHibernation(
+                status = UnusedAppRestriction.Enabled,
+                alreadyAsked = true,
+                grantClearedWhilePreferred = true,
+                cooldownElapsed = true
+            )
+        )
+        assertFalse(
+            shouldAskToDisableHibernation(
+                status = UnusedAppRestriction.Enabled,
+                alreadyAsked = true,
+                grantClearedWhilePreferred = true,
+                cooldownElapsed = false
+            )
+        )
+    }
+
+    @Test
+    fun exemption_satisfied_never_asks() {
+        assertFalse(
+            shouldAskToDisableHibernation(
+                status = UnusedAppRestriction.Enabled,
+                alreadyAsked = false,
+                exemptionSatisfied = true
             )
         )
     }

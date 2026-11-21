@@ -39,6 +39,12 @@ enum class PermissionLesson(
         body = "If you do not open LipaBill for a few months, Android can remove SMS and phone access. " +
             "History updates and payments then wait until you allow them again.",
         allowLabel = "Keep access"
+    ),
+    OemSurvival(
+        title = "Keep payments ready",
+        body = "Some phones put LipaBill to sleep and pause payment fill. " +
+            "Allow unrestricted battery use and Never sleeping apps when offered.",
+        allowLabel = "Open phone settings"
     )
 }
 

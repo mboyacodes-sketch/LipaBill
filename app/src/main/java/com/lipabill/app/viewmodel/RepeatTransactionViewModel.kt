@@ -29,7 +29,8 @@ data class RepeatConfirmUiState(
     val canPay: Boolean = false,
     val statusMessage: String? = null,
     val dialStarted: Boolean = false,
-    override val lines: PaymentLineSnapshot = InitialPaymentLines
+    override val lines: PaymentLineSnapshot = InitialPaymentLines,
+    val sessionPickedSubscriptionId: Int? = null
 ) : PaymentLineState
 
 class RepeatTransactionViewModel(
@@ -104,7 +105,10 @@ class RepeatTransactionViewModel(
         } else {
             null
         }
-        val canPay = tx != null && wallet != null && WalletMenuPlans.canRepeat(wallet, tx)
+        val sessionPick = _ui.value.sessionPickedSubscriptionId
+        val lineReady = !lines.requiresExplicitLinePick || sessionPick != null
+        val canPay = tx != null && wallet != null && lineReady &&
+            WalletMenuPlans.canRepeat(wallet, tx)
         _ui.value = RepeatConfirmUiState(
             transaction = tx,
             plan = plan,
@@ -113,7 +117,8 @@ class RepeatTransactionViewModel(
             canPay = canPay,
             statusMessage = _ui.value.statusMessage,
             dialStarted = _ui.value.dialStarted,
-            lines = lines.copy(activeWallet = lines.activeWallet ?: wallet)
+            lines = lines.copy(activeWallet = lines.activeWallet ?: wallet),
+            sessionPickedSubscriptionId = sessionPick
         )
     }
 
@@ -125,7 +130,16 @@ class RepeatTransactionViewModel(
             state.simLines,
             subscriptionId
         ) ?: return
+        _ui.value = state.copy(sessionPickedSubscriptionId = subscriptionId)
         refresh(state.transaction ?: transaction.value, state.amountInput)
+    }
+
+    fun applySiblingRetry(subscriptionId: Int) {
+        selectPayLine(subscriptionId)
+        _ui.value = _ui.value.copy(
+            dialStarted = false,
+            statusMessage = "Switched to the other line — confirm again."
+        )
     }
 
     suspend fun prepare(): RepeatTransactionCoordinator.PreparedRepeat? =
@@ -133,18 +147,24 @@ class RepeatTransactionViewModel(
 
     fun startDial(prepared: RepeatTransactionCoordinator.PreparedRepeat): Boolean {
         val state = _ui.value
+        if (state.requiresExplicitLinePick && state.sessionPickedSubscriptionId == null) {
+            return false
+        }
+        val dialSubId = state.sessionPickedSubscriptionId ?: state.selectedSubscriptionId
         val started = coordinator.startPaymentDial(
             prepared,
             app.securePreferences,
             state.region,
             state.simLines,
-            state.selectedSubscriptionId,
+            dialSubId,
             preferredSource = state.transaction?.source
         ) ?: return false
+        com.lipabill.app.ussd.SiblingLineRetry.noteTried(started.subscriptionId)
         _ui.value = state.copy(
             dialStarted = true,
             statusMessage = started.status,
-            lines = state.lines.after(started)
+            lines = state.lines.after(started),
+            sessionPickedSubscriptionId = started.subscriptionId
         )
         return true
     }

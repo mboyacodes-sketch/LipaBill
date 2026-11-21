@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Line numbers on dual-SIM (API 26+); paired with READ_PHONE_STATE for wallet matching. -->
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Android 12+: hide other apps' overlays while LipaBill is visible (tapjacking). -->
     <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS" />
@@ -26,6 +28,8 @@
     <uses-permission
         android:name="android.permission.ACCESS_ADSERVICES_ATTRIBUTION"
         tools:node="remove" />
+    <!-- OEM survival: request unrestricted battery so Accessibility stays bound. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Firebase Analytics (metrics only) + ML Kit model delivery -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -48,6 +52,12 @@
     <queries>
         <package android:name="com.android.settings" />
         <package android:name="com.android.settings.intelligence" />
+        <!-- OEM survival deep-links (Device Care / battery / autostart). -->
+        <package android:name="com.samsung.android.lool" />
+        <package android:name="com.samsung.android.sm" />
+        <package android:name="com.miui.securitycenter" />
+        <package android:name="com.miui.powerkeeper" />
+        <package android:name="com.transsion.phonemanager" />
         <intent>
             <action android:name="android.settings.ACCESSIBILITY_SETTINGS" />
         </intent>

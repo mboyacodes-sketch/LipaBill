@@ -131,12 +131,15 @@ class LineGatedSourcesTest {
     }
 
     @Test
-    fun ledger_lock_hints_say_sms_still_works() {
+    fun ledger_lock_hints_hard_disable_missing_sims() {
         val hints = lockedLedgerSources(AppRegion.KENYA, emptyList(), phoneAccess = true)
-        assertTrue(hints.getValue(MoneySource.MPESA).contains("SMS still imports"))
-        assertTrue(hints.getValue(MoneySource.MPESA).contains("Send and Pay"))
+        assertEquals(
+            "Needs a Safaricom SIM in this phone.",
+            hints.getValue(MoneySource.MPESA)
+        )
+        // Without phone access the picker is not gated yet.
         val noPhone = lockedLedgerSources(AppRegion.KENYA, emptyList(), phoneAccess = false)
-        assertTrue(noPhone.getValue(MoneySource.MPESA).contains("SMS still imports"))
+        assertTrue(noPhone.isEmpty())
     }
 
     @Test

@@ -23,6 +23,8 @@ import com.lipabill.app.engage.HabitPatterns
 import com.lipabill.app.engage.HabitPoints
 import com.lipabill.app.engage.QuizGenerator
 import com.lipabill.app.engage.QuizQuestion
+import com.lipabill.app.engage.RecurringChoice
+import com.lipabill.app.engage.RecurringPatterns
 import com.lipabill.app.engage.WeeklySummary
 import com.lipabill.app.ui.util.displayLabel
 import java.time.ZoneId
@@ -94,7 +96,9 @@ data class HabitsUiState(
     val taughtCount: Int = 0,
     val duoPending: Boolean = false,
     /** A shop paid often that the user has not yet said is a need or a want. */
-    val teachCandidate: String? = null
+    val teachCandidate: String? = null,
+    /** Pending “Potential recurring payment” to confirm or dismiss. */
+    val potentialRecurring: List<com.lipabill.app.engage.RecurringPattern> = emptyList()
 )
 
 private data class LedgerRead(
@@ -103,7 +107,8 @@ private data class LedgerRead(
     val paymentsRead: Int = 0,
     val catchUp: CatchUp? = null,
     val window: List<ChallengeTransaction> = emptyList(),
-    val foodDayBars: List<Int> = emptyList()
+    val foodDayBars: List<Int> = emptyList(),
+    val potentialRecurring: List<com.lipabill.app.engage.RecurringPattern> = emptyList()
 )
 
 internal fun challengeOptions(
@@ -262,7 +267,8 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
             duoPending = duo,
             teachCandidate = core.read.regulars
                 .map { it.payee }
-                .firstOrNull { payee -> taught.none { it.startsWith(HabitPatterns.payeeKey(payee) + "=") } }
+                .firstOrNull { payee -> taught.none { it.startsWith(HabitPatterns.payeeKey(payee) + "=") } },
+            potentialRecurring = core.read.potentialRecurring
         )
     }
         .onEach { state -> rememberEarned(state.badges) }
@@ -281,18 +287,42 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
             val prefs = app.securePreferences
             val zone = ZoneId.systemDefault()
             val rows = app.engagement.transactionsSince(now - HabitPatterns.WINDOW_DAYS * DAY_MILLIS, now)
-            val catchUp = HabitPatterns.catchUp(rows, prefs.habitsLastVisit, now)
-            prefs.habitsLastVisit = now
             val essentials = app.essentialPayees.value
+            val choices = app.recurringPatternChoices.value
+            val today = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+            val recurring = RecurringPatterns.detectFromChallenge(
+                rows = rows,
+                today = today,
+                zone = zone,
+                choices = choices,
+                essentials = essentials
+            )
+            val catchUp = HabitPatterns.catchUp(
+                rows,
+                prefs.habitsLastVisit,
+                now,
+                recurringChoices = choices,
+                essentials = essentials
+            )
+            prefs.habitsLastVisit = now
             ledger.value = LedgerRead(
                 patterns = HabitPatterns.detect(rows, now, zone, essentials),
                 regulars = HabitPatterns.regulars(rows, now, essentialKeys = essentials),
                 paymentsRead = rows.size,
                 catchUp = catchUp ?: ledger.value.catchUp,
                 window = rows,
-                foodDayBars = HabitPatterns.foodDayBars(rows, zone, now)
+                foodDayBars = HabitPatterns.foodDayBars(rows, zone, now),
+                potentialRecurring = RecurringPatterns.potential(recurring)
             )
         }
+    }
+
+    fun setRecurringChoice(key: String, confirmed: Boolean) {
+        app.setRecurringChoice(
+            key,
+            if (confirmed) RecurringChoice.Confirmed else RecurringChoice.Dismissed
+        )
+        openHabits()
     }
 
     fun dismissCatchUp() {

@@ -112,12 +112,35 @@ class SecurePreferences(context: Context) {
         }
 
     /**
-     * True after the one-time explanation of Android's unused-app hibernation.
-     * SMS and phone access can be reset if the app sits unused for months.
+     * True after unused-app restrictions are confirmed Disabled, or the user
+     * was coached and we are inside the cooldown window (see hibernationLastPromptAt).
      */
     var hibernationPromptShown: Boolean
         get() = prefs.getBoolean(KEY_HIBERNATION_PROMPT_SHOWN, false)
         set(value) = prefs.edit().putBoolean(KEY_HIBERNATION_PROMPT_SHOWN, value).apply()
+
+    /** Epoch millis of the last hibernation coach; 0 = never. */
+    var hibernationLastPromptAt: Long
+        get() = prefs.getLong(KEY_HIBERNATION_LAST_PROMPT_AT, 0L)
+        set(value) = prefs.edit().putLong(KEY_HIBERNATION_LAST_PROMPT_AT, value).apply()
+
+    /**
+     * True after unused-app status was observed as Disabled (exemption satisfied).
+     * Survives skips so we stop asking once Android reports hibernation off.
+     */
+    var hibernationExemptionSatisfied: Boolean
+        get() = prefs.getBoolean(KEY_HIBERNATION_EXEMPTION_SATISFIED, false)
+        set(value) = prefs.edit().putBoolean(KEY_HIBERNATION_EXEMPTION_SATISFIED, value).apply()
+
+    /** User saw the OEM battery / Never-sleeping survival coach at least once. */
+    var oemSurvivalPromptShown: Boolean
+        get() = prefs.getBoolean(KEY_OEM_SURVIVAL_PROMPT_SHOWN, false)
+        set(value) = prefs.edit().putBoolean(KEY_OEM_SURVIVAL_PROMPT_SHOWN, value).apply()
+
+    /** Epoch millis of the last OEM survival coach; 0 = never. */
+    var oemSurvivalLastPromptAt: Long
+        get() = prefs.getLong(KEY_OEM_SURVIVAL_LAST_PROMPT_AT, 0L)
+        set(value) = prefs.edit().putLong(KEY_OEM_SURVIVAL_LAST_PROMPT_AT, value).apply()
 
     /** Country the ledger reads confirmation SMS for. Existing installs stay Kenya. */
     var appRegion: AppRegion
@@ -252,6 +275,14 @@ class SecurePreferences(context: Context) {
     var watchedPayees: Set<String>
         get() = prefs.getStringSet(KEY_WATCHED_PAYEES, null)?.toSet() ?: emptySet()
         set(value) = prefs.edit().putStringSet(KEY_WATCHED_PAYEES, HashSet(value)).apply()
+
+    /**
+     * Recurring-pattern confirm / dismiss choices from Insights and Habits.
+     * Encoded as `payeeKey=confirmed` or `payeeKey=dismissed` (see RecurringPatterns).
+     */
+    var recurringPatternChoices: Set<String>
+        get() = prefs.getStringSet(KEY_RECURRING_PATTERN_CHOICES, null)?.toSet() ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_RECURRING_PATTERN_CHOICES, HashSet(value)).apply()
 
     /** Insights badges already earned; once earned they stay. */
     var earnedBadges: Set<String>
@@ -570,6 +601,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_PASS_REMINDER_MORNING_HOUR = "pass_reminder_morning_hour"
         private const val KEY_ESSENTIAL_PAYEES = "essential_payees"
         private const val KEY_WATCHED_PAYEES = "watched_payees"
+        private const val KEY_RECURRING_PATTERN_CHOICES = "recurring_pattern_choices_v1"
         private const val KEY_EARNED_BADGES = "earned_badges"
         private const val KEY_EARNED_HABIT_BADGES = "earned_habit_badges"
         private const val KEY_DISMISSED_HABIT_PATTERNS = "dismissed_habit_patterns"
@@ -593,6 +625,10 @@ class SecurePreferences(context: Context) {
         private const val KEY_UI_FONT_SIZE_SP = "ui_font_size_sp_v2"
         private const val KEY_RECORDING_PRIVACY = "recording_privacy"
         private const val KEY_HIBERNATION_PROMPT_SHOWN = "hibernation_prompt_shown"
+        private const val KEY_HIBERNATION_LAST_PROMPT_AT = "hibernation_last_prompt_at"
+        private const val KEY_HIBERNATION_EXEMPTION_SATISFIED = "hibernation_exemption_satisfied"
+        private const val KEY_OEM_SURVIVAL_PROMPT_SHOWN = "oem_survival_prompt_shown"
+        private const val KEY_OEM_SURVIVAL_LAST_PROMPT_AT = "oem_survival_last_prompt_at"
         private const val KEY_FIRST_RUN_SETUP_DONE = "first_run_setup_done"
         private const val KEY_REPLAY_FIRST_RUN_PENDING = "replay_first_run_pending"
         private const val KEY_APP_REGION = "app_region"
