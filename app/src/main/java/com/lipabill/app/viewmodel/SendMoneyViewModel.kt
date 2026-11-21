@@ -42,7 +42,12 @@ data class SendMoneyUiState(
     /** Fee on a past send of a similar size; null when unknown. */
     val feeEstimate: Double? = null,
     /** Sends this month per [phoneKey], for the recipient list. */
-    val monthlyCounts: Map<String, Int> = emptyMap()
+    val monthlyCounts: Map<String, Int> = emptyMap(),
+    /**
+     * SubscriptionId chosen via the From picker this sheet session.
+     * Required before Confirm when [PaymentLineSnapshot.requiresExplicitLinePick].
+     */
+    val sessionPickedSubscriptionId: Int? = null
 ) : PaymentLineState
 
 class SendMoneyViewModel(application: Application) : AndroidViewModel(application) {
@@ -79,6 +84,8 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
         val parsedAmount = RepeatTransactionViewModel.parseAmount(draft.amount)
         val counts = monthlySendCounts(past, LocalDate.now(), ZoneId.systemDefault())
         val simReady = gates.needsPhoneStatePermission || gates.hasEligiblePaySim
+        val lineReady = !gates.requiresExplicitLinePick ||
+            gates.sessionPickedSubscriptionId != null
         gates.copy(
             contacts = filtered,
             query = draft.query,
@@ -86,14 +93,18 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
             amountInput = draft.amount,
             amountValid = amountOk,
             detailsValid = detailsOk,
-            canSend = detailsOk && amountOk && probeOk && simReady && !gates.dialStarted,
+            canSend = detailsOk && amountOk && probeOk && simReady && lineReady &&
+                !gates.dialStarted,
             guidanceMessage = sendDetailsGuidance(
                 query = trimmed,
                 selected = draft.selected,
                 contacts = filtered,
                 detailsOk = detailsOk,
                 missingPaySim = !gates.needsPhoneStatePermission && !gates.hasEligiblePaySim,
-                missingPaySimMessage = gates.missingPaySimMessage
+                missingPaySimMessage = gates.missingPaySimMessage,
+                needsLinePick = gates.requiresExplicitLinePick &&
+                    gates.sessionPickedSubscriptionId == null,
+                linePickMessage = gates.explicitLinePickMessage
             ),
             sentThisMonth = phoneKey(phone)?.let { counts[it] } ?: 0,
             monthlyCounts = counts,
@@ -107,12 +118,17 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
         contacts: List<SendContact>,
         detailsOk: Boolean,
         missingPaySim: Boolean = false,
-        missingPaySimMessage: String = ""
+        missingPaySimMessage: String = "",
+        needsLinePick: Boolean = false,
+        linePickMessage: String? = null
     ): String? {
         if (missingPaySim) {
             return missingPaySimMessage.ifBlank {
                 "A matching SIM is required to send."
             }
+        }
+        if (needsLinePick) {
+            return linePickMessage ?: "Pick which SIM pays."
         }
         if (detailsOk || selected != null) return null
         val label = query.take(28).let { if (query.length > 28) "$it…" else it }
@@ -154,7 +170,19 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
             state.simLines,
             subscriptionId
         ) ?: return
+        _gates.update { it.copy(sessionPickedSubscriptionId = subscriptionId) }
         refreshGates()
+    }
+
+    /** Apply a sibling-line retry after insufficient funds on the other SIM. */
+    fun applySiblingRetry(subscriptionId: Int) {
+        selectPayLine(subscriptionId)
+        _gates.update {
+            it.copy(
+                dialStarted = false,
+                statusMessage = "Switched to the other line — confirm again."
+            )
+        }
     }
 
     fun setQuery(value: String) {
@@ -180,6 +208,8 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
     fun resetSession() {
         clearSelection()
         amountResume.clear()
+        com.lipabill.app.ussd.SiblingLineRetry.clear()
+        _gates.update { it.copy(sessionPickedSubscriptionId = null) }
     }
 
     /**
@@ -242,19 +272,25 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
     fun startDial(prepared: RepeatTransactionCoordinator.PreparedRepeat): Boolean {
         refreshGates()
         val state = uiState.value
+        if (state.requiresExplicitLinePick && state.sessionPickedSubscriptionId == null) {
+            return false
+        }
+        val dialSubId = state.sessionPickedSubscriptionId ?: state.selectedSubscriptionId
         val started = coordinator.startPaymentDial(
             prepared,
             app.securePreferences,
             state.region,
             state.simLines,
-            state.selectedSubscriptionId,
+            dialSubId,
             preferredSource = state.activeWallet?.ledgerSource
         ) ?: return false
+        com.lipabill.app.ussd.SiblingLineRetry.noteTried(started.subscriptionId)
         _gates.update {
             it.copy(
                 dialStarted = true,
                 statusMessage = started.status,
-                lines = it.lines.after(started)
+                lines = it.lines.after(started),
+                sessionPickedSubscriptionId = started.subscriptionId
             )
         }
         return true

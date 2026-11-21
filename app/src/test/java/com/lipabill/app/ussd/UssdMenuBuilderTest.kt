@@ -407,12 +407,25 @@ class FulizaPromptTest {
     @Test
     fun detects_fuliza_accept_decline() {
         assertTrue(FulizaPrompt.isOffer(offer))
+        assertFalse(InsufficientFundsPrompt.isHardInsufficient(offer))
         assertEquals("1", ConfirmDetector.resolveYes(offer))
         assertEquals("2", ConfirmDetector.resolveNo(offer))
         val summary = ConfirmDetector.summaryLines(offer)
         assertTrue(summary.contains("Fuliza"))
         assertTrue(summary.contains("380"))
         assertFalse(summary.contains("1. Accept"))
+    }
+
+    @Test
+    fun hard_insufficient_without_fuliza_is_not_an_offer() {
+        val hard = "Failed. Insufficient funds in your M-PESA account to pay Ksh50,000.00."
+        assertFalse(FulizaPrompt.isOffer(hard))
+        assertTrue(InsufficientFundsPrompt.isHardInsufficient(hard))
+        assertTrue(
+            InsufficientFundsPrompt.isHardInsufficient(
+                "Insufficient M-PESA balance to send Ksh500.00."
+            )
+        )
     }
 
     @Test

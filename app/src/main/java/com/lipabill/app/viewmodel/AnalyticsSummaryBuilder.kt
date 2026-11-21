@@ -1,6 +1,8 @@
 package com.lipabill.app.viewmodel
 
 import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.engage.RecurringChoice
+import com.lipabill.app.engage.RecurringPatterns
 import com.lipabill.app.ui.util.displayLabel
 import java.time.Instant
 import java.time.LocalDate
@@ -115,8 +117,38 @@ internal fun buildAnalyticsSummary(
     val busiest = busiestOutflow(outflowByDate, from, to)
     val fees = if (mpesa) feeSummary(filtered) else FeeSummary()
     val coveredDays = (ChronoUnit.DAYS.between(coveredFrom, to) + 1).coerceAtLeast(1)
+    val confirmedRecurring = marks.recurringChoices
+        .filterValues { it == RecurringChoice.Confirmed }
+        .keys
     val regulars = if (mpesa) {
-        detectRegulars(txs, zone, today, marks.essential, marks.watched)
+        detectRegulars(
+            txs,
+            zone,
+            today,
+            marks.essential,
+            marks.watched + confirmedRecurring
+        )
+    } else {
+        emptyList()
+    }
+    val recurringPatterns = if (mpesa) {
+        RecurringPatterns.detect(
+            txs = txs,
+            today = today,
+            zone = zone,
+            choices = marks.recurringChoices,
+            essentials = marks.essential,
+            watched = marks.watched
+        )
+    } else {
+        emptyList()
+    }
+    val potentialRecurring = RecurringPatterns.potential(recurringPatterns)
+    val changeRows = if (mpesa) {
+        RecurringPatterns.suppressNewChargesAlreadyPotential(
+            regularChanges(txs, today, zone),
+            potentialRecurring
+        )
     } else {
         emptyList()
     }
@@ -233,13 +265,14 @@ internal fun buildAnalyticsSummary(
         },
         periodBars = periodBars(coveredFrom, to, inflowByDate, outflowByDate),
         isReady = true,
-        regularChanges = if (mpesa) regularChanges(txs, today, zone) else emptyList(),
+        regularChanges = changeRows,
         priceTrends = if (mpesa) priceTrends(txs, today, zone) else emptyList(),
         categoryChanges = if (mpesa && comparable) {
             categoryChanges(spendByCategory(filtered, overrides), spendByCategory(previousTxs, overrides))
         } else {
             emptyList()
-        }
+        },
+        potentialRecurring = potentialRecurring
     )
 }
 

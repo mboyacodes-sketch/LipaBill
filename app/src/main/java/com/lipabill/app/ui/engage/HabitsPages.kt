@@ -1048,13 +1048,64 @@ private fun challengeOptionIcon(subject: ChallengeSubject): ImageVector = when (
 }
 
 @Composable
+internal fun PotentialRecurringCard(
+    pattern: com.lipabill.app.engage.RecurringPattern,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(HabitsTokens.CardShape)
+            .background(CardWhite)
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            "Potential recurring payment",
+            style = HomeType.caption,
+            color = Mute,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            pattern.name,
+            style = HomeType.rowTitle.copy(fontSize = 17.sp),
+            color = Ink,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            "${pattern.cadence.label} · about ${pattern.typicalAmount.toInt()} KSh",
+            style = HomeType.body,
+            color = Mute
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LipaPillButton(
+                label = "Yes, it repeats",
+                onClick = onConfirm,
+                modifier = Modifier.weight(1f),
+                filled = true,
+                maxLines = 1
+            )
+            LipaPillButton(
+                label = "Not a bill",
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                filled = false,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
 internal fun NoticedPage(
     habits: HabitsUiState,
     canStart: Boolean,
     onStart: (String) -> Unit,
     onNotMe: (String) -> Unit,
     onDismissCatchUp: () -> Unit,
-    onTeach: (payee: String, answer: String) -> Unit
+    onTeach: (payee: String, answer: String) -> Unit,
+    onRecurringChoice: (key: String, confirmed: Boolean) -> Unit = { _, _ -> }
 ) {
     val learningGood = habits.learningScore >= 55
     Column(verticalArrangement = Arrangement.spacedBy(HabitsTokens.sectionGap)) {
@@ -1093,6 +1144,13 @@ internal fun NoticedPage(
             )
         }
         habits.catchUp?.let { CatchUpCard(it, onDismissCatchUp) }
+        habits.potentialRecurring.firstOrNull()?.let { pattern ->
+            PotentialRecurringCard(
+                pattern = pattern,
+                onConfirm = { onRecurringChoice(pattern.key, true) },
+                onDismiss = { onRecurringChoice(pattern.key, false) }
+            )
+        }
         Text(stringResource(R.string.habits_patterns), style = HomeType.section.copy(fontSize = 17.sp, fontWeight = FontWeight.Bold), color = Ink)
         if (habits.patterns.isEmpty()) {
             Text(stringResource(R.string.habits_noticed_empty), style = HomeType.body, color = Mute)

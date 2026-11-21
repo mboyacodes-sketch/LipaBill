@@ -6,10 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MoneySource
+import com.lipabill.app.data.model.defaultLedgerSources
 import com.lipabill.app.data.model.providerCatalog
 import com.lipabill.app.data.model.lockedLedgerSources
 import com.lipabill.app.data.model.regionsPresentOnSims
 import com.lipabill.app.data.model.selectableAppRegions
+import com.lipabill.app.data.model.simWalletNumberHints
 import com.lipabill.app.data.model.toggleLedgerSource
 import com.lipabill.app.data.local.entity.RepeatAttemptEntity
 import com.lipabill.app.data.tickets.PassReminderLeadTimes
@@ -41,8 +43,10 @@ data class SettingsUiState(
     val simLines: List<SimLine> = emptyList(),
     val preferredSimSubscriptionId: Int? = null,
     val needsPhoneStatePermission: Boolean = false,
-    /** Wallets with no dial line; caption explains SMS still works without the SIM. */
+    /** Wallets with no matching SIM when phone access is on — chips stay off. */
     val lockedSources: Map<MoneySource, String> = emptyMap(),
+    /** “M-Pesa · …6877” suffixes from SIM line numbers when readable. */
+    val walletNumberHints: Map<MoneySource, String> = emptyMap(),
     /** Countries with a SIM on this phone; empty means the picker is not gated. */
     val simRegions: Set<AppRegion> = emptySet(),
     /** Regions the Country picker may select (SIM-backed + current). */
@@ -77,9 +81,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun toggleProvider(source: MoneySource) {
-        // SIM-locked wallets still belong on the ledger (SMS import). Send/Pay stay
-        // dial-gated separately; locked copy under the chip explains the missing line.
         val region = app.appRegion.value
+        val ctx = getApplication<Application>()
+        if (SimLineHelper.hasPhoneStatePermission(ctx)) {
+            val lines = SimLineHelper.listActiveLines(ctx, region)
+            if (source in LineGatedSources.locked(region, lines, phoneAccess = true)) return
+        }
         val next = toggleLedgerSource(
             app.enabledSources.value,
             source,
@@ -165,8 +172,21 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val region = app.securePreferences.appRegion
         val needsPerm = !SimLineHelper.hasPhoneStatePermission(ctx)
         val lines = if (needsPerm) emptyList() else SimLineHelper.listActiveLines(ctx, region)
-        val enabled = app.enabledSources.value
+        var enabled = app.enabledSources.value
         if (!needsPerm) {
+            val locked = LineGatedSources.locked(region, lines, phoneAccess = true).keys
+            val pruned = enabled.filterNot { it in locked }.toSet()
+            if (pruned != enabled) {
+                enabled = pruned.ifEmpty {
+                    defaultLedgerSources(
+                        region,
+                        onPhoneWallets = LineGatedSources.onPhone(region, lines)
+                    )
+                }
+                if (enabled != app.enabledSources.value) {
+                    app.setEnabledSources(enabled, rescan = true)
+                }
+            }
             SimLineHelper.ensurePayPreferred(region, app.securePreferences, lines, enabled)
         }
         // Settings is where phone access gets granted; let the ledger see the lines at once.
@@ -195,6 +215,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             preferredSimSubscriptionId = selected,
             needsPhoneStatePermission = needsPerm,
             lockedSources = lockedLedgerSources(region, lines, phoneAccess = !needsPerm),
+            walletNumberHints = if (needsPerm) emptyMap() else simWalletNumberHints(region, lines),
             simRegions = simRegions,
             selectableRegions = selectableAppRegions(simRegions, region)
         )

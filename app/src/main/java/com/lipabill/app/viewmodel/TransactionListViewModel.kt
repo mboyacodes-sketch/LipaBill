@@ -174,14 +174,17 @@ data class AnalyticsSummary(
     /** Regular bills that rose, are new or stopped (whole history, not just this period). */
     val regularChanges: List<RegularChange> = emptyList(),
     /** Average visit at usual merchants, now against before. */
-    val priceTrends: List<PriceTrend> = emptyList()
+    val priceTrends: List<PriceTrend> = emptyList(),
+    /** Pending “Potential recurring payment” rows (confirm / dismiss). */
+    val potentialRecurring: List<com.lipabill.app.engage.RecurringPattern> = emptyList()
 )
 
 /** Choices the user made about payees and badges, kept in secure prefs. */
 data class InsightMarks(
     val essential: Set<String> = emptySet(),
     val watched: Set<String> = emptySet(),
-    val earnedBadges: Set<String> = emptySet()
+    val earnedBadges: Set<String> = emptySet(),
+    val recurringChoices: Map<String, com.lipabill.app.engage.RecurringChoice> = emptyMap()
 )
 
 /** The challenge Insights shows: active, or ended in the last few days. */
@@ -314,8 +317,11 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     private val insightMarks = combine(
         app.essentialPayees,
         app.watchedPayees,
-        app.earnedBadges
-    ) { essential, watched, badges -> InsightMarks(essential, watched, badges) }
+        app.earnedBadges,
+        app.recurringPatternChoices
+    ) { essential, watched, badges, recurring ->
+        InsightMarks(essential, watched, badges, recurring)
+    }
 
     private val rails = combine(
         app.appRegion,
@@ -772,6 +778,17 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
 
     fun setPayeeWatched(key: String, watched: Boolean) {
         app.setPayeeWatched(key, watched)
+    }
+
+    fun setRecurringChoice(key: String, confirmed: Boolean) {
+        app.setRecurringChoice(
+            key,
+            if (confirmed) {
+                com.lipabill.app.engage.RecurringChoice.Confirmed
+            } else {
+                com.lipabill.app.engage.RecurringChoice.Dismissed
+            }
+        )
     }
 
     fun spendCategoryFor(tx: MpesaTransaction): SpendCategory =

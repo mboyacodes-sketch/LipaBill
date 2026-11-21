@@ -31,6 +31,7 @@ fun LipaChoiceChip(
     unselectedBorder: Color = SoftBlue,
     selectedContainer: Color = Accent,
     selectedContent: Color = OnAccent,
+    enabled: Boolean = true,
     @Suppress("UNUSED_PARAMETER") role: Role = Role.RadioButton
 ) {
     LipaFilterChip(
@@ -41,7 +42,8 @@ fun LipaChoiceChip(
         selectedContainer = selectedContainer,
         selectedContent = selectedContent,
         unselectedContainer = unselectedContainer,
-        unselectedBorder = unselectedBorder
+        unselectedBorder = unselectedBorder,
+        enabled = enabled
     )
 }
 
@@ -75,10 +77,12 @@ fun ProviderPicker(
     modifier: Modifier = Modifier,
     groups: List<Pair<String, List<MoneySource>>> = emptyList(),
     /**
-     * Wallets whose SIM is not in this phone, with the reason under the group.
-     * Still selectable for SMS ledger import; Send/Pay need the line separately.
+     * Wallets with no matching SIM when phone access is on — chips stay off.
+     * Banks are never locked this way.
      */
-    locked: Map<MoneySource, String> = emptyMap()
+    locked: Map<MoneySource, String> = emptyMap(),
+    /** Optional “M-Pesa · …6877” suffixes from SIM line numbers. */
+    numberHints: Map<MoneySource, String> = emptyMap()
 ) {
     val sections = groups.ifEmpty { listOf("" to catalog) }
     Column(
@@ -104,10 +108,18 @@ fun ProviderPicker(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     sources.forEach { source ->
+                        val unavailable = source in locked
+                        val hint = numberHints[source]
+                        val label = if (hint.isNullOrBlank()) {
+                            source.label
+                        } else {
+                            "${source.label} · $hint"
+                        }
                         LipaChoiceChip(
-                            label = source.label,
-                            selected = source in selected,
+                            label = label,
+                            selected = source in selected && !unavailable,
                             onClick = { onToggle(source) },
+                            enabled = !unavailable,
                             role = Role.Checkbox
                         )
                     }

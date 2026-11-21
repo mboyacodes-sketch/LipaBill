@@ -72,6 +72,7 @@ import com.lipabill.app.data.model.lockedLedgerSources
 import com.lipabill.app.data.model.providerCatalog
 import com.lipabill.app.data.model.regionsPresentOnSims
 import com.lipabill.app.data.model.selectableAppRegions
+import com.lipabill.app.data.model.simWalletNumberHints
 import com.lipabill.app.data.model.toggleLedgerSource
 import com.lipabill.app.ui.ProviderPicker
 import com.lipabill.app.ui.theme.Accent
@@ -83,6 +84,7 @@ import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.OnAccent
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
+import com.lipabill.app.ussd.LineGatedSources
 import com.lipabill.app.ussd.SimLineHelper
 import kotlinx.coroutines.launch
 
@@ -90,11 +92,10 @@ import kotlinx.coroutines.launch
 private const val PAGE_TURN_MS = 180
 
 /**
- * Consent wizard. Welcome (three-slide intro) → Region → Providers → SMS →
- * (Kenya: Phone → Accessibility). Setup pages share one layout: back arrow,
- * progress track, eyebrow, title, option cards, pill CTA, step footer.
- * Later visits skip Welcome: payment access is still a cluster; Camera,
- * Notifications, and Hibernation open as one page when needed.
+ * Consent wizard. Welcome (three-slide intro) → Region → Phone (Send/Pay) →
+ * Providers → SMS → (Accessibility). Phone before Providers so wallet chips
+ * match SIMs. Later visits skip Welcome; Camera / Notifications / Hibernation
+ * open as one page when needed.
  */
 @Composable
 fun FirstRunSetupScreen(
@@ -116,6 +117,8 @@ fun FirstRunSetupScreen(
     onSkipNotifications: () -> Unit = {},
     onSkipHibernation: () -> Unit = {},
     onOpenHibernationSettings: () -> Unit = {},
+    onSkipOemSurvival: () -> Unit = {},
+    onOpenOemSurvivalSettings: () -> Unit = {},
     startPage: FirstRunPage = FirstRunPage.Welcome,
     firstRun: Boolean = true,
     accessibilityNote: String? = null,
@@ -130,17 +133,26 @@ fun FirstRunSetupScreen(
         selectableAppRegions(simRegions, region)
     }
     var userChoseRegion by remember { mutableStateOf(false) }
-    // Primary + one other MNO + common banks — not M-Pesa alone under the 5-rail cap.
+    // Primary + on-phone MNOs + common banks when SIM access is known.
     var selectedProviders by remember(region) {
         mutableStateOf(defaultLedgerSources(region))
     }
-    // Missing SIMs block Send/Pay only; SMS still imports for enabled rails.
-    val lockedProviders = remember(region, simGranted) {
-        if (!simGranted) {
-            emptyMap()
+    val simLines = remember(region, simGranted) {
+        if (simGranted) SimLineHelper.listActiveLines(context, region) else emptyList()
+    }
+    val lockedProviders = remember(region, simGranted, simLines) {
+        lockedLedgerSources(region, simLines, phoneAccess = simGranted)
+    }
+    val providerNumberHints = remember(region, simLines) {
+        simWalletNumberHints(region, simLines)
+    }
+    LaunchedEffect(region, simGranted) {
+        val onPhone = if (simGranted) {
+            LineGatedSources.onPhone(region, SimLineHelper.listActiveLines(context, region))
         } else {
-            lockedLedgerSources(region, SimLineHelper.listActiveLines(context, region), phoneAccess = true)
+            null
         }
+        selectedProviders = defaultLedgerSources(region, onPhoneWallets = onPhone)
     }
     LaunchedEffect(firstRun, regionGuess) {
         if (!firstRun || userChoseRegion) return@LaunchedEffect
@@ -268,12 +280,15 @@ fun FirstRunSetupScreen(
                     },
                     selectedProviders = selectedProviders,
                     lockedProviders = lockedProviders,
+                    providerNumberHints = providerNumberHints,
                     onToggleProvider = { source ->
-                        selectedProviders = toggleLedgerSource(
-                            selectedProviders,
-                            source,
-                            region.sources
-                        )
+                        if (source !in lockedProviders) {
+                            selectedProviders = toggleLedgerSource(
+                                selectedProviders,
+                                source,
+                                region.sources
+                            )
+                        }
                     },
                     smsGranted = smsGranted,
                     permanentlyDenied = permanentlyDenied,
@@ -320,6 +335,11 @@ fun FirstRunSetupScreen(
                         next()
                     },
                     onOpenHibernationSettings = onOpenHibernationSettings,
+                    onSkipOemSurvival = {
+                        onSkipOemSurvival()
+                        next()
+                    },
+                    onOpenOemSurvivalSettings = onOpenOemSurvivalSettings,
                     onNext = { next() },
                     onFinished = onFinished,
                     firstRun = firstRun,
@@ -334,6 +354,10 @@ fun FirstRunSetupScreen(
                         })
                         FirstRunPage.Hibernation -> ({
                             onSkipHibernation()
+                            next()
+                        })
+                        FirstRunPage.OemSurvival -> ({
+                            onSkipOemSurvival()
                             next()
                         })
                         else -> ({ next() })
@@ -407,6 +431,7 @@ private fun WizardPageBody(
     onRegionSelected: (AppRegion) -> Unit = {},
     selectedProviders: Set<MoneySource> = emptySet(),
     lockedProviders: Map<MoneySource, String> = emptyMap(),
+    providerNumberHints: Map<MoneySource, String> = emptyMap(),
     onToggleProvider: (MoneySource) -> Unit = {},
     smsGranted: Boolean,
     permanentlyDenied: Boolean,
@@ -434,6 +459,8 @@ private fun WizardPageBody(
             FirstRunWizard.NOTIFICATIONS_TITLE to FirstRunWizard.NOTIFICATIONS_BODY
         FirstRunPage.Hibernation ->
             FirstRunWizard.HIBERNATION_TITLE to FirstRunWizard.HIBERNATION_BODY
+        FirstRunPage.OemSurvival ->
+            FirstRunWizard.OEM_SURVIVAL_TITLE to FirstRunWizard.OEM_SURVIVAL_BODY
     }
     // Granted / state lines sit in the info note under the content.
     val note: String? = when (page) {
@@ -539,6 +566,7 @@ private fun WizardPageBody(
                 selected = selectedProviders,
                 onToggle = onToggleProvider,
                 locked = lockedProviders,
+                numberHints = providerNumberHints,
                 modifier = Modifier
                     .weight(1f, fill = true)
                     .fillMaxWidth()
@@ -807,6 +835,8 @@ private fun WizardActions(
     onSkipNotifications: () -> Unit,
     onSkipHibernation: () -> Unit,
     onOpenHibernationSettings: () -> Unit,
+    onSkipOemSurvival: () -> Unit = {},
+    onOpenOemSurvivalSettings: () -> Unit = {},
     onNext: () -> Unit,
     onFinished: () -> Unit,
     firstRun: Boolean = true,
@@ -883,6 +913,14 @@ private fun WizardActions(
                 })
                 Spacer(modifier = Modifier.height(gap))
                 WizardSecondaryButton("Not now", onSkipHibernation)
+            }
+            FirstRunPage.OemSurvival -> {
+                WizardPrimaryButton(PermissionLesson.OemSurvival.allowLabel, {
+                    onOpenOemSurvivalSettings()
+                    onSkipOemSurvival()
+                })
+                Spacer(modifier = Modifier.height(gap))
+                WizardSecondaryButton("Not now", onSkipOemSurvival)
             }
         }
     }

@@ -41,7 +41,13 @@ data class PaymentLineSnapshot(
     val eligiblePayLines: List<SimLine> = emptyList(),
     val activeWallet: PaymentWallet? = null,
     /** Short home / sheet caption, e.g. "Pay with M-Pesa". */
-    val payWalletCaption: String? = null
+    val payWalletCaption: String? = null,
+    /**
+     * Same-MNO dual-SIM: preference alone is unsafe — Confirm waits until the
+     * sheet session picks a line via [setPreferredPayLine] / selectPayLine.
+     */
+    val requiresExplicitLinePick: Boolean = false,
+    val explicitLinePickMessage: String? = null
 )
 
 fun Context.paymentLineSnapshot(
@@ -59,6 +65,8 @@ fun Context.paymentLineSnapshot(
     }
     val preferred = preferences.preferredSimSubscriptionId
     val eligible = PaymentDialResolver.eligibleLines(region, lines, enabled)
+    val requiresPick = !needsPerm &&
+        PaymentDialResolver.requiresExplicitLinePick(region, lines, enabled)
     val target = if (needsPerm || eligible.isEmpty()) {
         null
     } else {
@@ -82,7 +90,13 @@ fun Context.paymentLineSnapshot(
         missingPaySimMessage = PaymentDialResolver.missingPaySimMessage(region),
         eligiblePayLines = eligible,
         activeWallet = target?.wallet,
-        payWalletCaption = target?.let { "Send & Pay with ${it.wallet.badge}" }
+        payWalletCaption = target?.let { "Send & Pay with ${it.wallet.badge}" },
+        requiresExplicitLinePick = requiresPick,
+        explicitLinePickMessage = if (requiresPick) {
+            PaymentDialResolver.explicitLinePickMessage(target?.wallet)
+        } else {
+            null
+        }
     )
 }
 

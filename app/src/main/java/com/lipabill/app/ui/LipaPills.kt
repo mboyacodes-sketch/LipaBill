@@ -105,26 +105,37 @@ fun LipaFilterChip(
     selectedContent: Color = OnAccent,
     unselectedContainer: Color = CardWhite,
     unselectedContent: Color = Ink,
-    unselectedBorder: Color = Hairline
+    unselectedBorder: Color = Hairline,
+    enabled: Boolean = true
 ) {
     val shape = RoundedCornerShape(percent = 50)
+    val container = when {
+        !enabled -> unselectedContainer.copy(alpha = 0.45f)
+        selected -> selectedContainer
+        else -> unselectedContainer
+    }
+    val content = when {
+        !enabled -> unselectedContent.copy(alpha = 0.45f)
+        selected -> selectedContent
+        else -> unselectedContent
+    }
     Box(
         modifier = modifier
             .height(height)
             .clip(shape)
-            .background(if (selected) selectedContainer else unselectedContainer)
+            .background(container)
             .then(
-                if (selected) Modifier
-                else Modifier.border(1.dp, unselectedBorder, shape)
+                if (selected && enabled) Modifier
+                else Modifier.border(1.dp, unselectedBorder.copy(alpha = if (enabled) 1f else 0.45f), shape)
             )
-            .clickable(role = Role.RadioButton, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = label,
             style = HomeType.label.asPillLabel(),
-            color = if (selected) selectedContent else unselectedContent,
+            color = content,
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
             maxLines = 1,

@@ -43,6 +43,7 @@ import com.lipabill.app.ui.theme.HomeType
 import com.lipabill.app.ui.theme.Income
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
+import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.util.formatKsh
 import com.lipabill.app.viewmodel.BudgetPace
 import com.lipabill.app.viewmodel.BudgetStatus
@@ -437,11 +438,49 @@ private fun GoalDialog(
 }
 
 
-/** Regular bills that changed, and how prices at usual places have moved. */
+/** Regular bills that changed, potential recurring, and how prices at usual places have moved. */
 @Composable
-internal fun WatchingCard(changes: List<RegularChange>, trends: List<PriceTrend>) {
-    if (changes.isEmpty() && trends.isEmpty()) return
+internal fun WatchingCard(
+    changes: List<RegularChange>,
+    trends: List<PriceTrend>,
+    potentialRecurring: List<com.lipabill.app.engage.RecurringPattern> = emptyList(),
+    onRecurringChoice: (key: String, confirmed: Boolean) -> Unit = { _, _ -> }
+) {
+    if (changes.isEmpty() && trends.isEmpty() && potentialRecurring.isEmpty()) return
     InsightCard(title = "Watching what repeats", caption = "Bills and usual shops that changed") {
+        potentialRecurring.forEach { pattern ->
+            Column(verticalArrangement = Arrangement.spacedBy(Space.gap)) {
+                Text(
+                    "Potential recurring payment",
+                    style = HomeType.caption,
+                    color = Mute,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    pattern.name,
+                    style = HomeType.label,
+                    fontWeight = FontWeight.Bold,
+                    color = Watch,
+                    modifier = Modifier.recordingPrivacyCover()
+                )
+                Text(
+                    "${formatKsh(pattern.typicalAmount)} · ${pattern.cadence.label.lowercase()}",
+                    style = HomeType.caption,
+                    color = Mute
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.gap)) {
+                    TextButton(onClick = { onRecurringChoice(pattern.key, true) }) {
+                        Text("Yes, it repeats")
+                    }
+                    TextButton(onClick = { onRecurringChoice(pattern.key, false) }) {
+                        Text("Not a bill")
+                    }
+                }
+            }
+        }
+        if (potentialRecurring.isNotEmpty() && (changes.isNotEmpty() || trends.isNotEmpty())) {
+            HorizontalDivider(color = Canvas)
+        }
         changes.forEach { change ->
             val (line, detail, color) = when (change) {
                 is RegularChange.PriceChanged -> Triple(
@@ -450,7 +489,7 @@ internal fun WatchingCard(changes: List<RegularChange>, trends: List<PriceTrend>
                     if (change.difference > 0) Expense else Income
                 )
                 is RegularChange.NewCharge -> Triple(
-                    "New regular: ${change.name}",
+                    "Potential recurring payment: ${change.name}",
                     "${formatKsh(change.amount)} · ${change.cadence.label.lowercase()}",
                     Watch
                 )

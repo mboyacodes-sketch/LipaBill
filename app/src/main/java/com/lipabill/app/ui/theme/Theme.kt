@@ -1,7 +1,5 @@
 package com.lipabill.app.ui.theme
 
-import androidx.activity.SystemBarStyle
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.ColorScheme
@@ -360,15 +358,7 @@ fun LipaBillTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val activity = view.context.findComponentActivity() ?: return@SideEffect
-            val bar = if (darkTheme) {
-                SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
-            } else {
-                SystemBarStyle.light(
-                    android.graphics.Color.TRANSPARENT,
-                    android.graphics.Color.TRANSPARENT
-                )
-            }
-            activity.enableEdgeToEdge(statusBarStyle = bar, navigationBarStyle = bar)
+            LipaEdgeToEdge.applySystemBarIcons(activity.window, lightIcons = !darkTheme)
             activity.window.decorView.setBackgroundColor(colors.canvas.toArgb())
         }
     }

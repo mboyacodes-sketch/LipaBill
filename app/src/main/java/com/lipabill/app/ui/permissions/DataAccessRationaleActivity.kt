@@ -1,13 +1,11 @@
 package com.lipabill.app.ui.permissions
 
 import android.content.Intent
-import android.graphics.Color as AndroidColor
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import com.lipabill.app.ui.theme.LipaEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -40,15 +38,7 @@ class DataAccessRationaleActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val night = (application as LipaBillApp).darkMode.value
-        val barStyle = if (night) {
-            SystemBarStyle.dark(AndroidColor.TRANSPARENT)
-        } else {
-            SystemBarStyle.light(
-                scrim = AndroidColor.TRANSPARENT,
-                darkScrim = AndroidColor.TRANSPARENT
-            )
-        }
-        enableEdgeToEdge(statusBarStyle = barStyle, navigationBarStyle = barStyle)
+        LipaEdgeToEdge.enable(window, lightIcons = !night)
         super.onCreate(savedInstanceState)
         val app = application as LipaBillApp
         val copy = DataAccessRationale.forPermissionGroup(

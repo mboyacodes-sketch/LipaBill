@@ -140,13 +140,74 @@ class LedgerSourcesTest {
         assertEquals(MAX_ENABLED_LEDGER_SOURCES, ke.size)
         assertTrue(MoneySource.MPESA in ke)
         assertTrue(MoneySource.AIRTEL_MONEY in ke)
+        // Four Kenya wallets fill most of the cap; KCB is the first bank that fits.
         assertTrue(MoneySource.KCB in ke)
-        assertTrue(MoneySource.EQUITY in ke)
+        assertTrue(ke.any { !it.isWallet })
 
         val ug = defaultLedgerSources(AppRegion.UGANDA)
         assertTrue(MoneySource.MTN_MOMO in ug)
         assertTrue(MoneySource.AIRTEL_MONEY in ug)
         assertTrue(MoneySource.CENTENARY in ug)
+    }
+
+    @Test
+    fun default_rails_only_include_on_phone_wallets_when_known() {
+        val safaricomOnly = defaultLedgerSources(
+            AppRegion.KENYA,
+            onPhoneWallets = setOf(MoneySource.MPESA)
+        )
+        assertTrue(MoneySource.MPESA in safaricomOnly)
+        assertTrue(MoneySource.AIRTEL_MONEY !in safaricomOnly)
+        assertTrue(MoneySource.KCB in safaricomOnly)
+
+        val none = defaultLedgerSources(
+            AppRegion.KENYA,
+            onPhoneWallets = emptySet()
+        )
+        assertTrue(none.none { it.isWallet })
+        assertTrue(MoneySource.KCB in none)
+    }
+
+    @Test
+    fun sim_wallet_number_hints_show_last_four_per_mno() {
+        val lines = listOf(
+            com.lipabill.app.ussd.SimLine(
+                subscriptionId = 1,
+                simSlotIndex = 0,
+                displayName = "Safaricom",
+                carrierName = "Safaricom",
+                numberHint = "254712345678",
+                label = "SIM 1",
+                isSafaricom = true,
+                mcc = 639,
+                mnc = 2
+            ),
+            com.lipabill.app.ussd.SimLine(
+                subscriptionId = 2,
+                simSlotIndex = 1,
+                displayName = "Airtel",
+                carrierName = "Airtel",
+                numberHint = "0733 111 222",
+                label = "SIM 2",
+                isSafaricom = false,
+                mcc = 639,
+                mnc = 3
+            ),
+            com.lipabill.app.ussd.SimLine(
+                subscriptionId = 3,
+                simSlotIndex = 2,
+                displayName = "Safaricom",
+                carrierName = "Safaricom",
+                numberHint = "0700 999 888",
+                label = "SIM 3",
+                isSafaricom = true,
+                mcc = 639,
+                mnc = 2
+            )
+        )
+        val hints = simWalletNumberHints(AppRegion.KENYA, lines)
+        assertEquals("…5678 / …9888", hints[MoneySource.MPESA])
+        assertEquals("…1222", hints[MoneySource.AIRTEL_MONEY])
     }
 
     @Test

@@ -235,7 +235,8 @@ fun HabitsScreen(
                                 onStart = startFromPage,
                                 onNotMe = viewModel::dismissPattern,
                                 onDismissCatchUp = viewModel::dismissCatchUp,
-                                onTeach = viewModel::teachPayee
+                                onTeach = viewModel::teachPayee,
+                                onRecurringChoice = viewModel::setRecurringChoice
                             )
                             HabitsPage.BADGES -> BadgesPage(habits = habits)
                             HabitsPage.SETTINGS -> SettingsPage(
