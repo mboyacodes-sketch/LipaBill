@@ -13,6 +13,9 @@
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android 16 Live Updates: lets the pass-today notification show as a status-bar chip
+         and on the lock screen. Install-time (no prompt); users can turn it off per app. -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <!-- Android 12+: hide other apps' overlays while LipaBill is visible (tapjacking). -->
     <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS" />
     <uses-permission android:name="android.permission.CAMERA" />
@@ -285,6 +288,11 @@
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
+
+        <!-- "Mark used" on the pass-today Live Update. Only our own PendingIntent reaches it. -->
+        <receiver
+            android:name=".tickets.PassLiveActionReceiver"
+            android:exported="false" />
 
         <!-- Re-plan pass reminders after clock/timezone changes or an app update. -->
         <receiver
