@@ -51,8 +51,14 @@ object PassLifecycleResolver {
         val eventDay = Instant.ofEpochMilli(start).atZone(zone).toLocalDate()
         val isToday = eventDay == today
         return when {
-            start < nowMillis -> PassLifecycle(
+            // A pass that started earlier today is still the one at the gate: keep it active.
+            eventDay.isBefore(today) -> PassLifecycle(
                 status = TicketStatus.PAST_DUE,
+                issue = PassIssue.DAY_PASSED,
+                isToday = false
+            )
+            start < nowMillis -> PassLifecycle(
+                status = TicketStatus.ACTIVE,
                 issue = PassIssue.ALREADY_STARTED,
                 isToday = isToday
             )

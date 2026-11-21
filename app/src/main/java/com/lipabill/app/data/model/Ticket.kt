@@ -79,14 +79,21 @@ data class Ticket(
     val occasionMillis: Long?
         get() = startsAtMillis ?: boardingStartsAtMillis ?: returnBoardingStartsAtMillis
 
-    fun effectiveStatus(nowMillis: Long = System.currentTimeMillis()): TicketStatus {
+    /**
+     * Past due only once the pass's day is over (or its printed end, for nights that run past
+     * midnight) — never while the holder is at the gate. A started pass is still ACTIVE.
+     */
+    fun effectiveStatus(
+        nowMillis: Long = System.currentTimeMillis(),
+        zone: ZoneId = ZoneId.systemDefault()
+    ): TicketStatus {
         if (status == TicketStatus.USED) return TicketStatus.USED
-        val start = occasionMillis
-        if (start != null && start < nowMillis) return TicketStatus.PAST_DUE
-        return when (status) {
-            TicketStatus.PAST_DUE -> TicketStatus.PAST_DUE
-            else -> TicketStatus.ACTIVE
-        }
+        if (status == TicketStatus.PAST_DUE) return TicketStatus.PAST_DUE
+        val start = occasionMillis ?: return TicketStatus.ACTIVE
+        val dayOver = Instant.ofEpochMilli(start).atZone(zone).toLocalDate()
+            .plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val printedEnd = notes.notesValue("Ends")?.toLongOrNull() ?: 0L
+        return if (nowMillis >= maxOf(dayOver, printedEnd)) TicketStatus.PAST_DUE else TicketStatus.ACTIVE
     }
 
     val isTravelTicket: Boolean get() = expectsBoardingPass

@@ -13,7 +13,8 @@ enum class PassIssue(val message: String, val blocking: Boolean) {
     ENDS_BEFORE_START("The end time is before the start. Check both.", false),
     LONG_PAST("This date has passed. Check the year.", false),
     FAR_FUTURE("This date is more than two years away. Check the year.", false),
-    ALREADY_STARTED("This pass’s start time has passed. It will be saved as past due.", false),
+    ALREADY_STARTED("This pass has already started today.", false),
+    DAY_PASSED("This pass’s day has passed. It will be saved as past due.", false),
     DUE_TODAY("This pass is today.", false),
     CANCELLED("This ticket looks cancelled or void. It will be saved as used.", false),
     UNSUPPORTED_KIND("That looks like a flight. Passes holds event and SGR train tickets for now.", true)
