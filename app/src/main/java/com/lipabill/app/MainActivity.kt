@@ -81,8 +81,6 @@ import com.lipabill.app.update.AppUpdates
 import com.lipabill.app.ui.permissions.AccessibilityPreferred
 import com.lipabill.app.ui.permissions.FirstRunPage
 import com.lipabill.app.ui.permissions.HibernationExemptionPrompt
-import com.lipabill.app.ui.permissions.unusedAppRestrictionOf
-import com.lipabill.app.ui.permissions.readUnusedAppRestrictions
 import com.lipabill.app.ui.permissions.OemSurvivalPrompt
 import com.lipabill.app.ui.permissions.OemSurvivalHelper
 import com.lipabill.app.ui.permissions.AccessibilityHealthProbe
@@ -583,24 +581,11 @@ private fun AuthenticatedApp(
             AccessibilityPreferred.syncFromSystem(context, app.securePreferences)
             // OEM health: distinguish grant cleared vs unbound (Samsung sleep).
             scope.launch {
-                val unused = unusedAppRestrictionOf(readUnusedAppRestrictions(context))
-                val health = AccessibilityHealthProbe.snapshot(
+                val health = AccessibilityHealthProbe.checkAndLog(
                     context,
                     app.securePreferences,
-                    unused
-                )
-                AppMetrics.a11yHealth(
-                    preferred = health.preferred,
-                    secureOn = health.secureOn,
-                    bound = health.bound,
-                    batteryIgnoring = health.batteryIgnoring,
-                    unusedAppStatus = health.unusedAppStatus,
-                    manufacturer = health.manufacturer,
-                    model = health.model,
-                    sdk = health.sdk,
-                    oemFamily = OemSurvivalHelper.oemFamilyKey(),
-                    coach = health.coachKind.name.lowercase(),
-                    trigger = "resume"
+                    trigger = "resume",
+                    awaitBind = false
                 )
                 if (BuildConfig.DEBUG || dismissedA11yReenableThisSession) return@launch
                 when (health.coachKind) {
@@ -725,32 +710,11 @@ private fun AuthenticatedApp(
     /** Opens Accessibility toggle or OEM survival based on live health. */
     fun openA11yCoachForPayment() {
         scope.launch {
-            val unused = unusedAppRestrictionOf(readUnusedAppRestrictions(context))
-            var health = AccessibilityHealthProbe.snapshot(
+            val health = AccessibilityHealthProbe.checkAndLog(
                 context,
                 app.securePreferences,
-                unused
-            )
-            if (!health.bound && health.secureOn) {
-                AccessibilityHealthProbe.awaitBindIfListed(context)
-                health = AccessibilityHealthProbe.snapshot(
-                    context,
-                    app.securePreferences,
-                    unused
-                )
-            }
-            AppMetrics.a11yHealth(
-                preferred = health.preferred,
-                secureOn = health.secureOn,
-                bound = health.bound,
-                batteryIgnoring = health.batteryIgnoring,
-                unusedAppStatus = health.unusedAppStatus,
-                manufacturer = health.manufacturer,
-                model = health.model,
-                sdk = health.sdk,
-                oemFamily = OemSurvivalHelper.oemFamilyKey(),
-                coach = health.coachKind.name.lowercase(),
-                trigger = "payment"
+                trigger = "payment",
+                awaitBind = true
             )
             if (health.bound) return@launch
             val kind = if (health.secureOn) A11yCoachKind.Unbound else A11yCoachKind.GrantCleared
@@ -1101,32 +1065,11 @@ private fun AuthenticatedApp(
             // Live check — wait briefly for OEM rebind when Secure still lists us.
             val needsPhoneState = readState().second
             scope.launch {
-                val unused = unusedAppRestrictionOf(readUnusedAppRestrictions(context))
-                var health = AccessibilityHealthProbe.snapshot(
+                val health = AccessibilityHealthProbe.checkAndLog(
                     context,
                     app.securePreferences,
-                    unused
-                )
-                if (!health.bound && health.secureOn) {
-                    AccessibilityHealthProbe.awaitBindIfListed(context)
-                    health = AccessibilityHealthProbe.snapshot(
-                        context,
-                        app.securePreferences,
-                        unused
-                    )
-                }
-                AppMetrics.a11yHealth(
-                    preferred = health.preferred,
-                    secureOn = health.secureOn,
-                    bound = health.bound,
-                    batteryIgnoring = health.batteryIgnoring,
-                    unusedAppStatus = health.unusedAppStatus,
-                    manufacturer = health.manufacturer,
-                    model = health.model,
-                    sdk = health.sdk,
-                    oemFamily = OemSurvivalHelper.oemFamilyKey(),
-                    coach = health.coachKind.name.lowercase(),
-                    trigger = "payment"
+                    trigger = "payment",
+                    awaitBind = true
                 )
                 when {
                     !health.bound && !AccessibilityHelper.isLipaBillServiceEnabled(context) -> {
