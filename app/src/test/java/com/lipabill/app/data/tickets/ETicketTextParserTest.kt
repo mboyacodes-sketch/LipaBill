@@ -165,6 +165,23 @@ class ETicketTextParserTest {
     }
 
     @Test
+    fun textOnlyEventPassUsesEntryCodeWhenNoBarcodeImage() {
+        val ocr = """
+            SAMPLE EVENT PASS
+            Photo Night
+            Venue: Photo Hall
+            Date: 30 Dec 2026 20:00
+            Seat: C1
+            Order: SYNTH-PHOTO
+            Entry code: SYNTHPHOTO0001
+            FICTIONAL
+        """.trimIndent()
+        val draft = ETicketTextParser.parse(ocr, emptyList(), kind = TicketDocumentKind.EVENT)
+        assertEquals("SYNTHPHOTO0001", draft.barcodeValue)
+        assertEquals("Photo Hall", draft.venue)
+    }
+
+    @Test
     fun spatialHintsPreferLeftAsOrigin() {
         val ocr = """
             Ticket No: 0299823

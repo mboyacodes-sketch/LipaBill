@@ -94,8 +94,6 @@ import com.lipabill.app.metrics.TicketImportResult
 import com.lipabill.app.data.model.TicketSource
 import com.lipabill.app.data.tickets.AlreadySavedException
 import com.lipabill.app.data.tickets.intelligence.ContextFinding
-import com.lipabill.app.data.tickets.intelligence.DuplicateBookingRefRule
-import com.lipabill.app.data.tickets.intelligence.OverlappingEventsRule
 import com.lipabill.app.data.tickets.intelligence.evaluateContextRules
 import com.lipabill.app.data.tickets.PassDraft
 import com.lipabill.app.data.tickets.TicketDocumentKind
@@ -330,13 +328,11 @@ fun TicketsScreen(
                 it.isOnDay(zone, today) && it.effectiveStatus() != TicketStatus.USED
             }
             val usedCount = visibleTickets.size - upcomingCount
-            // Overlaps and twin bookings are news the list itself can't show.
+            // Due soon, past due, overlaps and twin bookings — news the list itself can't show.
             val notices = remember(visibleTickets) {
-                evaluateContextRules(
-                    visibleTickets,
-                    System.currentTimeMillis(),
-                    rules = listOf(OverlappingEventsRule, DuplicateBookingRefRule)
-                ).distinctBy { it.ruleId to it.ticketIds.toSet() }.take(2)
+                evaluateContextRules(visibleTickets, System.currentTimeMillis())
+                    .distinctBy { it.ruleId to it.ticketIds.toSet() }
+                    .take(3)
             }
             val window = LocalWindowForm.current.width
             val columns = when (window) {
@@ -910,11 +906,6 @@ private enum class PassCategory(val label: String) {
 private fun Ticket.passCategory(): PassCategory = when {
     isRailTravel -> PassCategory.SGR
     else -> PassCategory.EVENTS
-}
-
-private fun Ticket.isOnDay(zone: ZoneId, day: LocalDate): Boolean {
-    val millis = occasionMillis ?: return false
-    return Instant.ofEpochMilli(millis).atZone(zone).toLocalDate() == day
 }
 
 private sealed interface PassListItem {

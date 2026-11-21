@@ -26,10 +26,16 @@ fun Context.canPostNotifications(): Boolean =
         ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
         PackageManager.PERMISSION_GRANTED
 
-fun NotificationCompat.Builder.asLipaBill(context: Context): NotificationCompat.Builder =
+fun NotificationCompat.Builder.asLipaBill(
+    context: Context,
+    /** Shade row large bitmap. Off for live status chips so the row isn’t two app icons. */
+    largeIcon: Boolean = true
+): NotificationCompat.Builder {
     setSmallIcon(R.drawable.ic_stat_lipabill)
-        .setLargeIcon(lipaBillLargeIcon(context))
         .setColor(ContextCompat.getColor(context, R.color.ic_launcher_background))
+    if (largeIcon) setLargeIcon(lipaBillLargeIcon(context))
+    return this
+}
 
 /** Creates the channel once. Importance cannot change after the first create. */
 fun NotificationManagerCompat.ensureChannel(
@@ -96,6 +102,13 @@ fun Context.postLipaBill(
     /** Lock-screen copy when visibility is private; omit event names and codes. */
     publicTitle: String? = null,
     publicBody: String? = null,
+    /** Stays in the shade until the app clears it (Uber-style live status). */
+    ongoing: Boolean = false,
+    /** Epoch millis for a countdown chronometer when [countdown] is true. */
+    whenMillis: Long? = null,
+    countdown: Boolean = false,
+    /** Live chips skip the large icon so the shade isn’t small-icon + app-icon twice. */
+    largeIcon: Boolean = true,
     prepare: (NotificationManagerCompat) -> Unit = {}
 ) {
     if (!canPostNotifications()) return
@@ -109,11 +122,12 @@ fun Context.postLipaBill(
         vibrate = vibrate
     )
     val builder = NotificationCompat.Builder(this, channelId)
-        .asLipaBill(this)
+        .asLipaBill(this, largeIcon = largeIcon)
         .setContentTitle(title)
         .setContentText(body)
         .setContentIntent(contentIntent)
-        .setAutoCancel(true)
+        .setAutoCancel(!ongoing)
+        .setOngoing(ongoing)
         .setOnlyAlertOnce(true)
         .setPriority(priority)
         .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
@@ -121,13 +135,20 @@ fun Context.postLipaBill(
         builder.setStyle(NotificationCompat.BigTextStyle().bigText(body))
     }
     if (category != null) builder.setCategory(category)
+    if (whenMillis != null) {
+        builder.setWhen(whenMillis).setShowWhen(true)
+        if (countdown) {
+            builder.setUsesChronometer(true).setChronometerCountDown(true)
+        }
+    }
     if (publicTitle != null || publicBody != null) {
         val public = NotificationCompat.Builder(this, channelId)
-            .asLipaBill(this)
+            .asLipaBill(this, largeIcon = largeIcon)
             .setContentTitle(publicTitle ?: title)
             .setContentText(publicBody ?: body)
             .setContentIntent(contentIntent)
-            .setAutoCancel(true)
+            .setAutoCancel(!ongoing)
+            .setOngoing(ongoing)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
         builder.setPublicVersion(public)

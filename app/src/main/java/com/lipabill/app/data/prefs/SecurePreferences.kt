@@ -360,7 +360,7 @@ class SecurePreferences(context: Context) {
             val morning = prefs.getInt(KEY_PASS_REMINDER_MORNING_HOUR, 8)
             return PassReminderLeadTimes(
                 dayBeforeHour = if (day == -1 || day in 0..23) day else 18,
-                hoursBefore = if (hours == -1 || hours in setOf(12, 24, 48)) hours else 24,
+                hoursBefore = if (hours == -1 || hours in setOf(2, 12, 24, 48)) hours else 24,
                 morningHour = if (morning == -1 || morning in 5..11) morning else 8
             )
         }

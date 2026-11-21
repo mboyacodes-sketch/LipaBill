@@ -2,6 +2,7 @@ package com.lipabill.app.data.tickets
 
 import com.lipabill.app.data.model.TicketBarcodeFormat
 import com.lipabill.app.data.model.TicketSource
+import com.lipabill.app.data.model.TicketStatus
 
 /**
  * Normalized draft ready to insert / attach on a [com.lipabill.app.data.model.Ticket].
@@ -22,7 +23,12 @@ data class TicketImport(
     /** How the source code was encoded, when it was read from pixels. */
     val barcodeSpec: BarcodeSpec? = null,
     /** Serialized [PassColors] from a Wallet pass. */
-    val passColors: String? = null
+    val passColors: String? = null,
+    /**
+     * Landing status from Pass Intelligence (cancelled → used, start already gone → past due).
+     * Defaults to active for paste / scan paths that don't run lifecycle.
+     */
+    val status: TicketStatus = TicketStatus.ACTIVE
 )
 
 fun ParsedPkPass.toTicketImport(): TicketImport = TicketImport(
