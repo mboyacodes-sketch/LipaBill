@@ -31,6 +31,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -416,7 +418,7 @@ private fun AuthenticatedApp(
         mutableStateOf(activity.intent?.getBooleanExtra(MainActivity.EXTRA_OPEN_INSIGHTS, false) == true)
     }
     var openTicketId by remember {
-        mutableStateOf(activity.intent?.getLongExtra(MainActivity.EXTRA_OPEN_TICKET_ID, 0L) ?: 0L)
+        mutableLongStateOf(activity.intent?.getLongExtra(MainActivity.EXTRA_OPEN_TICKET_ID, 0L) ?: 0L)
     }
     var instantHomeReturn by remember { mutableStateOf(false) }
     LaunchedEffect(instantHomeReturn) {
@@ -482,7 +484,7 @@ private fun AuthenticatedApp(
     var a11yEnabled by remember {
         mutableStateOf(AccessibilityHelper.isLipaBillServiceEnabled(context))
     }
-    var extraAccessTick by remember { mutableStateOf(0) }
+    var extraAccessTick by remember { mutableIntStateOf(0) }
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -494,7 +496,7 @@ private fun AuthenticatedApp(
     ) { }
     var permanentlyDenied by remember { mutableStateOf(false) }
     var pendingDialTxId by remember { mutableStateOf<Long?>(null) }
-    var phoneStateRefreshKey by remember { mutableStateOf(0) }
+    var phoneStateRefreshKey by remember { mutableIntStateOf(0) }
     var showAccessibilityReenable by remember { mutableStateOf(false) }
     var showOemSurvival by remember { mutableStateOf(false) }
     var dismissedA11yReenableThisSession by remember { mutableStateOf(false) }
