@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lipabill.app.data.model.BoardingLeg
 import com.lipabill.app.data.model.BoardingPassSnapshot
+import com.lipabill.app.data.model.TicketBarcodeFormat
 import com.lipabill.app.data.model.TicketStatus
 import com.lipabill.app.data.tickets.BookingConfirmationParser
 import com.lipabill.app.metrics.AppMetrics
@@ -444,6 +445,9 @@ fun TicketDetailScreen(
                     { openOriginal() }
                 } else {
                     null
+                },
+                printedCode = eventGateCode.takeIf {
+                    hasEventPayload && current.gateBarcodeFormat == TicketBarcodeFormat.TEXT
                 }
             )
         } else {

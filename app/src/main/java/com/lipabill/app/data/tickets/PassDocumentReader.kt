@@ -36,7 +36,7 @@ class PassDocumentReader(private val documents: PassDocumentRepository) {
             val draft = TicketDocumentImporter.import(context, uri, TicketDocumentKind.PKPASS)
             val classification = DocumentClassifier.classify("", hasBarcode = true, hint = TicketDocumentKind.PKPASS)
             val extraction = PassFieldReader.read(draft, ReadEvidence(fromPdfText = false, barcodeFromPixels = false), classification)
-            return finish(draft, null, extraction, classification.kind, text = "")
+            return finish(draft, null, extraction, classification.kind, text = "", distinctTicketCodes = 1)
         }
 
         val stored = documents.store(uri)
@@ -61,7 +61,14 @@ class PassDocumentReader(private val documents: PassDocumentRepository) {
             classification
         )
         documents.recordExtraction(documentId, extraction)
-        return finish(analyzed.draft, documentId, extraction, classification.kind, analyzed.read.text)
+        return finish(
+            analyzed.draft,
+            documentId,
+            extraction,
+            classification.kind,
+            analyzed.read.text,
+            distinctTicketCodes = distinctCodes(analyzed)
+        )
     }
 
     /**
@@ -92,7 +99,14 @@ class PassDocumentReader(private val documents: PassDocumentRepository) {
                 classification
             )
             documents.recordExtraction(documentId, extraction)
-            finish(analyzed.draft, documentId, extraction, classification.kind, analyzed.read.text)
+            finish(
+                analyzed.draft,
+                documentId,
+                extraction,
+                classification.kind,
+                analyzed.read.text,
+                distinctTicketCodes = distinctCodes(analyzed)
+            )
         } finally {
             opened.file.delete()
         }
@@ -103,12 +117,26 @@ class PassDocumentReader(private val documents: PassDocumentRepository) {
         documentId: String?,
         extraction: PassExtraction,
         kind: PassKind,
-        text: String
+        text: String,
+        distinctTicketCodes: Int
     ): PassDraft {
         val lifecycle = PassLifecycleResolver.resolve(text, draft.startsAtMillis)
         val withStatus = draft.copy(status = lifecycle.status)
-        val issues = PassValidator.validate(withStatus, kind).toMutableList()
+        val issues = PassValidator.validate(
+            withStatus,
+            kind,
+            sourceText = text,
+            distinctTicketCodes = distinctTicketCodes
+        ).toMutableList()
         lifecycle.issue?.let { if (it !in issues) issues += it }
         return PassDraft(withStatus, documentId, extraction, issues)
     }
+
+    private fun distinctCodes(analyzed: ETicketAnalyzer.AnalyzedTicket): Int =
+        analyzed.read.barcodes
+            .map { it.value.trim() }
+            .filter { it.isNotEmpty() && !ETicketTextParser.looksLikeImplausibleCode(it) }
+            .distinct()
+            .size
+            .coerceAtLeast(1)
 }

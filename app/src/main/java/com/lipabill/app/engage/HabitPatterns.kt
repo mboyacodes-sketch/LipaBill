@@ -1,9 +1,15 @@
 package com.lipabill.app.engage
 
+import com.lipabill.app.data.foldMerchantName
 import com.lipabill.app.data.foldPayeeName
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.viewmodel.countsAsSpendOutflow
+import com.lipabill.app.viewmodel.isOwnMoneyMove
+import com.lipabill.app.viewmodel.markedPayee
+import com.lipabill.app.viewmodel.payeeKey as insightsPayeeKey
 import java.time.DayOfWeek
 import java.time.Instant
+import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 
@@ -53,9 +59,21 @@ object HabitPatterns {
     private const val PAYDAY_HOURS = 48L
     private const val LARGE_CREDIT_CENTS = 5_000_00L
     private const val PAYDAY_SPEND_FLOOR_CENTS = 1_500_00L
+    /** More than this many large credits in one calendar month → gifts / cash-ins, not salary. */
+    private const val MAX_LARGE_CREDITS_PER_MONTH = 2
 
-    /** Same shape as Insights' payee key, so payees marked essential there match here. */
-    fun payeeKey(name: String): String = foldPayeeName(name)
+    private val SALARY_NAME_CUES = listOf(
+        "payroll", "salary", "salaries", "wages", "payslip", "pay slip", "stipend"
+    )
+
+    /**
+     * Same identity as Insights [payeeKey]: phone-first when known, else folded name.
+     * Name-only overload kept for bill short labels and older call sites.
+     */
+    fun payeeKey(name: String): String = insightsPayeeKey(name, null) ?: foldPayeeName(name)
+
+    fun payeeKey(name: String?, phone: String?): String =
+        insightsPayeeKey(name, phone) ?: name?.let(::foldPayeeName).orEmpty()
 
     /**
      * [transactions] should cover the last [WINDOW_DAYS]; older rows are ignored.
@@ -71,14 +89,14 @@ object HabitPatterns {
         return listOfNotNull(
             foodPeak(window, now, zone),
             fulizaLate(window, zone),
-            regulars(window, now, limit = 1, essentialKeys = essentialKeys).firstOrNull(),
+            regulars(window, now, zone, limit = 1, essentialKeys = essentialKeys).firstOrNull(),
             airtimeDrip(window, now),
-            paydayRush(window, now)
+            paydayRush(window, now, zone)
         )
     }
 
     private fun foodPeak(window: List<ChallengeTransaction>, now: Long, zone: ZoneId): HabitPattern? {
-        val food = window.filter { CategoryMatcher.matches(CategoryRules.foodDelivery, it) }
+        val food = window.filter { it.amountCents > 0L && isFoodSpend(it.type, it.counterpartyName) }
         if (food.size < 4) return null
         val byDay = food.groupingBy { Instant.ofEpochMilli(it.timestampMillis).atZone(zone).dayOfWeek }.eachCount()
         val (day, count) = byDay.maxWithOrNull(compareBy<Map.Entry<DayOfWeek, Int>> { it.value }.thenBy { -it.key.value })
@@ -112,14 +130,16 @@ object HabitPatterns {
     }
 
     /**
-     * Large credit (salary-like) followed by a spend spike in the next 48 hours.
-     * Needs at least two such events in the window.
+     * Large salary-like credit followed by a spend spike in the next 48 hours.
+     * Needs at least two such events. Own-money deposits, agent cash-ins, and busy
+     * gift months are left out.
      */
-    private fun paydayRush(window: List<ChallengeTransaction>, now: Long): HabitPattern.PaydayRush? {
-        val credits = window.filter {
-            (it.type == TransactionType.RECEIVED || it.type == TransactionType.DEPOSIT) &&
-                it.amountCents >= LARGE_CREDIT_CENTS
-        }
+    private fun paydayRush(
+        window: List<ChallengeTransaction>,
+        now: Long,
+        zone: ZoneId
+    ): HabitPattern.PaydayRush? {
+        val credits = window.filter { looksLikePaydayCredit(it, window, zone) }
         if (credits.isEmpty()) return null
         val events = credits.mapNotNull { credit ->
             val end = credit.timestampMillis + PAYDAY_HOURS * 3_600_000L
@@ -134,14 +154,37 @@ object HabitPatterns {
         return HabitPattern.PaydayRush(events = events.size, spendCents = events.sum())
     }
 
+    private fun looksLikePaydayCredit(
+        tx: ChallengeTransaction,
+        window: List<ChallengeTransaction>,
+        zone: ZoneId
+    ): Boolean {
+        if (tx.type != TransactionType.RECEIVED && tx.type != TransactionType.DEPOSIT) return false
+        if (tx.amountCents < LARGE_CREDIT_CENTS) return false
+        if (isOwnMoneyMove(tx.type, tx.counterpartyName)) return false
+        val name = foldMerchantName(tx.counterpartyName).orEmpty()
+        if (name.contains("agent")) return false
+        if (SALARY_NAME_CUES.any { name.contains(it) }) return true
+        // Rare large credits in that calendar month (salary-ish); frequent = gifts / top-ups.
+        val month = YearMonth.from(Instant.ofEpochMilli(tx.timestampMillis).atZone(zone))
+        val largeInMonth = window.count { other ->
+            (other.type == TransactionType.RECEIVED || other.type == TransactionType.DEPOSIT) &&
+                other.amountCents >= LARGE_CREDIT_CENTS &&
+                !isOwnMoneyMove(other.type, other.counterpartyName) &&
+                YearMonth.from(Instant.ofEpochMilli(other.timestampMillis).atZone(zone)) == month
+        }
+        return largeInMonth <= MAX_LARGE_CREDITS_PER_MONTH
+    }
+
     /**
-     * Shops paid at least four times in 30 days, most often first. Food delivery has its own
-     * challenge, and Paybill / Send Money are left out: rent, bills and family are not habits to skip.
-     * Groceries, health, school and anything marked essential are left out too.
+     * Shops paid on at least four distinct calendar days in 30 days, most often first.
+     * Food delivery has its own challenge; Paybill / Send Money are left out. Groceries,
+     * health, school and anything marked essential (Insights phone- or name-key) are left out.
      */
     fun regulars(
         transactions: List<ChallengeTransaction>,
         now: Long,
+        zone: ZoneId = ZoneId.systemDefault(),
         limit: Int = 3,
         essentialKeys: Set<String> = emptySet()
     ): List<HabitPattern.FrequentPayee> = transactions
@@ -149,22 +192,26 @@ object HabitPatterns {
         .filter { it.timestampMillis in (now - MONTH_DAYS * DAY)..now }
         .filter { it.type == TransactionType.BUY_GOODS && it.amountCents > 0L }
         .filter { !it.counterpartyName.isNullOrBlank() }
-        .filterNot { CategoryMatcher.matches(CategoryRules.foodDelivery, it.counterpartyName) }
+        .filterNot { isFoodSpend(it.type, it.counterpartyName) }
         .filterNot { CategoryMatcher.matches(CategoryRules.everydayEssentials, it.counterpartyName) }
-        .filterNot { payeeKey(it.counterpartyName!!) in essentialKeys }
-        .groupBy { payeeKey(it.counterpartyName!!) }
+        .filterNot { markedPayee(it.counterpartyName, it.counterpartyPhone, essentialKeys) }
+        .groupBy { payeeKey(it.counterpartyName, it.counterpartyPhone) }
         .values
-        .filter { it.size >= 4 }
-        .map { rows ->
+        .mapNotNull { rows ->
+            val days = rows.mapTo(linkedSetOf()) { dayOf(it.timestampMillis, zone) }
+            if (days.size < 4) return@mapNotNull null
             HabitPattern.FrequentPayee(
                 payee = rows.first().counterpartyName!!.trim(),
-                count = rows.size,
+                count = days.size,
                 cents = rows.sumOf { it.amountCents }
             )
         }
         .sortedWith(compareByDescending<HabitPattern.FrequentPayee> { it.count }.thenByDescending { it.cents })
         .take(limit)
         .toList()
+
+    private fun dayOf(millis: Long, zone: ZoneId): LocalDate =
+        Instant.ofEpochMilli(millis).atZone(zone).toLocalDate()
 
     /** What happened while Habits was closed for [CATCH_UP_DAYS] or more. Null on a first visit. */
     fun catchUp(
@@ -182,12 +229,14 @@ object HabitPatterns {
             .asSequence()
             .filter { it.timestampMillis in priorStart until lastVisit }
             .filter { it.type == TransactionType.BUY_GOODS && !it.counterpartyName.isNullOrBlank() }
-            .map { payeeKey(it.counterpartyName!!) }
+            .map { payeeKey(it.counterpartyName, it.counterpartyPhone) }
+            .filter { it.isNotEmpty() }
             .toSet()
         val newRegulars = since
             .asSequence()
             .filter { it.type == TransactionType.BUY_GOODS && !it.counterpartyName.isNullOrBlank() }
-            .map { payeeKey(it.counterpartyName!!) }
+            .map { payeeKey(it.counterpartyName, it.counterpartyPhone) }
+            .filter { it.isNotEmpty() }
             .filterNot { it in priorPayees }
             .toSet()
             .size
@@ -247,7 +296,8 @@ object HabitPatterns {
     ): List<Int> {
         val food = transactions.filter {
             it.timestampMillis in (now - MONTH_DAYS * DAY)..now &&
-                CategoryMatcher.matches(CategoryRules.foodDelivery, it)
+                it.amountCents > 0L &&
+                isFoodSpend(it.type, it.counterpartyName)
         }
         if (food.isEmpty()) return emptyList()
         val counts = IntArray(7)

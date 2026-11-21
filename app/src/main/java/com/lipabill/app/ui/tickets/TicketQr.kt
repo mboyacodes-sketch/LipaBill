@@ -24,12 +24,15 @@ import kotlinx.coroutines.withContext
 
 private const val TAG = "LipaBill.Barcode"
 
-fun TicketBarcodeFormat.toZxing(): BarcodeFormat = when (this) {
+fun TicketBarcodeFormat.toZxing(): BarcodeFormat? = when (this) {
     TicketBarcodeFormat.QR_CODE -> BarcodeFormat.QR_CODE
     TicketBarcodeFormat.CODE_128 -> BarcodeFormat.CODE_128
+    TicketBarcodeFormat.CODE_39 -> BarcodeFormat.CODE_39
+    TicketBarcodeFormat.DATA_MATRIX -> BarcodeFormat.DATA_MATRIX
     TicketBarcodeFormat.PDF_417 -> BarcodeFormat.PDF_417
     TicketBarcodeFormat.AZTEC -> BarcodeFormat.AZTEC
-    TicketBarcodeFormat.OTHER -> BarcodeFormat.QR_CODE
+    // Printed-only codes and unknown formats must never be redrawn as a QR the gate won't accept.
+    TicketBarcodeFormat.TEXT, TicketBarcodeFormat.OTHER -> null
 }
 
 /** Small LRU so ticket detail reuses bitmaps instead of re-encoding on the UI thread. */
@@ -80,6 +83,7 @@ fun encodeTicketBarcode(
     onGrey: Boolean = false
 ): ImageBitmap? {
     if (value.isBlank()) return null
+    if (format == TicketBarcodeFormat.TEXT || format == TicketBarcodeFormat.OTHER) return null
     val fg = AndroidColor.BLACK
     val bg = if (onGrey) AndroidColor.TRANSPARENT else AndroidColor.WHITE
     if (format == TicketBarcodeFormat.PDF_417) {
@@ -98,7 +102,8 @@ fun encodeTicketBarcode(
             }
         }
     }
-    return encodeWithZxing(value, format.toZxing(), sizePx, fg, bg)
+    val zxing = format.toZxing() ?: return null
+    return encodeWithZxing(value, zxing, sizePx, fg, bg)
 }
 
 private fun encodeWithZxing(
@@ -110,7 +115,7 @@ private fun encodeWithZxing(
 ): ImageBitmap? {
     return runCatching {
         val height = when (format) {
-            BarcodeFormat.CODE_128 -> (sizePx * 0.42f).toInt().coerceAtLeast(120)
+            BarcodeFormat.CODE_128, BarcodeFormat.CODE_39 -> (sizePx * 0.42f).toInt().coerceAtLeast(120)
             BarcodeFormat.PDF_417 -> (sizePx * 0.55f).toInt().coerceAtLeast(160)
             else -> sizePx
         }

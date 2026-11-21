@@ -1,0 +1,12 @@
+{
+  "name": "two_day_till_not_regular",
+  "now": "2026-11-10",
+  "zone": "Africa/Nairobi",
+  "detectRegulars": [
+    {"at": "2026-09-14", "name": "Corner Shop", "type": "BUY_GOODS", "amount": 1200},
+    {"at": "2026-10-14", "name": "Corner Shop", "type": "BUY_GOODS", "amount": 1200}
+  ],
+  "expect": {
+    "regularKeys": []
+  }
+}

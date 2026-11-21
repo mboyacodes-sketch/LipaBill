@@ -218,7 +218,8 @@ fun EventPassContent(
     onBack: () -> Unit,
     onMarkUsed: () -> Unit,
     onChangeDate: (() -> Unit)?,
-    onViewOriginal: (() -> Unit)? = null
+    onViewOriginal: (() -> Unit)? = null,
+    printedCode: String? = null
 ) {
     val appContext = LocalContext.current.applicationContext
     val home = remember {
@@ -229,7 +230,7 @@ fun EventPassContent(
     CompositionLocalProvider(LocalPassPalette provides palette) {
         EventPassBody(
             ticket, model, qrBitmap, status, canMarkUsed, contentPadding,
-            onBack, onMarkUsed, onChangeDate, onViewOriginal
+            onBack, onMarkUsed, onChangeDate, onViewOriginal, printedCode
         )
     }
 }
@@ -245,7 +246,8 @@ private fun EventPassBody(
     onBack: () -> Unit,
     onMarkUsed: () -> Unit,
     onChangeDate: (() -> Unit)?,
-    onViewOriginal: (() -> Unit)?
+    onViewOriginal: (() -> Unit)?,
+    printedCode: String? = null
 ) {
     val context = LocalContext.current
     val isUsed = status == TicketStatus.USED
@@ -281,7 +283,7 @@ private fun EventPassBody(
                 Spacer(modifier = Modifier.height(18.dp))
                 PassHeadline(model = model, status = status, startsAtMillis = ticket.startsAtMillis)
                 Spacer(modifier = Modifier.height(22.dp))
-                PassCard(model = model, qrBitmap = qrBitmap, isUsed = isUsed)
+                PassCard(model = model, qrBitmap = qrBitmap, isUsed = isUsed, printedCode = printedCode)
                 Spacer(modifier = Modifier.height(20.dp))
             }
             PassActions(
@@ -488,7 +490,7 @@ private fun Countdown(startsAtMillis: Long) {
 }
 
 @Composable
-private fun PassCard(model: EventPassModel, qrBitmap: ImageBitmap?, isUsed: Boolean) {
+private fun PassCard(model: EventPassModel, qrBitmap: ImageBitmap?, isUsed: Boolean, printedCode: String? = null) {
     var perforationY by remember { mutableStateOf<Float?>(null) }
     val shape = remember(perforationY) { NotchedPassShape(CardCorner, NotchRadius, perforationY) }
     val context = LocalContext.current
@@ -566,7 +568,7 @@ private fun PassCard(model: EventPassModel, qrBitmap: ImageBitmap?, isUsed: Bool
                 )
             }
         }
-        PassStub(model = model, qrBitmap = qrBitmap, isUsed = isUsed)
+        PassStub(model = model, qrBitmap = qrBitmap, isUsed = isUsed, printedCode = printedCode)
     }
 }
 
@@ -664,7 +666,7 @@ private fun PassGrid(fields: List<PassField>) {
 }
 
 @Composable
-private fun PassStub(model: EventPassModel, qrBitmap: ImageBitmap?, isUsed: Boolean) {
+private fun PassStub(model: EventPassModel, qrBitmap: ImageBitmap?, isUsed: Boolean, printedCode: String? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -679,8 +681,8 @@ private fun PassStub(model: EventPassModel, qrBitmap: ImageBitmap?, isUsed: Bool
                 .padding(12.dp),
             contentAlignment = Alignment.Center
         ) {
-            if (qrBitmap != null) {
-                Image(
+            when {
+                qrBitmap != null -> Image(
                     bitmap = qrBitmap,
                     contentDescription = "Entry code",
                     contentScale = ContentScale.Fit,
@@ -690,8 +692,19 @@ private fun PassStub(model: EventPassModel, qrBitmap: ImageBitmap?, isUsed: Bool
                         .recordingPrivacyCover()
                         .graphicsLayer { alpha = if (isUsed) UsedPassAlpha else 1f }
                 )
-            } else {
-                Text(
+                !printedCode.isNullOrBlank() -> Text(
+                    text = printedCode,
+                    color = PassInk,
+                    fontFamily = GeometricSansFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .recordingPrivacyCover()
+                        .graphicsLayer { alpha = if (isUsed) UsedPassAlpha else 1f }
+                )
+                else -> Text(
                     if (model.codePending) "No code yet" else "No code",
                     color = PassLabel,
                     fontFamily = GeometricSansFamily,

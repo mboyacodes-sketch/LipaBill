@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,7 +28,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import com.lipabill.app.R
@@ -45,10 +50,12 @@ import kotlinx.coroutines.withContext
 
 /** A gate code ready to show, rendered from the encoding captured off the original pass. */
 class BoardingCode(
-    val bitmap: ImageBitmap,
+    val bitmap: ImageBitmap?,
     val format: TicketBarcodeFormat,
     /** True only when the code's EC level can absorb the centre LipaBill plate. */
-    val showMark: Boolean
+    val showMark: Boolean,
+    /** Printed-only code when [format] is [TicketBarcodeFormat.TEXT] (no inventable symbol). */
+    val printedValue: String? = null
 )
 
 private object BoardingCodeCache {
@@ -61,6 +68,9 @@ private object BoardingCodeCache {
 }
 
 private fun renderBoardingCode(value: String, spec: BarcodeSpec): BoardingCode? {
+    if (spec.format == TicketBarcodeFormat.TEXT) {
+        return BoardingCode(bitmap = null, format = TicketBarcodeFormat.TEXT, showMark = false, printedValue = value)
+    }
     if (spec.format == TicketBarcodeFormat.QR_CODE) {
         val matrix = BarcodeSpecEncoder.encodeQr(value, spec, sizePx = 512) ?: return null
         val image = RoundedQrRenderer.toImageBitmap(
@@ -87,6 +97,12 @@ fun rememberBoardingCode(
     serializedSpec: String?
 ): BoardingCode? {
     val code = value?.takeIf { it.isNotBlank() }
+    // Printed-only: never go through the QR legacy fallback in effectiveSpec.
+    if (format == TicketBarcodeFormat.TEXT && code != null) {
+        return remember(code) {
+            BoardingCode(null, TicketBarcodeFormat.TEXT, showMark = false, printedValue = code)
+        }
+    }
     val spec = remember(serializedSpec, format) {
         BarcodeSpecEncoder.effectiveSpec(BarcodeSpec.parse(serializedSpec), format)
     }
@@ -132,7 +148,11 @@ fun BoardingQrCard(
             ?.asImageBitmap()
     }
     val shape = RoundedCornerShape(22.dp)
-    val square = code.format == TicketBarcodeFormat.QR_CODE || code.format == TicketBarcodeFormat.AZTEC
+    val printed = code.format == TicketBarcodeFormat.TEXT
+    val square = !printed &&
+        (code.format == TicketBarcodeFormat.QR_CODE ||
+            code.format == TicketBarcodeFormat.AZTEC ||
+            code.format == TicketBarcodeFormat.DATA_MATRIX)
     Box(
         modifier = modifier
             .then(
@@ -149,17 +169,32 @@ fun BoardingQrCard(
             .border(1.dp, Color(0x14000000), shape),
         contentAlignment = Alignment.Center
     ) {
-        Image(
-            bitmap = code.bitmap,
-            contentDescription = "Boarding code",
-            contentScale = if (square) ContentScale.Fit else ContentScale.FillBounds,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(if (square) 12.dp else 16.dp)
-                .then(if (square) Modifier.clip(QrImageShape) else Modifier)
-                .recordingPrivacyCover()
-        )
-        if (code.showMark) {
+        if (printed) {
+            Text(
+                text = code.printedValue.orEmpty(),
+                color = Color.Black,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 22.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .recordingPrivacyCover()
+            )
+        } else if (code.bitmap != null) {
+            Image(
+                bitmap = code.bitmap,
+                contentDescription = "Boarding code",
+                contentScale = if (square) ContentScale.Fit else ContentScale.FillBounds,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(if (square) 12.dp else 16.dp)
+                    .then(if (square) Modifier.clip(QrImageShape) else Modifier)
+                    .recordingPrivacyCover()
+            )
+        }
+        if (code.showMark && code.bitmap != null) {
             Box(
                 modifier = Modifier
                     .size(RequestQrMarkPlate)

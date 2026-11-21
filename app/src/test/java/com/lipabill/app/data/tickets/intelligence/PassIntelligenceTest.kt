@@ -169,6 +169,64 @@ class PassIntelligenceTest {
     }
 
     @Test
+    fun fromJson_skips_unknown_source_and_field_without_throwing() {
+        val json = """
+            {
+              "version": 1,
+              "kind": "EVENT",
+              "kindConfidence": 0.9,
+              "evidence": ["synthetic"],
+              "confirmKind": false,
+              "fields": {
+                "TITLE": {
+                  "value": "Sample Festival",
+                  "confidence": 0.85,
+                  "source": "PDF_TEXT",
+                  "review": false
+                },
+                "VENUE": {
+                  "value": "Should be dropped",
+                  "confidence": 0.5,
+                  "source": "LOCAL_MODEL",
+                  "review": true
+                },
+                "NOT_A_FIELD": {
+                  "value": "x",
+                  "confidence": 0.5,
+                  "source": "OCR",
+                  "review": true
+                },
+                "BARCODE": {
+                  "value": "SAMPLE-CODE-1",
+                  "confidence": 0.99,
+                  "source": "BARCODE",
+                  "review": false
+                }
+              }
+            }
+        """.trimIndent()
+        val parsed = PassExtraction.fromJson(json)!!
+        assertEquals("Sample Festival", parsed.fields.getValue(PassField.TITLE).value)
+        assertNull(parsed.fields[PassField.VENUE])
+        assertEquals(ExtractionSource.BARCODE, parsed.fields.getValue(PassField.BARCODE).source)
+        assertTrue(parsed.fields.getValue(PassField.BARCODE).source.isGateDecoded)
+        assertFalse(ExtractionSource.OCR.isGateDecoded)
+    }
+
+    @Test
+    fun fromJson_rejects_unknown_kind_and_missing_fields_object() {
+        assertNull(
+            PassExtraction.fromJson(
+                """{"version":1,"kind":"FLIGHT","kindConfidence":0.1,"evidence":[],"confirmKind":true,"fields":{}}"""
+            )
+        )
+        val emptyFields = PassExtraction.fromJson(
+            """{"version":1,"kind":"EVENT","kindConfidence":0.5,"evidence":[],"confirmKind":false}"""
+        )!!
+        assertTrue(emptyFields.fields.isEmpty())
+    }
+
+    @Test
     fun validator_blocks_only_what_a_pass_cannot_work_without() {
         assertTrue(PassValidator.canSave(PassValidator.validate(draft(), PassKind.EVENT, now)))
         val noCode = PassValidator.validate(draft(code = ""), PassKind.EVENT, now)

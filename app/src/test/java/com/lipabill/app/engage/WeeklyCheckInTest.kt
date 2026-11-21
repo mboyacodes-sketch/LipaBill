@@ -25,6 +25,26 @@ class WeeklyCheckInTest {
     }
 
     @Test
+    fun savings_day_stays_quiet_like_insights_outflow() {
+        val summary = build(
+            listOf(
+                ChallengeTransaction(
+                    1,
+                    weekStart + 3_600_000,
+                    "M-Shwari",
+                    TransactionType.SAVINGS,
+                    50_000
+                )
+            ),
+            previous = 0L,
+            now = wednesdayNoon
+        )
+        assertEquals(0L, summary.spendCents)
+        assertEquals(summary.daysCounted, summary.quietDays)
+        assertTrue(summary.byCategory.isEmpty())
+    }
+
+    @Test
     fun one_category_skips_the_top_question() {
         val summary = build(
             listOf(tx(1, weekStart + 3_600_000, TransactionType.SENT, 10_000)),

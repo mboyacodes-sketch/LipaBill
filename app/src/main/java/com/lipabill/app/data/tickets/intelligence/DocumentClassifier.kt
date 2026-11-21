@@ -12,20 +12,33 @@ import java.util.Locale
 object DocumentClassifier {
 
     private val RAIL_WORDS = listOf(
-        "sgr", "madaraka", "kenya railways", "coach", "terminus", "train", "inter county", "economy class"
+        "sgr", "madaraka", "kenya railways", "coach", "terminus", "train", "inter county", "economy class",
+        // Swahili
+        "abiria", "behewa", "kituo"
     )
     private val EVENT_WORDS = listOf(
         "venue", "admission", "admit", "gate", "entry", "doors", "vip", "regular", "early bird",
         "section", "row", "organiser", "organizer", "event", "festival", "concert", "match",
-        "stadium", "kick-off", "kick off", "attendee", "tier"
+        "stadium", "kick-off", "kick off", "attendee", "tier",
+        // Swahili
+        "tiketi", "kiingilio", "uwanja", "kiti"
     )
+
+    /** Soften common OCR swaps (0/O, 1/l/I) before keyword matching. */
+    internal fun normalizeForClassify(text: String): String {
+        // Only normalize within likely keyword tokens — keep booking refs intact by working on a copy for matching.
+        return text.lowercase(Locale.US)
+            .replace(Regex("""(?<=[a-z])0(?=[a-z])"""), "o")
+            .replace(Regex("""(?<=[a-z])1(?=[a-z])"""), "l")
+            .replace('|', 'l')
+    }
 
     fun classify(
         text: String,
         hasBarcode: Boolean,
         hint: TicketDocumentKind = TicketDocumentKind.AUTO
     ): ClassificationResult {
-        val lower = text.lowercase(Locale.US)
+        val lower = normalizeForClassify(text)
         if (hint == TicketDocumentKind.PKPASS) {
             return ClassificationResult(PassKind.EVENT, 0.95f, listOf("wallet pass"), false)
         }

@@ -20,8 +20,10 @@ import com.lipabill.app.engage.CheckInStreak
 import com.lipabill.app.engage.CheckInStreaks
 import com.lipabill.app.engage.WeeklySummary
 import com.lipabill.app.engage.WeeklySummaryBuilder
+import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.engage.kesToCents
 import com.lipabill.app.metrics.AppMetrics
+import com.lipabill.app.viewmodel.withoutReversals
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -39,7 +41,8 @@ class EngagementRepository(
 
     suspend fun transactionsSince(since: Long, now: Long = System.currentTimeMillis()): List<ChallengeTransaction> =
         withContext(Dispatchers.IO) {
-            transactions.listBetween(since, now + 1).map { it.toChallengeTransaction() }
+            withoutReversals(transactions.listBetween(since, now + 1).map { it.toMpesa() })
+                .map { it.toChallengeTransaction() }
         }
 
     suspend fun hasCheckIn(weekId: String): Boolean = withContext(Dispatchers.IO) {
@@ -95,7 +98,9 @@ class EngagementRepository(
         for (row in rows) {
             val template = ChallengeTemplates.byId(row.templateId) ?: continue
             val rule = CategoryRules.byId(template.categoryId) ?: continue
-            val window = transactions.listBetween(row.startAt, row.endAt)
+            val window = withoutReversals(
+                transactions.listBetween(row.startAt, row.endAt).map { it.toMpesa() }
+            )
             val result = ChallengeEvaluator.evaluate(
                 challenge = row.toSnapshot(),
                 transactions = window.map { it.toChallengeTransaction() },
@@ -123,7 +128,7 @@ class EngagementRepository(
                 val monday = ChallengeClock.localDate(start, zone).minusWeeks(1)
                 val prevStart = monday.atStartOfDay(zone).toInstant().toEpochMilli()
                 val prevEnd = start
-                transactions.listBetween(prevStart, prevEnd)
+                withoutReversals(transactions.listBetween(prevStart, prevEnd).map { it.toMpesa() })
                     .sumOf { WeeklySummaryBuilder.signedSpendCents(it.toChallengeTransaction()) }
             }
             WeeklySummaryBuilder.build(
@@ -131,7 +136,8 @@ class EngagementRepository(
                 weekEnd = end,
                 weekId = weekId,
                 previousSpendCents = previousSpend,
-                transactions = transactions.listBetween(start, end).map { it.toChallengeTransaction() },
+                transactions = withoutReversals(transactions.listBetween(start, end).map { it.toMpesa() })
+                    .map { it.toChallengeTransaction() },
                 now = now,
                 zone = zone
             )
@@ -211,11 +217,27 @@ private fun ChallengeEntity.toSnapshot() = ChallengeSnapshot(
     breakingTransactionId = breakingTransactionId
 )
 
-private fun WindowTransactionRow.toChallengeTransaction() = ChallengeTransaction(
+private fun WindowTransactionRow.toMpesa() = MpesaTransaction(
+    id = id,
+    code = code,
+    type = type,
+    amount = amount,
+    counterpartyName = counterpartyName,
+    counterpartyPhone = counterpartyPhone,
+    timestampMillis = timestampMillis,
+    balance = null,
+    cost = cost,
+    rawBody = rawBody
+)
+
+private fun WindowTransactionRow.toChallengeTransaction() = toMpesa().toChallengeTransaction()
+
+private fun MpesaTransaction.toChallengeTransaction() = ChallengeTransaction(
     id = id,
     timestampMillis = timestampMillis,
     counterpartyName = counterpartyName,
     type = type,
     amountCents = kesToCents(amount) ?: 0L,
-    feeCents = cost?.let { kesToCents(it) } ?: 0L
+    feeCents = cost?.let { kesToCents(it) } ?: 0L,
+    counterpartyPhone = counterpartyPhone
 )

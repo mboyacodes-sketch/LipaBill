@@ -1,0 +1,13 @@
+{
+  "name": "datamatrix_format",
+  "text": "Sample Festival\nVenue: Today Hall\nEvent date 14 Dec 2026\n7:30 PM\nAdmit one",
+  "barcodes": [
+    { "value": "EVT-DM-9911", "format": "DATA_MATRIX" }
+  ],
+  "expect": {
+    "kind": "EVENT",
+    "barcodeValue": "EVT-DM-9911",
+    "barcodeFormat": "DATA_MATRIX",
+    "startDate": "2026-12-14"
+  }
+}

@@ -50,11 +50,21 @@ fun withoutReversals(txs: List<MpesaTransaction>): List<MpesaTransaction> {
  * Money moving between the user's own pots: into M-Shwari / Lock Savings and back out,
  * and Fuliza draws that the payment they funded already counts. None of it is income or spend.
  */
-fun isOwnMoneyMove(tx: MpesaTransaction): Boolean = when (tx.type) {
+fun isOwnMoneyMove(type: TransactionType, counterpartyName: String?): Boolean = when (type) {
     TransactionType.SAVINGS, TransactionType.FULIZA -> true
-    TransactionType.DEPOSIT -> tx.counterpartyName?.startsWith("M-Shwari", ignoreCase = true) == true
+    TransactionType.DEPOSIT -> counterpartyName?.startsWith("M-Shwari", ignoreCase = true) == true
     else -> false
 }
+
+fun isOwnMoneyMove(tx: MpesaTransaction): Boolean =
+    isOwnMoneyMove(tx.type, tx.counterpartyName)
+
+/**
+ * Wallet outflow that Insights quiet days / calendars and Habits quiet weeks share:
+ * not savings/Fuliza/own deposits; positive outgoing amount.
+ */
+fun countsAsSpendOutflow(type: TransactionType, counterpartyName: String?, amountPositive: Boolean): Boolean =
+    amountPositive && type.isOutgoing() && !isOwnMoneyMove(type, counterpartyName)
 
 data class FeeSummary(
     val total: Double = 0.0,
@@ -118,15 +128,27 @@ fun foldPayeeName(raw: String): String = foldPayeeKey(raw)
  * Keys that may have been stored for essentials/watched before phone-first identity.
  * Lets an older "landlord" mark still match a now phone-keyed regular.
  */
-fun payeeMarkCandidates(tx: MpesaTransaction, key: String = payeeKey(tx).orEmpty()): Set<String> {
+fun payeeMarkCandidates(tx: MpesaTransaction, key: String = payeeKey(tx).orEmpty()): Set<String> =
+    payeeMarkCandidates(tx.counterpartyName, tx.counterpartyPhone, key)
+
+/** Same candidate set for Habits / challenge rows that only carry name + phone. */
+fun payeeMarkCandidates(
+    name: String?,
+    phone: String?,
+    key: String = payeeKey(name, phone).orEmpty()
+): Set<String> {
     val out = linkedSetOf<String>()
     if (key.isNotEmpty()) out += key
-    foldMerchantName(tx.counterpartyName)?.let { out += it }
-    tx.counterpartyName?.let { out += foldPayeeName(it) }
-    phoneKey(tx.counterpartyPhone)?.let { out += "tel:$it" }
-    tx.counterpartyPhone?.filter { it.isDigit() }?.takeIf { it.isNotEmpty() }?.let { out += "tel:$it" }
+    foldMerchantName(name)?.let { out += it }
+    name?.let { out += foldPayeeName(it) }
+    phoneKey(phone)?.let { out += "tel:$it" }
+    phone?.filter { it.isDigit() }?.takeIf { it.isNotEmpty() }?.let { out += "tel:$it" }
     return out
 }
+
+/** True when any stored mark key overlaps [payeeMarkCandidates] for this party. */
+fun markedPayee(name: String?, phone: String?, marks: Set<String>): Boolean =
+    marks.isNotEmpty() && payeeMarkCandidates(name, phone).any { it in marks }
 
 private fun marked(candidates: Set<String>, marks: Set<String>): Boolean =
     marks.isNotEmpty() && candidates.any { it in marks }
@@ -183,24 +205,48 @@ private val STRONG_BUSINESS_TOKENS = setOf(
     "ltd", "limited", "plc", "llc", "inc", "corp", "company", "holdings",
     "bank", "insurance", "assurance", "sacco", "cooperative", "co-operative",
     "safaricom", "airtel", "telkom",
-    "kplc", "nwasco", "sewerage", "water", "power",
+    "kplc", "nwasco", "sewerage",
+    // "water" / "power" / "church" alone hit personal names (Mary Water) — use phrases.
     "dstv", "gotv", "showmax", "netflix", "zuku", "jamii", "faiba", "liquid",
     "paybill", "till", "supermarket", "mall", "hotel", "hospital", "clinic",
-    "school", "academy", "university", "college", "church", "ministry",
+    "school", "academy", "university", "college", "ministry",
     "landlord", "rent", "estate", "apartments", "housing", "homes", "properties"
 )
 
 /** Phrases matched anywhere in the folded name. */
 private val BUSINESS_PHRASES = listOf(
-    "kenya power", "nairobi water", "co-operative", "real estate"
+    "kenya power", "nairobi water", "water and sewerage", "water company",
+    "power company", "co-operative", "real estate", "baptist church", "catholic church",
+    "ack church", "pcea", "full gospel"
 )
 
 /** Single-token brands that look like a name otherwise. */
 private val BUSINESS_BRANDS = setOf(
     "netflix", "showmax", "dstv", "gotv", "zuku", "faiba", "jumia", "glovo",
-    "uber", "bolt", "little", "startimes", "azam", "canal", "youtube", "spotify",
+    // Ride brands as exact tokens only — "little jane" must not become a bill.
+    "uber", "bolt", "little cab", "startimes", "azam", "canal", "youtube", "spotify",
     "google", "apple", "microsoft", "amazon", "paypal", "m-pesa", "mpesa"
 )
+
+/** Tokens that look like a bill/subscription — not a variable till basket. */
+private val BILL_LIKE_TOKENS = STRONG_BUSINESS_TOKENS - setOf(
+    "mall", "hotel", "supermarket", "till", "clinic", "hospital"
+)
+
+/**
+ * Short-history (two-day) regulars are for Paybill / clear bill cues, not BUY_GOODS tills
+ * whose amounts wobble with the basket.
+ */
+fun isStrongBillLike(name: String, key: String, type: TransactionType): Boolean {
+    if (type == TransactionType.PAYBILL) return true
+    if (key.startsWith("bill:")) return true
+    val folded = foldMerchantName(name) ?: name.trim().lowercase(Locale.US)
+    if (folded.isEmpty()) return false
+    if (BUSINESS_BRANDS.any { folded == it || folded.startsWith("$it ") }) return true
+    if (BUSINESS_PHRASES.any { folded.contains(it) }) return true
+    val tokens = folded.split(Regex("[\\s./\\-_]+")).filter { it.isNotBlank() }
+    return tokens.any { it in BILL_LIKE_TOKENS }
+}
 
 /**
  * Coming-up / regulars should surface bills and subscriptions (usually month to month),
@@ -285,13 +331,17 @@ fun detectRegulars(
         val cadence = cadenceFor(typicalGap) ?: continue
         val shortHistory = dates.size < minPayments
         if (shortHistory) {
-            // Two similar pays on a known rhythm still count when history is thin.
+            // Two similar pays on a known rhythm still count when history is thin —
+            // but only for Paybill / strong bill cues, not variable till baskets.
             if (dates.size != 2 || !amountsStable(amounts, typical)) continue
+            if (!isStrongBillLike(displayName, key, named.type)) continue
         } else {
             val tolerance = max(2.0, typicalGap * 0.35)
             val steady = gaps.count { abs(it - typicalGap) <= tolerance }
             if (steady < ceil(gaps.size * 2.0 / 3.0)) continue
-            val amountTolerance = max(50.0, typical * 0.4)
+            // BUY_GOODS baskets vary; require near-stable amounts. Bills keep the wider slack.
+            val amountSlack = if (named.type == TransactionType.BUY_GOODS) 0.15 else 0.4
+            val amountTolerance = max(50.0, typical * amountSlack)
             val similar = amounts.count { abs(it - typical) <= amountTolerance }
             if (similar < ceil(amounts.size * 2.0 / 3.0)) continue
         }

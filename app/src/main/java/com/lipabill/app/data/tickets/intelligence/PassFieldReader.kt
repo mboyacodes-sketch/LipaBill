@@ -10,7 +10,11 @@ import com.lipabill.app.data.tickets.TicketImport
 /** How the text behind a draft was obtained. Counts only — no ticket content. */
 data class ReadEvidence(
     val fromPdfText: Boolean,
-    val barcodeFromPixels: Boolean
+    val barcodeFromPixels: Boolean,
+    /** Fields that came from an explicit label ("Venue: X") rather than inference. */
+    val labeledFields: Set<PassField> = emptySet(),
+    /** Mean OCR line confidence 0–1 when the read was OCR; null for PDF text / unknown. */
+    val ocrLineConfidence: Float? = null
 )
 
 /**
@@ -33,10 +37,25 @@ object PassFieldReader {
         val base = when (textSource) {
             ExtractionSource.WALLET_PASS -> 0.95f
             ExtractionSource.PDF_TEXT -> 0.85f
-            else -> 0.72f
+            else -> {
+                val ocr = evidence.ocrLineConfidence
+                if (ocr != null) (0.55f + ocr * 0.35f).coerceIn(0.50f, 0.85f) else 0.72f
+            }
         }
-        fun field(value: String?, confidence: Float = base, source: ExtractionSource = textSource) =
-            ExtractedField(value?.trim()?.ifBlank { null }, if (value.isNullOrBlank()) 0f else confidence, source)
+        fun field(
+            key: PassField,
+            value: String?,
+            confidence: Float = base,
+            source: ExtractionSource = textSource
+        ): ExtractedField {
+            val labeled = key in evidence.labeledFields
+            val conf = when {
+                value.isNullOrBlank() -> 0f
+                labeled -> confidence
+                else -> (confidence - 0.12f).coerceAtLeast(0.40f)
+            }
+            return ExtractedField(value?.trim()?.ifBlank { null }, conf, source)
+        }
 
         val code = draft.barcodeValue.takeUnless { it.isBlank() || EventTicketSms.isPending(it) }
         val codeField = when {
@@ -52,15 +71,15 @@ object PassFieldReader {
         return PassExtraction(
             classification = classification,
             fields = mapOf(
-                PassField.TITLE to field(title),
-                PassField.VENUE to field(draft.venue),
-                PassField.STARTS_AT to field(draft.startsAtMillis?.toString(), dateConfidence),
-                PassField.ENDS_AT to field(draft.notes.notesValue("Ends"), dateConfidence),
-                PassField.SEAT_OR_TIER to field(draft.seatOrTier),
-                PassField.TIER to field(draft.notes.firstNotesValue("Tier")),
-                PassField.GUEST to field(draft.notes.firstNotesValue("Guest", "Attendee", "Name")),
+                PassField.TITLE to field(PassField.TITLE, title),
+                PassField.VENUE to field(PassField.VENUE, draft.venue),
+                PassField.STARTS_AT to field(PassField.STARTS_AT, draft.startsAtMillis?.toString(), dateConfidence),
+                PassField.ENDS_AT to field(PassField.ENDS_AT, draft.notes.notesValue("Ends"), dateConfidence),
+                PassField.SEAT_OR_TIER to field(PassField.SEAT_OR_TIER, draft.seatOrTier),
+                PassField.TIER to field(PassField.TIER, draft.notes.firstNotesValue("Tier")),
+                PassField.GUEST to field(PassField.GUEST, draft.notes.firstNotesValue("Guest", "Attendee", "Name")),
                 // Booking references must be exact — a misread one is worse than none.
-                PassField.ORDER_ID to field(draft.orderId, base - 0.05f),
+                PassField.ORDER_ID to field(PassField.ORDER_ID, draft.orderId, base - 0.05f),
                 PassField.BARCODE to codeField
             )
         )

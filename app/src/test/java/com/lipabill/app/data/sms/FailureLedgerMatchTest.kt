@@ -183,6 +183,31 @@ class FailureLedgerMatchTest {
     }
 
     @Test
+    fun amount_only_same_rail_refuses_when_several_rows_match() {
+        val failureAt = 1_700_000_000_000L
+        val a = tx(1, 500.0, MoneySource.MPESA, TransactionType.BUY_GOODS, at = failureAt - 30_000L)
+        val b = tx(2, 500.0, MoneySource.MPESA, TransactionType.SENT, phone = "254711111111", at = failureAt - 20_000L)
+        assertNull(
+            FailureLedgerMatch.findVoidCandidate(
+                amount = 500.0,
+                source = MoneySource.MPESA,
+                partyDigits = emptySet(),
+                candidates = listOf(a, b),
+                failureAtMillis = failureAt
+            )
+        )
+        assertNotNull(
+            FailureLedgerMatch.findVoidCandidate(
+                amount = 500.0,
+                source = MoneySource.MPESA,
+                partyDigits = emptySet(),
+                candidates = listOf(a),
+                failureAtMillis = failureAt
+            )
+        )
+    }
+
+    @Test
     fun open_payment_matches_amount_without_party_digits() {
         val snap = PendingPaymentReceipt.Snapshot(
             auditId = 1L,

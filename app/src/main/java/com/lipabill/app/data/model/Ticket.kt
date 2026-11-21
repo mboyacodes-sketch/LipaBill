@@ -6,8 +6,12 @@ import java.time.ZoneId
 enum class TicketBarcodeFormat {
     QR_CODE,
     CODE_128,
+    CODE_39,
+    DATA_MATRIX,
     PDF_417,
     AZTEC,
+    /** Printed booking / ticket number with no scannable symbol — show as text, never invent a QR. */
+    TEXT,
     OTHER
 }
 

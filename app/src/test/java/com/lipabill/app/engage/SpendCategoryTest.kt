@@ -25,8 +25,10 @@ class SpendCategoryTest {
     )
 
     @Test
-    fun auto_glovo_is_food() {
+    fun auto_glovo_and_java_house_are_food() {
         assertEquals(SpendCategory.FOOD, autoSpendCategory(TransactionType.BUY_GOODS, "GLOVO KE"))
+        assertEquals(SpendCategory.FOOD, autoSpendCategory(TransactionType.BUY_GOODS, "Java House"))
+        assertTrue(isFoodSpend(TransactionType.BUY_GOODS, "Artcaffe"))
     }
 
     @Test
@@ -35,8 +37,18 @@ class SpendCategoryTest {
     }
 
     @Test
-    fun auto_person_send_is_people() {
+    fun auto_person_send_is_people_but_landlord_send_is_bills() {
         assertEquals(SpendCategory.PEOPLE, autoSpendCategory(TransactionType.SENT, "Jane Wanjiku"))
+        assertEquals(SpendCategory.PEOPLE, autoSpendCategory(TransactionType.SENT, "Mary Water"))
+        assertEquals(SpendCategory.BILLS, autoSpendCategory(TransactionType.SENT, "Landlord"))
+        assertEquals(SpendCategory.BILLS, autoSpendCategory(TransactionType.SENT, "Safaricom Limited"))
+    }
+
+    @Test
+    fun fragment_only_transport_needs_category_review() {
+        assertTrue(needsCategoryReview(TransactionType.BUY_GOODS, "Little Cab"))
+        assertTrue(!needsCategoryReview(TransactionType.BUY_GOODS, "Naivas Westlands"))
+        assertTrue(!needsCategoryReview(TransactionType.PAYBILL, "KPLC Prepaid"))
     }
 
     @Test
@@ -49,6 +61,21 @@ class SpendCategoryTest {
     fun auto_uber_ride_is_transport_not_food() {
         assertEquals(SpendCategory.TRANSPORT, autoSpendCategory(TransactionType.BUY_GOODS, "Uber"))
         assertEquals(SpendCategory.FOOD, autoSpendCategory(TransactionType.BUY_GOODS, "Uber Eats"))
+    }
+
+    @Test
+    fun little_cab_is_transport_but_person_named_little_is_not() {
+        assertEquals(SpendCategory.TRANSPORT, autoSpendCategory(TransactionType.BUY_GOODS, "Little Cab"))
+        assertEquals(SpendCategory.PEOPLE, autoSpendCategory(TransactionType.SENT, "Little Jane"))
+        assertEquals(SpendCategory.SHOPPING, autoSpendCategory(TransactionType.BUY_GOODS, "Little Shop"))
+    }
+
+    @Test
+    fun mno_agent_buy_goods_is_not_bills_airtime_type_still_airtime() {
+        assertEquals(SpendCategory.SHOPPING, autoSpendCategory(TransactionType.BUY_GOODS, "Safaricom Agent"))
+        assertEquals(SpendCategory.AIRTIME, autoSpendCategory(TransactionType.AIRTIME, "Safaricom"))
+        assertEquals(SpendCategory.BILLS, autoSpendCategory(TransactionType.PAYBILL, "Safaricom Home"))
+        assertEquals(SpendCategory.BILLS, autoSpendCategory(TransactionType.PAYBILL, "KRA PIN Payment"))
     }
 
     @Test

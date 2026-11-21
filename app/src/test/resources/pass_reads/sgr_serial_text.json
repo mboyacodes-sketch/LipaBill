@@ -1,0 +1,11 @@
+{
+  "name": "sgr_serial_text",
+  "text": "MADARAKA EXPRESS\nKenya Railways\nSold at Nairobi Terminus\nNairobi Terminus\nE2\nMombasa Terminus\n09:00\nthe 13th of September, 2017\nKSH 700.00\nSeat47 Coach7 SecondClass\nNOT TRANSFERABLE\nName: JANE DOE\nSerial: 0908100299823",
+  "barcodes": [],
+  "expect": {
+    "kind": "RAIL",
+    "barcodeValue": "0908100299823",
+    "barcodeFormat": "TEXT",
+    "titleContains": "SGR"
+  }
+}

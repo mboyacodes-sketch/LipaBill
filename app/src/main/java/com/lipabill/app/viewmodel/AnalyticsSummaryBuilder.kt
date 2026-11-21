@@ -241,10 +241,8 @@ internal fun buildAnalyticsSummary(
         fees = fees,
         regulars = regulars,
         habit = habit,
-        periodTransactions = ledger.filter { tx ->
-            val date = Instant.ofEpochMilli(tx.timestampMillis).atZone(zone).toLocalDate()
-            !date.isBefore(from) && !date.isAfter(to)
-        },
+        // Same netting as totals / quiet days — do not list undone + reversal pairs.
+        periodTransactions = filtered,
         heroLabel = buildString {
             append(formatPeriodSpan(from, to))
             append(" · ")
@@ -331,11 +329,11 @@ private fun flowByDate(
             continue
         }
         val amount = tx.amount ?: continue
-        // Same rule as flowTotals, so the calendar, quiet days and month bars match the totals.
+        // Same rule as flowTotals / Habits quiet days (countsAsSpendOutflow).
         if (isOwnMoneyMove(tx)) continue
-        if (tx.type.isOutgoing()) {
+        if (countsAsSpendOutflow(tx.type, tx.counterpartyName, amount > 0.0)) {
             outflow[date] = (outflow[date] ?: 0.0) + amount + (tx.cost ?: 0.0)
-        } else {
+        } else if (!tx.type.isOutgoing()) {
             inflow[date] = (inflow[date] ?: 0.0) + amount
         }
     }

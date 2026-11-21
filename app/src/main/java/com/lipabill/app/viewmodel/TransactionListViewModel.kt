@@ -17,7 +17,9 @@ import com.lipabill.app.engage.CategoryRules
 import com.lipabill.app.engage.ChallengeClock
 import com.lipabill.app.engage.ChallengeStatus
 import com.lipabill.app.engage.ChallengeTemplates
+import com.lipabill.app.engage.ChallengeTransaction
 import com.lipabill.app.engage.SpendCategory
+import com.lipabill.app.engage.kesToCents
 import com.lipabill.app.engage.resolveSpendCategory
 import com.lipabill.app.ui.util.formatActivityTime
 import com.lipabill.app.ui.util.inCategoryOrder
@@ -873,8 +875,20 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         } else {
             total
         }
+        // Same matcher as challenge break detection (types + fees), not name-only.
         val baseline = averageDailySpend(ledger, beforeMillis = latest.startAt) { tx ->
-            CategoryMatcher.matches(rule, tx.counterpartyName)
+            CategoryMatcher.matches(
+                rule,
+                ChallengeTransaction(
+                    id = tx.id,
+                    timestampMillis = tx.timestampMillis,
+                    counterpartyName = tx.counterpartyName,
+                    type = tx.type,
+                    amountCents = kesToCents(tx.amount) ?: 0L,
+                    feeCents = kesToCents(tx.cost) ?: 0L,
+                    counterpartyPhone = tx.counterpartyPhone
+                )
+            )
         }
         val cleanDays = when (kind) {
             ChallengeCardKind.ACTIVE -> day - 1

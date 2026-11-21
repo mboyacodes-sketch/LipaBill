@@ -10,8 +10,10 @@ import java.util.regex.Pattern
  */
 object FailureSms {
 
+    // Bare "failed" mid-sentence is too broad (marketing). Prefer "Failed." at the start,
+    // "…. failed.", or "transaction failed", plus insufficient / declined / timed-out cues.
     private val FAILURE_BODY = Regex(
-        """\b(?:transaction\s+failed|failed|unsuccessful|not\s+successful|was\s+not\s+successful|declined|timed?\s*out|could\s+not\s+(?:be\s+)?completed|unable\s+to\s+(?:process|complete)|insufficient\s+funds|do\s+not\s+have\s+sufficient)\b""",
+        """(?:^|\n)\s*failed\b|failed\.|\b(?:transaction\s+failed|unsuccessful|not\s+successful|was\s+not\s+successful|declined|timed?\s*out|could\s+not\s+(?:be\s+)?completed|unable\s+to\s+(?:process|complete)|insufficient\s+funds|do\s+not\s+have\s+sufficient)\b""",
         RegexOption.IGNORE_CASE
     )
 

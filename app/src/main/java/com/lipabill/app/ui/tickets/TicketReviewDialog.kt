@@ -52,7 +52,6 @@ import com.lipabill.app.data.tickets.EventPresets
 import com.lipabill.app.data.tickets.TicketDocumentKind
 import com.lipabill.app.data.tickets.TicketImport
 import com.lipabill.app.data.tickets.intelligence.ExtractedField
-import com.lipabill.app.data.tickets.intelligence.ExtractionSource
 import com.lipabill.app.data.tickets.intelligence.PassExtraction
 import com.lipabill.app.data.tickets.intelligence.PassField
 import com.lipabill.app.data.tickets.intelligence.PassKind
@@ -346,8 +345,8 @@ private fun DateRow(startsAt: Long?, notes: String?, onPick: () -> Unit) {
 @Composable
 private fun CodeRow(hasCode: Boolean, code: ExtractedField? = null) {
     // Never show the code itself here: it is the ticket. Say only how sure the read is.
-    val typedOut = hasCode && code != null && code.source != ExtractionSource.BARCODE &&
-        code.source != ExtractionSource.WALLET_PASS
+    // Missing provenance or non-gate sources → ask the user to check (fail closed).
+    val typedOut = hasCode && (code == null || !code.source.isGateDecoded)
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
             if (hasCode) Icons.Outlined.CheckCircle else Icons.Outlined.ErrorOutline,
