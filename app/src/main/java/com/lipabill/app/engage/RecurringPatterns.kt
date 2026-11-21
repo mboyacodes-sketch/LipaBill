@@ -3,6 +3,7 @@ package com.lipabill.app.engage
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.viewmodel.Cadence
 import com.lipabill.app.viewmodel.detectRegulars
+import com.lipabill.app.viewmodel.payeeMarkCandidates
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -91,9 +92,25 @@ object RecurringPatterns {
                 lastPaid = regular.lastPaid,
                 nextDue = regular.nextDue,
                 payments = regular.payments,
-                choice = choices[regular.key] ?: RecurringChoice.Pending
+                choice = choiceFor(regular.key, regular.name, choices)
             )
         }
+    }
+
+    /**
+     * Prefs may still hold a legacy name key after identity moved to phone-first.
+     * Match any [payeeMarkCandidates] alias so confirm/dismiss still stick.
+     */
+    fun choiceFor(
+        key: String,
+        name: String,
+        choices: Map<String, RecurringChoice>
+    ): RecurringChoice {
+        choices[key]?.let { return it }
+        for (alias in payeeMarkCandidates(name, null, key)) {
+            choices[alias]?.let { return it }
+        }
+        return RecurringChoice.Pending
     }
 
     /** Pending only — Insights “Potential recurring payment” list. */
@@ -149,7 +166,7 @@ object RecurringPatterns {
                 type = row.type,
                 amount = row.amountCents / 100.0,
                 counterpartyName = row.counterpartyName,
-                counterpartyPhone = null,
+                counterpartyPhone = row.counterpartyPhone,
                 timestampMillis = row.timestampMillis,
                 balance = null,
                 cost = row.feeCents / 100.0,

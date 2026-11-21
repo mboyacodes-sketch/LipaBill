@@ -1,0 +1,13 @@
+{
+  "name": "app_download_qr_loses",
+  "text": "Sample Festival\nVenue: Today Hall\nEvent date 14 Dec 2026\nScan at entry",
+  "barcodes": [
+    { "value": "https://play.google.com/store/apps/details?id=com.example.tickets", "format": "QR_CODE" },
+    { "value": "GATE-ENTRY-4421", "format": "QR_CODE" }
+  ],
+  "expect": {
+    "kind": "EVENT",
+    "barcodeValue": "GATE-ENTRY-4421",
+    "barcodeFormat": "QR_CODE"
+  }
+}

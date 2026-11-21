@@ -75,7 +75,9 @@ object BarcodeSpecReader {
         BarcodeFormat.QR_CODE,
         BarcodeFormat.PDF_417,
         BarcodeFormat.AZTEC,
-        BarcodeFormat.DATA_MATRIX
+        BarcodeFormat.DATA_MATRIX,
+        BarcodeFormat.CODE_128,
+        BarcodeFormat.CODE_39
     )
 
     /** ARGB pixels, e.g. from `Bitmap.getPixels`. */
@@ -123,6 +125,9 @@ object BarcodeSpecReader {
             BarcodeFormat.QR_CODE -> TicketBarcodeFormat.QR_CODE
             BarcodeFormat.PDF_417 -> TicketBarcodeFormat.PDF_417
             BarcodeFormat.AZTEC -> TicketBarcodeFormat.AZTEC
+            BarcodeFormat.DATA_MATRIX -> TicketBarcodeFormat.DATA_MATRIX
+            BarcodeFormat.CODE_128 -> TicketBarcodeFormat.CODE_128
+            BarcodeFormat.CODE_39 -> TicketBarcodeFormat.CODE_39
             else -> return null
         }
         val ec = result.resultMetadata?.get(ResultMetadataType.ERROR_CORRECTION_LEVEL)?.toString()
@@ -172,8 +177,10 @@ object BarcodeSpecEncoder {
     fun effectiveSpec(spec: BarcodeSpec?, fallbackFormat: TicketBarcodeFormat?): BarcodeSpec =
         when {
             spec != null -> spec
-            fallbackFormat == null || fallbackFormat == TicketBarcodeFormat.QR_CODE ||
-                fallbackFormat == TicketBarcodeFormat.OTHER -> legacyQr
+            fallbackFormat == null ||
+                fallbackFormat == TicketBarcodeFormat.QR_CODE ||
+                fallbackFormat == TicketBarcodeFormat.OTHER ||
+                fallbackFormat == TicketBarcodeFormat.TEXT -> legacyQr
             else -> BarcodeSpec(fallbackFormat)
         }
 

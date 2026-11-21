@@ -302,6 +302,18 @@ class CostInsightsTest {
     }
 
     @Test
+    fun two_day_buy_goods_till_is_not_a_regular_even_when_amounts_match() {
+        val today = LocalDate.of(2026, 11, 10)
+        val shop = listOf(
+            LocalDate.of(2026, 9, 14),
+            LocalDate.of(2026, 10, 14)
+        ).map { tx(TransactionType.BUY_GOODS, "Corner Shop", 1_200.0, it) }
+        assertTrue(detectRegulars(shop, zone, today).isEmpty())
+        assertTrue(!isStrongBillLike("Corner Shop", "corner shop", TransactionType.BUY_GOODS))
+        assertTrue(isStrongBillLike("Safaricom Home", "safaricom home", TransactionType.PAYBILL))
+    }
+
+    @Test
     fun a_bill_split_across_two_payments_on_one_day_is_one_payment() {
         val today = LocalDate.of(2026, 11, 10)
         val rent = listOf(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 9, 1), LocalDate.of(2026, 10, 1))
@@ -500,6 +512,12 @@ class CostInsightsTest {
         assertTrue(!isBusinessLikeRegular("Ann Kenya", "tel:711000111", TransactionType.SENT))
         assertTrue(!isBusinessLikeRegular("Grace Nairobi", "grace nairobi", TransactionType.SENT))
         assertTrue(!isBusinessLikeRegular("Mary Wanjiku", "tel:711000111", TransactionType.SENT))
+        // Bare "water" / "power" must not tag personal names.
+        assertTrue(!isBusinessLikeRegular("Mary Water", "mary water", TransactionType.SENT))
+        assertTrue(!isBusinessLikeRegular("John Power", "john power", TransactionType.SENT))
+        assertTrue(isBusinessLikeRegular("Nairobi Water", "nairobi water", TransactionType.SENT))
+        // Phone-only Send (no name) is not a business regular cue by itself.
+        assertTrue(!isBusinessLikeRegular("", "tel:711000111", TransactionType.SENT))
         assertTrue(
             !isBusinessLikeRegular(
                 "A B C D E",
@@ -509,6 +527,7 @@ class CostInsightsTest {
         )
         // Till / Paybill stay business even with a person-like SMS name.
         assertTrue(isBusinessLikeRegular("Shop 123", "till:123", TransactionType.BUY_GOODS))
+        assertTrue(isBusinessLikeRegular("NAIVAS WESTLANDS", "naivas", TransactionType.BUY_GOODS))
         assertTrue(isBusinessPayee(tx(TransactionType.AIRTIME, "Airtime", 50.0, LocalDate.of(2026, 11, 1))))
         assertTrue(isBusinessPayee(tx(TransactionType.BUY_GOODS, null, 100.0, LocalDate.of(2026, 11, 1), phone = "0700111222")))
         assertTrue(isOwnMoneyMove(tx(TransactionType.SAVINGS, "M-Shwari", 100.0, LocalDate.of(2026, 11, 1))))

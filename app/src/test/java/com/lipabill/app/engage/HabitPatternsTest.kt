@@ -19,8 +19,13 @@ class HabitPatternsTest {
     private val now = LocalDate.of(2026, 11, 11).atStartOfDay(zone).toInstant().toEpochMilli() + 12 * 3_600_000L
     private var nextId = 1L
 
-    private fun tx(at: Long, name: String?, type: TransactionType, cents: Long) =
-        ChallengeTransaction(nextId++, at, name, type, cents)
+    private fun tx(
+        at: Long,
+        name: String?,
+        type: TransactionType,
+        cents: Long,
+        phone: String? = null
+    ) = ChallengeTransaction(nextId++, at, name, type, cents, counterpartyPhone = phone)
 
     private fun on(date: LocalDate, hour: Int = 20) =
         date.atStartOfDay(zone).toInstant().toEpochMilli() + hour * 3_600_000L
@@ -57,23 +62,87 @@ class HabitPatternsTest {
     }
 
     @Test
-    fun regulars_are_shops_only_and_skip_food_delivery() {
-        val rows = (0..4).map { tx(now - it * day, "Java House", TransactionType.BUY_GOODS, 45_000) } +
+    fun regulars_are_shops_only_and_skip_food_and_essentials() {
+        val rows = (0..4).map { tx(now - it * day, "Miniso", TransactionType.BUY_GOODS, 45_000) } +
             (0..5).map { tx(now - it * day, "KPLC", TransactionType.PAYBILL, 100_000) } +
             (0..5).map { tx(now - it * day, "Glovo", TransactionType.BUY_GOODS, 50_000) } +
+            (0..4).map { tx(now - it * day, "Java House", TransactionType.BUY_GOODS, 40_000) } +
             (0..3).map { tx(now - 40 * day - it * day, "Naivas", TransactionType.BUY_GOODS, 50_000) }
-        val regulars = HabitPatterns.regulars(rows, now)
-        assertEquals(listOf("Java House"), regulars.map { it.payee })
+        val regulars = HabitPatterns.regulars(rows, now, zone)
+        assertEquals(listOf("Miniso"), regulars.map { it.payee })
         assertEquals(225_000L, regulars.single().cents)
+        assertEquals(5, regulars.single().count)
     }
 
     @Test
     fun groceries_and_marked_essentials_are_never_suggested() {
         val rows = (0..4).map { tx(now - it * day, "GRAMOS SUPERMARKET LIMITED", TransactionType.BUY_GOODS, 40_000) } +
             (0..4).map { tx(now - it * day, "Naivas Westlands", TransactionType.BUY_GOODS, 40_000) } +
-            (0..4).map { tx(now - it * day, "Java  House", TransactionType.BUY_GOODS, 45_000) }
-        assertEquals(listOf("Java  House"), HabitPatterns.regulars(rows, now).map { it.payee })
-        assertTrue(HabitPatterns.regulars(rows, now, essentialKeys = setOf("java house")).isEmpty())
+            (0..4).map { tx(now - it * day, "Miniso Westlands", TransactionType.BUY_GOODS, 45_000) }
+        assertEquals(listOf("Miniso Westlands"), HabitPatterns.regulars(rows, now, zone).map { it.payee })
+        assertTrue(HabitPatterns.regulars(rows, now, zone, essentialKeys = setOf("miniso")).isEmpty())
+    }
+
+    @Test
+    fun phone_keyed_essential_suppresses_named_shop_with_same_phone() {
+        val phone = "254712345678"
+        val rows = (0..4).map {
+            tx(now - it * day, "Miniso", TransactionType.BUY_GOODS, 45_000, phone = phone)
+        }
+        assertEquals(1, HabitPatterns.regulars(rows, now, zone).size)
+        assertTrue(
+            HabitPatterns.regulars(rows, now, zone, essentialKeys = setOf("tel:712345678")).isEmpty()
+        )
+    }
+
+    @Test
+    fun same_day_double_taps_do_not_inflate_frequent_shop() {
+        val day0 = now
+        val day1 = now - day
+        val day2 = now - 2 * day
+        // Three calendar days, six payments — not frequent.
+        val rows = listOf(
+            tx(day0, "Miniso", TransactionType.BUY_GOODS, 40_000),
+            tx(day0 + 3_600_000L, "Miniso", TransactionType.BUY_GOODS, 40_000),
+            tx(day1, "Miniso", TransactionType.BUY_GOODS, 40_000),
+            tx(day1 + 3_600_000L, "Miniso", TransactionType.BUY_GOODS, 40_000),
+            tx(day2, "Miniso", TransactionType.BUY_GOODS, 40_000),
+            tx(day2 + 3_600_000L, "Miniso", TransactionType.BUY_GOODS, 40_000)
+        )
+        assertTrue(HabitPatterns.regulars(rows, now, zone).isEmpty())
+        val fourDays = rows + tx(now - 3 * day, "Miniso", TransactionType.BUY_GOODS, 40_000)
+        val regular = HabitPatterns.regulars(fourDays, now, zone).single()
+        assertEquals(4, regular.count)
+    }
+
+    @Test
+    fun food_peak_includes_restaurant_not_only_delivery() {
+        val fridays = (1..5).map {
+            tx(on(LocalDate.of(2026, 11, 6).minusWeeks(it.toLong() - 1)), "Java House", TransactionType.BUY_GOODS, 60_000)
+        }
+        val tuesday = tx(on(LocalDate.of(2026, 11, 3)), "Artcaffe", TransactionType.BUY_GOODS, 40_000)
+        val pattern = HabitPatterns.detect(fridays + tuesday, now, zone).filterIsInstance<HabitPattern.FoodPeakDay>().single()
+        assertEquals(DayOfWeek.FRIDAY, pattern.day)
+    }
+
+    @Test
+    fun payday_rush_ignores_agent_cash_in_and_own_mshwari() {
+        val credit1 = on(LocalDate.of(2026, 9, 28))
+        val credit2 = on(LocalDate.of(2026, 10, 28))
+        val agent = listOf(
+            tx(credit1, "Agent 12345", TransactionType.DEPOSIT, 50_000_00L),
+            tx(credit1 + 3_600_000L, "Glovo", TransactionType.BUY_GOODS, 2_000_00L),
+            tx(credit2, "Agent 999", TransactionType.DEPOSIT, 55_000_00L),
+            tx(credit2 + 2_600_000L, "Uber Eats", TransactionType.BUY_GOODS, 2_000_00L)
+        )
+        assertTrue(HabitPatterns.detect(agent, now, zone).none { it is HabitPattern.PaydayRush })
+        val mshwari = listOf(
+            tx(credit1, "M-Shwari", TransactionType.DEPOSIT, 50_000_00L),
+            tx(credit1 + 3_600_000L, "Glovo", TransactionType.BUY_GOODS, 2_000_00L),
+            tx(credit2, "M-Shwari", TransactionType.DEPOSIT, 55_000_00L),
+            tx(credit2 + 2_600_000L, "Uber Eats", TransactionType.BUY_GOODS, 2_000_00L)
+        )
+        assertTrue(HabitPatterns.detect(mshwari, now, zone).none { it is HabitPattern.PaydayRush })
     }
 
     @Test
@@ -213,7 +282,7 @@ class HabitPatternsTest {
 
     @Test
     fun options_put_the_strongest_pattern_first() {
-        val regular = HabitPattern.FrequentPayee("Java House", 5, 225_000)
+        val regular = HabitPattern.FrequentPayee("Miniso", 5, 225_000)
         val options = challengeOptions(
             patterns = listOf(HabitPattern.FulizaLateMonth(2, 3, 2), regular),
             regulars = listOf(regular)
@@ -221,7 +290,7 @@ class HabitPatternsTest {
         assertEquals(ChallengeSubject.FULIZA, options.first().subject)
         assertTrue(options.first().suggested)
         assertEquals(1, options.count { it.suggested })
-        assertEquals("Java House", options.single { it.subject == ChallengeSubject.PAYEE }.payee)
+        assertEquals("Miniso", options.single { it.subject == ChallengeSubject.PAYEE }.payee)
         assertTrue(options.any { it.templateId == ChallengeTemplates.quietDays7.id })
         assertTrue(options.any { it.templateId == ChallengeTemplates.zeroFee7Days.id })
         assertTrue(options.any { it.templateId == ChallengeTemplates.fulizaUntilPayday(7).id })

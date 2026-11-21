@@ -2,6 +2,8 @@ package com.lipabill.app.engage
 
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.viewmodel.isBusinessLikeRegular
+import com.lipabill.app.viewmodel.payeeKey
 
 /**
  * Spend labels on top of SMS [TransactionType].
@@ -48,15 +50,43 @@ fun parseSpendCategoryOverrides(encoded: Set<String>): Map<String, String> {
  * Name fragments for transport (rides / fuel), separate from food delivery.
  */
 val transportNameHints: List<String> = listOf(
-    "uber", "bolt", "little", "faras", "faras ride", "taxi",
+    "uber", "bolt", "little cab", "little ride", "faras", "faras ride", "taxi",
     "shell", "total energies", "total petrol", "rubis", "ola energy", "petrol", "diesel"
 )
 
-/** Utility / subscription style bills beyond everyday essentials groceries. */
+/**
+ * Restaurant / cafe cues beyond [CategoryRules.foodDelivery].
+ * Multi-token brands only — no bare "java" / "cafe" person-name traps beyond matcher contains.
+ */
+val foodNameHints: List<String> = listOf(
+    "restaurant", "cafe", "caffè", "coffee",
+    "java house", "artcaffe", "kfc", "chicken inn", "galitos", "galito's",
+    "pizza inn", "dominos", "domino's", "nandos", "nando's", "subway",
+    "burger king", "cold stone"
+)
+
+/** True when Insights and Habits should treat the payment as food (delivery or restaurant). */
+fun isFoodSpend(type: TransactionType, counterpartyName: String?): Boolean {
+    if (!type.isOutgoing() || type == TransactionType.SAVINGS || type == TransactionType.AIRTIME) {
+        return false
+    }
+    return CategoryMatcher.matches(CategoryRules.foodDelivery, counterpartyName) ||
+        CategoryMatcher.matches(
+            CategoryRule(categoryId = "food_extra", nameContains = foodNameHints),
+            counterpartyName
+        )
+}
+
+/**
+ * Utility / subscription bills beyond everyday essentials.
+ * Bare MNO brands are omitted — AIRTIME type wins first, PAYBILL falls through to Bills;
+ * agents named "Safaricom" must not become bill labels.
+ */
 val billsNameHints: List<String> = listOf(
     "dstv", "gotv", "showmax", "netflix", "zuku", "faiba", "jamii", "liquid",
-    "safaricom", "airtel", "telkom", "startimes", "youtube", "spotify",
-    "paybill", "nhif", "sha ", "nssf", "kra ", "housing levy"
+    "safaricom home", "airtel home", "telkom home", "startimes", "youtube", "spotify",
+    "paybill", "nhif", "social health", "sha contribution", "nssf",
+    "kra pin", "kenya revenue", "itax", "housing levy"
 )
 
 /**
@@ -72,12 +102,7 @@ fun autoSpendCategory(type: TransactionType, counterpartyName: String?): SpendCa
         TransactionType.WITHDRAW -> return SpendCategory.OTHER
         else -> Unit
     }
-    if (CategoryMatcher.matches(CategoryRules.foodDelivery, counterpartyName) ||
-        CategoryMatcher.matches(
-            CategoryRule(categoryId = "food_extra", nameContains = listOf("restaurant", "cafe", "caffè", "coffee")),
-            counterpartyName
-        )
-    ) {
+    if (isFoodSpend(type, counterpartyName)) {
         return SpendCategory.FOOD
     }
     if (CategoryMatcher.matches(CategoryRules.everydayEssentials, counterpartyName)) {
@@ -109,11 +134,42 @@ fun autoSpendCategory(type: TransactionType, counterpartyName: String?): SpendCa
         return SpendCategory.BILLS
     }
     return when (type) {
-        TransactionType.SENT, TransactionType.POCHI -> SpendCategory.PEOPLE
+        TransactionType.SENT, TransactionType.POCHI -> {
+            val name = counterpartyName?.trim().orEmpty()
+            val key = payeeKey(counterpartyName, null).orEmpty()
+            if (name.isNotEmpty() && isBusinessLikeRegular(name, key, type)) {
+                SpendCategory.BILLS
+            } else {
+                SpendCategory.PEOPLE
+            }
+        }
         TransactionType.PAYBILL -> SpendCategory.BILLS
         TransactionType.BUY_GOODS -> SpendCategory.SHOPPING
         else -> SpendCategory.OTHER
     }
+}
+
+/**
+ * True when the auto label came only from a name fragment (transport/bills hints),
+ * so the receipt can nudge “Check category”.
+ */
+fun needsCategoryReview(type: TransactionType, counterpartyName: String?): Boolean {
+    if (counterpartyName.isNullOrBlank()) return false
+    if (isFoodSpend(type, counterpartyName)) return false
+    if (CategoryMatcher.matches(CategoryRules.everydayEssentials, counterpartyName)) return false
+    val resolved = autoSpendCategory(type, counterpartyName)
+    val fromTransport = resolved == SpendCategory.TRANSPORT &&
+        CategoryMatcher.matches(
+            CategoryRule(categoryId = "transport", nameContains = transportNameHints),
+            counterpartyName
+        )
+    val fromBillsHint = resolved == SpendCategory.BILLS &&
+        type != TransactionType.PAYBILL &&
+        CategoryMatcher.matches(
+            CategoryRule(categoryId = "bills", nameContains = billsNameHints),
+            counterpartyName
+        )
+    return fromTransport || fromBillsHint
 }
 
 /**

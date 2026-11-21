@@ -46,6 +46,9 @@ class CategoryMatcherTest {
         assertTrue(CategoryMatcher.matches(CategoryRules.feeLike, tx(TransactionType.FULIZA, null)))
         assertTrue(CategoryMatcher.matches(CategoryRules.feeLike, tx(TransactionType.SENT, "Jane", fee = 7_00)))
         assertFalse(CategoryMatcher.matches(CategoryRules.feeLike, tx(TransactionType.SENT, "Jane", fee = 0)))
+        // Withdraw fee-only still breaks a zero-fee week; free Buy Goods does not.
+        assertTrue(CategoryMatcher.matches(CategoryRules.feeLike, tx(TransactionType.WITHDRAW, "Agent", fee = 2_700)))
+        assertFalse(CategoryMatcher.matches(CategoryRules.feeLike, tx(TransactionType.BUY_GOODS, "Miniso", fee = 0)))
     }
 
     @Test

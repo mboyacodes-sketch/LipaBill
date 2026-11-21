@@ -1,0 +1,12 @@
+{
+  "name": "category_fragments",
+  "cases": [
+    {"type": "BUY_GOODS", "name": "Little Cab", "category": "transport"},
+    {"type": "SENT", "name": "Little Jane", "category": "people"},
+    {"type": "BUY_GOODS", "name": "Safaricom Agent", "category": "shopping"},
+    {"type": "AIRTIME", "name": "Safaricom", "category": "airtime"},
+    {"type": "PAYBILL", "name": "Safaricom Home", "category": "bills"},
+    {"type": "PAYBILL", "name": "KRA PIN Payment", "category": "bills"},
+    {"type": "BUY_GOODS", "name": "Sharon Beauty", "category": "shopping"}
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "order_date_vs_event",
+  "text": "Order confirmation\nOrdered 1 Nov 2026\nPurchased online\nSample Festival\nEvent date 14 Dec 2026\nVenue: Today Hall\nDoors open 6:00 PM\nAdmission: Regular\nTicket No: SF14DEC99\nScan at entry",
+  "expect": {
+    "kind": "EVENT",
+    "titleContains": "Sample Festival",
+    "startDate": "2026-12-14",
+    "barcodeValue": "SF14DEC99",
+    "barcodeFormat": "TEXT"
+  }
+}

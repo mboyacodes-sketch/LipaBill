@@ -6,6 +6,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -93,7 +94,47 @@ class ETicketTextParserTest {
         """.trimIndent()
         val draft = ETicketTextParser.parse(ocr, emptyList())
         assertEquals("AB12CD34", draft.barcodeValue)
+        assertEquals(TicketBarcodeFormat.TEXT, draft.barcodeFormat)
         assertTrue(draft.title.contains("SGR"))
+    }
+
+    @Test
+    fun rejectsPhoneAndCompactDateAsTicketCode() {
+        assertTrue(ETicketTextParser.looksLikeImplausibleCode("254712345678"))
+        assertTrue(ETicketTextParser.looksLikeImplausibleCode("0712345678"))
+        assertTrue(ETicketTextParser.looksLikeImplausibleCode("20261121"))
+        assertTrue(ETicketTextParser.looksLikeImplausibleCode("https://example.com/app"))
+        assertFalse(ETicketTextParser.looksLikeImplausibleCode("0908100299823"))
+        assertFalse(ETicketTextParser.looksLikeImplausibleCode("AB12CD34"))
+    }
+
+    @Test
+    fun prefersGateCodeOverAppDownloadQr() {
+        val picked = ETicketTextParser.preferGateBarcode(
+            listOf(
+                ETicketTextParser.FoundBarcode(
+                    "https://play.google.com/store/apps/details?id=x",
+                    TicketBarcodeFormat.QR_CODE
+                ),
+                ETicketTextParser.FoundBarcode("GATE-ENTRY-4421", TicketBarcodeFormat.QR_CODE)
+            ),
+            surroundingText = "Scan at entry GATE-ENTRY-4421"
+        )
+        assertEquals("GATE-ENTRY-4421", picked!!.value)
+    }
+
+    @Test
+    fun eventTextDoesNotGrabPhoneAsCode() {
+        val ocr = """
+            Lakeside Culture Fest
+            Venue: Arboretum Gardens
+            Date: 14 Nov 2026
+            Phone: 254712345678
+            Ticket No: LK99821
+        """.trimIndent()
+        val draft = ETicketTextParser.parse(ocr, emptyList())
+        assertEquals("LK99821", draft.barcodeValue)
+        assertEquals(TicketBarcodeFormat.TEXT, draft.barcodeFormat)
     }
 
     @Test

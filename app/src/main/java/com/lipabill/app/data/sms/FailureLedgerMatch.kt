@@ -28,6 +28,16 @@ object FailureLedgerMatch {
         failureAtMillis: Long
     ): MpesaTransaction? {
         val since = failureAtMillis - TTL_MS
+        // Amount-only same-rail voids are unsafe when several rows share the amount.
+        if (partyDigits.isEmpty()) {
+            val amountHits = candidates.count { tx ->
+                val rowAmount = tx.amount ?: return@count false
+                abs(rowAmount - amount) <= AMOUNT_EPS &&
+                    tx.timestampMillis >= since &&
+                    tx.timestampMillis <= failureAtMillis + TimeUnit.MINUTES.toMillis(2)
+            }
+            if (amountHits > 1) return null
+        }
         var best: MpesaTransaction? = null
         var bestScore = 0
         for (tx in candidates) {

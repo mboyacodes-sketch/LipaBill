@@ -81,7 +81,13 @@ class PassDocumentRepository(
     }
 
     suspend fun latestExtraction(documentId: String): PassExtraction? = withContext(Dispatchers.IO) {
-        dao.latestExtraction(documentId)?.let { PassExtraction.fromJson(it.fieldsJson) }
+        val row = dao.latestExtraction(documentId) ?: return@withContext null
+        // Corrupt / future provenance → null; review falls back to the ticket draft.
+        PassExtraction.fromJson(row.fieldsJson)
+            ?: run {
+                AppLog.w(TAG, "extraction_json_unreadable chars=${row.fieldsJson.length}")
+                null
+            }
     }
 
     suspend fun get(documentId: String): PassDocumentEntity? = withContext(Dispatchers.IO) {

@@ -1,6 +1,7 @@
 package com.lipabill.app.engage
 
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.viewmodel.countsAsSpendOutflow
 import java.time.ZoneId
 
 data class WeeklySummary(
@@ -53,7 +54,7 @@ object WeeklySummaryBuilder {
         for (tx in inWeek) {
             val signed = signedSpendCents(tx)
             spend += signed
-            if (tx.type.isOutgoing() && tx.type != TransactionType.SAVINGS && tx.amountCents > 0L) {
+            if (countsAsSpendOutflow(tx.type, tx.counterpartyName, tx.amountCents > 0L)) {
                 categories[tx.type] = (categories[tx.type] ?: 0L) + tx.amountCents
             }
         }
@@ -100,9 +101,7 @@ object WeeklySummaryBuilder {
             val spent = transactions.any { tx ->
                 tx.timestampMillis >= dayStart &&
                     tx.timestampMillis < dayEnd &&
-                    tx.type.isOutgoing() &&
-                    tx.type != TransactionType.SAVINGS &&
-                    tx.amountCents > 0L
+                    countsAsSpendOutflow(tx.type, tx.counterpartyName, tx.amountCents > 0L)
             }
             if (!spent) quiet++
             date = date.plusDays(1)

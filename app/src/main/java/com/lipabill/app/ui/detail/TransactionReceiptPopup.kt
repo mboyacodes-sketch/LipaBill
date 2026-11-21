@@ -67,6 +67,7 @@ import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.engage.SpendCategory
+import com.lipabill.app.engage.needsCategoryReview
 import com.lipabill.app.ui.components.CounterpartyAvatar
 import com.lipabill.app.ui.components.txAmountLook
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
@@ -266,6 +267,9 @@ fun TransactionReceiptPopup(
                             StatusPill(text = "Confirmed", filled = false)
                             StatusPill(text = typeLabel, filled = true)
                             StatusPill(text = spendCategory.label, filled = false)
+                            if (needsCategoryReview(tx.type, tx.counterpartyName)) {
+                                StatusPill(text = "Check category", filled = false)
+                            }
                         }
                         if (onSavePayee != null) {
                             Spacer(modifier = Modifier.height(10.dp))
@@ -287,7 +291,15 @@ fun TransactionReceiptPopup(
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Spacer(modifier = Modifier.size(6.dp))
-                                    Text("Edit name & category", style = HomeType.label, color = Ink)
+                                    Text(
+                                        if (needsCategoryReview(tx.type, tx.counterpartyName)) {
+                                            "Check category"
+                                        } else {
+                                            "Edit name & category"
+                                        },
+                                        style = HomeType.label,
+                                        color = Ink
+                                    )
                                 }
                             } else {
                                 PayeeEditPanel(

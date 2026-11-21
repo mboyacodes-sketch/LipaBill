@@ -63,6 +63,13 @@ class FailurePathCoverageTest {
     }
 
     @Test
+    fun marketing_failed_word_alone_is_not_a_failure_sms() {
+        assertFalse(FailureSms.isFailure("LipaBill never failed you. Keep going."))
+        assertTrue(FailureSms.isFailure("Deposit of KES 50000.00 failed."))
+        assertTrue(FailureSms.isFailure("Failed. Insufficient funds in your M-PESA account."))
+    }
+
+    @Test
     fun kenya_mpesa_confirmed_success_still_accepted() {
         val ok =
             "ABC123XYZ Confirmed. Ksh1,500.00 sent to JOHN 254712345678 on 15/3/24 at 2:15 PM. " +

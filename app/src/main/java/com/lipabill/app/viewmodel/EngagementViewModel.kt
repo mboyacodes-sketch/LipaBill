@@ -25,6 +25,7 @@ import com.lipabill.app.engage.QuizGenerator
 import com.lipabill.app.engage.QuizQuestion
 import com.lipabill.app.engage.RecurringChoice
 import com.lipabill.app.engage.RecurringPatterns
+import com.lipabill.app.engage.SpendCategory
 import com.lipabill.app.engage.WeeklySummary
 import com.lipabill.app.ui.util.displayLabel
 import java.time.ZoneId
@@ -307,7 +308,7 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
             prefs.habitsLastVisit = now
             ledger.value = LedgerRead(
                 patterns = HabitPatterns.detect(rows, now, zone, essentials),
-                regulars = HabitPatterns.regulars(rows, now, essentialKeys = essentials),
+                regulars = HabitPatterns.regulars(rows, now, zone, essentialKeys = essentials),
                 paymentsRead = rows.size,
                 catchUp = catchUp ?: ledger.value.catchUp,
                 window = rows,
@@ -347,6 +348,12 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
         taughtPayees.value = next
         // A need is marked essential everywhere, so Habits and Insights stop suggesting a pause on it.
         app.setPayeeEssential(key, categoryId == TEACH_NEED)
+        // Mirror into Insights spend overrides so receipts / category totals agree.
+        when (categoryId) {
+            TEACH_NEED -> app.setSpendCategoryOverride(key, SpendCategory.ESSENTIALS)
+            TEACH_WANT -> app.setSpendCategoryOverride(key, SpendCategory.SHOPPING)
+            else -> SpendCategory.fromId(categoryId)?.let { app.setSpendCategoryOverride(key, it) }
+        }
         openHabits()
     }
 

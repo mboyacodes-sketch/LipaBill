@@ -30,7 +30,9 @@ data class ChallengeTransaction(
     val type: TransactionType,
     val amountCents: Long,
     /** M-Pesa transaction cost charged on this payment. */
-    val feeCents: Long = 0L
+    val feeCents: Long = 0L,
+    /** Optional phone so Habits identity matches Insights phone-first payeeKey. */
+    val counterpartyPhone: String? = null
 )
 
 data class ChallengeEvaluation(

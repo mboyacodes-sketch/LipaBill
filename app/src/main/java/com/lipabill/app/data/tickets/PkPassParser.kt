@@ -136,7 +136,9 @@ object PkPassParser {
             TicketBarcodeFormat.QR_CODE,
             TicketBarcodeFormat.PDF_417,
             TicketBarcodeFormat.AZTEC,
+            TicketBarcodeFormat.DATA_MATRIX,
             TicketBarcodeFormat.CODE_128,
+            TicketBarcodeFormat.CODE_39,
             TicketBarcodeFormat.OTHER
         )
         return preferred.firstNotNullOfOrNull { fmt -> candidates.firstOrNull { it.format == fmt } }

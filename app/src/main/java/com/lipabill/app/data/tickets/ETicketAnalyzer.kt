@@ -138,42 +138,31 @@ object ETicketAnalyzer {
             val ocrLines = mutableListOf<TextLine>()
             var pageTop = 0f
 
-            if (pdfText.length >= 40) {
+            val pdfTrusted = pdfText.length >= 40 && pdfTextQuality(pdfText) >= 0.55f
+            if (pdfTrusted) {
                 textParts += pdfText
             }
 
-            // SGR / event photos: always OCR (+ rotate) even if PDF text exists (rare)
-            val forceOcr = kind == TicketDocumentKind.SGR_TICKET ||
+            // Always OCR when PDF text is short/garbled, or when a known ticket kind was chosen.
+            // Also OCR later if PDF text is missing date/title/code (partial-image PDFs).
+            var forceOcr = kind == TicketDocumentKind.SGR_TICKET ||
                 kind == TicketDocumentKind.EVENT ||
-                pdfText.length < 40
+                !pdfTrusted
 
             for (bitmap in bitmaps) {
                 var pageBarcodes = scanBarcodes(bitmap)
+                if (pageBarcodes.isEmpty()) {
+                    pageBarcodes = scanBarcodesWithZxing(bitmap)
+                }
                 var pageOcr = if (forceOcr) recognizeTextDetailed(bitmap) else null
 
                 if (forceOcr &&
                     (pageBarcodes.isEmpty() || pageOcr?.text?.let { !looksReadableTicket(it) } == true)
                 ) {
-                    for (degrees in listOf(90f, 270f, 180f)) {
-                        val rotated = rotateDegrees(bitmap, degrees) ?: continue
-                        try {
-                            val rotCodes = scanBarcodes(rotated)
-                            val rotOcr = recognizeTextDetailed(rotated)
-                            val betterCodes = rotCodes.isNotEmpty() && pageBarcodes.isEmpty()
-                            val betterText = (rotOcr.text.length > (pageOcr?.text?.length ?: 0)) ||
-                                looksReadableTicket(rotOcr.text)
-                            if (betterCodes || betterText) {
-                                if (rotCodes.isNotEmpty()) pageBarcodes = rotCodes
-                                if (betterText) pageOcr = rotOcr
-                            }
-                            if (pageBarcodes.isNotEmpty() &&
-                                pageOcr?.text?.let { looksReadableTicket(it) } == true
-                            ) {
-                                break
-                            }
-                        } finally {
-                            if (rotated != bitmap) rotated.recycle()
-                        }
+                    val rotatedPick = pickBestRotation(bitmap, pageBarcodes, pageOcr)
+                    if (rotatedPick != null) {
+                        pageBarcodes = rotatedPick.first
+                        pageOcr = rotatedPick.second
                     }
                 }
 
@@ -186,7 +175,25 @@ object ETicketAnalyzer {
                 pageTop += bitmap.height + 40f
             }
 
-            val combined = textParts.filter { it.isNotBlank() }.joinToString("\n")
+            var combined = textParts.filter { it.isNotBlank() }.joinToString("\n")
+            // Partial-image PDF: text layer exists but core fields are missing — OCR and merge.
+            if (pdfTrusted && bitmaps.isNotEmpty() && missingCoreFields(combined, barcodes)) {
+                forceOcr = true
+                for (bitmap in bitmaps) {
+                    val pageOcr = recognizeTextDetailed(bitmap)
+                    if (pageOcr.text.isNotBlank()) {
+                        textParts += pageOcr.text
+                        stationHints += pageOcr.stationHints
+                        ocrLines += pageOcr.lines
+                    }
+                    if (barcodes.isEmpty()) {
+                        val zx = scanBarcodes(bitmap).ifEmpty { scanBarcodesWithZxing(bitmap) }
+                        barcodes += zx
+                    }
+                }
+                combined = textParts.filter { it.isNotBlank() }.joinToString("\n")
+            }
+
             // Lengths only — never log OCR body (names, PNRs, seats).
             AppLog.d(
                 TAG,
@@ -202,9 +209,19 @@ object ETicketAnalyzer {
                     }
                 )
             }
-            // PDF text layer is exact; fall back to OCR boxes for photos / scanned PDFs.
-            val lines = pdfRead.lines.takeIf { pdfText.length >= 40 && it.isNotEmpty() } ?: ocrLines
-            ExtractedTicket(combined, barcodes, stationHints, lines, fromPdfText = pdfText.length >= 40)
+            val usedPdfLines = pdfTrusted && pdfRead.lines.isNotEmpty() && !missingCoreFields(pdfText, barcodes)
+            val lines = if (usedPdfLines) {
+                pdfRead.lines + ocrLines
+            } else {
+                ocrLines.ifEmpty { pdfRead.lines }
+            }
+            ExtractedTicket(
+                combined,
+                barcodes.distinctBy { it.value to it.format },
+                stationHints,
+                lines,
+                fromPdfText = pdfTrusted
+            )
         } finally {
             bitmaps.forEach { it.recycle() }
         }
@@ -279,12 +296,83 @@ object ETicketAnalyzer {
     }
 
     private fun looksReadableTicket(text: String): Boolean {
-        val lower = text.lowercase(Locale.getDefault())
-        return lower.contains("boarding") ||
-            lower.contains("flight") ||
-            lower.contains("madaraka") ||
-            lower.contains("booking") ||
-            lower.contains("seat") && (lower.contains("gate") || lower.contains("coach"))
+        val lower = text.lowercase(Locale.US)
+        // Align with DocumentClassifier word lists (events + SGR); flight support was removed.
+        val eventish = listOf(
+            "venue", "admission", "admit", "gate", "entry", "doors", "vip", "event",
+            "festival", "concert", "match", "stadium", "attendee", "tier", "ticket"
+        ).count { Regex("\\b${Regex.escape(it)}\\b").containsMatchIn(lower) }
+        val railish = listOf(
+            "madaraka", "sgr", "kenya railways", "coach", "terminus", "train", "booking", "seat"
+        ).count { lower.contains(it) }
+        return eventish >= 2 || railish >= 2 ||
+            (lower.contains("seat") && (lower.contains("gate") || lower.contains("coach")))
+    }
+
+    /** Share of letters/digits and presence of known ticket words — low means broken PDF fonts. */
+    internal fun pdfTextQuality(text: String): Float {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return 0f
+        val alnum = trimmed.count { it.isLetterOrDigit() }
+        val ratio = alnum.toFloat() / trimmed.length
+        val lower = trimmed.lowercase(Locale.US)
+        val known = listOf(
+            "ticket", "venue", "date", "gate", "seat", "coach", "event", "admit",
+            "madaraka", "sgr", "order", "booking", "entry", "doors"
+        ).count { lower.contains(it) }
+        return (ratio * 0.7f + (known.coerceAtMost(4) / 4f) * 0.3f).coerceIn(0f, 1f)
+    }
+
+    private fun missingCoreFields(text: String, barcodes: List<ETicketTextParser.FoundBarcode>): Boolean {
+        if (barcodes.isNotEmpty()) {
+            val hasDate = EventTicketExtractor.findDate(text, java.time.LocalDate.now()) != null
+            val hasTitleCue = text.lineSequence().any { it.trim().length >= 8 && it.any(Char::isLetter) }
+            return !hasDate || !hasTitleCue
+        }
+        return true
+    }
+
+    private suspend fun pickBestRotation(
+        bitmap: Bitmap,
+        currentCodes: List<ETicketTextParser.FoundBarcode>,
+        currentOcr: OcrResult?
+    ): Pair<List<ETicketTextParser.FoundBarcode>, OcrResult?>? {
+        var bestCodes = currentCodes
+        var bestOcr = currentOcr
+        var bestScore = scoreOrientation(currentCodes, currentOcr)
+        var improved = false
+        for (degrees in listOf(90f, 270f, 180f)) {
+            val rotated = rotateDegrees(bitmap, degrees) ?: continue
+            try {
+                var rotCodes = scanBarcodes(rotated)
+                if (rotCodes.isEmpty()) rotCodes = scanBarcodesWithZxing(rotated)
+                val rotOcr = recognizeTextDetailed(rotated)
+                val score = scoreOrientation(rotCodes, rotOcr)
+                if (score > bestScore) {
+                    bestScore = score
+                    if (rotCodes.isNotEmpty()) bestCodes = rotCodes
+                    bestOcr = rotOcr
+                    improved = true
+                }
+            } finally {
+                if (rotated != bitmap) rotated.recycle()
+            }
+        }
+        return if (improved) bestCodes to bestOcr else null
+    }
+
+    private fun scoreOrientation(
+        codes: List<ETicketTextParser.FoundBarcode>,
+        ocr: OcrResult?
+    ): Int {
+        val text = ocr?.text.orEmpty()
+        var score = codes.size * 40
+        if (looksReadableTicket(text)) score += 50
+        // Prefer readable alnum share over raw length (garbled OCR can be long).
+        val alnum = text.count { it.isLetterOrDigit() }
+        if (text.isNotEmpty()) score += ((alnum.toFloat() / text.length) * 30).toInt()
+        score += ocr?.lines.orEmpty().sumOf { (it.size).toInt().coerceAtMost(40) } / 10
+        return score
     }
 
     private fun rotateDegrees(src: Bitmap, degrees: Float): Bitmap? {
@@ -306,13 +394,24 @@ object ETicketAnalyzer {
                     )
             } ?: androidx.exifinterface.media.ExifInterface.ORIENTATION_NORMAL
 
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                BitmapFactory.decodeStream(input, null, bounds)
+            }
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            val maxSide = 2400
+            var sample = 1
+            var largest = maxOf(bounds.outWidth, bounds.outHeight)
+            while (largest / (sample * 2) >= maxSide) sample *= 2
+
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
             val raw = context.contentResolver.openInputStream(uri)?.use { input ->
-                BitmapFactory.decodeStream(input)
+                BitmapFactory.decodeStream(input, null, opts)
             } ?: return null
 
             val rotated = rotateBitmapForExif(raw, exifOrientation)
             if (rotated != raw) raw.recycle()
-            scaleDown(rotated, 2200)
+            scaleDown(rotated, maxSide)
         } catch (t: Throwable) {
             AppLog.w(TAG, "decode_image_fail", t)
             null
@@ -356,7 +455,8 @@ object ETicketAnalyzer {
 
             ParcelFileDescriptor.open(cache, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
                 PdfRenderer(pfd).use { renderer ->
-                    val pageCount = min(renderer.pageCount, 3)
+                    // Match PDF text stripper page cap (4) so barcodes aren't missed on page 4.
+                    val pageCount = min(renderer.pageCount, 4)
                     val pages = mutableListOf<Bitmap>()
                     for (i in 0 until pageCount) {
                         renderer.openPage(i).use { page ->
@@ -403,7 +503,14 @@ object ETicketAnalyzer {
             val image = InputImage.fromBitmap(bitmap, 0)
             val results = scanner.process(image).await()
             results.mapNotNull { b ->
-                val value = b.rawValue.orEmpty()
+                var value = b.rawValue.orEmpty()
+                if (value.isBlank()) {
+                    // Binary payloads with no displayable text — keep hex of raw bytes.
+                    val raw = b.rawBytes
+                    if (raw != null && raw.isNotEmpty()) {
+                        value = raw.joinToString("") { "%02X".format(it) }
+                    }
+                }
                 if (value.isBlank()) return@mapNotNull null
                 val format = b.format.toTicketFormat()
                 val spec = if (format == TicketBarcodeFormat.QR_CODE ||
@@ -423,6 +530,87 @@ object ETicketAnalyzer {
         } finally {
             scanner.close()
         }
+    }
+
+    /** When ML Kit finds nothing: ZXing with TRY_HARDER, invert, and an enlarged crop. */
+    private fun scanBarcodesWithZxing(bitmap: Bitmap): List<ETicketTextParser.FoundBarcode> {
+        return try {
+            val w = bitmap.width
+            val h = bitmap.height
+            val pixels = IntArray(w * h)
+            bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+            val direct = BarcodeSpecReader.fromArgb(pixels, w, h, expectedText = null)
+            val found = mutableListOf<ETicketTextParser.FoundBarcode>()
+            // BarcodeSpecReader returns a Spec; decode payload via MultiFormatReader path below.
+            val payloads = decodeAllZxing(pixels, w, h)
+            for ((value, format) in payloads) {
+                found += ETicketTextParser.FoundBarcode(value, format, direct?.takeIf { it.format == format })
+            }
+            if (found.isEmpty() && maxOf(w, h) < 900) {
+                val scale = 2
+                val enlarged = Bitmap.createScaledBitmap(bitmap, w * scale, h * scale, true)
+                try {
+                    val ep = IntArray(enlarged.width * enlarged.height)
+                    enlarged.getPixels(ep, 0, enlarged.width, 0, 0, enlarged.width, enlarged.height)
+                    for ((value, format) in decodeAllZxing(ep, enlarged.width, enlarged.height)) {
+                        found += ETicketTextParser.FoundBarcode(value, format)
+                    }
+                } finally {
+                    if (enlarged != bitmap) enlarged.recycle()
+                }
+            }
+            found
+        } catch (t: Throwable) {
+            AppLog.w(TAG, "zxing_barcode_fail", t)
+            emptyList()
+        }
+    }
+
+    private fun decodeAllZxing(
+        pixels: IntArray,
+        width: Int,
+        height: Int
+    ): List<Pair<String, TicketBarcodeFormat>> {
+        val source = com.google.zxing.RGBLuminanceSource(width, height, pixels)
+        val hints = mapOf(
+            com.google.zxing.DecodeHintType.TRY_HARDER to true,
+            com.google.zxing.DecodeHintType.POSSIBLE_FORMATS to listOf(
+                com.google.zxing.BarcodeFormat.QR_CODE,
+                com.google.zxing.BarcodeFormat.PDF_417,
+                com.google.zxing.BarcodeFormat.AZTEC,
+                com.google.zxing.BarcodeFormat.DATA_MATRIX,
+                com.google.zxing.BarcodeFormat.CODE_128,
+                com.google.zxing.BarcodeFormat.CODE_39
+            )
+        )
+        val out = mutableListOf<Pair<String, TicketBarcodeFormat>>()
+        for (bitmap in listOf(
+            com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source)),
+            com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source.invert()))
+        )) {
+            val results = runCatching {
+                com.google.zxing.multi.GenericMultipleBarcodeReader(com.google.zxing.MultiFormatReader())
+                    .decodeMultiple(bitmap, hints)
+                    .toList()
+            }.getOrDefault(emptyList())
+            for (r in results) {
+                val format = when (r.barcodeFormat) {
+                    com.google.zxing.BarcodeFormat.QR_CODE -> TicketBarcodeFormat.QR_CODE
+                    com.google.zxing.BarcodeFormat.PDF_417 -> TicketBarcodeFormat.PDF_417
+                    com.google.zxing.BarcodeFormat.AZTEC -> TicketBarcodeFormat.AZTEC
+                    com.google.zxing.BarcodeFormat.DATA_MATRIX -> TicketBarcodeFormat.DATA_MATRIX
+                    com.google.zxing.BarcodeFormat.CODE_128 -> TicketBarcodeFormat.CODE_128
+                    com.google.zxing.BarcodeFormat.CODE_39 -> TicketBarcodeFormat.CODE_39
+                    else -> TicketBarcodeFormat.OTHER
+                }
+                val value = r.text?.takeIf { it.isNotBlank() }
+                    ?: r.rawBytes?.joinToString("") { "%02X".format(it) }
+                    ?: continue
+                out += value to format
+            }
+            if (out.isNotEmpty()) break
+        }
+        return out.distinctBy { it.first to it.second }
     }
 
     /** zxing pass over the code ML Kit found, cropped with margin, for EC level / version. */
@@ -514,7 +702,9 @@ object ETicketAnalyzer {
         Barcode.FORMAT_QR_CODE -> TicketBarcodeFormat.QR_CODE
         Barcode.FORMAT_PDF417 -> TicketBarcodeFormat.PDF_417
         Barcode.FORMAT_AZTEC -> TicketBarcodeFormat.AZTEC
-        Barcode.FORMAT_CODE_128, Barcode.FORMAT_CODE_39 -> TicketBarcodeFormat.CODE_128
+        Barcode.FORMAT_CODE_128 -> TicketBarcodeFormat.CODE_128
+        Barcode.FORMAT_CODE_39 -> TicketBarcodeFormat.CODE_39
+        Barcode.FORMAT_DATA_MATRIX -> TicketBarcodeFormat.DATA_MATRIX
         else -> TicketBarcodeFormat.OTHER
     }
 }

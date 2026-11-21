@@ -121,6 +121,22 @@ class RecurringPatternsTest {
     }
 
     @Test
+    fun legacy_name_choice_still_matches_phone_keyed_regular() {
+        assertEquals(
+            RecurringChoice.Confirmed,
+            RecurringPatterns.choiceFor(
+                key = "tel:700111222",
+                name = "Landlord",
+                choices = mapOf("landlord" to RecurringChoice.Confirmed)
+            )
+        )
+        assertEquals(
+            RecurringChoice.Pending,
+            RecurringPatterns.choiceFor("tel:700111222", "Landlord", emptyMap())
+        )
+    }
+
+    @Test
     fun challenge_rows_detect_kplc_label() {
         val day = 24L * 60 * 60 * 1000
         val now = today.atTime(12, 0).toInstant(zone).toEpochMilli()

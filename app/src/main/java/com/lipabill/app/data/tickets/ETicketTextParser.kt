@@ -129,61 +129,140 @@ object ETicketTextParser {
     }
 
     private fun pickBarcode(barcodes: List<FoundBarcode>, text: String): FoundBarcode? {
-        val cleaned = barcodes.filter { it.value.isNotBlank() }
-        if (cleaned.isNotEmpty()) {
-            val preferred = listOf(
-                TicketBarcodeFormat.QR_CODE,
-                TicketBarcodeFormat.PDF_417,
-                TicketBarcodeFormat.AZTEC,
-                TicketBarcodeFormat.CODE_128,
-                TicketBarcodeFormat.OTHER
-            )
-            return preferred.firstNotNullOfOrNull { fmt -> cleaned.firstOrNull { it.format == fmt } }
-                ?: cleaned.first()
-        }
-        // No barcode image — fall back to printed ticket / booking / serial numbers.
-        // Event PDFs often say "Entry code:" or "Order:" with no QR image.
+        val cleaned = barcodes
+            .filter { it.value.isNotBlank() && !looksLikeImplausibleCode(it.value) }
+            .let { list -> preferGateBarcode(list, surroundingText = text) }
+        if (cleaned != null) return cleaned
+
+        // No barcode image — fall back to printed ticket / booking / serial numbers as TEXT.
+        // Event PDFs often say "Entry code:" with no QR image.
         firstMatch(
             text,
             Regex(
                 """(?i)\b(?:entry\s*code|ticket\s*code)\s*[:.#\-]*\s*([A-Z0-9][A-Z0-9\-]{5,23})\b"""
             )
-        )?.let { return FoundBarcode(it, TicketBarcodeFormat.QR_CODE) }
+        )?.takeUnless { looksLikeImplausibleCode(it) || isEnglishLeftoverCode(it) }
+            ?.let { return FoundBarcode(it, TicketBarcodeFormat.TEXT) }
         firstMatch(
             text,
             Regex(
-                """(?i)\b(?:booking\s*ref(?:erence)?|ticket\s*(?:no|number|#)?|order(?:\s*(?:no|number|id|#))?|pnr|confirmation(?:\s*(?:no|number|code))?|ref(?:erence)?)\s*[:.#\-]*\s*([A-Z0-9][A-Z0-9\-]{5,23})\b"""
+                """(?i)\b(?:booking\s*ref(?:erence)?|ticket\s*(?:no|number|#)|pnr|confirmation\s*(?:no|number|code)|ref(?:erence)?)\s*[:.#\-]*\s*([A-Z0-9]{6,14})\b"""
             )
-        )?.let { return FoundBarcode(it, TicketBarcodeFormat.QR_CODE) }
+        )?.takeUnless { looksLikeImplausibleCode(it) || isEnglishLeftoverCode(it) }
+            ?.let { return FoundBarcode(it, TicketBarcodeFormat.TEXT) }
 
         firstMatch(text, Regex("""(?i)\bSerial\s*N?\s*[:.#\-]?\s*(\d{10,16})\b"""))
-            ?.let { return FoundBarcode(it, TicketBarcodeFormat.QR_CODE) }
+            ?.takeUnless { looksLikeImplausibleCode(it) }
+            ?.let { return FoundBarcode(it, TicketBarcodeFormat.TEXT) }
+
+        // Numeric catch-alls are SGR-only — on event tickets they grab phones and dates.
+        if (!looksLikeSgr(text)) return null
 
         // Madaraka red ticket number (top-left), e.g. 0299823
         firstMatch(text, Regex("""(?m)^\s*(\d{6,8})\b"""))
-            ?.let { return FoundBarcode(it, TicketBarcodeFormat.QR_CODE) }
+            ?.takeUnless { looksLikeImplausibleCode(it) }
+            ?.let { return FoundBarcode(it, TicketBarcodeFormat.TEXT) }
 
         // Long serial near QR, e.g. 0908100299823
-        Regex("""\b(\d{11,16})\b""").find(text)?.groupValues?.getOrNull(1)
-            ?.let { return FoundBarcode(it, TicketBarcodeFormat.QR_CODE) }
+        Regex("""\b(\d{11,16})\b""").findAll(text)
+            .mapNotNull { it.groupValues.getOrNull(1) }
+            .firstOrNull { !looksLikeImplausibleCode(it) }
+            ?.let { return FoundBarcode(it, TicketBarcodeFormat.TEXT) }
 
         return null
     }
+
+    /**
+     * Prefer a gate-usable symbol over app-download / social QRs.
+     * Non-URL payloads win; ticket-looking URLs beat generic https links; "Scan at entry" neighbours boost.
+     */
+    internal fun preferGateBarcode(barcodes: List<FoundBarcode>, surroundingText: String = ""): FoundBarcode? {
+        if (barcodes.isEmpty()) return null
+        val preferred = listOf(
+            TicketBarcodeFormat.QR_CODE,
+            TicketBarcodeFormat.PDF_417,
+            TicketBarcodeFormat.AZTEC,
+            TicketBarcodeFormat.DATA_MATRIX,
+            TicketBarcodeFormat.CODE_128,
+            TicketBarcodeFormat.CODE_39,
+            TicketBarcodeFormat.OTHER
+        )
+        fun score(b: FoundBarcode): Int {
+            var s = 100 - preferred.indexOf(b.format).let { if (it < 0) 50 else it * 5 }
+            val v = b.value.trim()
+            val lower = v.lowercase(Locale.US)
+            when {
+                !looksLikeUrl(v) -> s += 40
+                looksLikeTicketUrl(lower) -> s += 20
+                else -> s -= 30
+            }
+            if (surroundingText.isNotEmpty() &&
+                Regex("""(?i)scan\s+at\s+(entry|gate|entrance)""").containsMatchIn(surroundingText) &&
+                surroundingText.contains(v.take(12))
+            ) {
+                s += 25
+            }
+            return s
+        }
+        return barcodes.maxByOrNull(::score)
+    }
+
+    internal fun looksLikeSgr(text: String): Boolean {
+        val lower = text.lowercase(Locale.US)
+        return listOf(
+            "madaraka", "sgr", "kenya railways", "krc", "metickets",
+            "inter-county", "intercounty", "nairobi terminus", "mombasa terminus",
+            "sold at", "not transferable", "only valid for carriage"
+        ).any { lower.contains(it) } ||
+            (Regex("""(?i)\bCoach\s*\d+\b""").containsMatchIn(text) &&
+                SGR_STATIONS.any { lower.contains(it.lowercase(Locale.US)) })
+    }
+
+    /** English leftovers next to "confirmation" / "order" that are not booking refs. */
+    private fun isEnglishLeftoverCode(value: String): Boolean {
+        val v = value.lowercase(Locale.US)
+        return v in setOf(
+            "ordered", "purchased", "issued", "printed", "confirmed", "admission",
+            "november", "december", "january", "february", "september", "october", "august"
+        )
+    }
+
+    /** Phones, compact dates, money amounts, URLs — never use these as a gate code. */
+    internal fun looksLikeImplausibleCode(value: String): Boolean {
+        val v = value.trim()
+        if (v.length < 4) return true
+        val digits = v.replace(Regex("""[\s\-()]"""), "")
+        if (Regex("""^(?:\+?254|0)?7\d{8}$""").matches(digits)) return true
+        if (Regex("""^254\d{9}$""").matches(digits)) return true
+        if (Regex("""^\d{8}$""").matches(digits)) {
+            val y = digits.substring(0, 4).toIntOrNull()
+            val m = digits.substring(4, 6).toIntOrNull()
+            val d = digits.substring(6, 8).toIntOrNull()
+            if (y != null && y in 2000..2100 && m != null && m in 1..12 && d != null && d in 1..31) {
+                return true
+            }
+        }
+        if (Regex("""^\d{1,7}[.,]\d{2}$""").matches(v)) return true
+        if (looksLikeUrl(v)) return true
+        return false
+    }
+
+    private fun looksLikeUrl(value: String): Boolean {
+        val lower = value.trim().lowercase(Locale.US)
+        return lower.startsWith("http://") || lower.startsWith("https://") ||
+            lower.startsWith("www.") || lower.contains("://")
+    }
+
+    private fun looksLikeTicketUrl(lower: String): Boolean =
+        listOf("ticket", "pass", "entry", "gate", "booking", "event", "admit", "qr")
+            .any { lower.contains(it) }
 
     private fun parseSgr(
         text: String,
         barcode: FoundBarcode,
         stationHints: List<StationHint>
     ): TicketImport? {
-        val lower = text.lowercase(Locale.US)
-        val looksSgr = listOf(
-            "madaraka", "sgr", "kenya railways", "krc", "metickets",
-            "inter-county", "intercounty", "nairobi terminus", "mombasa terminus",
-            "sold at", "not transferable", "only valid for carriage"
-        ).any { lower.contains(it) } ||
-            Regex("""(?i)\bCoach\s*\d+\b""").containsMatchIn(text) &&
-            SGR_STATIONS.any { lower.contains(it.lowercase(Locale.US)) }
-        if (!looksSgr) return null
+        if (!looksLikeSgr(text)) return null
 
         val (from, to) = resolveSgrRoute(text, stationHints)
 
@@ -261,8 +340,7 @@ object ETicketTextParser {
             startsAtMillis = startsAt,
             seatOrTier = seatOrTier,
             barcodeValue = barcode.value,
-            // SGR gate / stub codes are QR
-            barcodeFormat = TicketBarcodeFormat.QR_CODE,
+            barcodeFormat = barcode.format,
             orderId = booking,
             notes = notes,
             source = TicketSource.E_TICKET,

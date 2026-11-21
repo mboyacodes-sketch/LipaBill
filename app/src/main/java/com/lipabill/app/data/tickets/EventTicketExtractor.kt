@@ -1,5 +1,6 @@
 package com.lipabill.app.data.tickets
 
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -143,7 +144,8 @@ object EventTicketExtractor {
     private val BOILERPLATE = Regex(
         """(?i)^(e[- ]?tickets?|tickets?|your tickets?|admit one|admission ticket|order confirmation|booking confirmation|""" +
             """confirmation|thank you.*|powered by.*|terms.*|page \d+.*|scan .*|present .*|this is your ticket.*|event ticket|""" +
-            """general admission|official ticket|receipt|invoice|tax invoice|qr code|valid for.*|entry: .*)$"""
+            """general admission|official ticket|receipt|invoice|tax invoice|qr code|valid for.*|entry: .*|""" +
+            """purchased( online)?|ordered( online)?|issued( online)?|printed( on.*)?|admission:?\s*\w*)$"""
     )
 
     private val MONTHS = mapOf(
@@ -154,8 +156,15 @@ object EventTicketExtractor {
     private const val ORD = "(?:st|nd|rd|th)?"
     private val DAY_FIRST = Regex("""(?i)\b(\d{1,2})$ORD(?:\s*[-–/&]\s*(\d{1,2})$ORD)?\s+$MONTH\.?,?(?:\s+(\d{4}))?\b""")
     private val MONTH_FIRST = Regex("""(?i)\b$MONTH\.?\s+(\d{1,2})$ORD(?:\s*[-–]\s*(\d{1,2})$ORD)?,?(?:\s+(\d{4}))?\b""")
+    /** "30 Dec – 2 Jan 2027" / "30 December - 2 January 2027" */
+    private val CROSS_MONTH = Regex(
+        """(?i)\b(\d{1,2})$ORD\s+$MONTH\.?\s*(?:[-–—]|\s+to\s+)\s*(\d{1,2})$ORD\s+$MONTH\.?,?(?:\s+(\d{4}))?\b"""
+    )
     private val ISO = Regex("""\b(\d{4})-(\d{2})-(\d{2})""")
     private val NUMERIC = Regex("""\b(\d{1,2})[/.](\d{1,2})[/.](\d{2,4})\b""")
+    private val WEEKDAY = Regex("""(?i)\b(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:rs(?:day)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b""")
+    private val DATE_GOOD = Regex("""(?i)\b(?:event\s*date|start(?:s)?(?:\s*date)?|when|date(?:\s*&\s*time)?|show\s*date)\b""")
+    private val DATE_BAD = Regex("""(?i)\b(?:ordered|purchased|issued|printed|order\s*date|purchase\s*date|invoice\s*date)\b""")
     private val TIME = Regex("""(?i)\b(\d{1,2})(?:[:.](\d{2}))?\s*([ap])\.?\s*m\b\.?|\b([01]?\d|2[0-3]):([0-5]\d)\b(?!\s*[ap]\.?m)""")
     private val MONEY = Regex(
         """(?i)(KES|KSHS?|K\.\s?SHS?\.?|USD|UGX|TZS|RWF|NGN|ZAR|EUR|GBP|US\$|\$|€|£)\s?([0-9][0-9,]*(?:\.[0-9]{1,2})?)|""" +
@@ -264,10 +273,12 @@ object EventTicketExtractor {
             if (headerDate != null && headerVenue != null) break
         }
 
-        // 3) Dates and times.
+        // 3) Dates and times — score every candidate so "Ordered 1 Nov" loses to "Event date 14 Dec".
         val dateText = values[Field.START_DATE] ?: values[Field.DATE]
-        val startDate = dateText?.let { findDate(it, today) } ?: headerDate
-            ?: ordered.firstNotNullOfOrNull { findDate(it.text, today) }
+        val labeledDate = dateText?.let { findDate(it, today) }
+        val startDate = labeledDate
+            ?: headerDate
+            ?: bestDate(ordered, today)
         val startTimes = (values[Field.START_TIME] ?: values[Field.TIME] ?: values[Field.START_DATE] ?: values[Field.DATE])
             ?.let { findTimes(it) }?.takeIf { it.isNotEmpty() }
             ?: headerTimes.takeIf { it.isNotEmpty() }
@@ -420,6 +431,7 @@ object EventTicketExtractor {
                 t.count(Char::isLetter) >= 3 &&
                 !t.startsWith("(") && !t.endsWith(":") &&
                 !BOILERPLATE.matches(t) &&
+                !DATE_BAD.containsMatchIn(t) &&
                 matchLabel(t) == null &&
                 findDate(t, today) == null && findTimes(t).isEmpty() && MONEY.find(t) == null &&
                 !t.contains("@") && !Regex("""(?i)https?://|www\.""").containsMatchIn(t) &&
@@ -514,36 +526,116 @@ object EventTicketExtractor {
     private fun formatTime(t: LocalTime): String =
         String.format(Locale.US, "%d:%02d %s", if (t.hour % 12 == 0) 12 else t.hour % 12, t.minute, if (t.hour < 12) "AM" else "PM")
 
-    internal data class DateHit(val start: LocalDate, val end: LocalDate?)
+    internal data class DateHit(
+        val start: LocalDate,
+        val end: LocalDate?,
+        /** Weekday token printed next to the date, if any (for mismatch checks). */
+        val printedWeekday: DayOfWeek? = null
+    )
 
-    internal fun findDate(text: String, today: LocalDate): DateHit? {
-        ISO.find(text)?.let { m ->
-            return runCatching {
-                DateHit(LocalDate.of(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt()), null)
-            }.getOrNull()
+    /** All date spans in [text], left-to-right (used for scoring). */
+    internal fun findAllDates(text: String, today: LocalDate): List<DateHit> {
+        val hits = mutableListOf<Pair<IntRange, DateHit>>()
+        fun add(range: IntRange, hit: DateHit?) {
+            if (hit == null) return
+            if (hits.any { range.first in it.first }) return
+            hits += range to hit.copy(printedWeekday = weekdayNear(text, range.first) ?: hit.printedWeekday)
         }
-        DAY_FIRST.find(text)?.let { m ->
-            val month = monthOf(m.groupValues[3]) ?: return@let
-            val year = m.groupValues[4].toIntOrNull()
-            val d1 = m.groupValues[1].toInt()
-            val d2 = m.groupValues[2].toIntOrNull()
-            return build(year, month, d1, d2, today)
+        ISO.findAll(text).forEach { m ->
+            add(
+                m.range,
+                runCatching {
+                    DateHit(LocalDate.of(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt()), null)
+                }.getOrNull()
+            )
         }
-        MONTH_FIRST.find(text)?.let { m ->
-            val month = monthOf(m.groupValues[1]) ?: return@let
-            val year = m.groupValues[4].toIntOrNull()
-            return build(year, month, m.groupValues[2].toInt(), m.groupValues[3].toIntOrNull(), today)
+        CROSS_MONTH.findAll(text).forEach { m ->
+            val startMonth = monthOf(m.groupValues[2]) ?: return@forEach
+            val endMonth = monthOf(m.groupValues[4]) ?: return@forEach
+            val year = m.groupValues[5].toIntOrNull()
+            add(
+                m.range,
+                buildCrossMonth(
+                    year,
+                    startMonth,
+                    m.groupValues[1].toInt(),
+                    endMonth,
+                    m.groupValues[3].toInt(),
+                    today
+                )
+            )
         }
-        NUMERIC.find(text)?.let { m ->
+        DAY_FIRST.findAll(text).forEach { m ->
+            val month = monthOf(m.groupValues[3]) ?: return@forEach
+            add(m.range, build(m.groupValues[4].toIntOrNull(), month, m.groupValues[1].toInt(), m.groupValues[2].toIntOrNull(), today))
+        }
+        MONTH_FIRST.findAll(text).forEach { m ->
+            val month = monthOf(m.groupValues[1]) ?: return@forEach
+            add(m.range, build(m.groupValues[4].toIntOrNull(), month, m.groupValues[2].toInt(), m.groupValues[3].toIntOrNull(), today))
+        }
+        NUMERIC.findAll(text).forEach { m ->
             var a = m.groupValues[1].toInt()
             var b = m.groupValues[2].toInt()
             var y = m.groupValues[3].toInt()
             if (y < 100) y += 2000
-            // East African tickets are day-first; flip only when it can't be.
             if (b > 12 && a <= 12) { val t = a; a = b; b = t }
-            return runCatching { DateHit(LocalDate.of(y, b, a), null) }.getOrNull()
+            add(m.range, runCatching { DateHit(LocalDate.of(y, b, a), null) }.getOrNull())
         }
-        return null
+        return hits.sortedBy { it.first.first }.map { it.second }.distinctBy { it.start to it.end }
+    }
+
+    internal fun findDate(text: String, today: LocalDate): DateHit? = findAllDates(text, today).firstOrNull()
+
+    /**
+     * Pick the event date from positioned lines: boost labeled / future / weekday dates,
+     * penalize Ordered / Purchased / Issued / Printed.
+     */
+    internal fun bestDate(lines: List<TextLine>, today: LocalDate): DateHit? {
+        data class Scored(val hit: DateHit, val score: Int)
+        val scored = mutableListOf<Scored>()
+        for (line in lines) {
+            val window = line.text
+            for (hit in findAllDates(window, today)) {
+                var score = 0
+                if (DATE_GOOD.containsMatchIn(window)) score += 50
+                if (DATE_BAD.containsMatchIn(window)) score -= 60
+                if (hit.printedWeekday != null) {
+                    score += 15
+                    if (hit.printedWeekday == hit.start.dayOfWeek) score += 20
+                    else score -= 40
+                }
+                if (!hit.start.isBefore(today)) score += 20
+                else if (hit.start.isBefore(today.minusDays(30))) score -= 15
+                scored += Scored(hit, score)
+            }
+        }
+        return scored.maxWithOrNull(compareBy<Scored> { it.score }.thenBy { it.hit.start })?.hit
+    }
+
+    /** True when a printed weekday disagrees with the calendar date (wrong year / day-month swap). */
+    internal fun weekdayMismatch(hit: DateHit): Boolean =
+        hit.printedWeekday != null && hit.printedWeekday != hit.start.dayOfWeek
+
+    private fun weekdayNear(text: String, dateStart: Int): DayOfWeek? {
+        val from = (dateStart - 16).coerceAtLeast(0)
+        val to = (dateStart + 28).coerceAtMost(text.length)
+        val slice = text.substring(from, to)
+        val m = WEEKDAY.find(slice) ?: return null
+        return weekdayOf(m.groupValues[1])
+    }
+
+    private fun weekdayOf(raw: String): DayOfWeek? {
+        val key = raw.lowercase(Locale.US).take(3)
+        return when (key) {
+            "mon" -> DayOfWeek.MONDAY
+            "tue" -> DayOfWeek.TUESDAY
+            "wed" -> DayOfWeek.WEDNESDAY
+            "thu" -> DayOfWeek.THURSDAY
+            "fri" -> DayOfWeek.FRIDAY
+            "sat" -> DayOfWeek.SATURDAY
+            "sun" -> DayOfWeek.SUNDAY
+            else -> null
+        }
     }
 
     private fun monthOf(raw: String): Int? = MONTHS[raw.lowercase(Locale.US).take(3)]
@@ -556,8 +648,46 @@ object EventTicketExtractor {
             y += 1
             start = LocalDate.of(y, month, d1)
         }
-        val end = d2?.takeIf { it > d1 }?.let { LocalDate.of(y, month, it) }
+        val end = when {
+            d2 == null -> null
+            // Same-month range: "14–16 Dec"
+            d2 > d1 -> LocalDate.of(y, month, d2)
+            // Cross-month: "30 Dec – 2 Jan" (second day smaller → next month)
+            else -> {
+                var endMonth = month + 1
+                var endYear = y
+                if (endMonth > 12) {
+                    endMonth = 1
+                    endYear += 1
+                }
+                LocalDate.of(endYear, endMonth, d2)
+            }
+        }
         DateHit(start, end)
+    }.getOrNull()
+
+    private fun buildCrossMonth(
+        year: Int?,
+        startMonth: Int,
+        startDay: Int,
+        endMonth: Int,
+        endDay: Int,
+        today: LocalDate
+    ): DateHit? = runCatching {
+        // "30 Dec – 2 Jan 2027": printed year is the end year; start falls in the prior year.
+        val crossesYear = endMonth < startMonth || (endMonth == startMonth && endDay < startDay)
+        val startYear: Int
+        val endYear: Int
+        if (year != null) {
+            endYear = year
+            startYear = if (crossesYear) year - 1 else year
+        } else {
+            var y = today.year
+            if (LocalDate.of(y, startMonth, startDay).isBefore(today.minusDays(60))) y += 1
+            startYear = y
+            endYear = if (crossesYear) y + 1 else y
+        }
+        DateHit(LocalDate.of(startYear, startMonth, startDay), LocalDate.of(endYear, endMonth, endDay))
     }.getOrNull()
 
     internal fun findTimes(text: String): List<LocalTime> = TIME.findAll(text).mapNotNull { m ->

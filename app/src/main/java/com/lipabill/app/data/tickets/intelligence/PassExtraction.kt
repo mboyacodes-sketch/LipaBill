@@ -5,15 +5,26 @@ import org.json.JSONObject
 /** What a document is. Flights are recognised only to be turned away (not supported yet). */
 enum class PassKind { EVENT, RAIL, OTHER }
 
-/** Where a field's value came from. Lets review say "read from the PDF" vs "guessed". */
+/**
+ * Where a field's value came from. Lets review say "read from the PDF" vs "guessed".
+ * Phase 4 local-model provenance is deferred — do not add TEMPLATE / LOCAL_MODEL until
+ * an on-device model path ships; unknown names in stored JSON are skipped on load.
+ */
 enum class ExtractionSource {
     PDF_TEXT,
     OCR,
     BARCODE,
     WALLET_PASS,
-    TEMPLATE,
-    LOCAL_MODEL,
-    USER_INPUT
+    USER_INPUT;
+
+    /** Pixel-decoded or Wallet barcode — safe to treat as gate-ready without a typed-out warning. */
+    val isGateDecoded: Boolean
+        get() = this == BARCODE || this == WALLET_PASS
+
+    companion object {
+        fun parseOrNull(name: String): ExtractionSource? =
+            entries.firstOrNull { it.name == name }
+    }
 }
 
 /** Fields a pass review shows. Values are display strings; dates are epoch millis as text. */
@@ -84,22 +95,28 @@ data class PassExtraction(
 
         fun fromJson(json: String): PassExtraction? = runCatching {
             val o = JSONObject(json)
-            val evidence = o.getJSONArray("evidence").let { a -> List(a.length()) { a.getString(it) } }
+            val kind = PassKind.entries.firstOrNull { it.name == o.getString("kind") }
+                ?: return@runCatching null
+            val evidence = o.getJSONArray("evidence").let { a ->
+                List(a.length()) { i -> a.getString(i) }
+            }
             val classification = ClassificationResult(
-                kind = PassKind.valueOf(o.getString("kind")),
+                kind = kind,
                 confidence = o.getDouble("kindConfidence").toFloat(),
                 evidence = evidence,
                 needsUserConfirmation = o.getBoolean("confirmKind")
             )
-            val f = o.getJSONObject("fields")
+            val f = o.optJSONObject("fields") ?: JSONObject()
             val fields = f.keys().asSequence().mapNotNull { name ->
-                val key = runCatching { PassField.valueOf(name) }.getOrNull() ?: return@mapNotNull null
-                val v = f.getJSONObject(name)
+                val key = PassField.entries.firstOrNull { it.name == name } ?: return@mapNotNull null
+                val v = f.optJSONObject(name) ?: return@mapNotNull null
+                val source = ExtractionSource.parseOrNull(v.optString("source", ""))
+                    ?: return@mapNotNull null
                 key to ExtractedField(
-                    value = if (v.isNull("value")) null else v.getString("value"),
-                    confidence = v.getDouble("confidence").toFloat(),
-                    source = ExtractionSource.valueOf(v.getString("source")),
-                    requiresReview = v.getBoolean("review")
+                    value = if (v.isNull("value")) null else v.optString("value").ifBlank { null },
+                    confidence = v.optDouble("confidence", 0.0).toFloat(),
+                    source = source,
+                    requiresReview = v.optBoolean("review", true)
                 )
             }.toMap()
             PassExtraction(classification, fields)

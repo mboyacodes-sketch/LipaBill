@@ -1,0 +1,12 @@
+{
+  "name": "phone_not_code",
+  "text": "Lakeside Culture Fest\nVenue: Arboretum Gardens\nDate: 14 Nov 2026\nTime: 2:00 PM\nDoors open 1:00 PM\nAdmission: Regular\nPhone: 254712345678\nTicket No: LK99821\nGuest: Jane Doe\nScan at entry",
+  "barcodes": [],
+  "expect": {
+    "kind": "EVENT",
+    "barcodeValue": "LK99821",
+    "barcodeFormat": "TEXT",
+    "rejectBarcodeValues": ["254712345678"],
+    "startDate": "2026-11-14"
+  }
+}

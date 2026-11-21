@@ -1,0 +1,18 @@
+{
+  "name": "food_peak_restaurant",
+  "now": "2026-11-11T12:00:00+03:00",
+  "zone": "Africa/Nairobi",
+  "essentials": [],
+  "rows": [
+    {"at": "2026-11-06T20:00:00+03:00", "name": "Java House", "type": "BUY_GOODS", "cents": 60000},
+    {"at": "2026-10-30T20:00:00+03:00", "name": "Java House", "type": "BUY_GOODS", "cents": 60000},
+    {"at": "2026-10-23T20:00:00+03:00", "name": "Java House", "type": "BUY_GOODS", "cents": 60000},
+    {"at": "2026-10-16T20:00:00+03:00", "name": "Java House", "type": "BUY_GOODS", "cents": 60000},
+    {"at": "2026-10-09T20:00:00+03:00", "name": "Java House", "type": "BUY_GOODS", "cents": 60000},
+    {"at": "2026-11-03T20:00:00+03:00", "name": "Artcaffe", "type": "BUY_GOODS", "cents": 40000}
+  ],
+  "expect": {
+    "habitIds": ["food_peak"],
+    "frequentPayees": []
+  }
+}

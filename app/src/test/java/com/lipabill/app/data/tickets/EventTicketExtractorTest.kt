@@ -166,6 +166,34 @@ class EventTicketExtractorTest {
     }
 
     @Test
+    fun prefersEventDateOverOrderedDate() {
+        val lines = TextLine.fromPlainText(
+            """
+            Ordered 1 Nov 2026
+            Sample Festival
+            Event date 14 Dec 2026
+            Venue: Today Hall
+            """.trimIndent()
+        )
+        val hit = EventTicketExtractor.bestDate(lines, LocalDate.of(2026, 11, 1))
+        assertEquals(LocalDate.of(2026, 12, 14), hit!!.start)
+    }
+
+    @Test
+    fun crossMonthDateRange() {
+        val hit = EventTicketExtractor.findDate("30 Dec – 2 Jan 2027", LocalDate.of(2026, 12, 1))
+        assertEquals(LocalDate.of(2026, 12, 30), hit!!.start)
+        assertEquals(LocalDate.of(2027, 1, 2), hit.end)
+    }
+
+    @Test
+    fun weekdayMismatchDetected() {
+        // 14 Dec 2026 is a Monday, not Saturday.
+        val hit = EventTicketExtractor.findAllDates("Sat 14 Dec 2026", LocalDate.of(2026, 11, 1)).first()
+        assertTrue(EventTicketExtractor.weekdayMismatch(hit))
+    }
+
+    @Test
     fun labelsNeedAColonOrCaps() {
         assertNull("a title is not a time label", EventTicketExtractor.matchLabel("Timeless Jazz Night"))
         assertNull(EventTicketExtractor.matchLabel("Time Out Festival"))

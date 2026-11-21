@@ -1,0 +1,17 @@
+{
+  "name": "phone_essential_suppresses_shop",
+  "now": "2026-11-11T12:00:00+03:00",
+  "zone": "Africa/Nairobi",
+  "essentials": ["tel:712345678"],
+  "rows": [
+    {"at": "2026-11-10T12:00:00+03:00", "name": "Miniso", "phone": "254712345678", "type": "BUY_GOODS", "cents": 45000},
+    {"at": "2026-11-09T12:00:00+03:00", "name": "Miniso", "phone": "254712345678", "type": "BUY_GOODS", "cents": 45000},
+    {"at": "2026-11-08T12:00:00+03:00", "name": "Miniso", "phone": "254712345678", "type": "BUY_GOODS", "cents": 45000},
+    {"at": "2026-11-07T12:00:00+03:00", "name": "Miniso", "phone": "254712345678", "type": "BUY_GOODS", "cents": 45000},
+    {"at": "2026-11-06T12:00:00+03:00", "name": "Miniso", "phone": "254712345678", "type": "BUY_GOODS", "cents": 45000}
+  ],
+  "expect": {
+    "frequentPayees": [],
+    "payeeKey": "tel:712345678"
+  }
+}

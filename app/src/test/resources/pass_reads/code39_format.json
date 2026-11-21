@@ -1,0 +1,12 @@
+{
+  "name": "code39_format",
+  "text": "Madaraka Express\nNairobi Terminus to Mombasa Terminus\nDate: 15 Oct 2026\nCoach 5 Seat 12A\nBooking Ref: KRC9X2P1",
+  "barcodes": [
+    { "value": "KRC9X2P1-39", "format": "CODE_39" }
+  ],
+  "expect": {
+    "kind": "RAIL",
+    "barcodeValue": "KRC9X2P1-39",
+    "barcodeFormat": "CODE_39"
+  }
+}
