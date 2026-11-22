@@ -194,15 +194,32 @@ class TransactionRepository(
             afterInsert?.invoke()
             return@withContext true
         }
-        // Already present — refresh money fields from the latest parse (fixes bad amounts).
-        dao.updateParsedMoneyByCode(
-            source = withPhone.source,
-            code = withPhone.code,
-            amount = withPhone.amount,
-            balance = withPhone.balance,
-            cost = withPhone.cost,
-            rawBody = withPhone.rawBody
-        )
+        // Already present — refresh from the latest parse (fixes bad amounts).
+        // Fuliza outstanding is stored in balance; never write it without type = FULIZA
+        // or home M-Pesa will show the overdraft as the wallet figure.
+        if (withPhone.type == TransactionType.FULIZA ||
+            MpesaSmsFilter.isFulizaConfirmation(withPhone.rawBody)
+        ) {
+            dao.updateParsedFulizaByCode(
+                source = withPhone.source,
+                code = withPhone.code,
+                type = TransactionType.FULIZA,
+                name = withPhone.counterpartyName,
+                amount = withPhone.amount,
+                balance = withPhone.balance,
+                cost = withPhone.cost,
+                rawBody = withPhone.rawBody
+            )
+        } else {
+            dao.updateParsedMoneyByCode(
+                source = withPhone.source,
+                code = withPhone.code,
+                amount = withPhone.amount,
+                balance = withPhone.balance,
+                cost = withPhone.cost,
+                rawBody = withPhone.rawBody
+            )
+        }
         false
     }
 
@@ -368,6 +385,7 @@ class TransactionRepository(
         purgeNonConfirmationsIfNeeded()
         repairParsedAmountsIfNeeded()
         reclassifySavingsIfNeeded()
+        reclassifyFulizaIfNeeded()
         reclassifyUnknownPartiesIfNeeded()
         reclassifyBankDirectionsIfNeeded()
         reclassifyBankDetailsIfNeeded()
@@ -545,6 +563,24 @@ class TransactionRepository(
             if (row.rawBody.isBlank()) continue
             if (!MpesaSmsFilter.isTransactionConfirmation(row.rawBody)) continue
             val reparsed = MpesaSmsParser.parse(row.rawBody, row.timestampMillis)
+            val fulizaBody = MpesaSmsFilter.isFulizaConfirmation(row.rawBody)
+            if (fulizaBody && reparsed.type == TransactionType.FULIZA) {
+                // Outstanding must not land on a non-FULIZA row (home would show it as M-Pesa).
+                dao.updateParty(
+                    id = row.id,
+                    type = TransactionType.FULIZA,
+                    name = reparsed.counterpartyName,
+                    phone = reparsed.counterpartyPhone
+                )
+                dao.updateParsedMoney(
+                    id = row.id,
+                    amount = reparsed.amount ?: row.amount,
+                    balance = reparsed.balance ?: row.balance,
+                    cost = reparsed.cost ?: row.cost
+                )
+                fixed++
+                continue
+            }
             val amountChanged = !moneyEquals(row.amount, reparsed.amount)
             val balanceChanged = !moneyEquals(row.balance, reparsed.balance)
             val costChanged = !moneyEquals(row.cost, reparsed.cost)
@@ -591,6 +627,7 @@ class TransactionRepository(
                 row.type == TransactionType.SENT &&
                     reparsed.type != TransactionType.SENT -> true
                 reparsed.type == TransactionType.SAVINGS -> true
+                reparsed.type == TransactionType.FULIZA -> true
                 else -> false
             }
             if (!shouldUpdate) continue
@@ -599,6 +636,53 @@ class TransactionRepository(
                 type = reparsed.type,
                 name = reparsed.counterpartyName ?: row.counterpartyName,
                 phone = reparsed.counterpartyPhone
+            )
+            if (reparsed.type == TransactionType.FULIZA) {
+                dao.updateParsedMoney(
+                    id = row.id,
+                    amount = reparsed.amount,
+                    balance = reparsed.balance,
+                    cost = reparsed.cost
+                )
+            }
+            fixed++
+        }
+        fixed
+    }
+
+    /**
+     * Fuliza draws stored under another type put outstanding in [MpesaTransaction.balance].
+     * Home M-Pesa then treats that figure as the wallet balance. Re-tag them once.
+     */
+    suspend fun reclassifyFulizaIfNeeded(): Int = withContext(Dispatchers.IO) {
+        if (securePreferences.fulizaClassifyRepairDone) return@withContext 0
+        val fixed = reclassifyFuliza()
+        securePreferences.fulizaClassifyRepairDone = true
+        fixed
+    }
+
+    private suspend fun reclassifyFuliza(): Int = withContext(Dispatchers.IO) {
+        val rows = dao.getAllForClassification()
+        var fixed = 0
+        for (row in rows) {
+            if (row.source != MoneySource.MPESA) continue
+            if (row.rawBody.isBlank()) continue
+            if (!MpesaSmsFilter.isFulizaConfirmation(row.rawBody)) continue
+            val reparsed = MpesaSmsParser.parse(row.rawBody, row.timestampMillis)
+            if (reparsed.type != TransactionType.FULIZA) continue
+            val typeWrong = row.type != TransactionType.FULIZA
+            if (!typeWrong) continue
+            dao.updateParty(
+                id = row.id,
+                type = TransactionType.FULIZA,
+                name = reparsed.counterpartyName ?: row.counterpartyName,
+                phone = reparsed.counterpartyPhone
+            )
+            dao.updateParsedMoney(
+                id = row.id,
+                amount = reparsed.amount,
+                balance = reparsed.balance,
+                cost = reparsed.cost
             )
             fixed++
         }

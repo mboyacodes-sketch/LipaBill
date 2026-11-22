@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
@@ -122,6 +123,7 @@ import com.lipabill.app.BuildConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity(),
@@ -153,6 +155,11 @@ class MainActivity : AppCompatActivity(),
         super.onCreate(savedInstanceState)
         applyCaptureProtection()
         hideOtherAppOverlays()
+        // Cold-start App Links must replay like onNewIntent — don't keep a prior
+        // "already shown" token that would swallow the URI after unlock.
+        if (PayLink.parse(intent?.dataString) != null) {
+            deliveredPayToken = null
+        }
         acceptReceiptIntent(intent)
         acceptPayIntent(intent)
         captureIncomingDocument(intent)
@@ -236,9 +243,16 @@ class MainActivity : AppCompatActivity(),
 
     private var deliveredPayToken: String? = null
 
+    /**
+     * Marks the pay link as handed to UI. Keeps [intent] data until [stripPayIntentData]
+     * so a cancelled composition can still recover via [onResume] before strip.
+     */
     fun clearPendingPay() {
         _pendingPay.value?.let { deliveredPayToken = it.token }
         _pendingPay.value = null
+    }
+
+    fun stripPayIntentData() {
         val current = intent ?: return
         if (PayLink.parse(current.dataString) != null) {
             current.data = null
@@ -1179,30 +1193,40 @@ private fun AuthenticatedApp(
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     var confirmIncomingPay by remember { mutableStateOf<PayLink.Target?>(null) }
+    // Retry when nav becomes ready (cold start / unlock). Clearing before the dialog
+    // was shown used to drop the link on the first open.
     LaunchedEffect(Unit) {
-        host.pendingPay.collect { target ->
-            if (target == null) return@collect
-            if (!app.securePreferences.firstRunSetupDone) return@collect
-            if (navController.currentDestination?.route == Route.FirstRunSetup.path) return@collect
-            host.clearPendingPay()
-            if (navController.currentDestination?.route != Route.List.path) {
-                val popped = navController.popBackStack(Route.List.path, inclusive = false)
-                if (!popped) {
-                    navController.navigate(Route.List.path) { launchSingleTop = true }
+        combine(
+            host.pendingPay,
+            snapshotFlow { navController.currentBackStackEntry?.destination?.route }
+        ) { target, route -> target to route }
+            .collect { (target, route) ->
+                if (target == null) return@collect
+                if (!app.securePreferences.firstRunSetupDone) return@collect
+                if (route == null || route == Route.FirstRunSetup.path) return@collect
+                confirmIncomingPay = target
+                host.clearPendingPay()
+                if (route != Route.List.path) {
+                    val popped = navController.popBackStack(Route.List.path, inclusive = false)
+                    if (!popped) {
+                        navController.navigate(Route.List.path) { launchSingleTop = true }
+                    }
                 }
             }
-            confirmIncomingPay = target
-        }
     }
     confirmIncomingPay?.let { target ->
         AlertDialog(
-            onDismissRequest = { confirmIncomingPay = null },
+            onDismissRequest = {
+                confirmIncomingPay = null
+                host.stripPayIntentData()
+            },
             title = { Text(stringResource(R.string.pay_link_confirm_title)) },
             text = { Text(incomingPayConfirmMessage(target)) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         confirmIncomingPay = null
+                        host.stripPayIntentData()
                         openIncomingPay(target)
                     }
                 ) {
@@ -1210,7 +1234,12 @@ private fun AuthenticatedApp(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { confirmIncomingPay = null }) {
+                TextButton(
+                    onClick = {
+                        confirmIncomingPay = null
+                        host.stripPayIntentData()
+                    }
+                ) {
                     Text(stringResource(R.string.pay_link_confirm_cancel))
                 }
             }

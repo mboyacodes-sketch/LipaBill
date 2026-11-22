@@ -266,6 +266,14 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_BANK_DETAIL_REPAIR_DONE, false)
         set(value) = prefs.edit().putBoolean(KEY_BANK_DETAIL_REPAIR_DONE, value).apply()
 
+    /**
+     * One-shot: Fuliza draw SMS mistyped as wallet rows (outstanding sat in balance and
+     * showed as M-Pesa). Re-tag as FULIZA so home excludes them from the wallet figure.
+     */
+    var fulizaClassifyRepairDone: Boolean
+        get() = prefs.getBoolean(KEY_FULIZA_CLASSIFY_REPAIR_DONE, false)
+        set(value) = prefs.edit().putBoolean(KEY_FULIZA_CLASSIFY_REPAIR_DONE, value).apply()
+
     /** Regular payees the user marked essential (rent, school fees): kept out of cost nudges. */
     var essentialPayees: Set<String>
         get() = prefs.getStringSet(KEY_ESSENTIAL_PAYEES, null)?.toSet() ?: emptySet()
@@ -595,6 +603,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_UNKNOWN_PARTY_REPAIR_DONE = "unknown_party_repair_v1"
         private const val KEY_BANK_DIRECTION_REPAIR_DONE = "bank_direction_repair_v2"
         private const val KEY_BANK_DETAIL_REPAIR_DONE = "bank_detail_repair_v1"
+        private const val KEY_FULIZA_CLASSIFY_REPAIR_DONE = "fuliza_classify_repair_v1"
         private const val KEY_DARK_MODE = "dark_mode"
         private const val KEY_PASS_REMINDER_DAY_BEFORE_HOUR = "pass_reminder_day_before_hour"
         private const val KEY_PASS_REMINDER_HOURS_BEFORE = "pass_reminder_hours_before"
