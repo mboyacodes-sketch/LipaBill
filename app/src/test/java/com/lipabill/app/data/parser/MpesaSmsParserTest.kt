@@ -3,8 +3,11 @@ package com.lipabill.app.data.parser
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.sms.FULIZA_DRAW_100_SMS
 import com.lipabill.app.data.sms.FULIZA_DRAW_40_SMS
+import com.lipabill.app.data.sms.FULIZA_DRAW_UKLOH2TGDD_SMS
+import com.lipabill.app.data.sms.MpesaSmsFilter
 import com.lipabill.app.data.sms.REVERSAL_JULIUS_SMS
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -275,6 +278,20 @@ class MpesaSmsParserTest {
         assertEquals(40.0, forty.amount!!, 0.001)
         assertEquals(0.40, forty.cost!!, 0.001)
         assertEquals(61.67, forty.balance!!, 0.001)
+    }
+
+    @Test
+    fun fuliza_draw_outstanding_is_not_a_wallet_balance_line() {
+        val tx = MpesaSmsParser.parse(FULIZA_DRAW_UKLOH2TGDD_SMS, ts)
+        assertEquals(TransactionType.FULIZA, tx.type)
+        assertEquals("UKLOH2TGDD", tx.code)
+        assertEquals(1.0, tx.amount!!, 0.001)
+        assertEquals(0.01, tx.cost!!, 0.001)
+        // Outstanding only — never mistaken for "New M-PESA balance is …".
+        assertEquals(3472.12, tx.balance!!, 0.001)
+        assertEquals("Due 19/12/26", tx.counterpartyName)
+        assertTrue(MpesaSmsFilter.isFulizaConfirmation(FULIZA_DRAW_UKLOH2TGDD_SMS))
+        assertFalse(MpesaSmsFilter.isMpesaWalletConfirmation(FULIZA_DRAW_UKLOH2TGDD_SMS))
     }
 
     @Test
