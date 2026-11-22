@@ -202,6 +202,30 @@ interface TransactionDao {
         rawBody: String
     ): Int
 
+    /**
+     * Fuliza outstanding lives in [balance]. Always keep [type] = FULIZA when writing it,
+     * or home M-Pesa will treat the figure as the wallet balance.
+     */
+    @Query(
+        """
+        UPDATE transactions
+        SET type = :type,
+            counterpartyName = COALESCE(:name, counterpartyName),
+            amount = :amount, balance = :balance, cost = :cost, rawBody = :rawBody
+        WHERE source = :source AND code = :code
+        """
+    )
+    suspend fun updateParsedFulizaByCode(
+        source: MoneySource,
+        code: String,
+        type: TransactionType,
+        name: String?,
+        amount: Double?,
+        balance: Double?,
+        cost: Double?,
+        rawBody: String
+    ): Int
+
     @Query("SELECT id, code, rawBody, source FROM transactions")
     suspend fun getAllForPurge(): List<TransactionPurgeRow>
 
