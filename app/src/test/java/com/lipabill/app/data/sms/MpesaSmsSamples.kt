@@ -11,6 +11,12 @@ internal const val FULIZA_DRAW_40_SMS =
         "Total Fuliza M-PESA outstanding amount is Ksh61.67 due on 02/10/26. " +
         "To check daily charges, Dial *334#OK Select Query Charges"
 
+/** Live-style draw: no space after Ksh on the outstanding figure. */
+internal const val FULIZA_DRAW_UKLOH2TGDD_SMS =
+    "UKLOH2TGDD Confirmed. Fuliza M-PESA amount is Ksh 1.00. Access Fee charged Ksh 0.01. " +
+        "Total Fuliza M-PESA outstanding amount is Ksh3472.12 due on 19/12/26. " +
+        "To check daily charges, Dial *334#OK Select Query Charges"
+
 internal const val REVERSAL_JULIUS_SMS =
     "UJ4R7Q7R31 confirmed. Your original transaction UJ3R78QL2Z in favour of " +
         "JULIUS VIAZI SUPPLIER has been reversed successfully on 4/10/26 at 8:15 PM " +
