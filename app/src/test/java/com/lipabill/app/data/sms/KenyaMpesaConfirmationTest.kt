@@ -94,6 +94,14 @@ class KenyaMpesaConfirmationTest {
         assertEquals(0.40, forty.cost!!, 0.001)
         assertEquals(61.67, forty.balance!!, 0.001)
         assertEquals("Due 02/10/26", forty.counterpartyName)
+
+        val live = ConfirmationIngestion.acceptAndParse("MPESA", FULIZA_DRAW_UKLOH2TGDD_SMS, ts)!!
+        assertEquals("UKLOH2TGDD", live.code)
+        assertEquals(TransactionType.FULIZA, live.type)
+        assertEquals(1.0, live.amount!!, 0.001)
+        assertEquals(0.01, live.cost!!, 0.001)
+        assertEquals(3472.12, live.balance!!, 0.001)
+        assertFalse(MpesaSmsFilter.isMpesaWalletConfirmation(FULIZA_DRAW_UKLOH2TGDD_SMS))
     }
 
     @Test
