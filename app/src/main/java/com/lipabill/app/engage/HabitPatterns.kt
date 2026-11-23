@@ -3,7 +3,6 @@ package com.lipabill.app.engage
 import com.lipabill.app.data.foldMerchantName
 import com.lipabill.app.data.foldPayeeName
 import com.lipabill.app.data.model.TransactionType
-import com.lipabill.app.viewmodel.countsAsSpendOutflow
 import com.lipabill.app.viewmodel.isOwnMoneyMove
 import com.lipabill.app.viewmodel.markedPayee
 import com.lipabill.app.viewmodel.payeeKey as insightsPayeeKey
