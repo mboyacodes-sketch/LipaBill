@@ -1,68 +1,78 @@
 package com.lipabill.app.ui.auth
 
-import com.lipabill.app.ui.AccentWideButton
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Canvas as DrawCanvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.ConfirmationNumber
+import androidx.compose.material.icons.outlined.NorthEast
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.WarningAmber
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.lipabill.app.auth.AuthUiState
 import com.lipabill.app.ui.components.LipaBillMark
 import com.lipabill.app.ui.theme.Accent
-import com.lipabill.app.ui.theme.Canvas as ThemeCanvas
+import com.lipabill.app.ui.theme.ActionMetrics
+import com.lipabill.app.ui.theme.ActionPay
+import com.lipabill.app.ui.theme.ActionTickets
+import com.lipabill.app.ui.theme.BrandNavy
+import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.GeometricSansFamily
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
+import com.lipabill.app.ui.theme.OnAccent
+import com.lipabill.app.ui.theme.OnPastel
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.Space
 
-private val AuthCream: Color
-    @androidx.compose.runtime.Composable
-    @androidx.compose.runtime.ReadOnlyComposable
-    get() = ThemeCanvas
-
-private val AuthHeadline: Color
-    @androidx.compose.runtime.Composable
-    @androidx.compose.runtime.ReadOnlyComposable
-    get() = Accent
+/**
+ * Lock screen: FINS soft-UI layout, LipaBill navy / soft-blue palette
+ * (logo → Send/Pay/Insights/Passes card fan → quote → body → Open LipaBill).
+ */
+/** Deeper navy for the CTA gradient foot (paired with [Accent]). */
+private val AccentDeep = Color(0xFF1A2F4A)
 
 @Composable
 fun AuthGateScreen(
@@ -70,11 +80,14 @@ fun AuthGateScreen(
     errorMessage: String?,
     onUnlockClick: () -> Unit,
     onOpenLockSettings: () -> Unit,
-    onAutoPrompt: () -> Unit
+    onAutoPrompt: () -> Unit,
+    autoPrompt: Boolean = true
 ) {
     when (state) {
         AuthUiState.Locked -> {
-            LaunchedEffect(Unit) { onAutoPrompt() }
+            if (autoPrompt) {
+                LaunchedEffect(Unit) { onAutoPrompt() }
+            }
             LockedContent(
                 errorMessage = errorMessage,
                 onUnlockClick = onUnlockClick
@@ -92,217 +105,382 @@ private fun LockedContent(
     errorMessage: String?,
     onUnlockClick: () -> Unit
 ) {
-    val breath by rememberInfiniteTransition(label = "unlock_breath").animateFloat(
-        initialValue = 0.72f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1900, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "unlock_breath_alpha"
-    )
-    val ringPulse by rememberInfiniteTransition(label = "ring_pulse").animateFloat(
-        initialValue = 0.55f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "ring_pulse_alpha"
-    )
-
+    val glow = SoftBlue
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(AuthCream)
+            .background(Canvas)
     ) {
-        AuthBackdropBlobs()
+        // Soft navy-blue wash behind copy + CTA (LipaBill SoftBlue, not FINS lime).
+        DrawCanvas(modifier = Modifier.fillMaxSize()) {
+            val cx = size.width * 0.5f
+            val cy = size.height * 0.88f
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        glow.copy(alpha = 0.70f),
+                        glow.copy(alpha = 0.28f),
+                        Color.Transparent
+                    ),
+                    center = Offset(cx, cy),
+                    radius = size.width * 0.95f
+                ),
+                radius = size.width * 0.95f,
+                center = Offset(cx, cy)
+            )
+        }
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .safeDrawingPadding()
-                .padding(horizontal = 28.dp),
+                .safeDrawingPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // Brand + fan as one mid-screen cluster. Logo stays *above* the fan
+            // box — the rotated Send card already peeks to the top edge, so
+            // drawing the brand inside that box overlaps.
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    LipaBillMark(size = 84.dp)
-                    Spacer(modifier = Modifier.height(18.dp))
-                    LipaBillWordmark()
-
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    BrandHeader(
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "SEE IT CLEARLY",
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            letterSpacing = 2.4.sp,
-                            fontWeight = FontWeight.Medium,
-                            fontFamily = GeometricSansFamily
-                        ),
-                        color = Mute,
-                        textAlign = TextAlign.Center
-                    )
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    Text(
-                        text = "Your money has a story.",
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontFamily = GeometricSansFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 26.sp,
-                            lineHeight = 32.sp
-                        ),
-                        color = AuthHeadline,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "Unlock to see where it went, then send, pay, or show a pass.",
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontFamily = GeometricSansFamily,
-                            fontSize = 15.sp,
-                            lineHeight = 22.sp
-                        ),
-                        color = Mute,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 4.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(28.dp))
-
-                    FingerprintBadge(
-                        breath = breath,
-                        ringPulse = ringPulse
-                    )
+                    WalletCardFan()
                 }
             }
-
+            Text(
+                text = "“Your money.\nOne clear story.”",
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontFamily = GeometricSansFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 28.sp,
+                    lineHeight = 34.sp,
+                    letterSpacing = (-0.5).sp
+                ),
+                color = Ink,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = "Unlock to open your ledger, send or pay, and show a pass. " +
+                    "Encrypted on this phone — not in a LipaBill cloud.",
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontFamily = GeometricSansFamily,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    fontWeight = FontWeight.Normal
+                ),
+                color = Mute,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 28.dp)
+            )
             if (!errorMessage.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = errorMessage,
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(bottom = 10.dp)
+                    modifier = Modifier.padding(horizontal = 24.dp)
                 )
             }
-
-            AccentWideButton(onClick = onUnlockClick, elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)) {
-                Text(
-                    text = "Open LipaBill",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontFamily = GeometricSansFamily,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                )
-            }
-
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(20.dp))
+            UnlockCta(
+                onClick = onUnlockClick,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            )
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
 
 @Composable
-private fun LipaBillWordmark() {
-    Text(
-        text = "LipaBill",
-        style = MaterialTheme.typography.displayLarge.copy(
-            fontFamily = GeometricSansFamily,
-            fontWeight = FontWeight.Bold,
-            fontSize = 34.sp,
-            letterSpacing = (-0.6).sp,
-            lineHeight = 40.sp
-        ),
-        color = Accent,
-        textAlign = TextAlign.Center
-    )
+private fun BrandHeader(modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        LipaBillMark(size = 24.dp, elevated = false)
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "LipaBill",
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontFamily = GeometricSansFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                letterSpacing = (-0.2).sp
+            ),
+            color = Ink
+        )
+    }
 }
 
+/**
+ * Hero fan: the four home actions — Send, Pay, Insights, Passes —
+ * with Accent + on the top-right of the stack.
+ */
 @Composable
-private fun FingerprintBadge(
-    breath: Float,
-    ringPulse: Float
-) {
+private fun WalletCardFan() {
+    val navy = Accent
     Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier.size(140.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(360.dp)
+            // Decorative preview of home actions — not tappable until unlock.
+            .clearAndSetSemantics {
+                contentDescription = "Preview of Send, Pay, Insights, and Passes after unlock"
+            },
+        contentAlignment = Alignment.Center
     ) {
-        val ring = Accent.copy(alpha = 0.12f)
-        Canvas(modifier = Modifier.fillMaxSize().alpha(ringPulse)) {
-            val c = Offset(size.width / 2f, size.height / 2f)
-            val maxR = size.minDimension * 0.48f
-            drawCircle(color = ring, radius = maxR, center = c)
-            drawCircle(color = ring.copy(alpha = 0.18f), radius = maxR * 0.78f, center = c)
-            drawCircle(color = ring.copy(alpha = 0.28f), radius = maxR * 0.58f, center = c)
-        }
+        // Send — navy peek, spills left edge.
+        SoftActionCard(
+            fill = navy,
+            ink = OnAccent,
+            icon = Icons.Outlined.NorthEast,
+            iconFace = SoftBlue,
+            iconTint = BrandNavy,
+            label = "Send",
+            caption = "Skip the stress",
+            detail = "Right SIM, PIN never stored",
+            showDetails = false,
+            modifier = Modifier
+                .offset(x = (-96).dp, y = (-56).dp)
+                .rotate(-18f)
+                .zIndex(0f),
+            width = 248.dp,
+            height = 154.dp
+        )
+        // Insights — cream peek, spills right edge.
+        SoftActionCard(
+            fill = ActionMetrics,
+            ink = OnPastel,
+            icon = Icons.Outlined.BarChart,
+            iconFace = CardWhite,
+            iconTint = BrandNavy,
+            label = "Insights",
+            caption = "Where it went",
+            detail = "Wallets and banks, one picture",
+            showDetails = false,
+            modifier = Modifier
+                .offset(x = 108.dp, y = (-28).dp)
+                .rotate(18f)
+                .zIndex(1f),
+            width = 248.dp,
+            height = 154.dp
+        )
+        // Passes — white hero, lower right, overflows right.
+        SoftActionCard(
+            fill = CardWhite,
+            ink = Ink,
+            icon = Icons.Outlined.ConfirmationNumber,
+            iconFace = ActionTickets,
+            iconTint = BrandNavy,
+            label = "Passes",
+            caption = "What it became",
+            detail = "Tickets and boarding, ready",
+            showDetails = true,
+            modifier = Modifier
+                .offset(x = 56.dp, y = 52.dp)
+                .rotate(8f)
+                .zIndex(2f),
+            width = 268.dp,
+            height = 168.dp,
+            elevated = true
+        )
+        // Pay — front left hero, overflows left.
+        SoftActionCard(
+            fill = ActionPay,
+            ink = OnPastel,
+            icon = Icons.Outlined.Payments,
+            iconFace = CardWhite,
+            iconTint = BrandNavy,
+            label = "Pay",
+            caption = "Till, paybill, buy goods",
+            detail = "Confirm on this phone",
+            showDetails = true,
+            modifier = Modifier
+                .offset(x = (-52).dp, y = (-4).dp)
+                .rotate(-10f)
+                .zIndex(3f),
+            width = 284.dp,
+            height = 176.dp,
+            elevated = true
+        )
+
         Box(
             modifier = Modifier
-                .size(76.dp)
-                .shadow(
-                    elevation = 10.dp,
-                    shape = RoundedCornerShape(22.dp),
-                    spotColor = Color.Black.copy(alpha = 0.12f),
-                    ambientColor = Color.Black.copy(alpha = 0.06f)
-                )
-                .background(CardWhite, RoundedCornerShape(22.dp))
-                .alpha(breath),
+                .align(Alignment.Center)
+                .offset(x = 138.dp, y = (-64).dp)
+                .zIndex(6f)
+                .size(48.dp)
+                .shadow(10.dp, CircleShape, spotColor = navy.copy(alpha = 0.35f))
+                .clip(CircleShape)
+                .background(navy),
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.Filled.Fingerprint,
-                contentDescription = "Unlock with biometrics",
-                tint = Accent,
-                modifier = Modifier.size(36.dp)
+                imageVector = Icons.Filled.Add,
+                contentDescription = null,
+                tint = OnAccent,
+                modifier = Modifier.size(26.dp)
             )
         }
     }
 }
 
 @Composable
-private fun AuthBackdropBlobs() {
-    val wash = SoftBlue
-    val navy = Accent
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        val w = size.width
-        val h = size.height
-        // Soft mint wash top-right
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(wash.copy(alpha = 0.55f), Color.Transparent),
-                center = Offset(w * 0.92f, h * 0.08f),
-                radius = w * 0.55f
-            ),
-            radius = w * 0.55f,
-            center = Offset(w * 0.92f, h * 0.08f)
-        )
-        // Soft green wash bottom-left behind illustration
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(navy.copy(alpha = 0.08f), Color.Transparent),
-                center = Offset(w * 0.15f, h * 0.72f),
-                radius = w * 0.7f
-            ),
-            radius = w * 0.7f,
-            center = Offset(w * 0.15f, h * 0.72f)
-        )
-        val hill = Path().apply {
-            moveTo(0f, h * 0.78f)
-            cubicTo(w * 0.2f, h * 0.70f, w * 0.35f, h * 0.88f, w * 0.55f, h * 0.80f)
-            cubicTo(w * 0.75f, h * 0.72f, w * 0.9f, h * 0.86f, w, h * 0.78f)
-            lineTo(w, h)
-            lineTo(0f, h)
-            close()
+private fun SoftActionCard(
+    fill: Color,
+    ink: Color,
+    icon: ImageVector,
+    iconFace: Color,
+    iconTint: Color,
+    label: String,
+    caption: String,
+    detail: String,
+    showDetails: Boolean,
+    modifier: Modifier = Modifier,
+    width: Dp = 220.dp,
+    height: Dp = 136.dp,
+    elevated: Boolean = false
+) {
+    val shape = RoundedCornerShape(18.dp)
+    Column(
+        modifier = modifier
+            .width(width)
+            .height(height)
+            .shadow(
+                elevation = if (elevated) 18.dp else 8.dp,
+                shape = shape,
+                spotColor = Color.Black.copy(alpha = if (elevated) 0.12f else 0.07f),
+                ambientColor = Color.Black.copy(alpha = 0.04f)
+            )
+            .clip(shape)
+            .background(fill)
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        // Icon + label | home action name (was SIM / VISA).
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(iconFace),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = iconTint,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                if (showDetails) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontFamily = GeometricSansFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp
+                        ),
+                        color = ink
+                    )
+                }
+            }
+            Text(
+                text = label.uppercase(),
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontFamily = GeometricSansFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.0.sp
+                ),
+                color = ink.copy(alpha = 0.40f)
+            )
         }
-        drawPath(hill, color = navy.copy(alpha = 0.06f))
+        if (showDetails) {
+            Column {
+                Text(
+                    text = caption,
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontFamily = GeometricSansFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        letterSpacing = (-0.4).sp
+                    ),
+                    color = ink
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontFamily = GeometricSansFamily,
+                        fontSize = 13.sp
+                    ),
+                    color = ink.copy(alpha = 0.50f)
+                )
+            }
+        } else {
+            Spacer(modifier = Modifier.height(1.dp))
+        }
+    }
+}
+
+@Composable
+private fun UnlockCta(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(50)
+    val top = Accent
+    val bottom = AccentDeep
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .shadow(16.dp, shape, spotColor = bottom.copy(alpha = 0.35f))
+            .clip(shape)
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(top, bottom)
+                )
+            )
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "Open LipaBill",
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontFamily = GeometricSansFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 17.sp
+            ),
+            color = OnAccent
+        )
     }
 }
 
@@ -311,9 +489,8 @@ private fun NoLockScreenContent(onOpenSettings: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(AuthCream)
+            .background(Canvas)
     ) {
-        AuthBackdropBlobs()
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -331,7 +508,10 @@ private fun NoLockScreenContent(onOpenSettings: () -> Unit) {
             Spacer(modifier = Modifier.height(Space.section))
             Text(
                 text = "No screen lock found",
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontFamily = GeometricSansFamily,
+                    fontWeight = FontWeight.Bold
+                ),
                 color = Ink,
                 textAlign = TextAlign.Center
             )
