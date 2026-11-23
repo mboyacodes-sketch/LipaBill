@@ -176,6 +176,27 @@ object ETicketTextParser {
      * Prefer a gate-usable symbol over app-download / social QRs.
      * Non-URL payloads win; ticket-looking URLs beat generic https links; "Scan at entry" neighbours boost.
      */
+    /**
+     * Other gate codes in the same file as [chosen]: group orders print one ticket per page.
+     * Only scanned symbols of the same kind count, so app-download and social QRs (URLs) and
+     * printed reference numbers never become extra passes.
+     */
+    internal fun extraTicketCodes(barcodes: List<FoundBarcode>, chosen: String): List<FoundBarcode> {
+        val main = barcodes.firstOrNull { it.value == chosen } ?: return emptyList()
+        if (main.format == TicketBarcodeFormat.TEXT) return emptyList()
+        return barcodes
+            .asSequence()
+            .filter { it.format == main.format && it.value != chosen }
+            .filter { it.value.isNotBlank() && !looksLikeImplausibleCode(it.value) }
+            .filter { !looksLikeUrl(it.value.trim()) || looksLikeTicketUrl(it.value.trim().lowercase(Locale.US)) }
+            .distinctBy { it.value }
+            .take(MAX_EXTRA_TICKETS)
+            .toList()
+    }
+
+    /** A sanity cap: no group order should need more passes from one file. */
+    private const val MAX_EXTRA_TICKETS = 20
+
     internal fun preferGateBarcode(barcodes: List<FoundBarcode>, surroundingText: String = ""): FoundBarcode? {
         if (barcodes.isEmpty()) return null
         val preferred = listOf(

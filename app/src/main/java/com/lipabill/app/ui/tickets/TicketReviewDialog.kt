@@ -34,6 +34,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.material3.Checkbox
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -78,14 +81,17 @@ import com.lipabill.app.ui.util.formatEventSchedule
 @Composable
 fun TicketReviewDialog(
     draft: TicketImport,
-    onSave: (TicketImport, TicketDocumentKind) -> Unit,
+    /** Last flag: also save the file's other tickets as their own passes. */
+    onSave: (TicketImport, TicketDocumentKind, Boolean) -> Unit,
     onCancel: () -> Unit,
     /** How each field was read; flags the ones worth a second look. */
     extraction: PassExtraction? = null,
     /** Kind chosen when adding; overridden when classification asks the user. */
     initialKind: TicketDocumentKind = TicketDocumentKind.EVENT,
     /** Draws the original file small, so fields can be checked against it. */
-    loadPreview: (suspend () -> Bitmap?)? = null
+    loadPreview: (suspend () -> Bitmap?)? = null,
+    /** Other gate codes in the same file (a group order prints one ticket per page). */
+    extraTicketCount: Int = 0
 ) {
     val preview by produceState<Bitmap?>(null, draft) { value = loadPreview?.invoke() }
     val context = LocalContext.current
@@ -112,6 +118,7 @@ fun TicketReviewDialog(
     var tier by remember { mutableStateOf(draft.notes.firstNotesValue("Tier").orEmpty()) }
     var guest by remember { mutableStateOf(draft.notes.firstNotesValue("Guest", "Attendee", "Name").orEmpty()) }
     val hasCode = draft.barcodeValue.isNotBlank()
+    var saveAll by remember { mutableStateOf(extraTicketCount > 0) }
     val needsKindPick = extraction?.classification?.needsUserConfirmation == true
     // Sparse rule: code + date + (name or venue). Gate, seat and tier are optional.
     val canSave = hasCode && startsAt != null && (title.isNotBlank() || venue.isNotBlank())
@@ -241,6 +248,22 @@ fun TicketReviewDialog(
                 ReviewField("Ticket type", tier, required = false, onChange = { tier = it })
                 ReviewField("Guest", guest, required = false, private = true, onChange = { guest = it })
                 CodeRow(hasCode, extraction?.fields?.get(PassField.BARCODE))
+                if (extraTicketCount > 0) {
+                    val total = extraTicketCount + 1
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .toggleable(value = saveAll, role = Role.Checkbox, onValueChange = { saveAll = it })
+                    ) {
+                        Checkbox(checked = saveAll, onCheckedChange = null)
+                        Text(
+                            "This file has $total tickets. Save each as its own pass.",
+                            color = Ink,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
                 // Non-blocking checks (date in the past, end before start, code still pending).
                 val validateKind = if (confirmedKind == TicketDocumentKind.SGR_TICKET) {
                     PassKind.RAIL
@@ -256,8 +279,11 @@ fun TicketReviewDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(build(), confirmedKind) }, enabled = canSave) {
-                Text("Save pass", fontFamily = GeometricSansFamily)
+            TextButton(onClick = { onSave(build(), confirmedKind, saveAll) }, enabled = canSave) {
+                Text(
+                    if (saveAll) "Save ${extraTicketCount + 1} passes" else "Save pass",
+                    fontFamily = GeometricSansFamily
+                )
             }
         },
         dismissButton = {
