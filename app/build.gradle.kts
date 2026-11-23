@@ -32,8 +32,8 @@ android {
         applicationId = "com.lipabill.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 42
-        versionName = "3.2.0"
+        versionCode = 43
+        versionName = "3.2.1"
         // Real devices are arm64; drop x86/x86_64 emulator ABIs from shipped APKs.
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -136,6 +136,9 @@ android {
             excludes += "META-INF/LICENSE"
             excludes += "META-INF/LICENSE.txt"
             excludes += "META-INF/NOTICE.txt"
+            // AndroidX ships per-module LICENSE copies; none are needed at runtime.
+            excludes += "META-INF/androidx/**/LICENSE.txt"
+            excludes += "META-INF/*.version"
             // PDFBox pulls BouncyCastle PQC tables that text extraction never uses.
             excludes += "org/bouncycastle/pqc/**"
             excludes += "org/bouncycastle/x509/*.properties"
