@@ -311,51 +311,6 @@ fun DetailSkeleton(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun RequestSkeleton(modifier: Modifier = Modifier) {
-    SkeletonScreen(modifier = modifier) { brush ->
-        SkeletonBone(
-            modifier = Modifier
-                .width(100.dp)
-                .height(24.dp)
-                .align(Alignment.CenterHorizontally),
-            brush = brush
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        SkeletonBone(
-            modifier = Modifier
-                .width(160.dp)
-                .height(14.dp)
-                .align(Alignment.CenterHorizontally),
-            brush = brush
-        )
-        Spacer(modifier = Modifier.height(Space.section))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)
-        ) {
-            PillBone(width = 100.dp, brush = brush)
-            PillBone(width = 100.dp, brush = brush)
-        }
-        Spacer(modifier = Modifier.height(Space.section))
-        SkeletonBone(
-            modifier = Modifier
-                .size(248.dp)
-                .align(Alignment.CenterHorizontally),
-            shape = RoundedCornerShape(22.dp),
-            brush = brush
-        )
-        Spacer(modifier = Modifier.height(Space.block))
-        SkeletonBone(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(28.dp),
-            brush = brush
-        )
-    }
-}
-
-@Composable
 private fun SkeletonListRow(
     brush: Brush,
     avatar: Boolean = true
