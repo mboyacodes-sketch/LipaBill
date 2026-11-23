@@ -35,7 +35,6 @@ import com.lipabill.app.ui.adapt.moneySheetSearchOverlayMaxHeight
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
 import com.lipabill.app.ui.sheet.FulizaShortfallNote
 import com.lipabill.app.ui.sheet.MoneyBreakdownLine
-import com.lipabill.app.ui.sheet.MoneyFlowSheetHeader
 import com.lipabill.app.ui.sheet.SheetHeroAmountStyle
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Canvas
@@ -51,12 +50,6 @@ import com.lipabill.app.ui.util.formatKsh
 import com.lipabill.app.ui.util.formatMoneyInputDisplay
 import com.lipabill.app.viewmodel.maskPhone
 import com.lipabill.app.viewmodel.sentThisMonthCopy
-
-/** Send sheet title. Balance is shown on the From wallet row. */
-@Composable
-internal fun SendSheetHeader() {
-    MoneyFlowSheetHeader(title = "Send money")
-}
 
 /** Selected recipient card from the Send amount artboard. */
 @Composable
