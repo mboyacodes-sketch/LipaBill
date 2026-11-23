@@ -44,6 +44,7 @@
     <string name="challenge_offer_title">3 days without food delivery</string>
     <string name="challenge_offer_body">Glovo, Uber Eats, Bolt Food, and Jumia Food count. Other spending does not.</string>
     <string name="challenge_start">Start</string>
+    <string name="challenge_running">Running</string>
     <string name="challenge_restart">Start again</string>
     <string name="challenge_active_title">Day %1$d of %2$d</string>
     <string name="challenge_active_body_last">Still clear · last day</string>
@@ -120,7 +121,11 @@
     <string name="pattern_airtime_body">%1$d top-ups in 30 days, about %2$s each. One bundle may cost less.</string>
     <string name="challenges_title">Challenges</string>
     <string name="challenges_suggested">Picked from your ledger</string>
-    <string name="challenges_busy">You already have one running — Start switches to the new challenge.</string>
+    <string name="challenges_busy">You can run up to 3 challenges at once.</string>
+    <string name="challenges_at_cap">You already have 3 challenges running. Finish or wait for one to end.</string>
+    <string name="challenges_already_running">Already running.</string>
+    <string name="habits_also_running">Also running</string>
+    <string name="habits_also_running_day">Day %1$d of %2$d</string>
     <string name="challenges_filter_for_you">For you</string>
     <string name="challenges_filter_spend">Spend less</string>
     <string name="challenges_filter_fees">Fees</string>
@@ -132,7 +137,7 @@
     <string name="challenges_days_chip">%1$d days</string>
     <string name="challenges_points_chip">+%1$d points</string>
     <string name="challenges_duo_title">Duo streak</string>
-    <string name="challenges_duo_body">Invite a friend to the same challenge. Only days kept are shared, never amounts.</string>
+    <string name="challenges_duo_body">Share a challenge invite. Duo tracking is coming later — for now this only sends a message.</string>
     <string name="challenges_duo_invite">Invite a friend</string>
     <string name="challenges_duo_you">You</string>
     <string name="challenges_duo_plus">+1</string>
@@ -238,10 +243,11 @@
     <string name="complete_level_unlocked">Level %1$d unlocked</string>
     <string name="complete_badge_line">%1$s · %2$d of %3$d collected</string>
     <string name="complete_lock_copy">Lock what you kept? Move the money you saved so it stays there.</string>
-    <string name="complete_move_savings">Move to savings</string>
+    <string name="complete_move_savings">Share to move savings</string>
     <string name="complete_savings_note">Lock %1$s from keeping “%2$s”. Move it to M-Shwari or your savings till so it stays put.</string>
     <string name="complete_share">Share, no amounts</string>
     <string name="complete_next">Next challenge</string>
+    <string name="complete_done">Back to Habits</string>
     <string name="complete_share_text">I kept a LipaBill challenge: %1$s</string>
     <string name="recap_title">%1$s recap</string>
     <string name="recap_brand">LipaBill</string>
@@ -259,7 +265,7 @@
     <string name="recap_next">Next month: one quiet Saturday gets you further.</string>
     <string name="recap_hide_amounts">Hide amounts when sharing</string>
     <string name="recap_share">Share</string>
-    <string name="recap_save">Save image</string>
+    <string name="recap_save">Share details</string>
     <string name="recap_share_text">My LipaBill %1$s recap: %2$d quiet days, %3$d challenges kept.</string>
     <string name="widget_description">Safe to spend and your balance, hidden until you tap the eye.</string>
     <string name="widget_safe_label">Safe to spend</string>
