@@ -33,6 +33,8 @@ class EngagementRepository(
 ) {
     fun observeLatest() = challenges.observeLatest()
 
+    fun observeActive() = challenges.observeActive()
+
     fun observeStreak() = challenges.observeStreak()
 
     fun observeKeptTemplateIds() = challenges.observeKeptTemplateIds()
@@ -52,35 +54,61 @@ class EngagementRepository(
     suspend fun startSkipPayeeChallenge(payeeName: String, now: Long = System.currentTimeMillis()): Long? =
         start(ChallengeTemplates.skipPayee(payeeName), now)
 
-    /** Starts a known template. Unknown ids do nothing. */
+    /** Active challenges, newest first. */
+    suspend fun listActive(): List<ChallengeEntity> = withContext(Dispatchers.IO) {
+        challenges.listActive()
+    }
+
+    /** Newest active challenge, if any. */
+    suspend fun activeChallenge(): ChallengeEntity? = listActive().firstOrNull()
+
+    /** Starts a known template. Unknown ids do nothing. At most [MAX_ACTIVE] concurrent. */
     suspend fun startChallenge(templateId: String, now: Long = System.currentTimeMillis()): Long? {
         val template = ChallengeTemplates.byId(templateId) ?: return null
         return start(template, now)
     }
 
     private suspend fun start(template: ChallengeTemplate, now: Long): Long? = withContext(Dispatchers.IO) {
-        val existing = challenges.listEvaluable(now, ChallengeEvaluator.GRACE_MILLIS)
-            .firstOrNull { it.status == ChallengeStatus.ACTIVE.name }
-        if (existing != null) return@withContext existing.id
-        val zone = ChallengeClock.deviceZone()
-        val (start, end) = ChallengeClock.windowFrom(now, template.durationDays, zone)
-        val id = challenges.insertChallenge(
-            ChallengeEntity(
-                templateId = template.id,
-                startAt = start,
-                endAt = end,
-                zoneId = zone.id,
-                status = ChallengeStatus.ACTIVE.name
-            )
-        )
-        AppMetrics.challengeStarted(ChallengeTemplates.metricId(template.id))
-        id
+        val active = challenges.listActive()
+        val same = active.firstOrNull { it.templateId == template.id }
+        when {
+            // Same template already running — keep the window; do not insert again.
+            same != null -> same.id
+            // Cap concurrent actives.
+            active.size >= MAX_ACTIVE -> null
+            else -> {
+                val zone = ChallengeClock.deviceZone()
+                val (start, end) = ChallengeClock.windowFrom(now, template.durationDays, zone)
+                val id = challenges.insertChallenge(
+                    ChallengeEntity(
+                        templateId = template.id,
+                        startAt = start,
+                        endAt = end,
+                        zoneId = zone.id,
+                        status = ChallengeStatus.ACTIVE.name
+                    )
+                )
+                AppMetrics.challengeStarted(ChallengeTemplates.metricId(template.id))
+                id
+            }
+        }
     }
 
-    suspend fun cancelActive(now: Long = System.currentTimeMillis()) = withContext(Dispatchers.IO) {
-        val active = challenges.listEvaluable(now, ChallengeEvaluator.GRACE_MILLIS)
-            .filter { it.status == ChallengeStatus.ACTIVE.name }
-        for (row in active) {
+    /** Cancels one active challenge by row id. */
+    suspend fun cancelChallenge(id: Long) = withContext(Dispatchers.IO) {
+        val row = challenges.listActive().firstOrNull { it.id == id } ?: return@withContext
+        challenges.updateOutcome(
+            id = row.id,
+            status = ChallengeStatus.CANCELLED.name,
+            breakingTransactionId = row.breakingTransactionId,
+            completedAt = row.completedAt,
+            brokenAt = row.brokenAt
+        )
+    }
+
+    /** Cancels every active challenge (tests / rare wipe). */
+    suspend fun cancelActive() = withContext(Dispatchers.IO) {
+        for (row in challenges.listActive()) {
             challenges.updateOutcome(
                 id = row.id,
                 status = ChallengeStatus.CANCELLED.name,
@@ -205,6 +233,10 @@ class EngagementRepository(
             )
             if (inserted != -1L) AppMetrics.challengeCompleted(ChallengeTemplates.metricId(row.templateId))
         }
+    }
+
+    companion object {
+        const val MAX_ACTIVE = 3
     }
 }
 
