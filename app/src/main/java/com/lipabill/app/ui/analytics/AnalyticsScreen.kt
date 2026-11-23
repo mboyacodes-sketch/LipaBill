@@ -32,6 +32,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -62,6 +64,7 @@ import com.lipabill.app.data.export.canExportStatementPdf
 import com.lipabill.app.data.export.statementSourceBadge
 import com.lipabill.app.data.export.writeLedgerStatementPdf
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.ui.components.ConsumeSnackbarMessage
 import com.lipabill.app.ui.components.PaymentRailRow
 import com.lipabill.app.ui.components.InsightsSkeleton
 import com.lipabill.app.ui.theme.Canvas
@@ -73,9 +76,9 @@ import com.lipabill.app.ui.theme.Space
 import com.lipabill.app.ui.theme.asPillLabel
 import com.lipabill.app.viewmodel.AnalyticsRange
 import com.lipabill.app.viewmodel.AnalyticsSummary
-import com.lipabill.app.viewmodel.EngagementViewModel
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import com.lipabill.app.viewmodel.WalletAccount
+import com.lipabill.app.viewmodel.activityEngagementViewModel
 import com.lipabill.app.viewmodel.shortPeriodSpan
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -116,8 +119,8 @@ fun MetricsScreen(
         return
     }
     val challenge by viewModel.challenge.collectAsStateWithLifecycle()
-    // Fully qualified: the `viewModel` parameter hides the Compose helper of the same name.
-    val engageVm: EngagementViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val challengeMessage by viewModel.challengeMessage.collectAsStateWithLifecycle()
+    val engageVm = activityEngagementViewModel()
     val engage by engageVm.uiState.collectAsStateWithLifecycle()
     val account = state.account
     val mpesa = account == WalletAccount.MPESA
@@ -125,6 +128,8 @@ fun MetricsScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
+    ConsumeSnackbarMessage(challengeMessage, snackbar) { viewModel.clearChallengeMessage() }
 
     LaunchedEffect(Unit) { viewModel.refreshChallenge() }
     val earnedNow = stats.badges.filter { it.earned }.map { it.id }.toSet()
@@ -203,6 +208,7 @@ fun MetricsScreen(
     Scaffold(
         modifier = modifier,
         containerColor = Canvas,
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             if (onBack != null) {
                 TopAppBar(
@@ -312,7 +318,9 @@ fun MetricsScreen(
                     quietStreak = stats.quietStreak,
                     onStart = viewModel::startSkipChallenge,
                     onCheckIn = onOpenCheckIn,
-                    onOpenBreakPayment = onOpenBreakPayment
+                    checkInDone = engage.checkInDone,
+                    onOpenBreakPayment = onOpenBreakPayment,
+                    onDismissCompleted = viewModel::acknowledgeCompletedChallenge
                 )
             }
 
@@ -427,7 +435,7 @@ private fun PeriodPill(
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             listOf(
-                AnalyticsRange.THIS_MONTH to "Today",
+                AnalyticsRange.THIS_MONTH to "This month",
                 AnalyticsRange.DAYS_7 to "Last 7 days",
                 AnalyticsRange.DAYS_30 to "Last 30 days",
                 AnalyticsRange.DAYS_90 to "Last 90 days",
@@ -475,7 +483,7 @@ private fun shortRangeLabel(stats: AnalyticsSummary): String {
     val from = stats.periodFrom
     val to = stats.periodTo
     return when (stats.range) {
-        AnalyticsRange.THIS_MONTH -> "Today"
+        AnalyticsRange.THIS_MONTH -> "This month"
         AnalyticsRange.DAYS_7,
         AnalyticsRange.DAYS_30,
         AnalyticsRange.DAYS_90,
