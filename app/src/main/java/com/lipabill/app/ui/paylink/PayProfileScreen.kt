@@ -45,6 +45,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
@@ -161,7 +162,7 @@ fun PayProfileScreen(
     var addDialExpanded by remember { mutableStateOf(false) }
     var pendingSocialAdd by remember { mutableStateOf<SocialLink.Platform?>(null) }
     var socialEditing by remember { mutableStateOf(false) }
-    var socialRevision by remember { mutableStateOf(0) }
+    var socialRevision by remember { mutableIntStateOf(0) }
     var draftPrimary by remember {
         mutableStateOf(
             when (collectKind) {
@@ -252,7 +253,7 @@ fun PayProfileScreen(
     }
 
     var payQrFixed by remember { mutableStateOf(prefs.payQrFixed) }
-    var dayTick by remember { mutableStateOf(PayLink.dayIndex()) }
+    var dayTick by remember { mutableIntStateOf(PayLink.dayIndex()) }
     LaunchedEffect(payQrFixed) {
         if (payQrFixed) return@LaunchedEffect
         while (true) {
