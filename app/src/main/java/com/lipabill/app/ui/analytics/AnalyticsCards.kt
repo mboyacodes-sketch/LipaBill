@@ -609,7 +609,9 @@ internal fun ChallengeCard(
     quietStreak: Int,
     onStart: (String) -> Unit,
     onCheckIn: () -> Unit,
-    onOpenBreakPayment: (Long) -> Unit = {}
+    checkInDone: Boolean = false,
+    onOpenBreakPayment: (Long) -> Unit = {},
+    onDismissCompleted: () -> Unit = {}
 ) {
     InsightCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -708,15 +710,19 @@ internal fun ChallengeCard(
                 }
             }
             when {
-                challenge.kind == ChallengeCardKind.ACTIVE ->
+                // Weekly quiz — once per ISO week (same gate as RecapCard).
+                challenge.kind == ChallengeCardKind.ACTIVE && !checkInDone ->
                     PrimaryAction(text = "Check in", onClick = onCheckIn)
+                challenge.kind == ChallengeCardKind.COMPLETED ->
+                    PrimaryAction(text = "Done", onClick = onDismissCompleted)
                 challenge.kind == ChallengeCardKind.BROKEN &&
                     challenge.breakingTransactionId != null ->
                     PrimaryAction(
                         text = "See payment",
                         onClick = { onOpenBreakPayment(challenge.breakingTransactionId) }
                     )
-                habit != null ->
+                habit != null &&
+                    challenge.kind != ChallengeCardKind.ACTIVE ->
                     PrimaryAction(text = "Start again", onClick = { onStart(habit.name) })
             }
         }
@@ -1552,7 +1558,7 @@ internal fun RecapCard(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                "MONDAY RECAP",
+                "WEEKLY RECAP",
                 style = HomeType.caption,
                 color = Accent,
                 fontWeight = FontWeight.Bold,
@@ -1562,7 +1568,7 @@ internal fun RecapCard(
                 text = if (checkInDone) {
                     "This week's finding: $finding"
                 } else {
-                    "Check in on Monday to unlock this week's new finding."
+                    "Check in anytime to unlock this week's new finding."
                 },
                 style = HomeType.body,
                 color = Ink,
