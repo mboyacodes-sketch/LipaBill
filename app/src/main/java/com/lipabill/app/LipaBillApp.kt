@@ -265,8 +265,12 @@ class LipaBillApp : Application() {
     fun setActiveWallet(source: MoneySource): Boolean {
         val region = _appRegion.value
         if (source !in _enabledSources.value) return false
-        val line = _simLines.value.firstOrNull { it.payWalletFor(region)?.ledgerSource == source }
-            ?: return false
+        // Same identity as home wallet cards (LineGatedSources), then payWalletFor fallback.
+        val line = _simLines.value.firstOrNull {
+            LineGatedSources.sourceFor(region, it) == source
+        } ?: _simLines.value.firstOrNull {
+            it.payWalletFor(region)?.ledgerSource == source
+        } ?: return false
         securePreferences.preferredSimSubscriptionId = line.subscriptionId
         return true
     }
@@ -347,7 +351,8 @@ class LipaBillApp : Application() {
         // Skip when a developer replay is in progress.
         if (!securePreferences.firstRunSetupDone &&
             !securePreferences.replayFirstRunPending &&
-            (securePreferences.smsBackfillDone ||
+            (securePreferences.debugSkipSetupWizard ||
+                securePreferences.smsBackfillDone ||
                 securePreferences.preferredSimSubscriptionId >= 0 ||
                 securePreferences.accessibilityOnboardingSeen)
         ) {
@@ -547,8 +552,11 @@ class LipaBillApp : Application() {
         }
         securePreferences.recurringPatternChoices = RecurringPatterns.serializeChoices(next)
         _recurringPatternChoices.value = next
-        if (choice == RecurringChoice.Confirmed) {
-            setPayeeWatched(key, true)
+        // Confirm → watch + re-rank to top; dismiss → unwatch so Regulars / Coming up drop it.
+        when (choice) {
+            RecurringChoice.Confirmed -> setPayeeWatched(key, true)
+            RecurringChoice.Dismissed -> setPayeeWatched(key, false)
+            RecurringChoice.Pending, null -> Unit
         }
     }
 
