@@ -34,6 +34,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -53,11 +55,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lipabill.app.R
 import com.lipabill.app.engage.HabitPattern
 import com.lipabill.app.engage.centsToKes
 import com.lipabill.app.ui.LipaPillButton
+import com.lipabill.app.ui.components.ConsumeSnackbarMessage
 import com.lipabill.app.ui.components.HabitsSkeleton
 import com.lipabill.app.ui.theme.ActionMetrics
 import com.lipabill.app.ui.theme.Canvas
@@ -77,6 +79,7 @@ import com.lipabill.app.viewmodel.ChallengeSubject
 import com.lipabill.app.viewmodel.EngageUiState
 import com.lipabill.app.viewmodel.EngagementViewModel
 import com.lipabill.app.viewmodel.HabitsUiState
+import com.lipabill.app.viewmodel.activityEngagementViewModel
 import java.time.format.TextStyle
 import java.util.Locale
 
@@ -87,40 +90,49 @@ fun HabitsScreen(
     onQuizOpened: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: EngagementViewModel = viewModel()
+    viewModel: EngagementViewModel = activityEngagementViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val habits by viewModel.habits.collectAsStateWithLifecycle()
+    val actionMessage by viewModel.actionMessage.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    ConsumeSnackbarMessage(actionMessage, snackbar) { viewModel.clearActionMessage() }
     if (state.isLoading) {
         HabitsSkeleton(modifier = modifier)
         return
     }
     var page by rememberSaveable { mutableStateOf(HabitsPage.HOME) }
-    var autoCompleteShown by rememberSaveable { mutableStateOf(false) }
+    fun leaveComplete(to: HabitsPage = HabitsPage.HOME) {
+        viewModel.acknowledgeCompletedChallenge()
+        page = to
+    }
     LaunchedEffect(Unit) { viewModel.openHabits() }
-    LaunchedEffect(startQuiz) {
+    LaunchedEffect(startQuiz, state.checkInDone) {
         if (startQuiz) {
-            page = HabitsPage.CHECK_IN
+            // One weekly check-in; ignore Extra / Insights taps after it's done.
+            if (!state.checkInDone) {
+                page = HabitsPage.CHECK_IN
+            }
             onQuizOpened()
         }
     }
-    LaunchedEffect(state.card?.kind) {
-        if (state.card?.kind == ChallengeCardKind.COMPLETED && !autoCompleteShown) {
-            autoCompleteShown = true
+    LaunchedEffect(state.card?.kind, state.card?.challengeId) {
+        if (state.card?.kind == ChallengeCardKind.COMPLETED) {
             page = HabitsPage.COMPLETE
         }
     }
     BackHandler {
         when (page) {
             HabitsPage.HOME -> onBack()
+            HabitsPage.COMPLETE -> leaveComplete()
+            HabitsPage.RECAP -> page = HabitsPage.SETTINGS
             else -> page = HabitsPage.HOME
         }
     }
-    // Start stays tappable even with an active challenge — startChallenge switches.
-    val canStart = true
+    val activeTemplateIds = state.activeTemplateIds
+    val atCap = activeTemplateIds.size >= 3
     val startFromPage: (String) -> Unit = { templateId ->
-        viewModel.startChallenge(templateId)
-        page = HabitsPage.HOME
+        viewModel.startChallenge(templateId) { page = HabitsPage.HOME }
     }
     val showTopBar = page in setOf(
         HabitsPage.CHALLENGES,
@@ -131,6 +143,7 @@ fun HabitsScreen(
     Scaffold(
         modifier = modifier,
         containerColor = Canvas,
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             if (showTopBar) {
                 TopAppBar(
@@ -181,7 +194,7 @@ fun HabitsScreen(
                 )
                 HabitsPage.COMPLETE -> {
                     val card = state.card
-                    if (card == null) {
+                    if (card == null || card.kind != ChallengeCardKind.COMPLETED) {
                         LaunchedEffect(Unit) { page = HabitsPage.HOME }
                         Box(Modifier.fillMaxSize())
                     } else {
@@ -189,8 +202,8 @@ fun HabitsScreen(
                             card = card,
                             habits = habits,
                             stayedCents = stayedEstimateCents(habits),
-                            onNextChallenge = { page = HabitsPage.CHALLENGES },
-                            onDone = { page = HabitsPage.HOME }
+                            onNextChallenge = { leaveComplete(HabitsPage.CHALLENGES) },
+                            onDone = { leaveComplete() }
                         )
                     }
                 }
@@ -214,24 +227,27 @@ fun HabitsScreen(
                             HabitsPage.HOME -> HabitsHome(
                                 state = state,
                                 habits = habits,
-                                canStart = canStart,
+                                activeTemplateIds = activeTemplateIds,
                                 onOpen = { page = it },
                                 viewModel = viewModel
                             )
                             HabitsPage.CHALLENGES -> ChallengesPage(
                                 habits = habits,
-                                canStart = canStart,
-                                hasActiveChallenge = state.card?.kind == ChallengeCardKind.ACTIVE,
+                                activeTemplateIds = activeTemplateIds,
+                                atCap = atCap,
                                 onStart = startFromPage,
                                 onStartDiy = { categoryId, days, capCents ->
-                                    viewModel.startDiy(categoryId, days, capCents)
-                                    page = HabitsPage.HOME
+                                    viewModel.startDiy(categoryId, days, capCents) {
+                                        page = HabitsPage.HOME
+                                    }
                                 },
-                                onDuoInvite = { viewModel.setDuoPending(true) }
+                                // Share-only until duo tracking ships; do not write hollow prefs.
+                                onDuoInvite = { }
                             )
                             HabitsPage.NOTICED -> NoticedPage(
                                 habits = habits,
-                                canStart = canStart,
+                                activeTemplateIds = activeTemplateIds,
+                                atCap = atCap,
                                 onStart = startFromPage,
                                 onNotMe = viewModel::dismissPattern,
                                 onDismissCatchUp = viewModel::dismissCatchUp,
@@ -271,7 +287,7 @@ private fun stayedEstimateCents(habits: HabitsUiState): Long =
 private fun HabitsHome(
     state: EngageUiState,
     habits: HabitsUiState,
-    canStart: Boolean,
+    activeTemplateIds: Set<String>,
     onOpen: (HabitsPage) -> Unit,
     viewModel: EngagementViewModel
 ) {
@@ -338,9 +354,26 @@ private fun HabitsHome(
                 payee = card.payee,
                 fuliza = card.subject == ChallengeSubject.FULIZA,
                 generic = card.subject in GENERIC_SUBJECTS,
-                onStart = { viewModel.startChallenge() },
+                onStart = {
+                    val suggested = habits.options.firstOrNull { it.suggested }?.templateId
+                    viewModel.startChallenge(suggested ?: card.templateId)
+                },
                 onRestart = viewModel::restartChallenge
             )
+        }
+        if (state.otherActive.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                stringResource(R.string.habits_also_running),
+                style = HomeType.caption,
+                color = Mute,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            state.otherActive.forEach { other ->
+                AlsoRunningRow(other)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
         }
         Spacer(modifier = Modifier.height(HabitsTokens.sectionGap))
     }
@@ -360,7 +393,8 @@ private fun HabitsHome(
         Spacer(modifier = Modifier.height(12.dp))
         PatternCard(
             pattern = pattern,
-            canStart = canStart,
+            activeTemplateIds = activeTemplateIds,
+            atCap = activeTemplateIds.size >= 3,
             onStart = { viewModel.startChallenge(it) },
             onNotMe = { viewModel.dismissPattern(pattern.id) },
             foodBars = habits.foodDayBars,
@@ -386,6 +420,34 @@ private fun HabitsHome(
         )
         Spacer(modifier = Modifier.height(12.dp))
         BadgeStrip(habits.badges, onClick = { onOpen(HabitsPage.BADGES) })
+    }
+}
+
+@Composable
+private fun AlsoRunningRow(card: ChallengeCardState) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(CardWhite)
+            .border(1.dp, Hairline, RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                challengePlayingName(card.subject, card.payee, card.totalDays),
+                style = HomeType.rowTitle,
+                color = Ink,
+                maxLines = 2
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                stringResource(R.string.habits_also_running_day, card.day, card.totalDays),
+                style = HomeType.caption,
+                color = Mute
+            )
+        }
     }
 }
 
@@ -450,6 +512,16 @@ private fun ActiveNowPlaying(
 
 @Composable
 private fun WeekdayLetterStrip(kind: ChallengeCardKind, day: Int, totalDays: Int) {
+    // DIY can run past a week — letter cells only fit seven days.
+    if (totalDays > 7) {
+        Text(
+            stringResource(R.string.challenge_active_title, day.coerceAtLeast(1), totalDays),
+            style = HomeType.caption,
+            color = Mute,
+            fontWeight = FontWeight.SemiBold
+        )
+        return
+    }
     val letters = listOf("M", "T", "W", "T", "F", "S", "S")
     val days = totalDays.coerceIn(1, 7)
     val done = when (kind) {
