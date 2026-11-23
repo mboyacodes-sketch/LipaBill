@@ -141,16 +141,17 @@ fun ProcessingReceiptScreen(
         }
     }
     val snapshot = remember(auditId) { PendingPaymentReceipt.peek(auditId) }
-    val attempt by app.repeatRepository.observeById(auditId)
-        .collectAsStateWithLifecycle(initialValue = null)
+    // Remembered: a new Room flow per recomposition would re-subscribe and re-query.
+    val attemptFlow = remember(auditId) { app.repeatRepository.observeById(auditId) }
+    val attempt by attemptFlow.collectAsStateWithLifecycle(initialValue = null)
     var matchedTx by remember { mutableStateOf<MpesaTransaction?>(null) }
     val failedAuditId by PendingPaymentReceipt.failedAuditId
         .collectAsStateWithLifecycle()
     val paymentFailed = failedAuditId == auditId
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    val recent by app.repository.observeTransactions(limit = 40)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val recentFlow = remember { app.repository.observeTransactions(limit = 40) }
+    val recent by recentFlow.collectAsStateWithLifecycle(initialValue = emptyList())
 
     DisposableEffect(lifecycleOwner, auditId) {
         val observer = LifecycleEventObserver { _, event ->
