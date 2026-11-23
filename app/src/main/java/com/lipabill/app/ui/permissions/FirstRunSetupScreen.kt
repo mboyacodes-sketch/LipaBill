@@ -42,9 +42,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -61,6 +64,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.RegionGuess
@@ -75,6 +81,7 @@ import com.lipabill.app.data.model.selectableAppRegions
 import com.lipabill.app.data.model.simWalletNumberHints
 import com.lipabill.app.data.model.toggleLedgerSource
 import com.lipabill.app.ui.ProviderPicker
+import com.lipabill.app.ui.privacy.RecordingCapture
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Canvas
 import com.lipabill.app.ui.theme.CardWhite
@@ -116,6 +123,8 @@ fun FirstRunSetupScreen(
     onRequestNotifications: () -> Unit = {},
     onSkipNotifications: () -> Unit = {},
     onSkipHibernation: () -> Unit = {},
+    /** Called when unused-app restrictions are already Disabled (auto-advance). */
+    onHibernationCleared: () -> Unit = {},
     onOpenHibernationSettings: () -> Unit = {},
     onSkipOemSurvival: () -> Unit = {},
     onOpenOemSurvivalSettings: () -> Unit = {},
@@ -124,7 +133,9 @@ fun FirstRunSetupScreen(
     accessibilityNote: String? = null,
     region: AppRegion = AppRegion.DEFAULT,
     onRegionSelected: (AppRegion) -> Unit = {},
-    onProvidersSelected: (Set<MoneySource>) -> Unit = {}
+    onProvidersSelected: (Set<MoneySource>) -> Unit = {},
+    /** Debug / sideload: jump straight to Home and remember the Settings toggle. */
+    onDebugSkipToApp: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val regionGuess = remember { context.detectAppRegion() }
@@ -209,6 +220,36 @@ fun FirstRunSetupScreen(
         if (notificationsGranted && pages[pager.currentPage] == FirstRunPage.Notifications) next()
     }
 
+    // After opening battery / hibernation settings, advance only when the user returns and is clear.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var resumeTick by remember { mutableIntStateOf(0) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) resumeTick++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(resumeTick, pager.currentPage) {
+        if (resumeTick == 0) return@LaunchedEffect
+        when (pages.getOrNull(pager.currentPage)) {
+            FirstRunPage.Hibernation -> {
+                val status = unusedAppRestrictionOf(readUnusedAppRestrictions(context))
+                if (status == UnusedAppRestriction.Disabled) {
+                    onHibernationCleared()
+                    next()
+                }
+            }
+            FirstRunPage.OemSurvival -> {
+                if (AccessibilityHealthProbe.isIgnoringBatteryOptimizations(context)) {
+                    onSkipOemSurvival()
+                    next()
+                }
+            }
+            else -> Unit
+        }
+    }
+
     val page = pages[pager.currentPage]
     val intro = rememberPagerState(pageCount = { FirstRunWizard.INTRO_SLIDES.size })
     val regionIndex = pages.indexOf(FirstRunPage.Region).coerceAtLeast(0)
@@ -242,6 +283,16 @@ fun FirstRunSetupScreen(
                 side = chrome.side
             )
         }
+        if (!onIntro && firstRun && RecordingCapture.available && onDebugSkipToApp != null) {
+            TextButton(
+                onClick = onDebugSkipToApp,
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .padding(end = (chrome.side - 8.dp).coerceAtLeast(4.dp))
+            ) {
+                Text("Skip to app", color = Mute)
+            }
+        }
         HorizontalPager(
             state = pager,
             userScrollEnabled = false,
@@ -265,7 +316,8 @@ fun FirstRunSetupScreen(
                             goTo(regionIndex)
                         }
                     },
-                    onSkip = { goTo(regionIndex) }
+                    onSkip = { onDebugSkipToApp?.invoke() ?: goTo(regionIndex) },
+                    skipLabel = if (onDebugSkipToApp != null) "Skip to app" else "Skip"
                 )
             } else {
                 WizardPageBody(
@@ -907,18 +959,13 @@ private fun WizardActions(
                 onDone = if (isLastPage) onFinished else onNext
             )
             FirstRunPage.Hibernation -> {
-                WizardPrimaryButton(PermissionLesson.Hibernation.allowLabel, {
-                    onOpenHibernationSettings()
-                    onSkipHibernation()
-                })
+                // Open settings only — stay on this page until return (auto-advance) or Not now.
+                WizardPrimaryButton(PermissionLesson.Hibernation.allowLabel, onOpenHibernationSettings)
                 Spacer(modifier = Modifier.height(gap))
                 WizardSecondaryButton("Not now", onSkipHibernation)
             }
             FirstRunPage.OemSurvival -> {
-                WizardPrimaryButton(PermissionLesson.OemSurvival.allowLabel, {
-                    onOpenOemSurvivalSettings()
-                    onSkipOemSurvival()
-                })
+                WizardPrimaryButton(PermissionLesson.OemSurvival.allowLabel, onOpenOemSurvivalSettings)
                 Spacer(modifier = Modifier.height(gap))
                 WizardSecondaryButton("Not now", onSkipOemSurvival)
             }
