@@ -16,6 +16,13 @@ interface ChallengeDao {
     @Query("SELECT * FROM challenges ORDER BY id DESC LIMIT 1")
     fun observeLatest(): Flow<ChallengeEntity?>
 
+    /** Newest first. */
+    @Query("SELECT * FROM challenges WHERE status = 'ACTIVE' ORDER BY id DESC")
+    fun observeActive(): Flow<List<ChallengeEntity>>
+
+    @Query("SELECT * FROM challenges WHERE status = 'ACTIVE' ORDER BY id DESC")
+    suspend fun listActive(): List<ChallengeEntity>
+
     @Query(
         """
         SELECT * FROM challenges
