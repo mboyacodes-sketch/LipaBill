@@ -3,6 +3,7 @@ package com.lipabill.app.data.sms
 import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.data.parser.KenyanConfirmationParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -166,5 +167,43 @@ class ConfirmationIngestionTest {
         assertEquals(1, kept.size)
         assertEquals("MBNHEJ7B6WAAEYOV", kept.single().code)
         assertEquals(MoneySource.MPESA, kept.single().source)
+    }
+
+    @Test
+    fun coop_mpesa_credit_mirror_keeps_wallet_drops_bank() {
+        val coopBody =
+            "Dear Berry, You have received Kes 20000 on your M-pesa from CO-OP CUSTODY CIC." +
+                "Bank Ref:P752611237428056.Mpesa Ref:UKNR735IGK."
+        val mpesaBody =
+            "UKNR735IGK Confirmed.You have received Ksh20,000.00 from CO-OPBANK CORPORATE " +
+                "M-PESA PAYMENTS 5186899 on 23/11/26 at 3:14 PM New M-PESA balance is Ksh20,333.28."
+        val bank = ConfirmationIngestion.acceptAndParse("COOPBANK", coopBody, ts)!!
+        val wallet = ConfirmationIngestion.acceptAndParse("MPESA", mpesaBody, ts)!!
+        assertEquals(MoneySource.COOP, bank.source)
+        assertEquals(MoneySource.MPESA, wallet.source)
+        val kept = ConfirmationIngestion.dedupeConfirmationTwins(listOf(bank, wallet))
+        assertEquals(1, kept.size)
+        assertEquals(MoneySource.MPESA, kept.single().source)
+        assertEquals("UKNR735IGK", kept.single().code)
+        assertEquals(20000.0, kept.single().amount!!, 0.001)
+    }
+
+    @Test
+    fun equity_airtel_credit_mirror_keeps_wallet_drops_bank() {
+        val bankBody =
+            "Dear Customer, You have received KES 5,000.00 on your Airtel Money from SALARY. " +
+                "Bank Ref:EQ99887766.Airtel Ref:AM55TX99."
+        val walletBody =
+            "AM55TX99 Confirmed. You have received UGX 5000 from EQUITY. " +
+                "New Airtel Money balance is UGX 9,000. TxnId: AM55TX99."
+        // Airtel UG-style body may not pass Kenya MPESA filter; parse wallet via Kenyan path.
+        val bank = ConfirmationIngestion.acceptAndParse("EQUITY", bankBody, ts)!!
+        assertTrue(KenyanConfirmationParser.isBankWalletMirrorSms(bankBody))
+        assertEquals(MoneySource.EQUITY, bank.source)
+        val wallet = KenyanConfirmationParser.parse(walletBody, ts, MoneySource.AIRTEL_MONEY)!!
+        val kept = ConfirmationIngestion.dedupeConfirmationTwins(listOf(bank, wallet))
+        assertEquals(1, kept.size)
+        assertEquals(MoneySource.AIRTEL_MONEY, kept.single().source)
+        assertEquals("AM55TX99", kept.single().code)
     }
 }
