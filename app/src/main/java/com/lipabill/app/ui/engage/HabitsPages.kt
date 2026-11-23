@@ -345,14 +345,18 @@ internal fun patternChallenge(pattern: HabitPattern): String? = when (pattern) {
 @Composable
 internal fun PatternCard(
     pattern: HabitPattern,
-    canStart: Boolean,
     onStart: (String) -> Unit,
     onNotMe: () -> Unit,
+    activeTemplateIds: Set<String> = emptySet(),
+    atCap: Boolean = false,
     foodBars: List<Int> = emptyList(),
     compact: Boolean = false
 ) {
     val (icon, title, body) = patternCopy(pattern)
     val strong = pattern is HabitPattern.FoodPeakDay && pattern.sharePercent >= 40
+    val templateId = patternChallenge(pattern)
+    val alreadyRunning = templateId != null && templateId in activeTemplateIds
+    val canStart = templateId != null && !alreadyRunning && !atCap
     HabitsCard {
         if (compact) {
             Row(verticalAlignment = Alignment.Top) {
@@ -393,13 +397,20 @@ internal fun PatternCard(
         when (pattern) {
             is HabitPattern.PaydayRush -> {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val templateId = patternChallenge(pattern)
-                    if (templateId != null && canStart) {
+                    if (alreadyRunning) {
+                        PillButton(
+                            label = stringResource(R.string.challenge_running),
+                            filled = false,
+                            enabled = false,
+                            onClick = {},
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else if (canStart) {
                         PillButton(
                             label = stringResource(R.string.pattern_payday_cta),
                             filled = false,
                             accentOutline = true,
-                            onClick = { onStart(templateId) },
+                            onClick = { onStart(templateId!!) },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -413,15 +424,22 @@ internal fun PatternCard(
             }
             else -> {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val templateId = patternChallenge(pattern)
-                    if (templateId != null && canStart) {
+                    if (alreadyRunning) {
+                        PillButton(
+                            label = stringResource(R.string.challenge_running),
+                            filled = false,
+                            enabled = false,
+                            onClick = {},
+                            modifier = Modifier.weight(1f)
+                        )
+                    } else if (canStart) {
                         PillButton(
                             label = when (pattern) {
                                 is HabitPattern.FulizaLateMonth -> stringResource(R.string.pattern_fuliza_cta)
                                 else -> stringResource(R.string.habits_make_challenge)
                             },
                             filled = true,
-                            onClick = { onStart(templateId) },
+                            onClick = { onStart(templateId!!) },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -429,7 +447,11 @@ internal fun PatternCard(
                         label = stringResource(R.string.habits_not_me),
                         filled = false,
                         onClick = onNotMe,
-                        modifier = if (templateId == null || !canStart) Modifier.fillMaxWidth() else Modifier.weight(1f)
+                        modifier = if (templateId == null || (!canStart && !alreadyRunning)) {
+                            Modifier.fillMaxWidth()
+                        } else {
+                            Modifier.weight(1f)
+                        }
                     )
                 }
             }
@@ -659,8 +681,8 @@ internal fun badgeTitle(badge: HabitBadge): String = stringResource(
 @Composable
 internal fun ChallengesPage(
     habits: HabitsUiState,
-    canStart: Boolean,
-    hasActiveChallenge: Boolean = false,
+    activeTemplateIds: Set<String> = emptySet(),
+    atCap: Boolean = false,
     onStart: (String) -> Unit,
     onStartDiy: (categoryId: String, days: Int, capCents: Long) -> Unit,
     onDuoInvite: () -> Unit
@@ -680,9 +702,11 @@ internal fun ChallengesPage(
     val featured = filtered.firstOrNull { it.suggested } ?: filtered.firstOrNull()
     val rest = filtered.filterNot { it.templateId == featured?.templateId }
     Column(verticalArrangement = Arrangement.spacedBy(HabitsTokens.sectionGap)) {
-        if (hasActiveChallenge) {
-            Text(stringResource(R.string.challenges_busy), style = HomeType.body, color = Mute)
-        }
+        Text(
+            stringResource(if (atCap) R.string.challenges_at_cap else R.string.challenges_busy),
+            style = HomeType.body,
+            color = Mute
+        )
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -701,14 +725,22 @@ internal fun ChallengesPage(
             }
         }
         featured?.let { option ->
-            FeaturedChallengeCard(option = option, enabled = canStart, onStart = { onStart(option.templateId) })
+            val running = option.templateId in activeTemplateIds
+            FeaturedChallengeCard(
+                option = option,
+                enabled = !running && !atCap,
+                running = running,
+                onStart = { onStart(option.templateId) }
+            )
         }
         rest.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                 row.forEach { option ->
+                    val running = option.templateId in activeTemplateIds
                     CompactChallengeCard(
                         option = option,
-                        enabled = canStart,
+                        enabled = !running && !atCap,
+                        running = running,
                         onStart = { onStart(option.templateId) },
                         modifier = Modifier.weight(1f)
                     )
@@ -719,7 +751,7 @@ internal fun ChallengesPage(
         DuoCard(onInvite = onDuoInvite)
         DiyCard(
             shops = habits.options.mapNotNull { it.payee }.distinct(),
-            enabled = canStart,
+            enabled = !atCap,
             onStart = onStartDiy
         )
     }
@@ -731,7 +763,12 @@ private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun FeaturedChallengeCard(option: ChallengeOption, enabled: Boolean, onStart: () -> Unit) {
+private fun FeaturedChallengeCard(
+    option: ChallengeOption,
+    enabled: Boolean,
+    onStart: () -> Unit,
+    running: Boolean = false
+) {
     val difficulty = difficultyLabel(option.points)
     Column(
         modifier = Modifier
@@ -756,12 +793,22 @@ private fun FeaturedChallengeCard(option: ChallengeOption, enabled: Boolean, onS
         FlowRowChips(option, difficulty)
         Spacer(modifier = Modifier.height(12.dp))
         PillButton(
-            label = stringResource(R.string.challenge_start),
-            filled = true,
+            label = stringResource(
+                if (running) R.string.challenge_running else R.string.challenge_start
+            ),
+            filled = !running,
             enabled = enabled,
             onClick = onStart,
             modifier = Modifier.fillMaxWidth()
         )
+        if (running) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.challenges_already_running),
+                style = HomeType.caption,
+                color = Mute
+            )
+        }
     }
 }
 
@@ -815,13 +862,18 @@ private fun CompactChallengeCard(
     option: ChallengeOption,
     enabled: Boolean,
     onStart: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    running: Boolean = false
 ) {
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(18.dp))
             .background(CardWhite)
-            .border(1.dp, Hairline, RoundedCornerShape(18.dp))
+            .border(
+                1.dp,
+                if (running) Accent else Hairline,
+                RoundedCornerShape(18.dp)
+            )
             .clickable(enabled = enabled, onClick = onStart)
             .padding(14.dp)
     ) {
@@ -830,9 +882,18 @@ private fun CompactChallengeCard(
         Text(challengeOptionTitle(option), style = HomeType.rowTitle, color = Ink, maxLines = 3)
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            stringResource(R.string.challenges_option_meta_short, difficultyLabel(option.points), option.points),
+            if (running) {
+                stringResource(R.string.challenge_running)
+            } else {
+                stringResource(
+                    R.string.challenges_option_meta_short,
+                    difficultyLabel(option.points),
+                    option.points
+                )
+            },
             style = HomeType.caption,
-            color = Mute
+            color = if (running) Accent else Mute,
+            fontWeight = if (running) FontWeight.SemiBold else FontWeight.Normal
         )
     }
 }
@@ -1100,11 +1161,12 @@ internal fun PotentialRecurringCard(
 @Composable
 internal fun NoticedPage(
     habits: HabitsUiState,
-    canStart: Boolean,
     onStart: (String) -> Unit,
     onNotMe: (String) -> Unit,
     onDismissCatchUp: () -> Unit,
     onTeach: (payee: String, answer: String) -> Unit,
+    activeTemplateIds: Set<String> = emptySet(),
+    atCap: Boolean = false,
     onRecurringChoice: (key: String, confirmed: Boolean) -> Unit = { _, _ -> }
 ) {
     val learningGood = habits.learningScore >= 55
@@ -1158,7 +1220,8 @@ internal fun NoticedPage(
         habits.patterns.forEach { pattern ->
             PatternCard(
                 pattern = pattern,
-                canStart = canStart,
+                activeTemplateIds = activeTemplateIds,
+                atCap = atCap,
                 onStart = onStart,
                 onNotMe = { onNotMe(pattern.id) },
                 foodBars = habits.foodDayBars
