@@ -21,8 +21,15 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,10 +43,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import com.lipabill.app.ui.theme.Accent
+import com.lipabill.app.ui.theme.OnAccent
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
 import android.view.WindowManager
@@ -369,13 +379,33 @@ private fun LipaBillRoot(
 
     when (authState) {
         AuthUiState.Unlocked -> {
-            AuthenticatedApp(activity = activity, app = app)
+            Box(modifier = Modifier.fillMaxSize()) {
+                AuthenticatedApp(activity = activity, app = app)
+                // Debug-only: preview the AuthGate without waiting for lock timeout.
+                if (BuildConfig.DEBUG) {
+                    SmallFloatingActionButton(
+                        onClick = { app.authManager.lockNow() },
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .navigationBarsPadding()
+                            .padding(start = 16.dp, bottom = 24.dp),
+                        containerColor = Accent,
+                        contentColor = OnAccent
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Lock,
+                            contentDescription = "Lock LipaBill"
+                        )
+                    }
+                }
+            }
         }
         else -> {
             AdaptiveFrame(expandedMax = 520.dp) {
                 AuthGateScreen(
                     state = authState,
                     errorMessage = authError,
+                    autoPrompt = app.authManager.shouldAutoPromptUnlock(),
                     onUnlockClick = {
                         authError = null
                         app.authManager.authenticate(activity) { authError = it }
@@ -852,7 +882,10 @@ private fun AuthenticatedApp(
         }
     }
 
-    val startDestination = if (!app.securePreferences.firstRunSetupDone) {
+    val startDestination = if (
+        !app.securePreferences.firstRunSetupDone &&
+        !app.securePreferences.debugSkipSetupWizard
+    ) {
         Route.FirstRunSetup.path
     } else {
         Route.List.path
@@ -1306,6 +1339,11 @@ private fun AuthenticatedApp(
                 app.securePreferences.hibernationPromptShown = true
                 app.securePreferences.hibernationLastPromptAt = System.currentTimeMillis()
             },
+            onHibernationCleared = {
+                app.securePreferences.hibernationExemptionSatisfied = true
+                app.securePreferences.hibernationPromptShown = true
+                app.securePreferences.hibernationLastPromptAt = System.currentTimeMillis()
+            },
             onOpenHibernationSettings = { openHibernationSettings() },
             onSkipOemSurvival = {
                 OemSurvivalHelper.markPromptShown(app.securePreferences)
@@ -1319,7 +1357,16 @@ private fun AuthenticatedApp(
             accessibilityNote = note,
             region = region,
             onRegionSelected = { app.setAppRegion(it, rescan = false) },
-            onProvidersSelected = { app.setEnabledSources(it, rescan = false) }
+            onProvidersSelected = { app.setEnabledSources(it, rescan = false) },
+            // Debug / sideload only — Play first-run must not offer "Skip to app".
+            onDebugSkipToApp = if (firstRun && RecordingCapture.available) {
+                {
+                    app.securePreferences.debugSkipSetupWizard = true
+                    onFinished()
+                }
+            } else {
+                null
+            }
         )
     }
 
@@ -1566,9 +1613,16 @@ private fun AuthenticatedApp(
                     onOptInFuliza = { runFulizaOptIn() },
                     onCheckForUpdate = { AppUpdates.check(activity, manual = true) },
                     onReplayFirstRun = {
+                        app.securePreferences.debugSkipSetupWizard = false
                         app.securePreferences.replayFirstRunPending = true
                         app.securePreferences.firstRunSetupDone = false
                         navController.navigate(Route.FirstRunSetup.path) {
+                            popUpTo(navController.graph.id) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                    onSkipSetupWizard = {
+                        navController.navigate(Route.List.path) {
                             popUpTo(navController.graph.id) { inclusive = true }
                             launchSingleTop = true
                         }
