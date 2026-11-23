@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.local.entity.ChallengeEntity
+import com.lipabill.app.data.repository.EngagementRepository
 import com.lipabill.app.engage.BadgeProgress
 import com.lipabill.app.engage.CatchUp
 import com.lipabill.app.data.local.entity.CheckInStreakEntity
@@ -29,9 +30,11 @@ import com.lipabill.app.engage.SpendCategory
 import com.lipabill.app.engage.WeeklySummary
 import com.lipabill.app.ui.util.displayLabel
 import java.time.ZoneId
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
@@ -68,7 +71,10 @@ data class ChallengeCardState(
     val payee: String? = null,
     val templateId: String = ChallengeTemplates.foodDelivery3Days.id,
     val subject: ChallengeSubject = ChallengeSubject.FOOD_DELIVERY,
-    val points: Int = HabitPoints.forTemplate(templateId)
+    val points: Int = HabitPoints.forTemplate(templateId),
+    /** Room row id — used to acknowledge a completed celebration once. */
+    val challengeId: Long = 0L,
+    val endAt: Long = 0L
 )
 
 data class ChallengeOption(
@@ -155,6 +161,10 @@ internal fun challengeOptions(
 
 data class EngageUiState(
     val card: ChallengeCardState? = null,
+    /** Other ACTIVE challenges under the primary card (cap leaves room for 2). */
+    val otherActive: List<ChallengeCardState> = emptyList(),
+    /** Template ids of every running challenge — catalog disables these. */
+    val activeTemplateIds: Set<String> = emptySet(),
     val weekId: String = "",
     val checkInDone: Boolean = false,
     val streakCount: Int = 0,
@@ -175,13 +185,39 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
     private val taughtPayees = MutableStateFlow(app.securePreferences.taughtPayeeCategories)
     private val customDiy = MutableStateFlow(app.securePreferences.customDiyChallenges)
     private val duoPending = MutableStateFlow(app.securePreferences.pendingDuoInvite)
+    private val acknowledgedCompletedId =
+        MutableStateFlow(app.securePreferences.acknowledgedCompletedChallengeId)
+    private val _actionMessage = MutableStateFlow<String?>(null)
+    val actionMessage: StateFlow<String?> = _actionMessage.asStateFlow()
+
+    fun clearActionMessage() {
+        _actionMessage.value = null
+    }
+
+    private data class ChallengeBundle(
+        val latest: ChallengeEntity?,
+        val active: List<ChallengeEntity>,
+        val ackId: Long
+    )
+
+    private val challengeBundle: StateFlow<ChallengeBundle> = combine(
+        app.engagement.observeLatest(),
+        app.engagement.observeActive(),
+        acknowledgedCompletedId
+    ) { latest, active, ackId ->
+        ChallengeBundle(latest, active, ackId)
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        ChallengeBundle(null, emptyList(), acknowledgedCompletedId.value)
+    )
 
     val uiState: StateFlow<EngageUiState> = combine(
-        app.engagement.observeLatest(),
+        challengeBundle,
         app.engagement.observeStreak(),
         summary,
         checkInDone
-    ) { latest, streak, week, done ->
+    ) { bundle, streak, week, done ->
         val streakCount = streak?.count ?: 0
         val nextStreak = if (week == null) {
             streakCount
@@ -195,8 +231,16 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
                 week.weekId
             ).count
         }
+        val now = System.currentTimeMillis()
+        val primaryEntity = pickPrimaryChallenge(bundle.latest, bundle.active, bundle.ackId, now)
+        val card = cardFor(primaryEntity, bundle.ackId, now)
+        val otherActive = bundle.active
+            .filter { it.id != card.challengeId }
+            .map { cardFor(it, bundle.ackId, now) }
         EngageUiState(
-            card = cardFor(latest),
+            card = card,
+            otherActive = otherActive,
+            activeTemplateIds = bundle.active.map { it.templateId }.toSet(),
             weekId = week?.weekId.orEmpty(),
             checkInDone = done,
             streakCount = streakCount,
@@ -284,7 +328,9 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
      * since the last visit. Home and Insights share this view model and must not move the visit.
      */
     fun openHabits(now: Long = System.currentTimeMillis()) {
-        viewModelScope.launch {
+        // Re-evaluate active challenges so end / break shows before patterns load.
+        refresh()
+        viewModelScope.launch(Dispatchers.Default) {
             val prefs = app.securePreferences
             val zone = ZoneId.systemDefault()
             val rows = app.engagement.transactionsSince(now - HabitPatterns.WINDOW_DAYS * DAY_MILLIS, now)
@@ -306,16 +352,35 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
                 essentials = essentials
             )
             prefs.habitsLastVisit = now
+            val habitRegulars = HabitPatterns.regulars(rows, now, zone, essentialKeys = essentials)
+                .filterNot { shop ->
+                    RecurringPatterns.isDismissed(
+                        HabitPatterns.payeeKey(shop.payee),
+                        shop.payee,
+                        choices
+                    )
+                }
+            val patterns = HabitPatterns.detect(rows, now, zone, essentials)
+            val bars = HabitPatterns.foodDayBars(rows, zone, now)
             ledger.value = LedgerRead(
-                patterns = HabitPatterns.detect(rows, now, zone, essentials),
-                regulars = HabitPatterns.regulars(rows, now, zone, essentialKeys = essentials),
+                patterns = patterns,
+                regulars = habitRegulars,
                 paymentsRead = rows.size,
-                catchUp = catchUp ?: ledger.value.catchUp,
+                // Prefer a fresh catch-up; null means none (or already dismissed this session).
+                catchUp = catchUp,
                 window = rows,
-                foodDayBars = HabitPatterns.foodDayBars(rows, zone, now),
+                foodDayBars = bars,
                 potentialRecurring = RecurringPatterns.potential(recurring)
             )
         }
+    }
+
+    /** Mark the completed celebration as seen so Habits does not reopen it every visit. */
+    fun acknowledgeCompletedChallenge() {
+        val card = uiState.value.card ?: return
+        if (card.kind != ChallengeCardKind.COMPLETED || card.challengeId == 0L) return
+        app.securePreferences.acknowledgedCompletedChallengeId = card.challengeId
+        acknowledgedCompletedId.value = card.challengeId
     }
 
     fun setRecurringChoice(key: String, confirmed: Boolean) {
@@ -357,28 +422,41 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
         openHabits()
     }
 
+    /**
+     * Duo tracking has no backend yet. Invite still shares a message from the UI;
+     * prefs are kept for a future badge without earning one today.
+     */
     fun setDuoPending(pending: Boolean = true) {
         app.securePreferences.pendingDuoInvite = pending
         duoPending.value = pending
     }
 
     /** Build and start a DIY challenge; the template id is remembered for the catalog. */
-    fun startDiy(categoryId: String, days: Int, capCents: Long) {
+    fun startDiy(
+        categoryId: String,
+        days: Int,
+        capCents: Long,
+        onStarted: (() -> Unit)? = null
+    ) {
         val template = ChallengeTemplates.diy(categoryId, days, capCents)
         if (ChallengeTemplates.byId(template.id) == null) return
         val next = customDiy.value + template.id
         app.securePreferences.customDiyChallenges = next
         customDiy.value = next
-        startChallenge(template.id)
+        startChallenge(template.id, onStarted)
     }
 
     private fun rememberEarned(badges: List<BadgeProgress>) {
-        val stored = app.securePreferences.earnedHabitBadges
-        val next = stored + badges.filter { it.earned }.map { it.badge.id }
-        if (next != stored) app.securePreferences.earnedHabitBadges = next
+        viewModelScope.launch(Dispatchers.IO) {
+            val stored = app.securePreferences.earnedHabitBadges
+            val next = stored + badges.filter { it.earned }.map { it.badge.id }
+            if (next != stored) app.securePreferences.earnedHabitBadges = next
+        }
     }
 
     fun refresh() {
+        // Shared prefs key with Insights — keep in-memory ack in sync across Nav destinations.
+        acknowledgedCompletedId.value = app.securePreferences.acknowledgedCompletedChallengeId
         viewModelScope.launch {
             val end = app.engagement.evaluate()
             if (end != null) app.engagementScheduler.scheduleChallengeEnd(end)
@@ -389,31 +467,49 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     /**
-     * Starts [templateId]. If another challenge is already running, it is cancelled first
-     * so Challenges → Start is never a dead control.
+     * Starts [templateId] alongside any other actives (up to [EngagementRepository.MAX_ACTIVE]).
+     * Same template while running is a no-op. [onStarted] runs only on a real insert.
      */
-    fun startChallenge(templateId: String = ChallengeTemplates.foodDelivery3Days.id) {
+    fun startChallenge(
+        templateId: String = ChallengeTemplates.foodDelivery3Days.id,
+        onStarted: (() -> Unit)? = null
+    ) {
         viewModelScope.launch {
-            val current = uiState.value.card
-            if (current?.kind == ChallengeCardKind.ACTIVE && current.templateId == templateId) {
+            val active = app.engagement.listActive()
+            if (active.any { it.templateId == templateId }) {
+                _actionMessage.value = "That challenge is already running."
                 return@launch
             }
-            if (current?.kind == ChallengeCardKind.ACTIVE) {
-                app.engagement.cancelActive()
+            if (active.size >= EngagementRepository.MAX_ACTIVE) {
+                _actionMessage.value = "You already have 3 challenges running."
+                return@launch
             }
-            app.engagement.startChallenge(templateId) ?: return@launch
+            val started = app.engagement.startChallenge(templateId)
+            if (started == null) {
+                _actionMessage.value = "Couldn't start that challenge. Try again."
+                return@launch
+            }
             val end = app.engagement.evaluate()
             if (end != null) app.engagementScheduler.scheduleChallengeEnd(end)
             else app.engagementScheduler.scheduleChallengeSweep()
+            onStarted?.invoke()
         }
     }
 
     /** Starts the same challenge again, so a broken Fuliza or payee pause stays that kind. */
     fun restartChallenge() {
-        val templateId = uiState.value.card?.templateId ?: ChallengeTemplates.foodDelivery3Days.id
+        val card = uiState.value.card
+        val templateId = card?.templateId ?: ChallengeTemplates.foodDelivery3Days.id
+        val challengeId = card?.challengeId ?: 0L
         viewModelScope.launch {
-            app.engagement.cancelActive()
-            app.engagement.startChallenge(templateId) ?: return@launch
+            if (challengeId != 0L) {
+                app.engagement.cancelChallenge(challengeId)
+            }
+            val started = app.engagement.startChallenge(templateId)
+            if (started == null) {
+                _actionMessage.value = "Couldn't restart that challenge. Try again."
+                return@launch
+            }
             val end = app.engagement.evaluate()
             if (end != null) app.engagementScheduler.scheduleChallengeEnd(end)
             else app.engagementScheduler.scheduleChallengeSweep()
@@ -421,6 +517,7 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun completeCheckIn(selected: Map<String, String>) {
+        if (checkInDone.value) return
         val week = summary.value ?: return
         checkInDone.value = true
         viewModelScope.launch {
@@ -432,7 +529,11 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun cardFor(latest: ChallengeEntity?): ChallengeCardState {
+    private fun cardFor(
+        latest: ChallengeEntity?,
+        acknowledgedId: Long = acknowledgedCompletedId.value,
+        now: Long = System.currentTimeMillis()
+    ): ChallengeCardState {
         if (latest == null || latest.status == ChallengeStatus.CANCELLED.name) {
             return ChallengeCardState(ChallengeCardKind.OFFER)
         }
@@ -441,27 +542,39 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
         val payee = ChallengeTemplates.payeeOf(latest.templateId)
         val zone = ChallengeClock.zoneOf(latest.zoneId)
         val subject = challengeSubject(latest.templateId)
-        return when (val kind = challengeCardKind(ChallengeStatus.fromStored(latest.status))) {
+        val status = ChallengeStatus.fromStored(latest.status)
+        // After the user dismisses the celebration (or a few days pass), show a fresh offer.
+        if (status == ChallengeStatus.COMPLETED &&
+            (latest.id == acknowledgedId || now - latest.endAt > COMPLETED_CARD_MILLIS)
+        ) {
+            return ChallengeCardState(ChallengeCardKind.OFFER)
+        }
+        return when (val kind = challengeCardKind(status)) {
             ChallengeCardKind.ACTIVE -> ChallengeCardState(
                 kind = kind,
-                day = ChallengeClock.dayNumber(latest.startAt, latest.endAt, System.currentTimeMillis(), zone),
+                day = ChallengeClock.dayNumber(latest.startAt, latest.endAt, now, zone),
                 totalDays = total,
                 payee = payee,
                 templateId = latest.templateId,
-                subject = subject
+                subject = subject,
+                challengeId = latest.id,
+                endAt = latest.endAt
             )
             else -> ChallengeCardState(
                 kind = kind,
                 totalDays = total,
                 payee = payee,
                 templateId = latest.templateId,
-                subject = subject
+                subject = subject,
+                challengeId = latest.id,
+                endAt = latest.endAt
             )
         }
     }
 }
 
 private const val DAY_MILLIS = 24L * 60L * 60L * 1000L
+private const val COMPLETED_CARD_MILLIS = ChallengeCardAge.RECENT_MILLIS
 
 /** Answers to "Teach LipaBill": a need (essential) or a want. */
 const val TEACH_NEED = "need"
