@@ -639,6 +639,12 @@ internal fun ChallengeCompletePage(
                 modifier = Modifier.weight(1f)
             )
         }
+        Spacer(modifier = Modifier.height(10.dp))
+        OutlineAccentButton(
+            label = stringResource(R.string.complete_done),
+            onClick = onDone,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
