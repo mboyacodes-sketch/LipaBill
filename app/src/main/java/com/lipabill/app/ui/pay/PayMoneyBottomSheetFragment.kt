@@ -49,12 +49,10 @@ import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.parser.sanitizeAccountNumber
 import com.lipabill.app.data.repository.MerchantHit
 import com.lipabill.app.ui.payment.MoneySheetWalletBlock
-import com.lipabill.app.ui.payment.PayWalletPicker
 import com.lipabill.app.ui.permissions.paymentAccessDirective
 import com.lipabill.app.ui.sheet.EditableSheetField
 import com.lipabill.app.ui.sheet.InAppKeyboard
 import com.lipabill.app.ui.sheet.MoneyFlowConfirmDialog
-import com.lipabill.app.ui.sheet.MoneyFlowSheetHeader
 import com.lipabill.app.ui.sheet.MoneySheetScaffold
 import com.lipabill.app.ui.sheet.SheetTextEditor
 import com.lipabill.app.ui.sheet.amountExceedsBalance
@@ -293,8 +291,9 @@ fun PayMoneySheetContent(
 
     MoneySheetScaffold(
         balance = shownBalance,
-        balanceCaption = WalletAccount.MPESA.balanceCaption,
-        balancePrefix = WalletAccount.MPESA.balancePrefix,
+        balanceCaption = state.activeWallet?.let { "${it.badge} available" }
+            ?: WalletAccount.MPESA.balanceCaption,
+        balancePrefix = state.activeWallet?.badge ?: WalletAccount.MPESA.balancePrefix,
         pendingDeduction = pendingAmount,
         selectedName = selectedName ?: "Choose merchant",
         selectedSubtitle = selectedSubtitle ?: state.method.labelOrPick(),
