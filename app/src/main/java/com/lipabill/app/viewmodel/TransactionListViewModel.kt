@@ -10,16 +10,10 @@ import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
-import com.lipabill.app.data.local.entity.ChallengeEntity
 import com.lipabill.app.data.repository.LinkedPayeeRenameResult
-import com.lipabill.app.engage.CategoryMatcher
-import com.lipabill.app.engage.CategoryRules
-import com.lipabill.app.engage.ChallengeClock
-import com.lipabill.app.engage.ChallengeStatus
+import com.lipabill.app.data.repository.EngagementRepository
 import com.lipabill.app.engage.ChallengeTemplates
-import com.lipabill.app.engage.ChallengeTransaction
 import com.lipabill.app.engage.SpendCategory
-import com.lipabill.app.engage.kesToCents
 import com.lipabill.app.engage.resolveSpendCategory
 import com.lipabill.app.ui.util.formatActivityTime
 import com.lipabill.app.ui.util.inCategoryOrder
@@ -199,7 +193,9 @@ data class InsightChallenge(
     val kept: Double?,
     val startDate: LocalDate,
     /** Row that broke a skip challenge — opens the receipt from Insights. */
-    val breakingTransactionId: Long? = null
+    val breakingTransactionId: Long? = null,
+    /** Room row id — Done dismisses the completed card (same prefs as Habits). */
+    val challengeId: Long = 0L
 )
 
 /** Outcome of editing a payee name and/or spend category on a receipt. */
@@ -224,6 +220,8 @@ data class TransactionListUiState(
     val walletCards: List<WalletCardUi> = emptyList(),
     /** Source whose balance the pill shows. */
     val balanceWallet: MoneySource? = null,
+    /** Source Send & Pay will dial (preferred SIM), when known. */
+    val dialWallet: MoneySource? = null,
     /** Newest balance per source. */
     val walletBalances: Map<MoneySource, Double> = emptyMap(),
     val analytics: AnalyticsSummary = AnalyticsSummary(),
@@ -442,6 +440,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             sourced = sourced,
             mpesaBalance = balanceSource?.let { balances[it] },
             balanceWallet = balanceSource,
+            dialWallet = rails.activeWallet,
             balanceWallets = rails.balanceWallets,
             walletCards = walletCards(region, rails.balanceWallets, balanceSource, rails.lines, balances),
             walletBalances = balances,
@@ -513,6 +512,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             balanceWallets = wallet.balanceWallets,
             walletCards = wallet.walletCards,
             balanceWallet = wallet.balanceWallet,
+            dialWallet = wallet.dialWallet,
             walletBalances = wallet.walletBalances,
             fulizaOutstanding = wallet.fulizaStatus?.outstanding,
             fulizaDue = wallet.fulizaStatus?.dueDate,
@@ -594,7 +594,10 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         walletAccount.value = WalletAccount.MPESA
         typeFilter.value = null
         pillWallet.value = source
-        app.setActiveWallet(source)
+        if (!app.setActiveWallet(source)) {
+            scanMessage.value =
+                "Showing ${source.label} balance — insert or allow that SIM to dial Send & Pay."
+        }
     }
 
     /** Insights “All” chip: ledger picture with no source filter. */
@@ -830,87 +833,67 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         app.recordBadges(ids)
     }
 
+    private val acknowledgedCompletedId =
+        MutableStateFlow(app.securePreferences.acknowledgedCompletedChallengeId)
+
     val challenge: StateFlow<InsightChallenge?> = combine(
         mpesaLedger,
-        app.engagement.observeLatest()
-    ) { ledger, latest ->
-        insightChallenge(ledger, latest, System.currentTimeMillis())
+        app.engagement.observeLatest(),
+        app.engagement.observeActive(),
+        acknowledgedCompletedId
+    ) { ledger, latest, active, ackId ->
+        val now = System.currentTimeMillis()
+        val primary = pickPrimaryChallenge(latest, active, ackId, now)
+        buildInsightChallenge(ledger, primary, now, ackId)
     }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    private val _challengeMessage = MutableStateFlow<String?>(null)
+    val challengeMessage: StateFlow<String?> = _challengeMessage.asStateFlow()
+
+    fun clearChallengeMessage() {
+        _challengeMessage.value = null
+    }
+
     /** Re-checks challenge status against new texts; Insights calls this when it opens. */
     fun refreshChallenge() {
+        acknowledgedCompletedId.value = app.securePreferences.acknowledgedCompletedChallengeId
         viewModelScope.launch {
             val end = app.engagement.evaluate()
             if (end != null) app.engagementScheduler.scheduleChallengeEnd(end)
         }
+    }
+
+    /** Hide a completed challenge card (shared with Habits complete acknowledgment). */
+    fun acknowledgeCompletedChallenge() {
+        val card = challenge.value ?: return
+        if (card.kind != ChallengeCardKind.COMPLETED || card.challengeId == 0L) return
+        app.securePreferences.acknowledgedCompletedChallengeId = card.challengeId
+        acknowledgedCompletedId.value = card.challengeId
     }
 
     fun startSkipChallenge(payeeName: String) {
         viewModelScope.launch {
-            app.engagement.startSkipPayeeChallenge(payeeName) ?: return@launch
+            val templateId = ChallengeTemplates.skipPayee(payeeName).id
+            val active = app.engagement.listActive()
+            if (active.any { it.templateId == templateId }) {
+                _challengeMessage.value = "That challenge is already running."
+                return@launch
+            }
+            if (active.size >= EngagementRepository.MAX_ACTIVE) {
+                _challengeMessage.value = "You already have 3 challenges running."
+                return@launch
+            }
+            val started = app.engagement.startSkipPayeeChallenge(payeeName)
+            if (started == null) {
+                _challengeMessage.value = "Couldn't start that challenge. Try again."
+                return@launch
+            }
             val end = app.engagement.evaluate()
             if (end != null) app.engagementScheduler.scheduleChallengeEnd(end)
             else app.engagementScheduler.scheduleChallengeSweep()
         }
-    }
-
-    private fun insightChallenge(
-        ledger: List<MpesaTransaction>,
-        latest: ChallengeEntity?,
-        now: Long
-    ): InsightChallenge? {
-        if (latest == null) return null
-        val status = ChallengeStatus.fromStored(latest.status)
-        if (status == ChallengeStatus.CANCELLED) return null
-        val template = ChallengeTemplates.byId(latest.templateId) ?: return null
-        val rule = CategoryRules.byId(template.categoryId) ?: return null
-        val kind = challengeCardKind(status)
-        if (kind != ChallengeCardKind.ACTIVE && now - latest.endAt > RECENT_CHALLENGE_MILLIS) return null
-        val zone = ChallengeClock.zoneOf(latest.zoneId)
-        val total = template.durationDays
-        val day = if (kind == ChallengeCardKind.ACTIVE) {
-            ChallengeClock.dayNumber(latest.startAt, latest.endAt, now, zone)
-        } else {
-            total
-        }
-        // Same matcher as challenge break detection (types + fees), not name-only.
-        val baseline = averageDailySpend(ledger, beforeMillis = latest.startAt) { tx ->
-            CategoryMatcher.matches(
-                rule,
-                ChallengeTransaction(
-                    id = tx.id,
-                    timestampMillis = tx.timestampMillis,
-                    counterpartyName = tx.counterpartyName,
-                    type = tx.type,
-                    amountCents = kesToCents(tx.amount) ?: 0L,
-                    feeCents = kesToCents(tx.cost) ?: 0L,
-                    counterpartyPhone = tx.counterpartyPhone
-                )
-            )
-        }
-        val cleanDays = when (kind) {
-            ChallengeCardKind.ACTIVE -> day - 1
-            ChallengeCardKind.COMPLETED -> total
-            else -> 0
-        }
-        val payee = ChallengeTemplates.payeeOf(latest.templateId)
-        val fuliza = latest.templateId == ChallengeTemplates.fulizaFree7Days.id
-        return InsightChallenge(
-            title = when {
-                fuliza -> "No Fuliza for $total days"
-                payee != null -> "Skip $payee this week"
-                else -> "No food delivery for $total days"
-            },
-            kind = kind,
-            day = day,
-            totalDays = total,
-            // A skipped Fuliza draw is borrowing avoided, not money kept, so it shows no "kept" figure.
-            kept = if (fuliza) null else baseline * cleanDays.coerceAtLeast(0),
-            startDate = ChallengeClock.localDate(latest.startAt, zone),
-            breakingTransactionId = latest.breakingTransactionId?.takeIf { it > 0L }
-        )
     }
 
     private fun MpesaTransaction.matchesLedgerQuery(query: String): Boolean {
@@ -965,7 +948,6 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     }
 
     private companion object {
-        const val RECENT_CHALLENGE_MILLIS = 3L * 24L * 60L * 60L * 1000L
         const val SEARCH_DEBOUNCE_MS = 250L
         /** Ledger rows the money plan reads: months of history for bills and payday. */
         const val PLAN_WINDOW = 3000
@@ -996,6 +978,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         val sourced: List<MpesaTransaction> = emptyList(),
         val mpesaBalance: Double? = null,
         val balanceWallet: MoneySource? = null,
+        val dialWallet: MoneySource? = null,
         val balanceWallets: List<MoneySource> = emptyList(),
         val walletCards: List<WalletCardUi> = emptyList(),
         val walletBalances: Map<MoneySource, Double> = emptyMap(),

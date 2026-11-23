@@ -36,6 +36,8 @@ data class SettingsUiState(
     val timeoutMinutes: Int = 2,
     val fontSizeSp: Int = 12,
     val recordingPrivacy: Boolean = false,
+    /** Debug / sideload: bypass first-run and open Home. */
+    val skipSetupWizard: Boolean = false,
     val darkMode: Boolean = false,
     val repeatEnabled: Boolean = true,
     val passReminderLeadTimes: PassReminderLeadTimes = PassReminderLeadTimes.DEFAULT,
@@ -116,6 +118,20 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setRecordingPrivacy(enabled: Boolean) {
         app.setRecordingPrivacy(enabled)
+        refresh()
+    }
+
+    /**
+     * Debug / sideload. When enabled, marks first-run complete and clears any
+     * pending replay so the next launch opens Home. Caller should navigate home.
+     */
+    fun setSkipSetupWizard(enabled: Boolean) {
+        app.securePreferences.debugSkipSetupWizard = enabled
+        if (enabled) {
+            app.securePreferences.replayFirstRunPending = false
+            app.securePreferences.firstRunSetupDone = true
+            app.ensureDemoLedger()
+        }
         refresh()
     }
 
@@ -207,6 +223,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             timeoutMinutes = auth.timeoutMinutes(),
             fontSizeSp = app.securePreferences.uiFontSizeSp,
             recordingPrivacy = app.securePreferences.recordingPrivacy,
+            skipSetupWizard = app.securePreferences.debugSkipSetupWizard,
             darkMode = app.securePreferences.darkMode,
             repeatEnabled = app.securePreferences.repeatFeatureEnabled,
             passReminderLeadTimes = app.securePreferences.passReminderLeadTimes,

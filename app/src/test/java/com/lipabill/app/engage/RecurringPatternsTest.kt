@@ -55,6 +55,48 @@ class RecurringPatternsTest {
     }
 
     @Test
+    fun apply_choices_drops_dismissed_and_pins_confirmed() {
+        val dstv = monthly("DSTV KENYA", listOf(2000.0, 2000.0, 2000.0, 2000.0), LocalDate.parse("2026-11-10"))
+        val kplc = monthly("KPLC Prepaid", listOf(800.0, 900.0, 850.0, 880.0), LocalDate.parse("2026-11-08"))
+        val netflix = monthly("NETFLIX", listOf(1100.0, 1100.0, 1100.0, 1100.0), LocalDate.parse("2026-11-05"))
+        val all = dstv + kplc + netflix
+        val base = RecurringPatterns.detect(all, today, zone)
+        val byName = base.associateBy { it.name.uppercase() }
+        val dstvKey = byName.entries.first { "DSTV" in it.key }.value.key
+        val netflixKey = byName.entries.first { "NETFLIX" in it.key }.value.key
+        val kplcKey = byName.entries.first { "KPLC" in it.key }.value.key
+        val regulars = com.lipabill.app.viewmodel.detectRegulars(all, zone, today)
+        val ranked = RecurringPatterns.applyChoices(
+            regulars,
+            mapOf(
+                dstvKey to RecurringChoice.Confirmed,
+                netflixKey to RecurringChoice.Dismissed
+            )
+        )
+        assertTrue(ranked.none { it.key == netflixKey })
+        assertEquals(dstvKey, ranked.first().key)
+        assertTrue(ranked.first().watched)
+        assertTrue(ranked.any { it.key == kplcKey })
+    }
+
+    @Test
+    fun filter_changes_and_trends_skip_dismissed() {
+        val choices = mapOf("netflix" to RecurringChoice.Dismissed)
+        val changes = listOf(
+            com.lipabill.app.viewmodel.RegularChange.PriceChanged("NETFLIX", 1000.0, 1200.0),
+            com.lipabill.app.viewmodel.RegularChange.Stopped("DSTV KENYA", today.minusMonths(2), 2000.0)
+        )
+        val filtered = RecurringPatterns.filterChanges(changes, choices)
+        assertEquals(1, filtered.size)
+        assertTrue(filtered.single() is com.lipabill.app.viewmodel.RegularChange.Stopped)
+        val trends = listOf(
+            com.lipabill.app.viewmodel.PriceTrend("NETFLIX", 120.0, 100.0, java.time.YearMonth.of(2026, 1)),
+            com.lipabill.app.viewmodel.PriceTrend("NAIVAS", 500.0, 400.0, java.time.YearMonth.of(2026, 2))
+        )
+        assertEquals(1, RecurringPatterns.filterTrends(trends, choices).size)
+    }
+
+    @Test
     fun confirmed_feeds_next_bill_before_pending() {
         val dstv = monthly("DSTV KENYA", listOf(2000.0, 2000.0, 2000.0, 2000.0), LocalDate.parse("2026-11-10"))
         val kplc = monthly("KPLC Prepaid", listOf(800.0, 900.0, 850.0, 880.0), LocalDate.parse("2026-11-08"))

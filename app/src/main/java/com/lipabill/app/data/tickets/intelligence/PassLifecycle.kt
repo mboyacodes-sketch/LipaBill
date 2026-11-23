@@ -3,7 +3,6 @@ package com.lipabill.app.data.tickets.intelligence
 import com.lipabill.app.data.model.TicketStatus
 import com.lipabill.app.data.tickets.TicketImport
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 
 /**

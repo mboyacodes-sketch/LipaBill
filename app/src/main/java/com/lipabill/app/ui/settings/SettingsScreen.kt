@@ -109,6 +109,7 @@ fun SettingsScreen(
     onOptInFuliza: () -> Unit = {},
     onCheckForUpdate: () -> Unit = {},
     onReplayFirstRun: () -> Unit = {},
+    onSkipSetupWizard: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -450,6 +451,16 @@ fun SettingsScreen(
                         subtitle = "On by default for debug. Clears capture protection, blurs ledger PII, and shows dummy Request codes.",
                         checked = state.recordingPrivacy,
                         onCheckedChange = viewModel::setRecordingPrivacy
+                    )
+                    SettingsDivider()
+                    SettingsSwitchRow(
+                        title = "Skip setup wizard",
+                        subtitle = "Open Home without first-run. Permissions stay as they are. Turn off and use Replay to walk through setup again.",
+                        checked = state.skipSetupWizard,
+                        onCheckedChange = { enabled ->
+                            viewModel.setSkipSetupWizard(enabled)
+                            if (enabled) onSkipSetupWizard()
+                        }
                     )
                     SettingsDivider()
                     SettingsNavRow(

@@ -45,14 +45,6 @@ fun Modifier.hideKeyboardOnOutsideTap(onOutsideTap: () -> Unit = {}): Modifier =
 }
 
 /**
- * Status, navigation, cutout, and IME. Use on content that must not sit under
- * the system bars. Keep this off decorative backgrounds so they can draw edge-to-edge.
- */
-fun Modifier.systemBarsAndCutoutPadding(): Modifier = composed {
-    windowInsetsPadding(WindowInsets.safeDrawing)
-}
-
-/**
  * Bottom sheet content sits under the status bar gap already — only keep
  * horizontal cutout and navigation-bar padding so the keypad stays on screen.
  */

@@ -117,6 +117,7 @@ internal fun FirstRunIntro(
     region: AppRegion,
     onContinue: () -> Unit,
     onSkip: () -> Unit,
+    skipLabel: String = "Skip",
     modifier: Modifier = Modifier
 ) {
     val chrome = disclosureChrome()
@@ -139,7 +140,7 @@ internal fun FirstRunIntro(
                     .align(Alignment.TopEnd)
                     .padding(end = (chrome.side - 16.dp).coerceAtLeast(8.dp))
             ) {
-                Text("Skip", color = Mute)
+                Text(skipLabel, color = Mute)
             }
         }
         HorizontalPager(

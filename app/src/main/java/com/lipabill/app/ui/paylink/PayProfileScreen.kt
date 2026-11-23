@@ -665,7 +665,7 @@ fun PayProfileScreen(
                     } else if (paymentsQrReady) {
                         val payLink = link!!
                         val title = when (collectKind) {
-                            PayLink.Kind.PHONE -> "Send Money"
+                            PayLink.Kind.PHONE -> "Phone"
                             PayLink.Kind.TILL -> "Till"
                             PayLink.Kind.PAYBILL -> "Paybill"
                         }

@@ -135,11 +135,6 @@ val AvatarPastels = listOf(
     Color(0xFFF5DCDC)
 )
 
-fun avatarPastel(seed: Int): Color {
-    val i = kotlin.math.abs(seed) % AvatarPastels.size
-    return AvatarPastels[i]
-}
-
 /** Material scheme for this palette: light or dark defaults, with LipaBill's roles on top. */
 private fun LipaColors.toScheme(dark: Boolean): ColorScheme =
     (if (dark) darkColorScheme() else lightColorScheme()).copy(

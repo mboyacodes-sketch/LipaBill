@@ -47,6 +47,12 @@ class AuthManager(
     private val _state = MutableStateFlow<AuthUiState>(AuthUiState.Locked)
     val state: StateFlow<AuthUiState> = _state.asStateFlow()
 
+    /**
+     * True after [lockNow] until the next successful unlock. Skips the automatic
+     * biometric sheet so the lock screen UI stays visible (debug Lock FAB / Settings).
+     */
+    private var manualLockPending = false
+
     private fun capability(): AuthCapability =
         if (hasBiometricEnrolled() || hasDeviceCredential()) {
             AuthCapability.AVAILABLE
@@ -134,10 +140,7 @@ class AuthManager(
     }
 
     fun lockNow() {
-        if (skipLockForCapture()) {
-            _state.value = AuthUiState.Unlocked
-            return
-        }
+        manualLockPending = true
         if (capability() == AuthCapability.NONE) {
             _state.value = AuthUiState.LockScreenMissing
         } else {
@@ -145,8 +148,11 @@ class AuthManager(
         }
     }
 
+    /** False after a manual lock — caller should wait for the unlock CTA. */
+    fun shouldAutoPromptUnlock(): Boolean = !manualLockPending
+
     /** Debug captures (Maestro) skip the device lock so the wizard and demo ledger can run. */
-    private fun skipLockForCapture(): Boolean = BuildConfig.DEBUG
+    private fun skipLockForCapture(): Boolean = BuildConfig.DEBUG && !manualLockPending
 
     fun authenticate(
         activity: FragmentActivity,
@@ -156,7 +162,10 @@ class AuthManager(
             activity = activity,
             title = "Unlock LipaBill",
             subtitle = unlockSubtitle(),
-            onSuccess = { _state.value = AuthUiState.Unlocked },
+            onSuccess = {
+                manualLockPending = false
+                _state.value = AuthUiState.Unlocked
+            },
             onError = onError,
             onCancel = {}
         )

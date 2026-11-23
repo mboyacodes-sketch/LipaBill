@@ -81,7 +81,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lipabill.app.BuildConfig
 import com.lipabill.app.LipaBillApp
 import com.lipabill.app.data.model.MoneySource
@@ -118,7 +117,7 @@ import com.lipabill.app.ui.util.safeDrawingBottomPadding
 import com.lipabill.app.ui.util.safeDrawingTopPadding
 import com.lipabill.app.ussd.PendingPaymentReceipt
 import com.lipabill.app.viewmodel.DayGroup
-import com.lipabill.app.viewmodel.EngagementViewModel
+import com.lipabill.app.viewmodel.activityEngagementViewModel
 import com.lipabill.app.viewmodel.TransactionListViewModel
 import com.lipabill.app.viewmodel.WalletAccount
 import com.lipabill.app.viewmodel.fulizaDueCopy
@@ -198,8 +197,9 @@ fun TransactionListScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    val engageVm: EngagementViewModel = viewModel()
+    val engageVm = activityEngagementViewModel()
     val engage by engageVm.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { engageVm.refresh() }
     var receiptTxId by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(openReceipt?.id, openReceipt?.code) {
         val request = openReceipt ?: return@LaunchedEffect
@@ -228,6 +228,7 @@ fun TransactionListScreen(
         wallets = state.balanceWallets,
         cards = state.walletCards,
         selected = state.balanceWallet,
+        dialWallet = state.dialWallet,
         onSelect = viewModel::setBalanceWallet
     )
     // Full row (incl. rawBody) so share can send truncated original SMS.
@@ -891,6 +892,8 @@ private data class BalanceWalletPick(
     val wallets: List<MoneySource> = emptyList(),
     val cards: List<WalletCardUi> = emptyList(),
     val selected: MoneySource? = null,
+    /** Source Send & Pay dial when a SIM is linked. */
+    val dialWallet: MoneySource? = null,
     val onSelect: (MoneySource) -> Unit = {}
 )
 
@@ -1055,10 +1058,15 @@ private fun WalletDeck(
             }
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = if (card.source == walletPick.selected) {
-                    "Send & Pay use this wallet"
-                } else {
-                    "Swipe to make this your Send & Pay wallet"
+                text = when {
+                    card.source != walletPick.selected ->
+                        "Swipe to make this your Send & Pay wallet"
+                    card.source == walletPick.dialWallet ->
+                        "Send & Pay use this wallet"
+                    card.lineLabel == null ->
+                        "Balance only — allow phone access to dial this line"
+                    else ->
+                        "Balance only — Send & Pay still on ${walletPick.dialWallet?.label ?: "another line"}"
                 },
                 color = ink.muted,
                 fontSize = 11.sp
@@ -1229,7 +1237,7 @@ private fun QuickAction(
                 )
                 .clip(CircleShape)
                 .background(if (enabled) face else face.copy(alpha = 0.5f))
-                .clickable(onClick = onClick),
+                .clickable(enabled = enabled, onClick = onClick),
             contentAlignment = Alignment.Center
         ) {
             Icon(

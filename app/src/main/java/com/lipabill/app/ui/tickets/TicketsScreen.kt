@@ -50,7 +50,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ConfirmationNumber
 import androidx.compose.material.icons.outlined.Event
@@ -64,6 +63,7 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
@@ -139,7 +139,6 @@ import com.lipabill.app.viewmodel.TicketsViewModel
 import com.lipabill.app.viewmodel.label
 import com.lipabill.app.viewmodel.phaseLabel
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -305,6 +304,13 @@ fun TicketsScreen(
                     ) {
                         addMenuOpen = false
                         launchDocumentPicker(TicketDocumentKind.EVENT)
+                    },
+                    SpeedDialItem(
+                        label = "Enter manually",
+                        icon = Icons.Outlined.Edit
+                    ) {
+                        addMenuOpen = false
+                        addMode = AddTicketMode.MANUAL
                     }
                 )
             )
@@ -1272,12 +1278,12 @@ private fun TodayPassHero(
                     HeroButton("Keep", onKeep, Color.Transparent, Ink, border = Hairline)
                 }
                 TodayStage.NEEDS_BOARDING_PASS, TodayStage.CODE_PENDING -> {
+                    // Detail screen owns attach / scan; Today only opens the pass.
                     HeroButton(
-                        if (stage == TodayStage.NEEDS_BOARDING_PASS) "Add boarding pass" else "Add code",
+                        if (stage == TodayStage.NEEDS_BOARDING_PASS) "Open to add boarding" else "Open to add code",
                         onOpen, PassTone.warnInk, PassTone.onWarnButton,
                         modifier = Modifier.weight(1f)
                     )
-                    HeroButton("Open", onOpen, Color.Transparent, PassTone.warnInk, border = PassTone.warnEdge)
                 }
             }
         }

@@ -186,8 +186,18 @@ class TransactionRepository(
             tx
         }
         val withPhone = enrichSingleFromDirectory(enriched)
+        // Bank "on your M-pesa" advisory when the Safaricom credit is already stored.
+        if (!withPhone.source.isWallet &&
+            KenyanConfirmationParser.isBankWalletMirrorSms(withPhone.rawBody) &&
+            ConfirmationIngestion.sharesKnownReceipt(withPhone.rawBody, dao.allSourceCodes().toHashSet())
+        ) {
+            return@withContext false
+        }
         val rowId = dao.insertIgnore(TransactionEntity.fromDomain(withPhone))
         if (rowId != -1L) {
+            if (withPhone.source.isWallet) {
+                deleteBankWalletMirrorsSharing(withPhone)
+            }
             if (LedgerNotifier.isFresh(withPhone.timestampMillis)) {
                 onNewTransaction(withPhone.copy(id = rowId))
             }
@@ -389,6 +399,7 @@ class TransactionRepository(
         reclassifyUnknownPartiesIfNeeded()
         reclassifyBankDirectionsIfNeeded()
         reclassifyBankDetailsIfNeeded()
+        purgeBankWalletMirrorsIfNeeded()
     }
 
     private suspend fun importNewConfirmations(forceFullHistory: Boolean = false): Int {
@@ -458,6 +469,13 @@ class TransactionRepository(
             if (settlementTwin && ConfirmationIngestion.sharesKnownReceipt(sms.body, known)) {
                 continue
             }
+            // Bank "received on your {wallet}" when the MNO credit (or its ref) is known.
+            if (!source.isWallet &&
+                KenyanConfirmationParser.isBankWalletMirrorSms(sms.body) &&
+                ConfirmationIngestion.sharesKnownReceipt(sms.body, known)
+            ) {
+                continue
+            }
             if (FailureSms.isFailure(sms.body)) {
                 handlePaymentFailure(sms.address, sms.body, sms.dateMillis)
                 continue
@@ -491,12 +509,15 @@ class TransactionRepository(
             if (settlementTwin) batchTwinCodes += KenyanConfirmationParser.allReceiptCodes(sms.body)
         }
         var inserted = 0
-        val toStore = ConfirmationIngestion.dedupeLipaNaKcbTwins(pending)
+        val toStore = ConfirmationIngestion.dedupeConfirmationTwins(pending)
         if (toStore.isNotEmpty()) {
-            // Merchant SMS landed after a twin was already stored — drop the twin rows.
+            // Merchant / wallet SMS landed after a twin was already stored — drop the twin rows.
             for (tx in toStore) {
                 if (KenyanConfirmationParser.isLipaNaKcbMerchantSms(tx.rawBody)) {
                     deleteSettlementTwinsSharing(tx.rawBody)
+                }
+                if (tx.source.isWallet) {
+                    deleteBankWalletMirrorsSharing(tx)
                 }
             }
             val ids = dao.insertIgnoreAll(toStore.map { TransactionEntity.fromDomain(it) })
@@ -792,6 +813,48 @@ class TransactionRepository(
             phone = phone
         )
         return true
+    }
+
+    /**
+     * Drop bank "on your {wallet}" advisories that share a wallet ref with a stored
+     * MNO credit (Coop custody → double Received / +40k for a +20k credit).
+     */
+    suspend fun purgeBankWalletMirrorsIfNeeded(): Int = withContext(Dispatchers.IO) {
+        if (securePreferences.bankWalletMirrorPurgeDone) return@withContext 0
+        val fixed = purgeBankWalletMirrors()
+        securePreferences.bankWalletMirrorPurgeDone = true
+        fixed
+    }
+
+    private suspend fun purgeBankWalletMirrors(): Int {
+        val rows = dao.getAllForClassification()
+        val walletCodes = rows
+            .filter { it.source.isWallet }
+            .flatMapTo(HashSet()) { KenyanConfirmationParser.allReceiptCodes(it.rawBody) }
+        if (walletCodes.isEmpty()) return 0
+        val doomed = rows.mapNotNull { row ->
+            if (row.source.isWallet) return@mapNotNull null
+            if (!KenyanConfirmationParser.isBankWalletMirrorSms(row.rawBody)) return@mapNotNull null
+            val codes = KenyanConfirmationParser.allReceiptCodes(row.rawBody)
+            if (codes.any { it in walletCodes }) row.id else null
+        }
+        if (doomed.isEmpty()) return 0
+        dao.deleteByIds(doomed)
+        return doomed.size
+    }
+
+    /** When a wallet credit lands, remove any bank advisory that cites the same ref. */
+    private suspend fun deleteBankWalletMirrorsSharing(wallet: MpesaTransaction) {
+        if (!wallet.source.isWallet) return
+        val walletCodes = ConfirmationIngestion.receiptIdsOf(wallet)
+        if (walletCodes.isEmpty()) return
+        val doomed = dao.getAllForClassification().mapNotNull { row ->
+            if (row.source.isWallet) return@mapNotNull null
+            if (!KenyanConfirmationParser.isBankWalletMirrorSms(row.rawBody)) return@mapNotNull null
+            val bankCodes = KenyanConfirmationParser.allReceiptCodes(row.rawBody)
+            if (bankCodes.any { it in walletCodes }) row.id else null
+        }
+        if (doomed.isNotEmpty()) dao.deleteByIds(doomed)
     }
 
     /** Drop bank suspense twins that share a Lipa-na-KCB ref with a merchant receipt. */

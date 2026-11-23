@@ -1,6 +1,5 @@
 package com.lipabill.app.ui.tickets
 
-import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background

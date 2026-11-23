@@ -236,6 +236,18 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_REPLAY_FIRST_RUN_PENDING, false)
         set(value) = prefs.edit().putBoolean(KEY_REPLAY_FIRST_RUN_PENDING, value).apply()
 
+    /**
+     * Debug / sideload only. When true, cold start skips the first-run wizard and
+     * opens Home (marks setup done). Turn off + Replay to walk through setup again.
+     */
+    var debugSkipSetupWizard: Boolean
+        get() = RecordingCapture.available &&
+            prefs.getBoolean(KEY_DEBUG_SKIP_SETUP_WIZARD, false)
+        set(value) {
+            if (!RecordingCapture.available) return
+            prefs.edit().putBoolean(KEY_DEBUG_SKIP_SETUP_WIZARD, value).apply()
+        }
+
     /** When true, non-confirmation SMS rows have been purged from Room. */
     var confirmationFilterPurgeDone: Boolean
         get() = prefs.getBoolean(KEY_CONFIRMATION_PURGE_DONE, false)
@@ -274,6 +286,14 @@ class SecurePreferences(context: Context) {
         get() = prefs.getBoolean(KEY_FULIZA_CLASSIFY_REPAIR_DONE, false)
         set(value) = prefs.edit().putBoolean(KEY_FULIZA_CLASSIFY_REPAIR_DONE, value).apply()
 
+    /**
+     * One-shot: drop bank "received on your {wallet}" rows that twin an MNO credit
+     * (same wallet ref) so Insights does not double the inflow. v2 = all wallets.
+     */
+    var bankWalletMirrorPurgeDone: Boolean
+        get() = prefs.getBoolean(KEY_BANK_WALLET_MIRROR_PURGE_DONE, false)
+        set(value) = prefs.edit().putBoolean(KEY_BANK_WALLET_MIRROR_PURGE_DONE, value).apply()
+
     /** Regular payees the user marked essential (rent, school fees): kept out of cost nudges. */
     var essentialPayees: Set<String>
         get() = prefs.getStringSet(KEY_ESSENTIAL_PAYEES, null)?.toSet() ?: emptySet()
@@ -311,6 +331,14 @@ class SecurePreferences(context: Context) {
     var habitsLastVisit: Long
         get() = prefs.getLong(KEY_HABITS_LAST_VISIT, 0L)
         set(value) = prefs.edit().putLong(KEY_HABITS_LAST_VISIT, value).apply()
+
+    /**
+     * Challenge row id the user already saw on the complete page.
+     * Stops Habits from auto-reopening the celebration every visit.
+     */
+    var acknowledgedCompletedChallengeId: Long
+        get() = prefs.getLong(KEY_ACK_COMPLETED_CHALLENGE, 0L)
+        set(value) = prefs.edit().putLong(KEY_ACK_COMPLETED_CHALLENGE, value).apply()
 
     /**
      * Payees the user taught Habits a category for. Encoded as `payeeKey=categoryId`.
@@ -604,6 +632,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_BANK_DIRECTION_REPAIR_DONE = "bank_direction_repair_v2"
         private const val KEY_BANK_DETAIL_REPAIR_DONE = "bank_detail_repair_v1"
         private const val KEY_FULIZA_CLASSIFY_REPAIR_DONE = "fuliza_classify_repair_v1"
+        private const val KEY_BANK_WALLET_MIRROR_PURGE_DONE = "bank_wallet_mirror_purge_v2"
         private const val KEY_DARK_MODE = "dark_mode"
         private const val KEY_PASS_REMINDER_DAY_BEFORE_HOUR = "pass_reminder_day_before_hour"
         private const val KEY_PASS_REMINDER_HOURS_BEFORE = "pass_reminder_hours_before"
@@ -615,6 +644,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_EARNED_HABIT_BADGES = "earned_habit_badges"
         private const val KEY_DISMISSED_HABIT_PATTERNS = "dismissed_habit_patterns"
         private const val KEY_HABITS_LAST_VISIT = "habits_last_visit"
+        private const val KEY_ACK_COMPLETED_CHALLENGE = "acknowledged_completed_challenge_id"
         private const val KEY_TAUGHT_PAYEE_CATEGORIES = "taught_payee_categories"
         private const val KEY_SPEND_CATEGORY_OVERRIDES = "spend_category_overrides_v1"
         private const val KEY_CATEGORY_BUDGETS = "category_budgets_v1"
@@ -640,6 +670,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_OEM_SURVIVAL_LAST_PROMPT_AT = "oem_survival_last_prompt_at"
         private const val KEY_FIRST_RUN_SETUP_DONE = "first_run_setup_done"
         private const val KEY_REPLAY_FIRST_RUN_PENDING = "replay_first_run_pending"
+        private const val KEY_DEBUG_SKIP_SETUP_WIZARD = "debug_skip_setup_wizard"
         private const val KEY_APP_REGION = "app_region"
         private const val KEY_ENABLED_SOURCES = "enabled_ledger_sources_v1"
         private const val KEY_LEDGER_RAILS_WIDENED = "ledger_rails_widened_v1"

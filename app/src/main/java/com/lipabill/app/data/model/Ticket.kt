@@ -227,14 +227,6 @@ fun String?.firstNotesValue(vararg labels: String): String? {
     return null
 }
 
-/** A `Prefix …` piece inside a " · "-joined field, with the prefix removed. */
-fun String?.labeledPiece(prefix: String): String? =
-    this?.split("·")
-        ?.map { it.trim() }
-        ?.firstOrNull { it.startsWith(prefix, ignoreCase = true) }
-        ?.removePrefix(prefix)
-        ?.trim()
-
 /**
  * Sets (or with a blank [value], removes) the `Label: value` segment for [label] in " · "-joined
  * notes, keeping every other segment as it was.

@@ -3,6 +3,7 @@ package com.lipabill.app.data.sms
 import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MoneySource
 import com.lipabill.app.data.model.MpesaTransaction
+import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.data.parser.KenyanConfirmationParser
 import com.lipabill.app.data.parser.MpesaSmsParser
 
@@ -156,4 +157,64 @@ object ConfirmationIngestion {
         if (drop.isEmpty()) return rows
         return rows.filterIndexed { index, _ -> index !in drop }
     }
+
+    /**
+     * Bank "received on your {wallet}" SMS twin an MNO credit confirmation.
+     * Keep the wallet row (M-Pesa, Airtel Money, …); drop the bank advisory so
+     * Insights does not double the inflow.
+     */
+    fun dedupeBankWalletMirrors(rows: List<MpesaTransaction>): List<MpesaTransaction> {
+        if (rows.size <= 1) return rows
+        val codesByIndex = rows.map { receiptIdsOf(it) }
+        val walletIndexes = rows.indices.filter { rows[it].source.isWallet }
+        val mirrorIndexes = rows.indices.filter { i ->
+            val tx = rows[i]
+            !tx.source.isWallet && KenyanConfirmationParser.isBankWalletMirrorSms(tx.rawBody)
+        }
+        if (walletIndexes.isEmpty() || mirrorIndexes.isEmpty()) return rows
+        val drop = mutableSetOf<Int>()
+        for (m in mirrorIndexes) {
+            for (w in walletIndexes) {
+                if (isBankWalletMirrorPair(rows[m], rows[w], codesByIndex[m], codesByIndex[w])) {
+                    drop += m
+                    break
+                }
+            }
+        }
+        if (drop.isEmpty()) return rows
+        return rows.filterIndexed { index, _ -> index !in drop }
+    }
+
+    /** Apply every cross-rail twin rule before insert. */
+    fun dedupeConfirmationTwins(rows: List<MpesaTransaction>): List<MpesaTransaction> =
+        dedupeBankWalletMirrors(dedupeLipaNaKcbTwins(rows))
+
+    /** Receipt ids used to match bank mirrors to a wallet confirmation. */
+    fun receiptIdsOf(tx: MpesaTransaction): Set<String> =
+        KenyanConfirmationParser.allReceiptCodes(tx.rawBody) + tx.code
+
+    /**
+     * True when [bank] is an advisory mirror of [wallet] (shared wallet ref, or
+     * same amount within a few minutes when the bank SMS credits "on your" wallet).
+     */
+    fun isBankWalletMirrorPair(
+        bank: MpesaTransaction,
+        wallet: MpesaTransaction,
+        bankCodes: Set<String> = receiptIdsOf(bank),
+        walletCodes: Set<String> = receiptIdsOf(wallet)
+    ): Boolean {
+        if (!wallet.source.isWallet) return false
+        if (bank.source.isWallet) return false
+        if (!KenyanConfirmationParser.isBankWalletMirrorSms(bank.rawBody)) return false
+        if (bankCodes.any { it in walletCodes }) return true
+        if (bank.type != TransactionType.RECEIVED || wallet.type != TransactionType.RECEIVED) {
+            return false
+        }
+        val amountOk = bank.amount != null && wallet.amount != null &&
+            kotlin.math.abs(bank.amount - wallet.amount) < 0.005
+        if (!amountOk) return false
+        return kotlin.math.abs(bank.timestampMillis - wallet.timestampMillis) <= MIRROR_WINDOW_MS
+    }
+
+    private const val MIRROR_WINDOW_MS = 5L * 60L * 1000L
 }

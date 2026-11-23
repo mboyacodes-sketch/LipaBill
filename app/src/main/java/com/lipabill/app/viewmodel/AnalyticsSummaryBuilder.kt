@@ -120,7 +120,8 @@ internal fun buildAnalyticsSummary(
     val confirmedRecurring = marks.recurringChoices
         .filterValues { it == RecurringChoice.Confirmed }
         .keys
-    val regulars = if (mpesa) {
+    // One detectRegulars pass → ranked regulars + questionnaire patterns.
+    val detectedRegulars = if (mpesa) {
         detectRegulars(
             txs,
             zone,
@@ -131,23 +132,19 @@ internal fun buildAnalyticsSummary(
     } else {
         emptyList()
     }
-    val recurringPatterns = if (mpesa) {
-        RecurringPatterns.detect(
-            txs = txs,
-            today = today,
-            zone = zone,
-            choices = marks.recurringChoices,
-            essentials = marks.essential,
-            watched = marks.watched
-        )
-    } else {
-        emptyList()
-    }
+    val regulars = RecurringPatterns.applyChoices(detectedRegulars, marks.recurringChoices)
+    val recurringPatterns = RecurringPatterns.patternsFromRegulars(
+        detectedRegulars,
+        marks.recurringChoices
+    )
     val potentialRecurring = RecurringPatterns.potential(recurringPatterns)
     val changeRows = if (mpesa) {
-        RecurringPatterns.suppressNewChargesAlreadyPotential(
-            regularChanges(txs, today, zone),
-            potentialRecurring
+        RecurringPatterns.filterChanges(
+            RecurringPatterns.suppressNewChargesAlreadyPotential(
+                regularChanges(txs, today, zone),
+                potentialRecurring
+            ),
+            marks.recurringChoices
         )
     } else {
         emptyList()
@@ -264,7 +261,11 @@ internal fun buildAnalyticsSummary(
         periodBars = periodBars(coveredFrom, to, inflowByDate, outflowByDate),
         isReady = true,
         regularChanges = changeRows,
-        priceTrends = if (mpesa) priceTrends(txs, today, zone) else emptyList(),
+        priceTrends = if (mpesa) {
+            RecurringPatterns.filterTrends(priceTrends(txs, today, zone), marks.recurringChoices)
+        } else {
+            emptyList()
+        },
         categoryChanges = if (mpesa && comparable) {
             categoryChanges(spendByCategory(filtered, overrides), spendByCategory(previousTxs, overrides))
         } else {
