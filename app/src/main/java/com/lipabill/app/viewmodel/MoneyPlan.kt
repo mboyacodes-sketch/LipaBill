@@ -2,6 +2,8 @@ package com.lipabill.app.viewmodel
 
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.data.model.TransactionType
+import com.lipabill.app.engage.RecurringChoice
+import com.lipabill.app.engage.RecurringPatterns
 import com.lipabill.app.engage.SpendCategory
 import com.lipabill.app.engage.resolveSpendCategory
 import java.time.Instant
@@ -320,7 +322,14 @@ internal fun buildMoneyPlan(
     zone: ZoneId = ZoneId.systemDefault()
 ): MoneyPlanUi {
     val txs = withoutReversals(ledger)
-    val regulars = detectRegulars(txs, zone, today, marks.essential, marks.watched)
+    // Separate ledger window from Insights summary — own detectRegulars pass is intentional.
+    val confirmed = marks.recurringChoices
+        .filterValues { it == RecurringChoice.Confirmed }
+        .keys
+    val regulars = RecurringPatterns.applyChoices(
+        detectRegulars(txs, zone, today, marks.essential, marks.watched + confirmed),
+        marks.recurringChoices
+    )
     val wallets = walletSources.ifEmpty { listOf(primary) }
     val known = wallets.mapNotNull { balances[it] }
     val balance = if (known.isEmpty()) null else known.sum()
