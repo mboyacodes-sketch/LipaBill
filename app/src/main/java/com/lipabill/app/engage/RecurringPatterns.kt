@@ -2,6 +2,9 @@ package com.lipabill.app.engage
 
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.viewmodel.Cadence
+import com.lipabill.app.viewmodel.PriceTrend
+import com.lipabill.app.viewmodel.RegularChange
+import com.lipabill.app.viewmodel.RegularPayee
 import com.lipabill.app.viewmodel.detectRegulars
 import com.lipabill.app.viewmodel.payeeMarkCandidates
 import java.time.LocalDate
@@ -65,7 +68,8 @@ object RecurringPatterns {
 
     /**
      * Cadence detector over ledger rows. [choices] from prefs; dismissed stay out of
-     * [potential]; confirmed feed Coming up / next-bill.
+     * [potential] and out of ranked regulars / Coming up; confirmed pin to the top
+     * and feed next-bill.
      */
     fun detect(
         txs: Iterable<MpesaTransaction>,
@@ -76,14 +80,24 @@ object RecurringPatterns {
         watched: Set<String> = emptySet()
     ): List<RecurringPattern> {
         val confirmedKeys = choices.filterValues { it == RecurringChoice.Confirmed }.keys
-        val watchedForDetect = watched + confirmedKeys
-        return detectRegulars(
-            txs = txs,
-            zone = zone,
-            today = today,
-            essentials = essentials,
-            watched = watchedForDetect
-        ).map { regular ->
+        return patternsFromRegulars(
+            detectRegulars(
+                txs = txs,
+                zone = zone,
+                today = today,
+                essentials = essentials,
+                watched = watched + confirmedKeys
+            ),
+            choices
+        )
+    }
+
+    /** Map already-detected regulars — avoids a second [detectRegulars] pass on Insights. */
+    fun patternsFromRegulars(
+        regulars: List<RegularPayee>,
+        choices: Map<String, RecurringChoice>
+    ): List<RecurringPattern> =
+        regulars.map { regular ->
             RecurringPattern(
                 key = regular.key,
                 name = regular.name,
@@ -95,6 +109,65 @@ object RecurringPatterns {
                 choice = choiceFor(regular.key, regular.name, choices)
             )
         }
+
+    /**
+     * Apply Watching-what-repeats answers to detector output:
+     * - Dismissed → drop (Regulars, Coming up, safe-to-spend bills)
+     * - Confirmed → mark watched and rank above other regulars
+     * - Pending → keep detector order among non-confirmed
+     *
+     * Call whenever ledger or [choices] change so Insights/Habits re-rank together.
+     */
+    fun applyChoices(
+        regulars: List<RegularPayee>,
+        choices: Map<String, RecurringChoice>
+    ): List<RegularPayee> {
+        if (regulars.isEmpty()) return regulars
+        if (choices.isEmpty()) return regulars.sortedByDescending { it.monthlyCost }
+        val kept = regulars.mapNotNull { regular ->
+            when (choiceFor(regular.key, regular.name, choices)) {
+                RecurringChoice.Dismissed -> null
+                RecurringChoice.Confirmed -> regular.copy(watched = true)
+                RecurringChoice.Pending -> regular
+            }
+        }
+        return kept.sortedWith(
+            compareByDescending<RegularPayee> {
+                choiceFor(it.key, it.name, choices) == RecurringChoice.Confirmed
+            }
+                .thenByDescending { it.watched }
+                .thenByDescending { it.essential }
+                .thenByDescending { it.monthlyCost }
+        )
+    }
+
+    /** True when prefs say this payee is not a bill (name or phone key). */
+    fun isDismissed(
+        key: String?,
+        name: String,
+        choices: Map<String, RecurringChoice>
+    ): Boolean {
+        if (choices.isEmpty()) return false
+        val resolved = key?.takeIf { it.isNotBlank() } ?: HabitPatterns.payeeKey(name)
+        return choiceFor(resolved, name, choices) == RecurringChoice.Dismissed
+    }
+
+    /** Drop Watching rows for payees the user dismissed as not a bill. */
+    fun filterChanges(
+        changes: List<RegularChange>,
+        choices: Map<String, RecurringChoice>
+    ): List<RegularChange> {
+        if (choices.isEmpty() || changes.isEmpty()) return changes
+        return changes.filterNot { change -> isDismissed(null, change.name, choices) }
+    }
+
+    /** Drop price trends for dismissed payees. */
+    fun filterTrends(
+        trends: List<PriceTrend>,
+        choices: Map<String, RecurringChoice>
+    ): List<PriceTrend> {
+        if (choices.isEmpty() || trends.isEmpty()) return trends
+        return trends.filterNot { trend -> isDismissed(null, trend.name, choices) }
     }
 
     /**
