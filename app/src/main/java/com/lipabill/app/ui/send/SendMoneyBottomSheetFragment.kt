@@ -226,8 +226,9 @@ fun SendMoneySheetContent(
 
     MoneySheetScaffold(
         balance = shownBalance,
-        balanceCaption = WalletAccount.MPESA.balanceCaption,
-        balancePrefix = WalletAccount.MPESA.balancePrefix,
+        balanceCaption = state.activeWallet?.let { "${it.badge} available" }
+            ?: WalletAccount.MPESA.balanceCaption,
+        balancePrefix = state.activeWallet?.badge ?: WalletAccount.MPESA.balancePrefix,
         pendingDeduction = pendingAmount,
         selectedName = selectedName,
         selectedSubtitle = phone?.let { "@$it" },
