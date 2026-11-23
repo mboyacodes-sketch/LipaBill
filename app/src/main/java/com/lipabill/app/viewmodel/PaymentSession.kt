@@ -117,17 +117,6 @@ fun setPreferredPayLine(
     return PaymentDialResolver.resolve(region, lines, subscriptionId, enabled = enabled)
 }
 
-/** Home / sheets: resolve current dial target without a coordinator. */
-fun Context.activePayDialTarget(preferences: SecurePreferences): PaymentDialTarget? {
-    if (!SimLineHelper.hasPhoneStatePermission(this)) return null
-    val region = preferences.appRegion
-    val enabled = preferences.enabledLedgerSources(region)
-    val lines = SimLineHelper.listActiveLines(this, region)
-    val preferred = SimLineHelper.ensurePayPreferred(region, preferences, lines, enabled)
-        ?: return null
-    return PaymentDialResolver.resolve(region, lines, preferred, enabled = enabled)
-}
-
 /** Saves the chosen SIM, then the status line shown after dial starts. */
 fun dialStartedStatus(
     preferences: SecurePreferences,
