@@ -16,10 +16,13 @@ import com.lipabill.app.data.tickets.BookingConfirmationParser
 import com.lipabill.app.data.tickets.TicketDocumentImporter
 import com.lipabill.app.data.tickets.PassDocumentReader
 import com.lipabill.app.data.tickets.PassDraft
+import com.lipabill.app.data.tickets.GroupTickets
+import com.lipabill.app.metrics.AppLog
 import com.lipabill.app.data.tickets.intelligence.PassFieldReader
 import com.lipabill.app.data.tickets.TicketDocumentKind
 import com.lipabill.app.data.tickets.BarcodeSpec
 import com.lipabill.app.data.tickets.TicketImport
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -104,21 +107,45 @@ class TicketsViewModel(
     suspend fun saveImport(
         draft: TicketImport,
         kind: TicketDocumentKind,
-        read: PassDraft? = null
+        read: PassDraft? = null,
+        /** Also save the file's other tickets ([PassDraft.extraCodes]) as their own passes. */
+        saveExtras: Boolean = false
     ): Long? = withContext(Dispatchers.IO) {
-        val extraction = read?.let { PassFieldReader.withEdits(it.extraction, draft) }
-        app.passDocuments.saveWithDocument(read?.documentId, extraction) {
-            saveDraft(draft, kind)
+        val group = if (saveExtras) GroupTickets.drafts(draft, read?.extraCodes.orEmpty()) else listOf(draft)
+        val main = group.first()
+        val extraction = read?.let { PassFieldReader.withEdits(it.extraction, main) }
+        val id = app.passDocuments.saveWithDocument(read?.documentId, extraction) {
+            saveDraft(main, kind)
         }
+        if (id != null) {
+            // Never merged: group tickets share an order ref, and a merge would swap the
+            // first pass's code for this one. A code already saved is skipped.
+            val skipped = group.drop(1).count { extra ->
+                try {
+                    saveDraft(extra, kind, merge = false) == null
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    true
+                }
+            }
+            if (skipped > 0) AppLog.w(TAG, "group_extra_skipped=$skipped of ${group.size - 1}")
+        }
+        id
     }
 
-    private suspend fun saveDraft(draft: TicketImport, kind: TicketDocumentKind): Long? =
-        when (kind) {
+    private suspend fun saveDraft(
+        draft: TicketImport,
+        kind: TicketDocumentKind,
+        merge: Boolean = true
+    ): Long? {
+        suspend fun save(d: TicketImport): Long? =
+            if (merge) app.ticketRepository.addOrMerge(d) else app.ticketRepository.addImport(d)
+        return when (kind) {
             // Event tickets join a pass already saved for the same ticket (e.g. from its SMS).
             TicketDocumentKind.EVENT, TicketDocumentKind.PKPASS -> {
-                app.ticketRepository.addOrMerge(
-                    draft.copy(expectsBoardingPass = false, hasBoardingPass = true)
-                ) ?: throw IllegalArgumentException("That ticket is already saved.")
+                save(draft.copy(expectsBoardingPass = false, hasBoardingPass = true))
+                    ?: throw IllegalArgumentException("That ticket is already saved.")
             }
             // Picked as SGR in review: save a rail pass (booking + boarding on one code), marked the
             // way parsed SGR tickets are so the Passes list shows it with travel chrome.
@@ -129,19 +156,19 @@ class TicketsViewModel(
                 } else {
                     listOf(notes, SGR_MARKER).filter { it.isNotBlank() }.joinToString(" · ")
                 }
-                app.ticketRepository.addOrMerge(
-                    draft.copy(expectsBoardingPass = true, hasBoardingPass = true, notes = railNotes)
-                ) ?: throw IllegalArgumentException("That ticket is already saved.")
-            }
-            else -> {
-                app.ticketRepository.addOrMerge(draft)
+                save(draft.copy(expectsBoardingPass = true, hasBoardingPass = true, notes = railNotes))
                     ?: throw IllegalArgumentException("That ticket is already saved.")
             }
+            else -> {
+                save(draft) ?: throw IllegalArgumentException("That ticket is already saved.")
+            }
         }
+    }
 
     private companion object {
         /** Same marker [com.lipabill.app.data.tickets.ETicketTextParser] writes on SGR tickets. */
         const val SGR_MARKER = "Imported SGR ticket"
+        const val TAG = "LipaBill.Tickets"
     }
 
     /** From the Today card: a finished or live pass marked used without opening it. */

@@ -12,7 +12,12 @@ enum class AppRegion(
     val currencySymbol: String,
     val primaryWallet: MoneySource,
     val canSendPay: Boolean,
-    val hasFuliza: Boolean
+    val hasFuliza: Boolean,
+    /**
+     * Rough local-currency units per Kenyan shilling, for "is this a large amount" thresholds
+     * written in KES (habit patterns). Not for display or totals; refresh if rates drift far.
+     */
+    val unitsPerKes: Double
 ) {
     KENYA(
         iso = "KE",
@@ -21,7 +26,8 @@ enum class AppRegion(
         currencySymbol = "Ksh",
         primaryWallet = MoneySource.MPESA,
         canSendPay = true,
-        hasFuliza = true
+        hasFuliza = true,
+        unitsPerKes = 1.0
     ),
     TANZANIA(
         iso = "TZ",
@@ -30,7 +36,8 @@ enum class AppRegion(
         currencySymbol = "TSh",
         primaryWallet = MoneySource.MPESA,
         canSendPay = false,
-        hasFuliza = false
+        hasFuliza = false,
+        unitsPerKes = 20.0
     ),
     UGANDA(
         iso = "UG",
@@ -39,7 +46,8 @@ enum class AppRegion(
         currencySymbol = "USh",
         primaryWallet = MoneySource.MTN_MOMO,
         canSendPay = true,
-        hasFuliza = false
+        hasFuliza = false,
+        unitsPerKes = 28.0
     ),
     RWANDA(
         iso = "RW",
@@ -48,7 +56,8 @@ enum class AppRegion(
         currencySymbol = "FRw",
         primaryWallet = MoneySource.MTN_MOMO,
         canSendPay = false,
-        hasFuliza = false
+        hasFuliza = false,
+        unitsPerKes = 11.0
     );
 
     val sources: Set<MoneySource>
