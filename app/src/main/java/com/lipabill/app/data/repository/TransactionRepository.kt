@@ -130,6 +130,32 @@ class TransactionRepository(
     fun observeLedgerWindow(sources: Set<MoneySource>, limit: Int): Flow<List<MpesaTransaction>> =
         mapListItems(dao.observeLedgerWindow(sources.map { it.name }, limit))
 
+    /**
+     * One-shot Home search. Digit-only queries skip the NOCASE name scan.
+     * Cancelled by the caller when the user keeps typing ([mapLatest]).
+     */
+    suspend fun searchHome(
+        query: String,
+        sources: Set<MoneySource>,
+        type: TransactionType? = null,
+        fuliza: Boolean = false,
+        limit: Int = HOME_SEARCH_LIMIT
+    ): List<MpesaTransaction> {
+        val trimmed = query.trim()
+        if (trimmed.length < HOME_SEARCH_MIN_CHARS) return emptyList()
+        val sourceNames = sources.map { it.name }
+        val digitsOnly = trimmed.all { it.isDigit() || it == '+' }
+        val rows = withContext(Dispatchers.IO) {
+            when {
+                fuliza && digitsOnly -> dao.searchFulizaDigits(trimmed, limit)
+                fuliza -> dao.searchFulizaText(trimmed, limit)
+                digitsOnly -> dao.searchLedgerDigits(sourceNames, trimmed, type, limit)
+                else -> dao.searchLedgerText(sourceNames, trimmed, type, limit)
+            }
+        }
+        return rows.map { it.toListItem() }
+    }
+
     /** Ledger rows per source over all history. */
     fun observeSourceCounts(): Flow<Map<MoneySource, Int>> =
         dao.observeSourceCounts().map { rows -> rows.associate { it.source to it.n } }
@@ -1022,6 +1048,10 @@ class TransactionRepository(
     companion object {
         const val LIST_LIMIT = 80
         const val HOME_LIST_LIMIT = 250
+        /** Cap for Home typeahead so search stays scrollable and cheap. */
+        const val HOME_SEARCH_LIMIT = 80
+        /** Ignore 1-char queries — too many hits, not enough intent. */
+        const val HOME_SEARCH_MIN_CHARS = 2
         const val SEND_SCAN_LIMIT = 250
         /** Enough recent sends for fee band + this-month counts without the full wallet. */
         const val SEND_HISTORY_LIMIT = 120
