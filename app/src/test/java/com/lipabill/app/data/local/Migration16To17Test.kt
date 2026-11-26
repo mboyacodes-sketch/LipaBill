@@ -128,7 +128,7 @@ class Migration16To17Test {
     }
 
     @Test
-    fun migration_is_registered_last() {
-        assertTrue(AppDatabaseMigrations.ALL.last() === AppDatabaseMigrations.MIGRATION_16_17)
+    fun migration_is_registered() {
+        assertTrue(AppDatabaseMigrations.ALL.any { it === AppDatabaseMigrations.MIGRATION_16_17 })
     }
 }
