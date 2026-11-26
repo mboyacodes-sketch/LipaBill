@@ -18,7 +18,9 @@ data class PassDraft(
     /** Stored original, or null for Wallet passes (their file is the pass itself). */
     val documentId: String?,
     val extraction: PassExtraction,
-    val issues: List<PassIssue>
+    val issues: List<PassIssue>,
+    /** Other gate codes in the same file (one ticket per page); review can save each as a pass. */
+    val extraCodes: List<ETicketTextParser.FoundBarcode> = emptyList()
 )
 
 /** The same file was saved before; open that pass instead of saving a twin. */
@@ -36,7 +38,7 @@ class PassDocumentReader(private val documents: PassDocumentRepository) {
             val draft = TicketDocumentImporter.import(context, uri, TicketDocumentKind.PKPASS)
             val classification = DocumentClassifier.classify("", hasBarcode = true, hint = TicketDocumentKind.PKPASS)
             val extraction = PassFieldReader.read(draft, ReadEvidence(fromPdfText = false, barcodeFromPixels = false), classification)
-            return finish(draft, null, extraction, classification.kind, text = "", distinctTicketCodes = 1)
+            return finish(draft, null, extraction, classification.kind, text = "", extraCodes = emptyList())
         }
 
         val stored = documents.store(uri)
@@ -67,7 +69,7 @@ class PassDocumentReader(private val documents: PassDocumentRepository) {
             extraction,
             classification.kind,
             analyzed.read.text,
-            distinctTicketCodes = distinctCodes(analyzed)
+            extraCodes = extraCodes(analyzed)
         )
     }
 
@@ -105,7 +107,7 @@ class PassDocumentReader(private val documents: PassDocumentRepository) {
                 extraction,
                 classification.kind,
                 analyzed.read.text,
-                distinctTicketCodes = distinctCodes(analyzed)
+                extraCodes = extraCodes(analyzed)
             )
         } finally {
             opened.file.delete()
@@ -118,7 +120,7 @@ class PassDocumentReader(private val documents: PassDocumentRepository) {
         extraction: PassExtraction,
         kind: PassKind,
         text: String,
-        distinctTicketCodes: Int
+        extraCodes: List<ETicketTextParser.FoundBarcode>
     ): PassDraft {
         val lifecycle = PassLifecycleResolver.resolve(text, draft.startsAtMillis)
         val withStatus = draft.copy(status = lifecycle.status)
@@ -126,17 +128,13 @@ class PassDocumentReader(private val documents: PassDocumentRepository) {
             withStatus,
             kind,
             sourceText = text,
-            distinctTicketCodes = distinctTicketCodes
+            distinctTicketCodes = 1 + extraCodes.size
         ).toMutableList()
         lifecycle.issue?.let { if (it !in issues) issues += it }
-        return PassDraft(withStatus, documentId, extraction, issues)
+        return PassDraft(withStatus, documentId, extraction, issues, extraCodes)
     }
 
-    private fun distinctCodes(analyzed: ETicketAnalyzer.AnalyzedTicket): Int =
-        analyzed.read.barcodes
-            .map { it.value.trim() }
-            .filter { it.isNotEmpty() && !ETicketTextParser.looksLikeImplausibleCode(it) }
-            .distinct()
-            .size
-            .coerceAtLeast(1)
+    /** Only codes of the gate code's own kind count, so an app-download QR is not a second ticket. */
+    private fun extraCodes(analyzed: ETicketAnalyzer.AnalyzedTicket): List<ETicketTextParser.FoundBarcode> =
+        ETicketTextParser.extraTicketCodes(analyzed.read.barcodes, analyzed.draft.barcodeValue)
 }
