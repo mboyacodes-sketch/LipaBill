@@ -25,10 +25,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import com.lipabill.app.ui.components.QrImageShape
@@ -148,24 +149,30 @@ fun RequestQrPeekCarousel(
             verticalAlignment = Alignment.CenterVertically
         ) { page ->
             val slide = slides[page]
-            // 0 = fully active, 1 = fully a side peek (left and right share this).
-            val pageOffset = ((pager.currentPage - page) + pager.currentPageOffsetFraction)
-                .absoluteValue
-                .coerceIn(0f, 1f)
-            val focus = 1f - pageOffset
             RequestQrSlideCard(
                 slide = slide,
                 mark = mark,
                 onCopy = { onCopy(slide) },
                 modifier = Modifier
                     .graphicsLayer {
+                        // Read the scroll offset here, in the draw phase, so a swipe redraws
+                        // the layer each frame without recomposing every page.
+                        // 0 = fully active, 1 = fully a side peek (left and right share this).
+                        val pageOffset =
+                            ((pager.currentPage - page) + pager.currentPageOffsetFraction)
+                                .absoluteValue
+                                .coerceIn(0f, 1f)
+                        val focus = 1f - pageOffset
                         // Same peek scale/dim on both sides; only the active card is full size + bright.
                         val scale = lerp(RequestQrPeekScale, 1f, focus)
                         scaleX = scale
                         scaleY = scale
                         alpha = lerp(RequestQrPeekAlpha, 1f, focus)
+                        // Matches Modifier.blur's rectangle edge treatment; no-op at radius 0.
+                        val blur = (RequestQrPeekBlur * pageOffset).dp.toPx()
+                        renderEffect = if (blur > 0f) BlurEffect(blur, blur, TileMode.Clamp) else null
+                        clip = blur > 0f
                     }
-                    .blur(radius = (RequestQrPeekBlur * pageOffset).dp)
             )
         }
     }

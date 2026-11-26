@@ -14,18 +14,24 @@ import java.util.Locale
 private val dateTimeFormat: DateTimeFormatter =
     DateTimeFormatter.ofPattern("d MMM yyyy · HH:mm", Locale.UK)
 
-/** Whole-shilling money for Insights copy: "KSh 6,450". */
-fun formatKsh(amount: Double): String =
-    "KSh " + NumberFormat.getIntegerInstance(Locale.US).format(Math.round(amount))
-
-fun formatKes(amount: Double?): String {
-    if (amount == null) return "—"
-    // NumberFormat is not thread-safe — allocate per call (amounts are infrequent UI work).
-    val format = NumberFormat.getNumberInstance(Locale.US).apply {
+// NumberFormat is not thread-safe; one instance per thread instead of one per list row.
+private val wholeAmountFormat = ThreadLocal.withInitial {
+    NumberFormat.getIntegerInstance(Locale.US)
+}
+private val centsAmountFormat = ThreadLocal.withInitial {
+    NumberFormat.getNumberInstance(Locale.US).apply {
         minimumFractionDigits = 2
         maximumFractionDigits = 2
     }
-    return format.format(amount)
+}
+
+/** Whole-shilling money for Insights copy: "KSh 6,450". */
+fun formatKsh(amount: Double): String =
+    "KSh " + wholeAmountFormat.get()!!.format(Math.round(amount))
+
+fun formatKes(amount: Double?): String {
+    if (amount == null) return "—"
+    return centsAmountFormat.get()!!.format(amount)
 }
 
 fun formatTimestamp(millis: Long): String {

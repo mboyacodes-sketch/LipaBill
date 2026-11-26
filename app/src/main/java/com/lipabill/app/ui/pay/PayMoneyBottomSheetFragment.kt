@@ -55,7 +55,6 @@ import com.lipabill.app.ui.sheet.InAppKeyboard
 import com.lipabill.app.ui.sheet.MoneyFlowConfirmDialog
 import com.lipabill.app.ui.sheet.MoneySheetScaffold
 import com.lipabill.app.ui.sheet.SheetTextEditor
-import com.lipabill.app.ui.sheet.amountExceedsBalance
 import com.lipabill.app.ui.sheet.expandedSheetDialog
 import com.lipabill.app.ui.sheet.rememberMoneyFlowChrome
 import com.lipabill.app.ui.sheet.rememberMoneySheetAccess
@@ -268,9 +267,6 @@ fun PayMoneySheetContent(
         null -> null
     }
 
-    // When we know the wallet balance, amount above it disables Pay (no Fuliza bypass).
-    // Unknown balance stays payable so a missing SMS does not trap the sheet.
-    val blockOverBalance = shownBalance != null
     val chrome = rememberMoneyFlowChrome(
         amountInput = state.amountInput,
         amountValid = state.amountValid,
@@ -283,11 +279,9 @@ fun PayMoneySheetContent(
         paymentBlock = paymentBlock,
         blockedDirective = paymentBlock?.let { paymentAccessDirective(sheetAccess.missing) },
         confirmLabel = "Pay Now",
-        fulizaCoversShortfall = !blockOverBalance
+        fulizaCoversShortfall = true
     )
     val pendingAmount = chrome.pendingAmount
-    val exceedsKnownBalance = amountExceedsBalance(shownBalance, pendingAmount)
-    val canPayWithinBalance = state.canPay && !exceedsKnownBalance
 
     MoneySheetScaffold(
         balance = shownBalance,
@@ -491,11 +485,11 @@ fun PayMoneySheetContent(
             null
         },
         ctaLabel = chrome.primaryCta.label,
-        ctaEnabled = chrome.primaryCta.enabled && canPayWithinBalance,
+        ctaEnabled = chrome.primaryCta.enabled,
         onCta = {
             runMoneySheetPrimaryCta(
                 onAmountStep = true,
-                canConfirm = canPayWithinBalance,
+                canConfirm = state.canPay,
                 paymentBlock = paymentBlock,
                 onConfirm = { showConfirm = true },
                 onAllow = sheetAccess.allow,
@@ -508,7 +502,7 @@ fun PayMoneySheetContent(
         onClearAmount = { payVm.setAmountInput("") },
         feedbackMessage = chrome.feedbackMessage,
         feedbackTone = chrome.feedbackTone,
-        fulizaCoversShortfall = !blockOverBalance,
+        fulizaCoversShortfall = true,
         footnote = "You’ll enter your PIN on LipaBill’s secure keypad.",
         modifier = Modifier.fillMaxWidth()
     )
@@ -517,7 +511,7 @@ fun PayMoneySheetContent(
 
     MoneyFlowConfirmDialog(
         visible = showConfirm,
-        canConfirm = canPayWithinBalance,
+        canConfirm = state.canPay,
         confirmLabel = "Pay Now",
         summary = payVm.confirmSummary(),
         from = state.activeWallet,

@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -82,13 +83,16 @@ import com.lipabill.app.ui.theme.Mute
 import com.lipabill.app.ui.theme.SoftBlue
 import com.lipabill.app.ui.theme.asPillLabel
 import com.lipabill.app.ui.util.copyPlainText
+import com.lipabill.app.ui.util.dialPhoneNumber
 import com.lipabill.app.ui.util.displayLabel
 import com.lipabill.app.ui.util.formatKes
 import com.lipabill.app.ui.util.formatTimestamp
 import com.lipabill.app.ui.util.sharePlainText
 import com.lipabill.app.ussd.UssdMenuBuilder
 import com.lipabill.app.viewmodel.PayeeEditResult
+import com.lipabill.app.viewmodel.phoneKey
 import kotlinx.coroutines.launch
+import androidx.compose.ui.text.style.TextDecoration
 
 private val DetailFill: Color
     @androidx.compose.runtime.Composable
@@ -126,7 +130,7 @@ fun TransactionReceiptPopup(
     var editing by remember(tx.id) { mutableStateOf(false) }
     var draftName by remember(tx.id) { mutableStateOf(tx.counterpartyName.orEmpty()) }
     var draftCategory by remember(tx.id) { mutableStateOf(spendCategory) }
-    var linkedCount by remember(tx.id) { mutableStateOf(1) }
+    var linkedCount by remember(tx.id) { mutableIntStateOf(1) }
     var saving by remember { mutableStateOf(false) }
 
     LaunchedEffect(tx.id, editing, spendCategory) {
@@ -350,7 +354,7 @@ fun TransactionReceiptPopup(
                             outgoing -> "Total paid"
                             else -> "Total received"
                         },
-                        value = formatKes(if (fuliza) tx.balance else tx.amount),
+                        value = formatKes(if (fuliza) tx.balance else receiptTotal(tx)),
                         emphasize = true,
                         coverValue = fuliza
                     )
@@ -383,7 +387,28 @@ fun TransactionReceiptPopup(
                         }
                     }
                     if (!tx.counterpartyPhone.isNullOrBlank()) {
-                        DetailRow(tx.source.partyIdLabel, tx.counterpartyPhone, coverValue = true)
+                        val phone = tx.counterpartyPhone
+                        val callable = phoneKey(phone) != null
+                        DetailRow(
+                            label = tx.source.partyIdLabel,
+                            value = phone,
+                            coverValue = true,
+                            valueColor = if (callable) Accent else Ink,
+                            underlineValue = callable,
+                            onValueClick = if (callable) {
+                                {
+                                    if (!context.dialPhoneNumber(phone)) {
+                                        Toast.makeText(
+                                            context,
+                                            "No dialer on this phone",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            } else {
+                                null
+                            }
+                        )
                     }
                 }
 
@@ -594,12 +619,24 @@ private fun DetailSection(
     }
 }
 
+/**
+ * "Total paid" / "Total received" on the receipt. Money out costs the amount plus the
+ * M-Pesa fee; money in is the amount credited (the sender paid any fee).
+ */
+internal fun receiptTotal(tx: MpesaTransaction): Double? {
+    val amount = tx.amount ?: return null
+    return if (tx.type.isOutgoing()) amount + (tx.cost ?: 0.0) else amount
+}
+
 @Composable
 private fun DetailRow(
     label: String,
     value: String,
     emphasize: Boolean = false,
-    coverValue: Boolean = false
+    coverValue: Boolean = false,
+    valueColor: Color = Ink,
+    underlineValue: Boolean = false,
+    onValueClick: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -616,14 +653,22 @@ private fun DetailRow(
         )
         Text(
             text = value,
-            color = Ink,
+            color = valueColor,
             fontSize = if (emphasize) 14.sp else 12.sp,
             fontWeight = if (emphasize) FontWeight.Medium else FontWeight.Normal,
             textAlign = TextAlign.End,
+            textDecoration = if (underlineValue) TextDecoration.Underline else TextDecoration.None,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .weight(1f)
+                .then(
+                    if (onValueClick != null) {
+                        Modifier.clickable(onClick = onValueClick)
+                    } else {
+                        Modifier
+                    }
+                )
                 .recordingPrivacyCover(coverValue)
         )
     }

@@ -532,16 +532,17 @@ fun TicketsScreen(
             extraction = review.read.extraction,
             initialKind = review.kind,
             loadPreview = { viewModel.preview(review.read, maxWidth = 720) },
+            extraTicketCount = review.read.extraCodes.size,
             onCancel = {
                 AppMetrics.ticketImport(review.source, TicketImportResult.Cancelled)
                 viewModel.discardDocument(review.read)
                 reviewDraft = null
             },
-            onSave = { edited, kind ->
+            onSave = { edited, kind, saveAll ->
                 reviewDraft = null
                 scope.launch {
                     try {
-                        val id = viewModel.saveImport(edited, kind, review.read)
+                        val id = viewModel.saveImport(edited, kind, review.read, saveExtras = saveAll)
                         if (id == null) {
                             AppMetrics.ticketImport(review.source, TicketImportResult.Duplicate)
                             error = "That ticket is already saved, or has no usable code."
