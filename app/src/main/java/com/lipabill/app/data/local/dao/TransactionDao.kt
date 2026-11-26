@@ -71,6 +71,85 @@ interface TransactionDao {
     )
     fun observeLedgerWindow(sources: List<String>, limit: Int): Flow<List<TransactionEntity>>
 
+    /**
+     * Home text search (name / phone / code). One-shot, capped, no SMS bodies.
+     * Skips CAST(amount) — that forced a full encrypted-table scan on every key.
+     */
+    @Query(
+        """
+        SELECT id, code, type, amount, counterpartyName, counterpartyPhone,
+               timestampMillis, balance, cost, '' AS rawBody, source
+        FROM transactions
+        WHERE type != 'FULIZA' AND source IN (:sources)
+          AND (counterpartyName LIKE '%' || :query || '%' COLLATE NOCASE
+               OR counterpartyPhone LIKE '%' || :query || '%'
+               OR code LIKE '%' || :query || '%' COLLATE NOCASE)
+          AND (:type IS NULL OR type = :type)
+        ORDER BY timestampMillis DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun searchLedgerText(
+        sources: List<String>,
+        query: String,
+        type: TransactionType?,
+        limit: Int
+    ): List<TransactionEntity>
+
+    /**
+     * Home digit search (phone / code only) — skips NOCASE name scan.
+     */
+    @Query(
+        """
+        SELECT id, code, type, amount, counterpartyName, counterpartyPhone,
+               timestampMillis, balance, cost, '' AS rawBody, source
+        FROM transactions
+        WHERE type != 'FULIZA' AND source IN (:sources)
+          AND (counterpartyPhone LIKE '%' || :query || '%'
+               OR code LIKE '%' || :query || '%' COLLATE NOCASE)
+          AND (:type IS NULL OR type = :type)
+        ORDER BY timestampMillis DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun searchLedgerDigits(
+        sources: List<String>,
+        query: String,
+        type: TransactionType?,
+        limit: Int
+    ): List<TransactionEntity>
+
+    /** Fuliza Home text search. One-shot, capped, no SMS bodies. */
+    @Query(
+        """
+        SELECT id, code, type, amount, counterpartyName, counterpartyPhone,
+               timestampMillis, balance, cost, '' AS rawBody, source
+        FROM transactions
+        WHERE type = 'FULIZA'
+          AND (counterpartyName LIKE '%' || :query || '%' COLLATE NOCASE
+               OR counterpartyPhone LIKE '%' || :query || '%'
+               OR code LIKE '%' || :query || '%' COLLATE NOCASE)
+        ORDER BY timestampMillis DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun searchFulizaText(query: String, limit: Int): List<TransactionEntity>
+
+    /** Fuliza digit search — phone / code only. */
+    @Query(
+        """
+        SELECT id, code, type, amount, counterpartyName, counterpartyPhone,
+               timestampMillis, balance, cost, '' AS rawBody, source
+        FROM transactions
+        WHERE type = 'FULIZA'
+          AND (counterpartyPhone LIKE '%' || :query || '%'
+               OR code LIKE '%' || :query || '%' COLLATE NOCASE)
+        ORDER BY timestampMillis DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun searchFulizaDigits(query: String, limit: Int): List<TransactionEntity>
+
     /** Rows per source across the whole ledger (chip order, not the Home window). */
     @Query("SELECT source, COUNT(*) AS n FROM transactions WHERE type != 'FULIZA' GROUP BY source")
     fun observeSourceCounts(): Flow<List<SourceCount>>

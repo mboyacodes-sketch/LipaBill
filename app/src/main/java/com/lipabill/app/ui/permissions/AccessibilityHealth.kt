@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
 import com.lipabill.app.data.prefs.SecurePreferences
+import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.ussd.AccessibilityHelper
 import com.lipabill.app.ussd.UssdAccessibilityService
 import kotlinx.coroutines.delay
@@ -69,6 +70,39 @@ object AccessibilityHealthProbe {
             model = Build.MODEL.orEmpty().take(24),
             sdk = Build.VERSION.SDK_INT
         )
+    }
+
+    /**
+     * Live health for a coach decision, logged as `a11y_health` with [trigger]. With
+     * [awaitBind], a service still listed in Secure settings gets a short window to rebind
+     * before it counts as unbound.
+     */
+    suspend fun checkAndLog(
+        context: Context,
+        prefs: SecurePreferences,
+        trigger: String,
+        awaitBind: Boolean
+    ): AccessibilityHealth {
+        val unused = unusedAppRestrictionOf(readUnusedAppRestrictions(context))
+        var health = snapshot(context, prefs, unused)
+        if (awaitBind && !health.bound && health.secureOn) {
+            awaitBindIfListed(context)
+            health = snapshot(context, prefs, unused)
+        }
+        AppMetrics.a11yHealth(
+            preferred = health.preferred,
+            secureOn = health.secureOn,
+            bound = health.bound,
+            batteryIgnoring = health.batteryIgnoring,
+            unusedAppStatus = health.unusedAppStatus,
+            manufacturer = health.manufacturer,
+            model = health.model,
+            sdk = health.sdk,
+            oemFamily = OemSurvivalHelper.oemFamilyKey(),
+            coach = health.coachKind.name.lowercase(),
+            trigger = trigger
+        )
+        return health
     }
 
     fun isIgnoringBatteryOptimizations(context: Context): Boolean {

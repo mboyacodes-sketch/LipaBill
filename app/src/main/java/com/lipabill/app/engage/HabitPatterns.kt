@@ -58,6 +58,10 @@ object HabitPatterns {
     private const val PAYDAY_HOURS = 48L
     private const val LARGE_CREDIT_CENTS = 5_000_00L
     private const val PAYDAY_SPEND_FLOOR_CENTS = 1_500_00L
+
+    /** A KES threshold in the ledger's own currency (TZS / UGX / RWF amounts are far larger). */
+    private fun scaled(kesCents: Long, unitsPerKes: Double): Long =
+        Math.round(kesCents * unitsPerKes.coerceAtLeast(1.0))
     /** More than this many large credits in one calendar month → gifts / cash-ins, not salary. */
     private const val MAX_LARGE_CREDITS_PER_MONTH = 2
 
@@ -82,7 +86,9 @@ object HabitPatterns {
         transactions: List<ChallengeTransaction>,
         now: Long,
         zone: ZoneId,
-        essentialKeys: Set<String> = emptySet()
+        essentialKeys: Set<String> = emptySet(),
+        /** Local units per KES ([com.lipabill.app.data.model.AppRegion.unitsPerKes]); scales KES thresholds. */
+        unitsPerKes: Double = 1.0
     ): List<HabitPattern> {
         val window = transactions.filter { it.timestampMillis in (now - WINDOW_DAYS * DAY)..now }
         return listOfNotNull(
@@ -90,7 +96,7 @@ object HabitPatterns {
             fulizaLate(window, zone),
             regulars(window, now, zone, limit = 1, essentialKeys = essentialKeys).firstOrNull(),
             airtimeDrip(window, now),
-            paydayRush(window, now, zone)
+            paydayRush(window, now, zone, unitsPerKes)
         )
     }
 
@@ -136,9 +142,12 @@ object HabitPatterns {
     private fun paydayRush(
         window: List<ChallengeTransaction>,
         now: Long,
-        zone: ZoneId
+        zone: ZoneId,
+        unitsPerKes: Double
     ): HabitPattern.PaydayRush? {
-        val credits = window.filter { looksLikePaydayCredit(it, window, zone) }
+        val largeCredit = scaled(LARGE_CREDIT_CENTS, unitsPerKes)
+        val spendFloor = scaled(PAYDAY_SPEND_FLOOR_CENTS, unitsPerKes)
+        val credits = window.filter { looksLikePaydayCredit(it, window, zone, largeCredit) }
         if (credits.isEmpty()) return null
         val events = credits.mapNotNull { credit ->
             val end = credit.timestampMillis + PAYDAY_HOURS * 3_600_000L
@@ -147,7 +156,7 @@ object HabitPatterns {
                 .filter { it.timestampMillis > credit.timestampMillis && it.timestampMillis <= end }
                 .sumOf { WeeklySummaryBuilder.signedSpendCents(it) }
                 .coerceAtLeast(0L)
-            spend.takeIf { it >= PAYDAY_SPEND_FLOOR_CENTS }
+            spend.takeIf { it >= spendFloor }
         }
         if (events.size < 2) return null
         return HabitPattern.PaydayRush(events = events.size, spendCents = events.sum())
@@ -156,10 +165,11 @@ object HabitPatterns {
     private fun looksLikePaydayCredit(
         tx: ChallengeTransaction,
         window: List<ChallengeTransaction>,
-        zone: ZoneId
+        zone: ZoneId,
+        largeCredit: Long
     ): Boolean {
         if (tx.type != TransactionType.RECEIVED && tx.type != TransactionType.DEPOSIT) return false
-        if (tx.amountCents < LARGE_CREDIT_CENTS) return false
+        if (tx.amountCents < largeCredit) return false
         if (isOwnMoneyMove(tx.type, tx.counterpartyName)) return false
         val name = foldMerchantName(tx.counterpartyName).orEmpty()
         if (name.contains("agent")) return false
@@ -168,7 +178,7 @@ object HabitPatterns {
         val month = YearMonth.from(Instant.ofEpochMilli(tx.timestampMillis).atZone(zone))
         val largeInMonth = window.count { other ->
             (other.type == TransactionType.RECEIVED || other.type == TransactionType.DEPOSIT) &&
-                other.amountCents >= LARGE_CREDIT_CENTS &&
+                other.amountCents >= largeCredit &&
                 !isOwnMoneyMove(other.type, other.counterpartyName) &&
                 YearMonth.from(Instant.ofEpochMilli(other.timestampMillis).atZone(zone)) == month
         }

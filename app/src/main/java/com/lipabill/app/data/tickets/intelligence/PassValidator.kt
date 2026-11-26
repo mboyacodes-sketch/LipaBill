@@ -25,7 +25,7 @@ enum class PassIssue(val message: String, val blocking: Boolean) {
     WEEKDAY_MISMATCH("The weekday on the ticket doesn't match this date. Check the year.", false),
     IMPLAUSIBLE_CODE("That entry code looks like a phone, link or amount. Check it.", false),
     MULTI_DAY_TOO_LONG("This event spans more than a week. Check the end date.", false),
-    MULTI_TICKET_FILE("This file looks like it has several tickets. Save one at a time for now.", false)
+    MULTI_TICKET_FILE("This file has more than one ticket. You can save each as its own pass.", false)
 }
 
 /**

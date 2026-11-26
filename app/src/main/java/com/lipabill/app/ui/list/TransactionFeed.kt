@@ -273,6 +273,7 @@ internal fun LazyListScope.transactionFeed(
     onQueryChange: (String) -> Unit,
     searchOpen: Boolean,
     onSearchFocus: (Boolean) -> Unit,
+    onClearSearch: (() -> Unit)? = null,
     onRequestSms: () -> Unit,
     onOpenTransaction: (Long) -> Unit,
     pageMargin: Dp,
@@ -316,7 +317,16 @@ internal fun LazyListScope.transactionFeed(
                     onQueryChange = onQueryChange,
                     onFocusChange = onSearchFocus
                 )
-                Spacer(modifier = Modifier.height(6.dp))
+                if (searchQuery.isNotBlank() && onClearSearch != null) {
+                    TextButton(
+                        onClick = onClearSearch,
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        Text("Show all history")
+                    }
+                } else {
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
             } else {
                 Spacer(modifier = Modifier.height(4.dp))
             }
@@ -354,6 +364,7 @@ internal fun LazyListScope.transactionFeed(
                 },
                 account = account,
                 onAllowSms = onRequestSms,
+                onClearSearch = onClearSearch.takeIf { searchQuery.isNotBlank() },
                 modifier = Modifier.fillMaxWidth().sheet()
             )
         }
@@ -430,6 +441,7 @@ internal fun EmptyState(
     filterHint: String?,
     account: WalletAccount,
     onAllowSms: () -> Unit,
+    onClearSearch: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -462,7 +474,12 @@ internal fun EmptyState(
             color = Mute,
             textAlign = TextAlign.Center
         )
-        if (!hasPermission && !searching) {
+        if (onClearSearch != null) {
+            Spacer(modifier = Modifier.height(Space.block))
+            TextButton(onClick = onClearSearch) {
+                Text("Show all history")
+            }
+        } else if (!hasPermission && !searching) {
             Spacer(modifier = Modifier.height(Space.block))
             Button(onClick = onAllowSms) {
                 Text("Allow SMS to see where it went")
