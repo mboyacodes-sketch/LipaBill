@@ -36,7 +36,6 @@ import com.lipabill.app.ui.sheet.EditableSheetField
 import com.lipabill.app.ui.sheet.InAppKeyboard
 import com.lipabill.app.ui.sheet.MoneyFlowConfirmDialog
 import com.lipabill.app.ui.sheet.MoneySheetScaffold
-import com.lipabill.app.ui.sheet.amountExceedsBalance
 import com.lipabill.app.ui.sheet.expandedSheetDialog
 import com.lipabill.app.ui.sheet.rememberMoneyFlowChrome
 import com.lipabill.app.ui.sheet.rememberMoneySheetAccess
@@ -181,9 +180,6 @@ fun SendMoneySheetContent(
     val phone = state.selected?.normalizedPhone
         ?: UssdMenuBuilder.normalizePhoneNumber(state.query)
 
-    // When we know the wallet balance, amount above it disables Send (no Fuliza bypass).
-    // Unknown balance stays sendable so a missing SMS does not trap the sheet.
-    val blockOverBalance = shownBalance != null
     val chrome = rememberMoneyFlowChrome(
         amountInput = state.amountInput,
         amountValid = state.amountValid,
@@ -196,11 +192,9 @@ fun SendMoneySheetContent(
         paymentBlock = paymentBlock,
         blockedDirective = paymentBlock?.let { paymentAccessDirective(sheetAccess.missing) },
         confirmLabel = "Send Now",
-        fulizaCoversShortfall = !blockOverBalance
+        fulizaCoversShortfall = true
     )
     val pendingAmount = chrome.pendingAmount
-    val exceedsKnownBalance = amountExceedsBalance(shownBalance, pendingAmount)
-    val canSendWithinBalance = state.canSend && !exceedsKnownBalance
     val showRecipientEditor = editingRecipient || !state.detailsValid
     val matchContacts = remember(state.query, state.contacts, showRecipientEditor) {
         if (showRecipientEditor && state.query.isNotBlank()) {
@@ -348,11 +342,11 @@ fun SendMoneySheetContent(
             null
         },
         ctaLabel = chrome.primaryCta.label,
-        ctaEnabled = chrome.primaryCta.enabled && canSendWithinBalance,
+        ctaEnabled = chrome.primaryCta.enabled,
         onCta = {
             runMoneySheetPrimaryCta(
                 onAmountStep = true,
-                canConfirm = canSendWithinBalance,
+                canConfirm = state.canSend,
                 paymentBlock = paymentBlock,
                 onConfirm = { showConfirm = true },
                 onAllow = sheetAccess.allow,
@@ -365,7 +359,7 @@ fun SendMoneySheetContent(
         onClearAmount = { sendVm.setAmountInput("") },
         feedbackMessage = chrome.feedbackMessage,
         feedbackTone = chrome.feedbackTone,
-        fulizaCoversShortfall = !blockOverBalance,
+        fulizaCoversShortfall = true,
         footnote = "You’ll enter your PIN on LipaBill’s secure keypad.",
         modifier = Modifier.fillMaxWidth()
     )
@@ -374,7 +368,7 @@ fun SendMoneySheetContent(
 
     MoneyFlowConfirmDialog(
         visible = showConfirm,
-        canConfirm = canSendWithinBalance,
+        canConfirm = state.canSend,
         confirmLabel = "Send Now",
         summary = sendVm.confirmSummary(),
         from = state.activeWallet,
