@@ -1,5 +1,6 @@
 package com.lipabill.app.engage
 
+import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.TransactionType
 import com.lipabill.app.viewmodel.ChallengeSubject
 import com.lipabill.app.viewmodel.challengeOptions
@@ -123,6 +124,35 @@ class HabitPatternsTest {
         val tuesday = tx(on(LocalDate.of(2026, 11, 3)), "Artcaffe", TransactionType.BUY_GOODS, 40_000)
         val pattern = HabitPatterns.detect(fridays + tuesday, now, zone).filterIsInstance<HabitPattern.FoodPeakDay>().single()
         assertEquals(DayOfWeek.FRIDAY, pattern.day)
+    }
+
+    @Test
+    fun payday_rush_thresholds_scale_with_region_currency() {
+        val credit1 = on(LocalDate.of(2026, 9, 28))
+        val credit2 = on(LocalDate.of(2026, 10, 28))
+        // TSh 8,000 then TSh 3,000 spent: past the KES numbers, but about Ksh 400 / Ksh 150.
+        val small = listOf(
+            tx(credit1, "Juma", TransactionType.RECEIVED, 8_000_00L),
+            tx(credit1 + 3_600_000L, "Duka", TransactionType.BUY_GOODS, 3_000_00L),
+            tx(credit2, "Juma", TransactionType.RECEIVED, 8_000_00L),
+            tx(credit2 + 3_600_000L, "Duka", TransactionType.BUY_GOODS, 3_000_00L)
+        )
+        assertTrue(HabitPatterns.detect(small, now, zone).any { it is HabitPattern.PaydayRush })
+        assertTrue(
+            HabitPatterns.detect(small, now, zone, unitsPerKes = AppRegion.TANZANIA.unitsPerKes)
+                .none { it is HabitPattern.PaydayRush }
+        )
+        // A TSh 900,000 salary followed by TSh 60,000 of spending is a real payday rush.
+        val salary = listOf(
+            tx(credit1, "Payroll", TransactionType.RECEIVED, 900_000_00L),
+            tx(credit1 + 3_600_000L, "Duka", TransactionType.BUY_GOODS, 60_000_00L),
+            tx(credit2, "Payroll", TransactionType.RECEIVED, 900_000_00L),
+            tx(credit2 + 3_600_000L, "Duka", TransactionType.BUY_GOODS, 60_000_00L)
+        )
+        assertTrue(
+            HabitPatterns.detect(salary, now, zone, unitsPerKes = AppRegion.TANZANIA.unitsPerKes)
+                .any { it is HabitPattern.PaydayRush }
+        )
     }
 
     @Test

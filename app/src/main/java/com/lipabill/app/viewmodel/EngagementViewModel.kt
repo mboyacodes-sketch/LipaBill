@@ -360,7 +360,10 @@ class EngagementViewModel(application: Application) : AndroidViewModel(applicati
                         choices
                     )
                 }
-            val patterns = HabitPatterns.detect(rows, now, zone, essentials)
+            val patterns = HabitPatterns.detect(
+                rows, now, zone, essentials,
+                unitsPerKes = app.appRegion.value.unitsPerKes
+            )
             val bars = HabitPatterns.foodDayBars(rows, zone, now)
             ledger.value = LedgerRead(
                 patterns = patterns,
