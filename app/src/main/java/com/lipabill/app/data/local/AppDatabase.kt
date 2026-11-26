@@ -50,7 +50,7 @@ import java.security.SecureRandom
         ContextEventEntity::class,
         ReminderEntity::class
     ],
-    version = 17,
+    version = 19,
     exportSchema = true
 )
 @TypeConverters(Converters::class)

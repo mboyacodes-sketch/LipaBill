@@ -285,6 +285,20 @@ object AppDatabaseMigrations {
         }
     }
 
+    /**
+     * v18 only ever shipped to internal debug installs (a withdrawn invoice-attachment
+     * table). 18 → 19 drops it; 17 → 19 is a no-op, so the v19 schema equals v17.
+     */
+    val MIGRATION_18_19 = object : Migration(18, 19) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("DROP TABLE IF EXISTS `transaction_documents`")
+        }
+    }
+
+    val MIGRATION_17_19 = object : Migration(17, 19) {
+        override fun migrate(db: SupportSQLiteDatabase) = Unit
+    }
+
     /** Migrations that preserve data. Add new ones at the end of this list. */
     val ALL: Array<Migration> = arrayOf(
         MIGRATION_8_9,
@@ -295,6 +309,8 @@ object AppDatabaseMigrations {
         MIGRATION_13_14,
         MIGRATION_14_15,
         MIGRATION_15_16,
-        MIGRATION_16_17
+        MIGRATION_16_17,
+        MIGRATION_17_19,
+        MIGRATION_18_19
     )
 }
