@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.debounce
@@ -286,6 +287,8 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     private val ledgerHydrated = MutableStateFlow(false)
     private var hydrateJob: Job? = null
     private val searchQuery = MutableStateFlow("")
+    /** Live keystrokes for the search field — not wired into list regrouping. */
+    val typedSearchQuery: StateFlow<String> = searchQuery.asStateFlow()
     private val typeFilter = MutableStateFlow<TransactionType?>(null)
     private val sourceFilter = MutableStateFlow<MoneySource?>(null)
     /** Insights rails: empty = All, else exactly one source. Separate from Home's history chip. */
@@ -351,20 +354,19 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
 
     /**
      * Home window, read from the database for the picked sources only (or the one source chip
-     * in focus), so every row for that wallet or bank can be reached. Search reads the whole ledger.
+     * in focus), so every row for that wallet or bank can be reached. Search uses [homeSearch].
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     private val mpesaHome = combine(
         app.appRegion,
         app.enabledSources,
         sourceFilter,
-        debouncedSearch,
         homePage
-    ) { region, enabled, filter, query, page ->
+    ) { region, enabled, filter, page ->
         val catalog = enabled.ifEmpty { region.sources }
         HomeWindow(
             sources = if (filter != null) setOf(filter) else catalog,
-            limit = if (query.isBlank()) page else SEARCH_WINDOW
+            limit = page
         )
     }
         .distinctUntilChanged()
@@ -375,6 +377,43 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     private val fulizaHome = homePage
         .flatMapLatest { repo.observeWalletList(fuliza = true, limit = it) }
         .shareIn(viewModelScope, SharingStarted.Eagerly, replay = 1)
+
+    /**
+     * DB-backed Home search. Uses one-shot queries cancelled on each new term
+     * ([mapLatest]) so typing never queues stacked SQLCipher scans.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val homeSearch: StateFlow<List<MpesaTransaction>> = combine(
+        debouncedSearch,
+        typeFilter,
+        sourceFilter,
+        walletAccount,
+        combine(app.appRegion, app.enabledSources) { region, enabled -> region to enabled }
+    ) { query, type, filter, account, regionEnabled ->
+        val (region, enabled) = regionEnabled
+        val catalog = enabled.ifEmpty { region.sources }
+        SearchWindow(
+            query = query.trim(),
+            type = type,
+            sources = if (filter != null) setOf(filter) else catalog,
+            fuliza = account == WalletAccount.FULIZA
+        )
+    }
+        .distinctUntilChanged()
+        .mapLatest { window ->
+            if (window.query.length < SEARCH_MIN_CHARS) {
+                emptyList()
+            } else {
+                repo.searchHome(
+                    query = window.query,
+                    sources = window.sources,
+                    type = window.type.takeUnless { window.fuliza },
+                    fuliza = window.fuliza,
+                    limit = SEARCH_RESULT_LIMIT
+                )
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** True while the Home list may have older rows to load. */
     val canLoadMoreHistory: StateFlow<Boolean> = combine(
@@ -489,17 +528,29 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     /** Home list grouping — ignores analytics range / insight marks. */
     private val listBody: StateFlow<TransactionListUiState> = combine(
         homeWalletBase,
-        combine(searchQuery, debouncedSearch) { query, debounced -> query to debounced },
+        combine(debouncedSearch, homeSearch) { debounced, hits -> debounced to hits },
         typeFilter,
         hasSmsPermission,
         combine(scan, ledgerHydrated) { s, hydrated -> s to hydrated }
-    ) { wallet, queries, requestedType, smsOk, scanHydrated ->
-        val (query, debouncedQuery) = queries
-        val available = wallet.sourced.map { it.type }.inCategoryOrder()
-        val activeType = requestedType?.takeIf { it in available }
-        val visible = wallet.sourced.filter { tx ->
-            tx.matchesLedgerQuery(debouncedQuery) &&
-                (activeType == null || tx.type == activeType)
+    ) { wallet, search, requestedType, smsOk, scanHydrated ->
+        val (debouncedQuery, searchHits) = search
+        // < MIN chars keeps the paged history on screen while the user is still typing.
+        val searching = debouncedQuery.length >= SEARCH_MIN_CHARS
+        val available = if (!searching) {
+            wallet.sourced.map { it.type }.inCategoryOrder()
+        } else {
+            (wallet.sourced.asSequence().map { it.type } + searchHits.asSequence().map { it.type })
+                .distinct()
+                .toList()
+                .inCategoryOrder()
+        }
+        val activeType = requestedType?.takeIf { type ->
+            searching || type in available
+        }
+        val visible = if (!searching) {
+            wallet.sourced.filter { tx -> activeType == null || tx.type == activeType }
+        } else {
+            searchHits
         }
         val (s, hydrated) = scanHydrated
         val (scanning, message) = s
@@ -517,7 +568,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             fulizaOutstanding = wallet.fulizaStatus?.outstanding,
             fulizaDue = wallet.fulizaStatus?.dueDate,
             account = wallet.account,
-            searchQuery = query,
+            searchQuery = debouncedQuery,
             typeFilter = activeType,
             availableTypes = available,
             sourceFilter = wallet.sourceFilter,
@@ -563,6 +614,11 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
 
     fun setSearchQuery(query: String) {
         searchQuery.value = query
+    }
+
+    /** Drop the query so Home shows the paged full history again. */
+    fun clearSearch() {
+        searchQuery.value = ""
     }
 
     fun setTypeFilter(type: TransactionType?) {
@@ -896,15 +952,6 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
-    private fun MpesaTransaction.matchesLedgerQuery(query: String): Boolean {
-        val q = query.trim()
-        if (q.isEmpty()) return true
-        return counterpartyName?.contains(q, ignoreCase = true) == true ||
-            counterpartyPhone?.contains(q, ignoreCase = true) == true ||
-            code.contains(q, ignoreCase = true) ||
-            amount?.toString()?.contains(q, ignoreCase = true) == true
-    }
-
     private fun groupByDay(txs: List<MpesaTransaction>): List<DayGroup> {
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
@@ -948,17 +995,26 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     }
 
     private companion object {
-        const val SEARCH_DEBOUNCE_MS = 250L
+        const val SEARCH_DEBOUNCE_MS = 400L
+        /** Ignore single-character queries (too broad on an encrypted ledger). */
+        const val SEARCH_MIN_CHARS = 2
         /** Ledger rows the money plan reads: months of history for bills and payday. */
         const val PLAN_WINDOW = 3000
         const val HOME_PAGE_SIZE = 80
-        /** Search spans the whole picked ledger. */
-        const val SEARCH_WINDOW = 100_000
+        /** Max Home search hits — enough to scroll, small enough to stay snappy. */
+        const val SEARCH_RESULT_LIMIT = 80
         val DAY_GROUP_FORMAT: DateTimeFormatter =
             DateTimeFormatter.ofPattern("EEE, d MMM yyyy")
     }
 
     private data class HomeWindow(val sources: Set<MoneySource>, val limit: Int)
+
+    private data class SearchWindow(
+        val query: String,
+        val type: TransactionType?,
+        val sources: Set<MoneySource>,
+        val fuliza: Boolean
+    )
 
     private data class RailState(
         val rails: Rails,

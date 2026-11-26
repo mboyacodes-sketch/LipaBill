@@ -179,6 +179,7 @@ fun TransactionListScreen(
     onOpenHabits: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val typedQuery by viewModel.typedSearchQuery.collectAsStateWithLifecycle()
     if (state.isLoading) {
         HomeSkeleton(modifier = modifier)
         return
@@ -242,7 +243,7 @@ fun TransactionListScreen(
     var searchOpen by remember { mutableStateOf(false) }
     var searchFocused by remember { mutableStateOf(false) }
     var searchFieldFocused by remember { mutableStateOf(false) }
-    val searchEditor = rememberSheetEditor(state.searchQuery)
+    val searchEditor = rememberSheetEditor(typedQuery)
     val listState = rememberLazyListState()
     // Load the next page of history as the list nears its end, so every row of the
     // picked wallets and banks is reachable from Home.
@@ -264,14 +265,25 @@ fun TransactionListScreen(
     // Header search icon reveals the transactions search field (index after hero+actions).
     val txHeaderIndex = 2
 
+    /** Hide the keyboard but keep the query so results stay scrollable. */
+    fun dismissSearchKeyboard() {
+        searchFocused = false
+        searchFieldFocused = false
+        focusManager.clearFocus(force = true)
+        if (searchEditor.text.isEmpty() && typedQuery.isEmpty()) {
+            searchOpen = false
+        }
+    }
+
+    /** Clear the query and collapse search so Home shows full paged history. */
     fun closeSearch() {
         searchOpen = false
         searchFocused = false
         searchFieldFocused = false
         focusManager.clearFocus(force = true)
-        if (searchEditor.text.isNotEmpty() || state.searchQuery.isNotEmpty()) {
+        if (searchEditor.text.isNotEmpty() || typedQuery.isNotEmpty()) {
             searchEditor.overwrite("")
-            viewModel.setSearchQuery("")
+            viewModel.clearSearch()
         }
     }
 
@@ -336,8 +348,8 @@ fun TransactionListScreen(
             searchOpen = true
             searchFocused = true
         } else if (wasFocused) {
-            // Leaving the field drops the query so the list is not left filtered.
-            closeSearch()
+            // Keep the query — user clears via X, Done, or system back.
+            dismissSearchKeyboard()
         }
     }
     // Index-only: scrollOffset thrashing was toggling blur every frame.
@@ -354,7 +366,7 @@ fun TransactionListScreen(
             } else {
                 listState.firstVisibleItemIndex >= txHeaderIndex
             }
-            listFull || searchOpen || searchFocused || state.searchQuery.isNotBlank()
+            listFull || searchOpen || searchFocused || typedQuery.isNotBlank()
         }
     }
     BackHandler(enabled = homeMoved && !showingReceipt, onBack = ::resetHome)
@@ -365,8 +377,9 @@ fun TransactionListScreen(
 
     LaunchedEffect(listState.isScrollInProgress) {
         if (suppressSearchDismiss[0] > 0) return@LaunchedEffect
+        // Scrolling results should not wipe the query — only tuck the keyboard away.
         if (listState.isScrollInProgress && searchFocused) {
-            closeSearch()
+            dismissSearchKeyboard()
         }
     }
 
@@ -374,7 +387,9 @@ fun TransactionListScreen(
         modifier = modifier
             .fillMaxSize()
             .background(CreamCanvas)
-            .hideKeyboardOnOutsideTap(onOutsideTap = { if (searchOpen) closeSearch() })
+            .hideKeyboardOnOutsideTap(onOutsideTap = {
+                if (searchFocused) dismissSearchKeyboard()
+            })
     ) {
         // Left page swoosh — draws under the status bar; header content is inset separately.
         val swoosh = Accent
@@ -418,7 +433,7 @@ fun TransactionListScreen(
                 showSendPay = state.showSendPay,
                 grouped = state.grouped,
                 hasSmsPermission = state.hasSmsPermission,
-                searchQuery = state.searchQuery,
+                searchQuery = typedQuery,
                 typeFilter = state.typeFilter,
                 availableTypes = state.availableTypes,
                 onTypeFilter = viewModel::setTypeFilter,
@@ -429,9 +444,10 @@ fun TransactionListScreen(
                 walletPick = walletPick,
                 searchEditor = searchEditor,
                 onQueryChange = viewModel::setSearchQuery,
-                searchOpen = searchOpen,
+                searchOpen = searchOpen || typedQuery.isNotBlank(),
                 searchFocused = searchFocused,
                 onSearchFocus = ::onSearchFieldFocus,
+                onClearSearch = ::closeSearch,
                 onSearch = { openSearch(0) },
                 onOpenSettings = onOpenSettings,
                 onOpenProfile = onOpenProfile,
@@ -568,15 +584,16 @@ fun TransactionListScreen(
                     account = state.account,
                     grouped = state.grouped,
                     hasSmsPermission = state.hasSmsPermission,
-                    searchQuery = state.searchQuery,
+                    searchQuery = typedQuery,
                     typeFilter = state.typeFilter,
                     availableTypes = state.availableTypes,
                     onTypeFilter = viewModel::setTypeFilter,
                     sourceFilter = state.sourceFilter,
                     searchEditor = searchEditor,
                     onQueryChange = viewModel::setSearchQuery,
-                    searchOpen = searchOpen,
+                    searchOpen = searchOpen || typedQuery.isNotBlank(),
                     onSearchFocus = ::onSearchFieldFocus,
+                    onClearSearch = ::closeSearch,
                     onRequestSms = onRequestSms,
                     onOpenTransaction = { id ->
                         hideKeyboard()
@@ -601,7 +618,7 @@ fun TransactionListScreen(
 
             if (searchFocused && !showingReceipt) {
                 InAppKeyboard(
-                    startOnDigits = state.searchQuery.opensOnDigitKeys(),
+                    startOnDigits = typedQuery.opensOnDigitKeys(),
                     onChar = { ch ->
                         viewModel.setSearchQuery(searchEditor.insert(ch))
                     },
@@ -670,6 +687,7 @@ private fun HomeExpandedPane(
     searchOpen: Boolean,
     searchFocused: Boolean,
     onSearchFocus: (Boolean) -> Unit,
+    onClearSearch: () -> Unit,
     onSearch: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenProfile: () -> Unit,
@@ -763,6 +781,7 @@ private fun HomeExpandedPane(
                         onQueryChange = onQueryChange,
                         searchOpen = searchOpen,
                         onSearchFocus = onSearchFocus,
+                        onClearSearch = onClearSearch,
                         onRequestSms = onRequestSms,
                         onOpenTransaction = onOpenTransaction,
                         pageMargin = pageMargin,
