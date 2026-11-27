@@ -735,7 +735,7 @@ private fun PassStub(model: EventPassModel, qrBitmap: ImageBitmap?, isUsed: Bool
                     "This pass was marked as used."
                 } else {
                     val where = model.gate?.let { "Gate $it" } ?: "the entrance"
-                    "Show this code at $where. Brightness up, screenshot welcome."
+                    "Show this code at $where. Turn your brightness up. A screenshot works too."
                 },
                 color = PassLabel,
                 fontFamily = GeometricSansFamily,
@@ -877,7 +877,7 @@ private fun PendingCodeNote(link: String?) {
     )
     Spacer(modifier = Modifier.height(6.dp))
     Text(
-        "Import your ticket screenshot or PDF in Passes and it joins this pass.",
+        "Add your ticket screenshot or PDF in Passes and it will join this pass.",
         color = PassLabel,
         fontFamily = GeometricSansFamily,
         fontSize = 13.sp,

@@ -96,9 +96,9 @@ class FirstRunWizardTest {
 
     @Test
     fun providers_page_is_wallets_then_banks() {
-        assertEquals("Who should be in the picture?", FirstRunWizard.PROVIDERS_TITLE)
+        assertEquals("Which wallets and banks do you use?", FirstRunWizard.PROVIDERS_TITLE)
         // Wallets-then-banks order is the grouped grid's job; the copy states the cap.
-        assertTrue(FirstRunWizard.PROVIDERS_BODY.contains("Up to 5"))
+        assertTrue(FirstRunWizard.PROVIDERS_BODY.contains("up to 5"))
         assertTrue(FirstRunWizard.PROVIDERS_BODY.contains("Settings"))
     }
 
@@ -184,9 +184,9 @@ class FirstRunWizardTest {
 
     @Test
     fun notifications_page_explains_confirmation_alerts() {
-        assertEquals("Hear when money moves", FirstRunWizard.NOTIFICATIONS_TITLE)
+        assertEquals("Get alerts when money moves", FirstRunWizard.NOTIFICATIONS_TITLE)
         assertTrue(FirstRunWizard.NOTIFICATIONS_BODY.contains("confirmation", ignoreCase = true))
-        assertTrue(FirstRunWizard.NOTIFICATIONS_BODY.contains("without hunting SMS", ignoreCase = true))
+        assertTrue(FirstRunWizard.NOTIFICATIONS_BODY.contains("without digging through your messages", ignoreCase = true))
         assertTrue(FirstRunWizard.NOTIFICATIONS_BODY.contains("without alerts", ignoreCase = true))
         assertEquals("Allow alerts", PermissionLesson.Notifications.allowLabel)
     }

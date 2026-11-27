@@ -223,8 +223,8 @@ internal fun HeroCard(
                         )
                     }
                     Text(
-                        text = "${(share * 100).roundToInt()}% of what came in has gone out · " +
-                            "reversals netted, fees included",
+                        text = "${(share * 100).roundToInt()}% of what came in has gone out " +
+                            "(fees included, reversed payments left out)",
                         style = HomeType.caption,
                         color = soft
                     )
@@ -289,7 +289,7 @@ internal fun CostingYouCard(
                         "a month · ${shown.size} payee${if (shown.size == 1) "" else "s"}"
                     essential.isNotEmpty() ->
                         "${essential.size} essential · all-time"
-                    else -> "None yet · all-time"
+                    else -> "None yet"
                 },
                 selected = tab == CostTab.REGULARS,
                 onClick = { tab = CostTab.REGULARS },
@@ -306,7 +306,7 @@ internal fun CostingYouCard(
             CostTile(
                 title = "Habits",
                 value = habit?.let { "${it.visits} visits" } ?: "—",
-                caption = habit?.name ?: "None yet · period",
+                caption = habit?.name ?: "None this period",
                 privateCaption = habit != null,
                 selected = tab == CostTab.HABITS,
                 onClick = { tab = CostTab.HABITS },
@@ -317,8 +317,8 @@ internal fun CostingYouCard(
             CostTab.REGULARS -> Column {
                 if (regulars.isEmpty()) {
                     Text(
-                        "Pay the same bill or shop twice on a steady rhythm and they show up here. " +
-                            "Regulars look across your whole history, not just this period.",
+                        "Bills and shops you pay on a regular schedule show up here. " +
+                            "This looks at your whole history, not just this period.",
                         style = HomeType.body,
                         color = Mute
                     )
@@ -382,7 +382,7 @@ internal fun CostingYouCard(
                     color = Ink
                 )
                 if (feeShare != null) {
-                    Text("That is $feeShare% of what went out.", style = HomeType.caption, color = Mute)
+                    Text("That’s $feeShare% of everything that went out.", style = HomeType.caption, color = Mute)
                 }
                 if (fees.withdrawCount > 0) {
                     Text(
@@ -393,7 +393,7 @@ internal fun CostingYouCard(
                 }
             }
             CostTab.HABITS -> if (habit == null) {
-                Text("No single place shows up often enough in this period.", style = HomeType.body, color = Mute)
+                Text("No one place stands out this period.", style = HomeType.body, color = Mute)
             } else {
                 // Name on its own line so recording covers the payee but keeps the figures.
                 Column {
@@ -692,7 +692,7 @@ internal fun ChallengeCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     when {
-                        challenge.kind == ChallengeCardKind.BROKEN -> "A payment landed"
+                        challenge.kind == ChallengeCardKind.BROKEN -> "You made a payment"
                         challenge.kept == null -> "Still clear"
                         else -> "Kept so far"
                     },
@@ -755,7 +755,7 @@ internal fun RhythmCard(
         else -> "Month by month"
     }
     val caption = when {
-        showCalendar -> "Swipe months to filter Insights · future days stay quiet"
+        showCalendar -> "Swipe between months to change what Insights shows"
         else -> stats.busiestLabel?.let {
             "Busiest: $it, ${formatKsh(stats.busiestTotal)} ${if (fuliza) "drawn" else "out"}"
         } ?: "${stats.quietDays} days with no money out"
@@ -887,8 +887,8 @@ internal fun RhythmCard(
                         LegendSwatch(fill = CardWhite, border = Accent, label = "Due")
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        LegendSwatch(fill = DayFlow.NET_UP.fill(), border = null, label = "Both, net up")
-                        LegendSwatch(fill = DayFlow.NET_DOWN.fill(), border = null, label = "Both, net down")
+                        LegendSwatch(fill = DayFlow.NET_UP.fill(), border = null, label = "In and out, more in")
+                        LegendSwatch(fill = DayFlow.NET_DOWN.fill(), border = null, label = "In and out, more out")
                     }
                 }
             }
@@ -995,7 +995,7 @@ internal fun ComingUp(
         Spacer(modifier = Modifier.height(8.dp))
         Text("Coming up", style = HomeType.rowTitle, color = Ink)
         Text(
-            "Bills and standing payments due soon, from how often you have paid them.",
+            "Bills and regular payments due soon, based on when you usually pay them.",
             style = HomeType.caption,
             color = Mute
         )
@@ -1364,7 +1364,7 @@ internal fun PeriodBars(bars: List<PeriodBar>, fuliza: Boolean) {
             }
         }
         Text(
-            if (fuliza) "Drawn in each period" else "Money out in each period, fees included",
+            if (fuliza) "Borrowed in each period" else "Money out in each period, fees included",
             style = HomeType.caption,
             color = Mute
         )
@@ -1384,7 +1384,7 @@ internal fun WhereItWentCard(
 ) {
     if (rows.isEmpty()) return
     val max = rows.maxOf { it.total }.takeIf { it > 0.0 } ?: 1.0
-    InsightCard(title = "Where it went", caption = "Tap a row to focus your transactions on it") {
+    InsightCard(title = "Where it went", caption = "Tap a row to see those transactions") {
         rows.forEach { row ->
             val on = row.type == selected
             val dimmed = selected != null && !on
@@ -1568,7 +1568,7 @@ internal fun RecapCard(
                 text = if (checkInDone) {
                     "This week's finding: $finding"
                 } else {
-                    "Check in anytime to unlock this week's new finding."
+                    "Check in to see this week's finding."
                 },
                 style = HomeType.body,
                 color = Ink,
@@ -1654,7 +1654,7 @@ internal fun ExportBlock(rangeLabel: String, onExport: () -> Unit) {
             )
         }
         Text(
-            "Statement for this stretch, saved on this phone. Up to 30 days.",
+            "A statement for this period, saved on this phone. Up to 30 days at a time.",
             style = HomeType.caption,
             color = Mute,
             textAlign = TextAlign.Center

@@ -4,6 +4,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import com.lipabill.app.ui.analytics.safeToSpendDetail
 import com.lipabill.app.ui.util.formatKsh
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
+import com.lipabill.app.viewmodel.MonthFlow
 import com.lipabill.app.viewmodel.SafeToSpend
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -225,6 +226,7 @@ fun TransactionListScreen(
     val walletPick = BalanceWalletPick(
         // Always show under the cards; amount stays visible (not balance-masked).
         safe = plan.safe,
+        monthFlow = plan.monthFlow,
         onOpenPlan = onExchange,
         wallets = state.balanceWallets,
         cards = state.walletCards,
@@ -891,9 +893,9 @@ private fun HomeSourceFilter(
         if (hasBankRail) {
             Text(
                 text = if (selected != null && !selected.isWallet) {
-                    "${selected.label} filters history only."
+                    "${selected.label} only filters your history."
                 } else {
-                    "Bank chips filter history only."
+                    "Bank filters only change your history."
                 },
                 style = HomeType.caption,
                 color = Mute,
@@ -907,6 +909,8 @@ private fun HomeSourceFilter(
 private data class BalanceWalletPick(
     /** Safe to spend until payday, shown under the cards. */
     val safe: SafeToSpend? = null,
+    /** This month's money in and out, shown under safe to spend. */
+    val monthFlow: MonthFlow? = null,
     val onOpenPlan: () -> Unit = {},
     val wallets: List<MoneySource> = emptyList(),
     val cards: List<WalletCardUi> = emptyList(),
@@ -935,6 +939,7 @@ private fun BalanceSection(
         WalletDeck(balance, account, onAccountSelected, onOpenProfile, Modifier, showFuliza, fulizaDue, walletPick)
         SafeToSpendLine(
             safe = walletPick.safe,
+            monthFlow = walletPick.monthFlow,
             onClick = walletPick.onOpenPlan,
             modifier = Modifier.padding(top = 10.dp)
         )
@@ -946,7 +951,12 @@ private fun BalanceSection(
  * tap opens the plan in Insights. Placeholder when no wallet balance SMS yet.
  */
 @Composable
-private fun SafeToSpendLine(safe: SafeToSpend?, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun SafeToSpendLine(
+    safe: SafeToSpend?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    monthFlow: MonthFlow? = null
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -960,7 +970,7 @@ private fun SafeToSpendLine(safe: SafeToSpend?, onClick: () -> Unit, modifier: M
             Text("Safe to spend", style = HomeType.caption, color = Mute)
             if (safe == null) {
                 Text(
-                    "Shows once a wallet balance arrives by SMS.",
+                    "Shows once a message with your balance arrives.",
                     style = HomeType.label,
                     fontWeight = FontWeight.Bold,
                     color = Ink
@@ -979,6 +989,16 @@ private fun SafeToSpendLine(safe: SafeToSpend?, onClick: () -> Unit, modifier: M
                     color = Mute,
                     maxLines = 2,
                     modifier = Modifier.recordingPrivacyCover()
+                )
+            }
+            monthFlow?.let { flow ->
+                Text(
+                    "This month · in ${formatKsh(flow.moneyIn)} · out ${formatKsh(flow.moneyOut)}",
+                    style = HomeType.caption,
+                    color = Ink,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    modifier = Modifier.padding(top = 4.dp).recordingPrivacyCover()
                 )
             }
         }
@@ -1022,7 +1042,7 @@ private fun WalletDeck(
         onOpenRequest = onOpenProfile,
         flipHint = when {
             !fulizaBack -> "Tilt, tap to flip"
-            flipped -> "Tilt, tap for M-Pesa"
+            flipped -> "Tilt, tap for M-PESA"
             else -> "Tilt, tap for Fuliza"
         },
         modifier = modifier
@@ -1035,7 +1055,7 @@ private fun WalletDeck(
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 2.sp
             )
-            Text(text = "Overdraft on M-Pesa", color = ink.secondary, fontSize = 12.sp)
+            Text(text = "Overdraft on M-PESA", color = ink.secondary, fontSize = 12.sp)
             Spacer(modifier = Modifier.weight(1f))
             CardLabel("OUTSTANDING", ink)
             BalanceAmountRow(
@@ -1048,7 +1068,7 @@ private fun WalletDeck(
             Text(
                 text = if (fulizaDue != null && (balance ?: 0.0) > 0.0) {
                     fulizaDueCopy(fulizaDue, LocalDate.now()).replaceFirstChar { it.uppercase() } +
-                        " · daily charges since are not included"
+                        " · daily charges since then aren't included"
                 } else {
                     "Nothing owed on Fuliza"
                 },
@@ -1083,7 +1103,7 @@ private fun WalletDeck(
                     card.source == walletPick.dialWallet ->
                         "Send & Pay use this wallet"
                     card.lineLabel == null ->
-                        "Balance only — allow phone access to dial this line"
+                        "Balance only. Allow phone access to pay from this line"
                     else ->
                         "Balance only — Send & Pay still on ${walletPick.dialWallet?.label ?: "another line"}"
                 },
@@ -1171,7 +1191,7 @@ private fun LedgerMovesRow(
         LedgerMoveCard(
             icon = Icons.Outlined.ConfirmationNumber,
             label = "Passes",
-            caption = "What it became",
+            caption = "Your tickets",
             face = ActionTickets,
             onClick = onPasses,
             modifier = Modifier.weight(1f)

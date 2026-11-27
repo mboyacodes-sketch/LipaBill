@@ -272,7 +272,7 @@ internal fun SendAmountEntry(
         ) {
             MoneyBreakdownLine(
                 label = "Transaction cost",
-                value = feeEstimate?.let { "about ${formatKsh(it)}" } ?: "Shown by M-Pesa"
+                value = feeEstimate?.let { "about ${formatKsh(it)}" } ?: "Shown by M-PESA"
             )
             MoneyBreakdownLine(label = "Total", value = formatKsh(total))
             if (balance != null) {

@@ -128,9 +128,9 @@ fun dialStartedStatus(
     }
     val line = lines.firstOrNull { it.subscriptionId == subscriptionId }
     return if (line != null) {
-        "Payment on ${line.label} — enter PIN on the LipaBill keypad when prompted."
+        "Paying from ${line.label}. Enter your PIN on the LipaBill keypad when asked."
     } else {
-        "Payment started — enter PIN on the LipaBill keypad when prompted."
+        "Payment started. Enter your PIN on the LipaBill keypad when asked."
     }
 }
 

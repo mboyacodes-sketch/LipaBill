@@ -170,8 +170,8 @@ private fun LockedContent(
             )
             Spacer(modifier = Modifier.height(10.dp))
             Text(
-                text = "Unlock to open your ledger, send or pay, and show a pass. " +
-                    "Encrypted on this phone — not in a LipaBill cloud.",
+                text = "Unlock to see your money, send or pay, and show your passes. " +
+                    "Everything is encrypted and stays on this phone.",
                 style = MaterialTheme.typography.bodyLarge.copy(
                     fontFamily = GeometricSansFamily,
                     fontSize = 14.sp,
@@ -287,7 +287,7 @@ private fun WalletCardFan() {
             iconFace = ActionTickets,
             iconTint = BrandNavy,
             label = "Passes",
-            caption = "What it became",
+            caption = "Your passes",
             detail = "Tickets and boarding, ready",
             showDetails = true,
             modifier = Modifier
@@ -517,8 +517,8 @@ private fun NoLockScreenContent(onOpenSettings: () -> Unit) {
             )
             Spacer(modifier = Modifier.height(Space.block))
             Text(
-                text = "Set a screen lock or a Class 3 fingerprint or face unlock " +
-                    "before LipaBill can show where it went.",
+                text = "Set up a screen lock, fingerprint, or face unlock first. " +
+                    "LipaBill uses it to keep your money private.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = Mute,
                 textAlign = TextAlign.Center

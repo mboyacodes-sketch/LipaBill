@@ -21,7 +21,7 @@ import kotlin.math.roundToLong
 
 /** "original transaction QK12ABC34D in favour of ... has been reversed". */
 private val REVERSED_ORIGINAL = Regex(
-    "original\\s+transaction\\s+([A-Z0-9]{8,12})",
+    "(?:original|reversal\\s+of)\\s+transaction\\s+([A-Z0-9]{8,12})",
     RegexOption.IGNORE_CASE
 )
 
@@ -46,6 +46,11 @@ fun withoutReversals(txs: List<MpesaTransaction>): List<MpesaTransaction> {
     }
 }
 
+/** Drops reversals and the payments in [undone] (codes from [reversedOriginalCode] of stored reversals). */
+fun withoutReversedOriginals(txs: List<MpesaTransaction>, undone: Set<String>): List<MpesaTransaction> =
+    if (undone.isEmpty()) txs
+    else txs.filter { it.code.uppercase(Locale.US) !in undone }
+
 /**
  * Money moving between the user's own pots: into M-Shwari / Lock Savings and back out,
  * and Fuliza draws that the payment they funded already counts. None of it is income or spend.
@@ -57,7 +62,7 @@ fun isOwnMoneyMove(type: TransactionType, counterpartyName: String?): Boolean = 
 }
 
 fun isOwnMoneyMove(tx: MpesaTransaction): Boolean =
-    isOwnMoneyMove(tx.type, tx.counterpartyName)
+    tx.ownTransfer || isOwnMoneyMove(tx.type, tx.counterpartyName)
 
 /**
  * Wallet outflow that Insights quiet days / calendars and Habits quiet weeks share:
@@ -308,7 +313,7 @@ fun detectRegulars(
     minPayments: Int = 3
 ): List<RegularPayee> {
     val byPayee = txs
-        .filter { it.type in REGULAR_TYPES && (it.amount ?: 0.0) > 0.0 }
+        .filter { it.type in REGULAR_TYPES && !it.ownTransfer && (it.amount ?: 0.0) > 0.0 }
         .groupBy { payeeKey(it) }
     val regulars = mutableListOf<RegularPayee>()
     for ((key, payments) in byPayee) {
@@ -421,14 +426,14 @@ fun topHabit(
         .filter { it.visits >= minVisits }
         .maxWithOrNull(compareBy<SpendingHabit> { it.visits }.thenBy { it.total })
 
-/** "You kept KES X more than the stretch before." Null when there is nothing to compare. */
+/** "You kept KES X more than the period before." Null when there is nothing to compare. */
 fun keptHeadline(net: Double, previousNet: Double, hasPrior: Boolean): String? {
     if (!hasPrior) return null
     val diff = net - previousNet
     return when {
-        abs(diff) < 1.0 -> "You kept about the same as the stretch before."
-        diff > 0 -> "You kept ${formatKsh(diff)} more than the stretch before."
-        else -> "You kept ${formatKsh(-diff)} less than the stretch before."
+        abs(diff) < 1.0 -> "You kept about the same as the period before."
+        diff > 0 -> "You kept ${formatKsh(diff)} more than the period before."
+        else -> "You kept ${formatKsh(-diff)} less than the period before."
     }
 }
 

@@ -154,7 +154,7 @@ fun TicketDetailScreen(
                 "pdf",
                 if (ok) TicketImportResult.Saved else TicketImportResult.Duplicate
             )
-            if (!ok) error = "Couldn’t attach that boarding pass (duplicate QR or unreadable)."
+            if (!ok) error = "Couldn’t add that boarding pass. It may already be saved, or it couldn’t be read."
         } catch (t: Throwable) {
             if (t is CancellationException) throw t
             AppMetrics.ticketImportFailure("pdf", t)
@@ -212,7 +212,7 @@ fun TicketDetailScreen(
                                 else -> TicketImportResult.Duplicate
                             }
                         )
-                        if (!ok) error = "Couldn’t attach that code (already used elsewhere)."
+                        if (!ok) error = "Couldn’t add that code. It’s already on another pass."
                     } finally {
                         attaching = false
                         attachLeg = null
@@ -245,7 +245,7 @@ fun TicketDetailScreen(
                 CenterAlignedTopAppBar(
                     title = {
                         Text(
-                            "Boarding Pass",
+                            "Boarding pass",
                             color = Ink,
                             fontFamily = GeometricSansFamily,
                             fontWeight = FontWeight.SemiBold,
@@ -267,7 +267,7 @@ fun TicketDetailScreen(
                 TopAppBar(
                     title = {
                         Text(
-                            if (isRailDetail) "Boarding Pass" else (current?.title ?: "Ticket"),
+                            if (isRailDetail) "Boarding pass" else (current?.title ?: "Ticket"),
                             style = HomeType.greeting
                         )
                     },
@@ -513,7 +513,7 @@ fun TicketDetailScreen(
                     horizontalArrangement = Arrangement.spacedBy(Space.block)
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(28.dp), color = Ink)
-                    Text("Attaching boarding pass only — booking details stay as they are.", style = HomeType.body, color = Mute)
+                    Text("Only the boarding pass will be added. Your booking details won’t change.", style = HomeType.body, color = Mute)
                 }
             }
         )

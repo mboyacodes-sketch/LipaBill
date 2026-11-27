@@ -224,7 +224,7 @@ class PassReminderNotifier(private val context: Context) {
         context.postLipaBill(
             channelId = CHANNEL_ID,
             channelName = "Pass reminders",
-            channelDescription = "A day before, ahead of time, and the morning of a saved pass.",
+            channelDescription = "Reminders the day before, on the morning, and shortly before your event.",
             importance = NotificationManager.IMPORTANCE_HIGH,
             notifyId = notifyId(ticket.id, kind),
             title = title,

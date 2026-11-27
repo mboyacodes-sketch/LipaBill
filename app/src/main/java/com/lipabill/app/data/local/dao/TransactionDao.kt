@@ -173,7 +173,7 @@ interface TransactionDao {
      */
     @Query(
         """
-        SELECT id, counterpartyName, counterpartyPhone, type, amount, cost, timestampMillis, code, rawBody
+        SELECT id, counterpartyName, counterpartyPhone, type, amount, cost, timestampMillis, code, rawBody, source
         FROM transactions
         WHERE timestampMillis >= :startInclusive AND timestampMillis < :endExclusive
         ORDER BY timestampMillis ASC, id ASC
@@ -308,6 +308,10 @@ interface TransactionDao {
     @Query("SELECT id, code, rawBody, source FROM transactions")
     suspend fun getAllForPurge(): List<TransactionPurgeRow>
 
+    /** SMS text of every reversal, to find which payments they undid. */
+    @Query("SELECT rawBody FROM transactions WHERE type = 'REVERSED'")
+    fun observeReversalBodies(): Flow<List<String>>
+
     @Query("DELETE FROM transactions WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<Long>)
 
@@ -423,7 +427,8 @@ data class WindowTransactionRow(
     val cost: Double? = null,
     val timestampMillis: Long,
     val code: String = "",
-    val rawBody: String = ""
+    val rawBody: String = "",
+    val source: com.lipabill.app.data.model.MoneySource = com.lipabill.app.data.model.MoneySource.MPESA
 )
 
 data class NamedCounterpartyRow(

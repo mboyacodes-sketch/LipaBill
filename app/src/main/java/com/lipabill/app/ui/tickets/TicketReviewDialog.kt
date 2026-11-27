@@ -199,7 +199,7 @@ fun TicketReviewDialog(
                 }
                 filledFrom?.let {
                     Text(
-                        "Details filled from ${it.label}. Check them against your ticket; its printed time wins.",
+                        "Details filled in from ${it.label}. Check them against your ticket. If the times differ, go with the ticket.",
                         color = Mute,
                         fontSize = 12.sp
                     )

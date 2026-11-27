@@ -50,9 +50,15 @@ object KenyanConfirmationFilter {
         if (FailureSms.isFailure(body)) return false
         if (isOtpOrPin(body)) return false
         if (isPromo(body)) return false
+        if (isAirtimeGift(body)) return false
         if (!region.matchesCurrency(body)) return false
         return MOVEMENT.containsMatchIn(body) ||
             SUCCESSFUL_TRANSACTION.containsMatchIn(body) ||
             body.contains("Confirmed", ignoreCase = true)
     }
+
+    /** "You have received 20 Airtime from 0733…" — airtime, not money. */
+    private val AIRTIME_GIFT = Regex("received\\s+(ksh\\.?\\s*)?[\\d,.]+\\s+airtime\\s+from", RegexOption.IGNORE_CASE)
+
+    fun isAirtimeGift(body: String): Boolean = AIRTIME_GIFT.containsMatchIn(body)
 }

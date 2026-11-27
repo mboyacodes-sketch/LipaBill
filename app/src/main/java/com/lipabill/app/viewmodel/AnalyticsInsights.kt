@@ -62,13 +62,13 @@ fun percentChange(current: Double, previous: Double): Int? {
 
 fun vsPriorCopy(current: Double, previous: Double, comparable: Boolean): String? {
     if (!comparable) return null
-    if (previous == 0.0 && current == 0.0) return "Same as prior"
-    if (previous == 0.0) return "New vs prior"
+    if (previous == 0.0 && current == 0.0) return "Same as last time"
+    if (previous == 0.0) return "New since last time"
     val pct = percentChange(current, previous) ?: return null
     return when {
-        pct > 0 -> "+$pct% vs prior"
-        pct < 0 -> "$pct% vs prior"
-        else -> "Same as prior"
+        pct > 0 -> "+$pct% vs last time"
+        pct < 0 -> "$pct% vs last time"
+        else -> "Same as last time"
     }
 }
 
@@ -86,7 +86,8 @@ fun spendShareOfIncome(expense: Double, income: Double): Double? {
 private fun outgoingPayeeRows(txs: Iterable<MpesaTransaction>): List<CounterpartySpend> =
     txs
         .filter { tx ->
-            tx.type.isOutgoing() &&
+            !tx.ownTransfer &&
+                tx.type.isOutgoing() &&
                 tx.type != TransactionType.SAVINGS &&
                 tx.type != TransactionType.WITHDRAW &&
                 (tx.amount ?: 0.0) > 0.0
@@ -414,11 +415,11 @@ fun moneyStory(
 ): MoneyStory {
     if (!hasLedger) {
         return MoneyStory(
-            headline = "The picture fills from your texts.",
-            detail = "Once confirmations land, this stretch gets a shape."
+            headline = "Your summary builds from your payment messages.",
+            detail = "Once payment messages come in, you'll see how this period went."
         )
     }
-    val through = if (endsToday) "through today" else "through the end of this stretch"
+    val through = if (endsToday) "up to today" else "up to the end of this period"
     if (fuliza) {
         return fulizaStory(
             quietStreak = quietStreak,
@@ -431,50 +432,50 @@ fun moneyStory(
     if (quietStreak >= 3) {
         return MoneyStory(
             headline = "$quietStreak quiet days in a row.",
-            detail = "No money out $through."
+            detail = "Nothing went out $through."
         )
     }
     if (quietStreak == 2) {
         return MoneyStory(
             headline = "Two quiet days in a row.",
-            detail = "No money out $through."
+            detail = "Nothing went out $through."
         )
     }
     if (comparable && priorQuietDays != null && quietDays > priorQuietDays + 1) {
         return MoneyStory(
-            headline = "A quieter stretch than last time.",
+            headline = "Quieter than last time.",
             detail = "$quietDays days with no money out."
         )
     }
     val share = spendShareOfIncome(expense, income)
     if (share != null && share > 1.05) {
         return MoneyStory(
-            headline = "Outflow ran ahead of what came in.",
-            detail = "Spent ${(share * 100).roundToInt()}% of income this stretch."
+            headline = "More went out than came in.",
+            detail = "You spent ${(share * 100).roundToInt()}% of what came in."
         )
     }
     if (share != null && share <= 0.55) {
         return MoneyStory(
             headline = "Most of what came in is still here.",
-            detail = "Spent ${(share * 100).roundToInt()}% of income this stretch."
+            detail = "You spent ${(share * 100).roundToInt()}% of what came in."
         )
     }
     if (topName != null && topShare != null && topShare >= 0.4) {
         return MoneyStory(
-            headline = "$topName shaped this stretch.",
-            detail = "The largest share of what went out.",
+            headline = "$topName got the most.",
+            detail = "The biggest share of your money out.",
             namesPayee = true
         )
     }
     if (comparable && previousExpense > 0.0 && expense < previousExpense * 0.9) {
         return MoneyStory(
-            headline = "Spending is lighter than last time.",
+            headline = "You spent less than last time.",
             detail = vsPriorCopy(expense, previousExpense, comparable = true)
         )
     }
     if (comparable && previousExpense > 0.0 && expense > previousExpense * 1.1) {
         return MoneyStory(
-            headline = "Spending is heavier than last time.",
+            headline = "You spent more than last time.",
             detail = vsPriorCopy(expense, previousExpense, comparable = true)
         )
     }
@@ -485,7 +486,7 @@ fun moneyStory(
         )
     }
     return MoneyStory(
-        headline = "Here's what shaped this stretch.",
+        headline = "Here's how this period went.",
         detail = if (quietDays > 0) "$quietDays days with no money out." else null
     )
 }
@@ -499,31 +500,31 @@ private fun fulizaStory(
 ): MoneyStory {
     if (quietStreak >= 3) {
         return MoneyStory(
-            headline = "$quietStreak days without a Fuliza draw.",
-            detail = "Quiet $through."
+            headline = "$quietStreak days without Fuliza.",
+            detail = "Nothing borrowed $through."
         )
     }
     if (quietStreak == 2) {
         return MoneyStory(
-            headline = "Two days without a Fuliza draw.",
-            detail = "Quiet $through."
+            headline = "Two days without Fuliza.",
+            detail = "Nothing borrowed $through."
         )
     }
     if (comparable && previousExpense > 0.0 && expense < previousExpense * 0.9) {
         return MoneyStory(
-            headline = "Access fees are lighter than last time.",
+            headline = "You paid less in Fuliza fees than last time.",
             detail = vsPriorCopy(expense, previousExpense, comparable = true)
         )
     }
     if (comparable && previousExpense > 0.0 && expense > previousExpense * 1.1) {
         return MoneyStory(
-            headline = "Access fees are heavier than last time.",
+            headline = "You paid more in Fuliza fees than last time.",
             detail = vsPriorCopy(expense, previousExpense, comparable = true)
         )
     }
     return MoneyStory(
-        headline = "Here's the Fuliza stretch.",
-        detail = "Draws and access fees, from the same texts."
+        headline = "Here's your Fuliza for this period.",
+        detail = "What you borrowed and what it cost, from your M-PESA messages."
     )
 }
 

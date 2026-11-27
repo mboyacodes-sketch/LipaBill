@@ -12,7 +12,7 @@ import com.lipabill.app.ussd.AccessibilityHelper
  */
 enum class PaymentAccessNeed(val line: String, val actionLabel: String) {
     Phone(
-        line = "Phone — place the payment call after you confirm",
+        line = "Phone — dial the payment after you confirm",
         actionLabel = "Allow phone"
     ),
     PhoneState(

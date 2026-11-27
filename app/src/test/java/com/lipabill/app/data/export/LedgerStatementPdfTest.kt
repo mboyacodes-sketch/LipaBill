@@ -29,9 +29,9 @@ class LedgerStatementPdfTest {
                 sourceFilter = MoneySource.KCB
             )
         )
-        assertEquals("M-Pesa", statementSourceBadge(listOf(tx(MoneySource.MPESA))))
+        assertEquals("M-PESA", statementSourceBadge(listOf(tx(MoneySource.MPESA))))
         assertEquals(
-            "KCB+M-Pesa",
+            "KCB+M-PESA",
             statementSourceBadge(listOf(tx(MoneySource.MPESA), tx(MoneySource.KCB)))
         )
         assertEquals(

@@ -361,11 +361,11 @@ class CostInsightsTest {
     @Test
     fun kept_headline_compares_net_with_the_prior_stretch() {
         assertEquals(
-            "You kept KSh 4,820 more than the stretch before.",
+            "You kept KSh 4,820 more than the period before.",
             keptHeadline(net = 5_820.0, previousNet = 1_000.0, hasPrior = true)
         )
         assertEquals(
-            "You kept KSh 200 less than the stretch before.",
+            "You kept KSh 200 less than the period before.",
             keptHeadline(net = 800.0, previousNet = 1_000.0, hasPrior = true)
         )
         assertNull(keptHeadline(net = 800.0, previousNet = 0.0, hasPrior = false))

@@ -124,7 +124,7 @@ class SendMoneyViewModel(application: Application) : AndroidViewModel(applicatio
     ): String? {
         if (missingPaySim) {
             return missingPaySimMessage.ifBlank {
-                "A matching SIM is required to send."
+                "Insert a SIM for this wallet to send."
             }
         }
         if (needsLinePick) {

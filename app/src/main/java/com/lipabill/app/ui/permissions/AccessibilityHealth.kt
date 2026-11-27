@@ -144,7 +144,7 @@ object AccessibilityHealthProbe {
         A11yCoachKind.GrantCleared ->
             "LipaBill’s Accessibility switch was turned off. Turn it on again to Send and Pay."
         A11yCoachKind.Unbound ->
-            "Payments need LipaBill awake on this phone. Allow background / never sleeping, then try again."
+            "Payments need LipaBill to keep running in the background. Add it to Never sleeping apps in battery settings, then try again."
         A11yCoachKind.None -> null
     }
 }

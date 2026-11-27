@@ -56,15 +56,15 @@ enum class WalletAccount(
 ) {
     /** Primary ledger (M-Pesa balance; other wallets/banks mix into history). */
     MPESA(
-        chipLabel = "M-Pesa",
+        chipLabel = "M-PESA",
         balanceCaption = "Available balance",
         balancePrefix = "Available",
         ledgerTitle = "Transactions",
         metricsTitle = "Insights",
         inflowLabel = "Income",
         outflowLabel = "Expenses",
-        emptyHistoryTitle = "Nothing in the picture yet",
-        emptyHistoryDetail = "Pull down to import confirmation SMS from the wallets and banks you picked."
+        emptyHistoryTitle = "Nothing here yet",
+        emptyHistoryDetail = "Pull down to load payment messages from the wallets and banks you chose."
     ),
     FULIZA(
         chipLabel = "Fuliza",
@@ -93,7 +93,7 @@ enum class WalletAccount(
 
     /** Why Send and Pay are off when neither balance has arrived yet. */
     fun unfundedPaymentMessage(mpesaBalance: Double?, fulizaOutstanding: Double?): String =
-        "Send and Pay need an M-PESA balance from your messages. There isn’t one yet."
+        "Send and Pay need your M-PESA balance, and none of your messages show it yet."
 }
 
 enum class AnalyticsRange {
@@ -303,7 +303,12 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     private val customEnd = MutableStateFlow<LocalDate?>(null)
 
     /** Full ledgers for Insights / challenge — only while those screens subscribe. */
-    private val mpesaLedger = repo.observeWallet(fuliza = false)
+    /** Payments a stored reversal undid; list rows have no SMS text to tell. */
+    private val reversedCodes = repo.observeReversedCodes()
+
+    private val mpesaLedger = combine(repo.observeWallet(fuliza = false), reversedCodes) { rows, undone ->
+        reconcileCrossRail(withoutReversedOriginals(rows, undone))
+    }.flowOn(Dispatchers.Default)
     private val fulizaLedger = repo.observeWallet(fuliza = true)
 
 
@@ -652,7 +657,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         pillWallet.value = source
         if (!app.setActiveWallet(source)) {
             scanMessage.value =
-                "Showing ${source.label} balance — insert or allow that SIM to dial Send & Pay."
+                "Showing your ${source.label} balance. To Send and Pay from it, insert that SIM or allow phone access."
         }
     }
 
@@ -759,23 +764,23 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                 if (!hasSmsPermission.value) {
                     AppMetrics.setupBlocked(SetupBlocker.NoSms)
                     AppMetrics.ledgerRefreshFailed()
-                    scanMessage.value = "SMS permission required to scan inbox"
+                    scanMessage.value = "Allow SMS access so LipaBill can check your messages"
                     return@launch
                 }
                 // Full history: newly enabled rails sit behind the high-water mark.
                 val inserted = repo.rescanInbox(forceFullHistory = true)
                 AppMetrics.ledgerRefresh(inserted, includeUnchanged = true)
                 scanMessage.value = if (inserted == 0) {
-                    "Inbox scanned — no new confirmation messages"
+                    "Messages checked. Nothing new."
                 } else {
                     "Added $inserted new transaction${if (inserted == 1) "" else "s"}"
                 }
             } catch (error: SecurityException) {
                 AppMetrics.ledgerRefreshFailed(error)
-                scanMessage.value = "SMS permission required to scan inbox"
+                scanMessage.value = "Allow SMS access so LipaBill can check your messages"
             } catch (e: Exception) {
                 AppMetrics.ledgerRefreshFailed(e)
-                scanMessage.value = "Scan failed: ${e.message ?: "unknown error"}"
+                scanMessage.value = "Couldn't check your messages: ${e.message ?: "unknown error"}"
             } finally {
                 isScanning.value = false
             }
@@ -791,7 +796,10 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
      * the ledger without SMS bodies (months of history, enough for bills and payday).
      */
     /** Capped, body-free ledger the plan and Wrapped share (one DB subscription). */
-    private val planLedger = repo.observeWalletList(fuliza = false, limit = PLAN_WINDOW)
+    private val planLedger = combine(
+        repo.observeWalletList(fuliza = false, limit = PLAN_WINDOW),
+        reversedCodes
+    ) { rows, undone -> reconcileCrossRail(withoutReversedOriginals(rows, undone)) }
         .shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
 
     /** Last month told as story cards; null when there is no history for it. */
@@ -800,8 +808,38 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         if (rails.isEmpty()) ledger else ledger.filter { it.source in rails }
     }
 
-    val wrapped: StateFlow<MonthlyWrapped?> = combine(planLedgerForRails, app.spendCategoryOverrides) { ledger, overrides ->
-        buildWrapped(wrappedMonth(java.time.LocalDate.now()), ledger, overrides)
+    /** Fuliza draws for the Wrapped Fuliza card (a month holds far fewer than this). */
+    private val wrapFuliza = repo.observeWalletList(fuliza = true, limit = WRAP_FULIZA_WINDOW)
+
+    /**
+     * Last month as story cards; null when there is no history for it. Limited to the
+     * Settings-enabled rails (or the one picked in Insights), with Fuliza draws mixed in
+     * only when M-Pesa is in scope.
+     */
+    val wrapped: StateFlow<WrapCards?> = combine(
+        planLedger,
+        wrapFuliza,
+        combine(rails, insightsRailsFlow) { r, picked -> picked.ifEmpty { r.sources } },
+        app.spendCategoryOverrides
+    ) { ledger, fuliza, scope, overrides ->
+        val withFuliza = if (MoneySource.MPESA in scope) ledger + fuliza else ledger
+        buildMonthWrap(wrappedMonth(java.time.LocalDate.now()), withFuliza.filter { it.source in scope }, overrides)
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * The year as story cards (see [yearWrapWindow]). Reads the full ledgers, not the
+     * capped plan window, so heavy years are not cut short. Same rail scope as [wrapped].
+     */
+    val yearWrap: StateFlow<WrapCards?> = combine(
+        mpesaLedger,
+        fulizaLedger,
+        combine(rails, insightsRailsFlow) { r, picked -> picked.ifEmpty { r.sources } },
+        app.spendCategoryOverrides
+    ) { ledger, fuliza, scope, overrides ->
+        val withFuliza = if (MoneySource.MPESA in scope) ledger + fuliza else ledger
+        buildYearWrap(java.time.LocalDate.now(), withFuliza.filter { it.source in scope }, overrides)
     }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -994,16 +1032,18 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
-    private companion object {
-        const val SEARCH_DEBOUNCE_MS = 400L
+    companion object {
+        private const val SEARCH_DEBOUNCE_MS = 400L
         /** Ignore single-character queries (too broad on an encrypted ledger). */
-        const val SEARCH_MIN_CHARS = 2
+        private const val SEARCH_MIN_CHARS = 2
         /** Ledger rows the money plan reads: months of history for bills and payday. */
-        const val PLAN_WINDOW = 3000
-        const val HOME_PAGE_SIZE = 80
+        internal const val PLAN_WINDOW = 3000
+        /** Fuliza rows Wrapped reads for a month (a month holds far fewer). */
+        internal const val WRAP_FULIZA_WINDOW = 500
+        private const val HOME_PAGE_SIZE = 80
         /** Max Home search hits — enough to scroll, small enough to stay snappy. */
-        const val SEARCH_RESULT_LIMIT = 80
-        val DAY_GROUP_FORMAT: DateTimeFormatter =
+        private const val SEARCH_RESULT_LIMIT = 80
+        private val DAY_GROUP_FORMAT: DateTimeFormatter =
             DateTimeFormatter.ofPattern("EEE, d MMM yyyy")
     }
 

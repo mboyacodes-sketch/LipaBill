@@ -14,7 +14,7 @@ object SmsPermissionDisclosure {
         "LipaBill’s core feature is on-device money management.",
         "It reads confirmation SMS from wallets and banks you enable on this phone " +
             "to build your encrypted transaction history, available balance, and spending overview, " +
-            "and updates that ledger automatically.",
+            "and keeps it up to date automatically.",
         "Confirmations stay on this phone, encrypted, and are not uploaded or shared.",
         "LipaBill does not send SMS, does not read OTPs, and is not your default messaging app.",
         "You can continue without SMS; history stays empty until you allow it."
@@ -37,7 +37,7 @@ object SmsPermissionDisclosure {
         "confirmation SMS",
         "wallets and banks",
         "encrypted transaction history",
-        "updates that ledger automatically",
+        "keeps it up to date automatically",
         "on this phone",
         "encrypted",
         "not uploaded or shared",

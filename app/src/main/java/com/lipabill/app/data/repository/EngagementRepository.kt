@@ -29,8 +29,22 @@ import kotlinx.coroutines.withContext
 
 class EngagementRepository(
     private val challenges: ChallengeDao,
-    private val transactions: TransactionDao
+    private val transactions: TransactionDao,
+    /** Settings-enabled rails, same scope as Home. Empty means every rail. */
+    private val enabledSources: () -> Set<com.lipabill.app.data.model.MoneySource> = { emptySet() }
 ) {
+    /**
+     * Ledger rows in [start, end) the way Home and Insights count them: enabled rails only,
+     * reversals netted, bank copies of a wallet payment dropped, and transfers between the
+     * user's own accounts left out (they are neither spending nor income).
+     */
+    private suspend fun window(start: Long, end: Long): List<MpesaTransaction> {
+        val scope = enabledSources()
+        val rows = transactions.listBetween(start, end).map { it.toMpesa() }
+            .filter { scope.isEmpty() || it.source in scope }
+        return com.lipabill.app.viewmodel.reconcileCrossRail(withoutReversals(rows)).filterNot { it.ownTransfer }
+    }
+
     fun observeLatest() = challenges.observeLatest()
 
     fun observeActive() = challenges.observeActive()
@@ -43,8 +57,7 @@ class EngagementRepository(
 
     suspend fun transactionsSince(since: Long, now: Long = System.currentTimeMillis()): List<ChallengeTransaction> =
         withContext(Dispatchers.IO) {
-            withoutReversals(transactions.listBetween(since, now + 1).map { it.toMpesa() })
-                .map { it.toChallengeTransaction() }
+            window(since, now + 1).map { it.toChallengeTransaction() }
         }
 
     suspend fun hasCheckIn(weekId: String): Boolean = withContext(Dispatchers.IO) {
@@ -126,9 +139,7 @@ class EngagementRepository(
         for (row in rows) {
             val template = ChallengeTemplates.byId(row.templateId) ?: continue
             val rule = CategoryRules.byId(template.categoryId) ?: continue
-            val window = withoutReversals(
-                transactions.listBetween(row.startAt, row.endAt).map { it.toMpesa() }
-            )
+            val window = window(row.startAt, row.endAt)
             val result = ChallengeEvaluator.evaluate(
                 challenge = row.toSnapshot(),
                 transactions = window.map { it.toChallengeTransaction() },
@@ -156,7 +167,7 @@ class EngagementRepository(
                 val monday = ChallengeClock.localDate(start, zone).minusWeeks(1)
                 val prevStart = monday.atStartOfDay(zone).toInstant().toEpochMilli()
                 val prevEnd = start
-                withoutReversals(transactions.listBetween(prevStart, prevEnd).map { it.toMpesa() })
+                window(prevStart, prevEnd)
                     .sumOf { WeeklySummaryBuilder.signedSpendCents(it.toChallengeTransaction()) }
             }
             WeeklySummaryBuilder.build(
@@ -164,8 +175,7 @@ class EngagementRepository(
                 weekEnd = end,
                 weekId = weekId,
                 previousSpendCents = previousSpend,
-                transactions = withoutReversals(transactions.listBetween(start, end).map { it.toMpesa() })
-                    .map { it.toChallengeTransaction() },
+                transactions = window(start, end).map { it.toChallengeTransaction() },
                 now = now,
                 zone = zone
             )
@@ -259,7 +269,8 @@ private fun WindowTransactionRow.toMpesa() = MpesaTransaction(
     timestampMillis = timestampMillis,
     balance = null,
     cost = cost,
-    rawBody = rawBody
+    rawBody = rawBody,
+    source = source
 )
 
 private fun WindowTransactionRow.toChallengeTransaction() = toMpesa().toChallengeTransaction()

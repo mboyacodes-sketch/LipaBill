@@ -223,7 +223,7 @@ class PassDocumentRepository(
                 if (n < 0) break
                 total += n
                 if (total > DocumentRules.MAX_BYTES) {
-                    throw IllegalArgumentException("That file is too large to be a ticket (15 MB max).")
+                    throw IllegalArgumentException("That file is too big. Tickets must be under 15 MB.")
                 }
                 out.write(buf, 0, n)
             }
