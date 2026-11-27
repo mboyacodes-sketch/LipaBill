@@ -63,7 +63,6 @@ fun FirstRunPage.toConsentRoute(): String = when (this) {
     FirstRunPage.Hibernation -> RouteConsent.HIBERNATION
     FirstRunPage.OemSurvival -> RouteConsent.OEM_SURVIVAL
     FirstRunPage.Welcome,
-    FirstRunPage.Region,
     FirstRunPage.Providers -> RouteConsent.SMS
 }
 
