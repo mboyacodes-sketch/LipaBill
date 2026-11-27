@@ -28,6 +28,8 @@ data class WrapCards(
     /** Day with the most transactions, and how many. */
     val busiestDay: Pair<LocalDate, Int>?,
     // The flow
+    /** Last known balances before [from]; 0 when none. */
+    val broughtForward: Double = 0.0,
     val moneyIn: Double,
     val moneyOut: Double,
     /** Day the most money went out, and how much. */
@@ -63,7 +65,8 @@ data class WrapCards(
 
     data class BiggestPayment(val name: String, val amount: Double, val date: LocalDate)
 
-    val net: Double get() = moneyIn - moneyOut
+    /** Opening + receipts − spends (fees included in out). */
+    val net: Double get() = broughtForward + moneyIn - moneyOut
 
     /** Percent change in money out against the stretch before; null without one. */
     val outChange: Int? get() = moneyOutBefore?.takeIf { it >= 1.0 }?.let { (((moneyOut - it) / it) * 100).toInt() }
@@ -158,7 +161,7 @@ fun buildWrapCards(
     /** The stretch to compare against (e.g. the month before), used only when fully covered. */
     previous: Pair<LocalDate, LocalDate>? = null
 ): WrapCards? {
-    val txs = withoutReversals(ledger)
+    val txs = moneyPictureLedger(ledger)
     val inWindow = txs.filter { val d = it.date(zone); !d.isBefore(from) && !d.isAfter(to) }
     if (inWindow.isEmpty()) return null
 
@@ -169,6 +172,7 @@ fun buildWrapCards(
     val byDate = inWindow.groupBy { it.date(zone) }
     val busiestDay = byDate.maxByOrNull { it.value.size }?.let { it.key to it.value.size }
 
+    val broughtForward = openingBalanceBefore(txs, from, zone)
     val (moneyIn, moneyOut) = flowTotals(inWindow, WalletAccount.MPESA)
     val (inflowByDate, outflowByDate) = flowByDate(inWindow, zone, WalletAccount.MPESA)
 
@@ -207,6 +211,7 @@ fun buildWrapCards(
         activeDays = byDate.size,
         typeCounts = inWindow.groupingBy { it.type }.eachCount(),
         busiestDay = busiestDay,
+        broughtForward = broughtForward,
         moneyIn = moneyIn,
         moneyOut = moneyOut,
         heaviestOutDay = busiestOutflow(outflowByDate, from, to),

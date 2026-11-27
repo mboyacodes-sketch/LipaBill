@@ -81,7 +81,7 @@ internal enum class WrapCardKind(val title: String) {
 internal fun wrapKinds(c: WrapCards): List<WrapCardKind> = buildList {
     add(WrapCardKind.INTRO)
     add(WrapCardKind.NUMBERS)
-    if (c.moneyIn > 0.0 || c.moneyOut > 0.0) add(WrapCardKind.FLOW)
+    if (c.broughtForward > 0.0 || c.moneyIn > 0.0 || c.moneyOut > 0.0) add(WrapCardKind.FLOW)
     if (c.fees > 0.0) add(WrapCardKind.FEES)
     if (c.fuliza != null) add(WrapCardKind.FULIZA)
     if (c.topPeople.isNotEmpty()) add(WrapCardKind.PEOPLE)
@@ -226,6 +226,10 @@ private fun ColumnScope.SummaryBody(c: WrapCards, money: WrapMoney, hideNames: B
     Spacer(Modifier.height(6.dp))
     Body("Money out", Color.White.copy(alpha = 0.8f), 12.sp)
     WrapBig(money.short(c.moneyOut), WrapPalette.Accent, 30.sp)
+    if (c.broughtForward >= 1.0) {
+        Body("Brought forward", Color.White.copy(alpha = 0.8f), 12.sp)
+        WrapBig(money.short(c.broughtForward), Color.White, 24.sp)
+    }
     Body("Money in", Color.White.copy(alpha = 0.8f), 12.sp)
     WrapBig(money.short(c.moneyIn), Color.White, 26.sp)
     Spacer(Modifier.height(6.dp))
@@ -302,8 +306,13 @@ private fun ColumnScope.FlowBody(c: WrapCards, money: WrapMoney, muted: Color) {
     Spacer(Modifier.weight(1f))
     Body("Money out", Color.White, 14.sp)
     WrapBig(money.short(c.moneyOut), WrapPalette.Accent, 46.sp)
+    if (c.broughtForward >= 1.0) {
+        Body("Brought forward", Color.White, 14.sp)
+        WrapBig(money.short(c.broughtForward), Color.White, 36.sp)
+    }
     Body("Money in", Color.White, 14.sp)
     WrapBig(money.short(c.moneyIn), Color.White, 46.sp)
+    val hadOpening = c.broughtForward >= 1.0
     Body(
         buildString {
             c.heaviestOutDay?.let { (day, amount) -> append("Your heaviest day was ${day.format(WrapDayMonth)}: ${money.full(amount)} out.") }
@@ -312,8 +321,16 @@ private fun ColumnScope.FlowBody(c: WrapCards, money: WrapMoney, muted: Color) {
             append(
                 when {
                     net >= 1.0 -> "You kept ${money.full(net)}."
-                    net <= -1.0 -> "${money.full(-net)} more went out than came in."
-                    else -> "In and out came out even."
+                    net <= -1.0 -> if (hadOpening) {
+                        "${money.full(-net)} more went out than you had coming in, including what you started with."
+                    } else {
+                        "${money.full(-net)} more went out than came in."
+                    }
+                    else -> if (hadOpening) {
+                        "Opening, in and out came out even."
+                    } else {
+                        "In and out came out even."
+                    }
                 }
             )
         },

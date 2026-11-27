@@ -275,6 +275,40 @@ class AnalyticsInsightsTest {
     }
 
     @Test
+    fun whole_custom_month_prior_is_the_previous_calendar_month() {
+        // Past months from the calendar swipe are CUSTOM 1st→end, not a rolling window.
+        assertTrue(isWholeCalendarMonth(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31)))
+        assertFalse(isWholeCalendarMonth(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 17)))
+        assertEquals(
+            LocalDate.of(2026, 9, 1) to LocalDate.of(2026, 9, 30),
+            previousAnalyticsBounds(
+                AnalyticsRange.CUSTOM,
+                LocalDate.of(2026, 10, 1),
+                LocalDate.of(2026, 10, 31)
+            )
+        )
+        // February (non-leap) still maps to a full January.
+        assertEquals(
+            LocalDate.of(2025, 1, 1) to LocalDate.of(2025, 1, 31),
+            previousAnalyticsBounds(
+                AnalyticsRange.CUSTOM,
+                LocalDate.of(2025, 2, 1),
+                LocalDate.of(2025, 2, 28)
+            )
+        )
+    }
+
+    @Test
+    fun partial_custom_range_keeps_a_same_length_prior() {
+        val from = LocalDate.of(2026, 10, 5)
+        val to = LocalDate.of(2026, 10, 20)
+        assertEquals(
+            LocalDate.of(2026, 9, 19) to LocalDate.of(2026, 10, 4),
+            previousAnalyticsBounds(AnalyticsRange.CUSTOM, from, to)
+        )
+    }
+
+    @Test
     fun past_month_pulse_prefills_ledger_amounts() {
         val today = LocalDate.of(2026, 11, 17)
         val cells = monthPulseCalendar(

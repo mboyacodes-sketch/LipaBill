@@ -99,11 +99,16 @@ enum class WalletAccount(
 enum class AnalyticsRange {
     /** Calendar month in progress: 1st → today. Default Insights filter. */
     THIS_MONTH,
+    /** Rolling windows — only when the user picks them; not used for “month”. */
     DAYS_7,
     DAYS_30,
     DAYS_90,
     THIS_YEAR,
     YEAR,
+    /**
+     * User-picked dates, or a past calendar month from the pulse swipe
+     * (then always 1st → last day of that month).
+     */
     CUSTOM,
     ALL
 }
@@ -118,6 +123,8 @@ data class TypeBreakdown(
 data class AnalyticsSummary(
     val incomeTotal: Double = 0.0,
     val expenseTotal: Double = 0.0,
+    /** Last known balances before the period; 0 when none. */
+    val broughtForward: Double = 0.0,
     val dayCount: Long = 1L,
     val byType: List<TypeBreakdown> = emptyList(),
     val topCounterparties: List<CounterpartySpend> = emptyList(),
@@ -136,7 +143,7 @@ data class AnalyticsSummary(
     /** Inclusive bounds for the selected period (named months for the UI). */
     val periodFrom: LocalDate? = null,
     val periodTo: LocalDate? = null,
-    val rangeLabel: String = "Last 30 days",
+    val rangeLabel: String = "This month",
     val hasLedger: Boolean = false,
     val storyHeadline: String = "",
     val storyDetail: String? = null,

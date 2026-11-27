@@ -492,8 +492,12 @@ private val monthLabel: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM", L
 private val monthYearLabel: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM yy", Locale.US)
 
 /**
- * Money in and out per month for stretches longer than a month, or per year when
+ * Money in and out per **calendar month** for stretches longer than a month, or per year when
  * the stretch covers more than two years. Empty for short stretches (the day grid covers those).
+ *
+ * Each bar is a whole YearMonth (1st → end). When [from]/[to] clips a month (e.g. mid-month
+ * start on a rolling 90-day pill), only days inside the filter contribute — the bar label is
+ * still the calendar month, never a rolling 30-day chunk.
  */
 fun periodBars(
     from: LocalDate,
@@ -537,7 +541,12 @@ fun averageDailySpend(
 ): Double {
     val since = beforeMillis - days * 24L * 60L * 60L * 1000L
     val total = txs
-        .filter { it.timestampMillis in since until beforeMillis && it.type.isOutgoing() && matches(it) }
-        .sumOf { it.amount ?: 0.0 }
+        .filter {
+            it.timestampMillis in since until beforeMillis &&
+                !isOwnMoneyMove(it) &&
+                countsAsSpendOutflow(it.type, it.counterpartyName, (it.amount ?: 0.0) > 0.0) &&
+                matches(it)
+        }
+        .sumOf { (it.amount ?: 0.0) + (it.cost ?: 0.0) }
     return total / days
 }

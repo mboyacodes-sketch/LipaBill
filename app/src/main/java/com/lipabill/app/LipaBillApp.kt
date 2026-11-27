@@ -35,6 +35,7 @@ import com.lipabill.app.viewmodel.InsightMarks
 import com.lipabill.app.viewmodel.balanceWalletChoices
 import com.lipabill.app.viewmodel.buildMoneyPlan
 import com.lipabill.app.viewmodel.MoneyPlanUi
+import com.lipabill.app.viewmodel.withoutReversedOriginals
 import com.lipabill.app.widget.BalanceWidget
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.viewmodel.goalProgress
@@ -160,7 +161,10 @@ class LipaBillApp : Application() {
     /** Safe to spend and balance for the home-screen widget, from a capped ledger read. */
     suspend fun widgetSnapshot(): MoneyPlanUi {
         val since = System.currentTimeMillis() - 200L * 24 * 60 * 60 * 1000
-        val ledger = repository.ledgerSince(since)
+        // Same pipeline as Home / Insights: drop undone originals, then cross-rail reconcile
+        // inside buildMoneyPlan via moneyPictureLedger.
+        val undone = repository.observeReversedCodes().first()
+        val ledger = withoutReversedOriginals(repository.ledgerSince(since), undone)
         val balances = repository.observeLatestBalances().first()
         val region = _appRegion.value
         val enabled = _enabledSources.value.ifEmpty { region.sources }
