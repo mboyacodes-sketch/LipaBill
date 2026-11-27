@@ -68,7 +68,7 @@ class WrappedReadyWorker(
         }
         val cards = buildMonthWrap(
             month,
-            (ledger + fuliza).filter { scope.isEmpty() || it.source in scope },
+            com.lipabill.app.viewmodel.reconcileCrossRail(ledger + fuliza).filter { scope.isEmpty() || it.source in scope },
             app.spendCategoryOverrides.value
         )
         // Nothing moved last month: no story, so no nudge.

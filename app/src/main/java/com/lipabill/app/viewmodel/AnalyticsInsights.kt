@@ -86,7 +86,8 @@ fun spendShareOfIncome(expense: Double, income: Double): Double? {
 private fun outgoingPayeeRows(txs: Iterable<MpesaTransaction>): List<CounterpartySpend> =
     txs
         .filter { tx ->
-            tx.type.isOutgoing() &&
+            !tx.ownTransfer &&
+                tx.type.isOutgoing() &&
                 tx.type != TransactionType.SAVINGS &&
                 tx.type != TransactionType.WITHDRAW &&
                 (tx.amount ?: 0.0) > 0.0

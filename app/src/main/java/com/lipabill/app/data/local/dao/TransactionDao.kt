@@ -173,7 +173,7 @@ interface TransactionDao {
      */
     @Query(
         """
-        SELECT id, counterpartyName, counterpartyPhone, type, amount, cost, timestampMillis, code, rawBody
+        SELECT id, counterpartyName, counterpartyPhone, type, amount, cost, timestampMillis, code, rawBody, source
         FROM transactions
         WHERE timestampMillis >= :startInclusive AND timestampMillis < :endExclusive
         ORDER BY timestampMillis ASC, id ASC
@@ -423,7 +423,8 @@ data class WindowTransactionRow(
     val cost: Double? = null,
     val timestampMillis: Long,
     val code: String = "",
-    val rawBody: String = ""
+    val rawBody: String = "",
+    val source: com.lipabill.app.data.model.MoneySource = com.lipabill.app.data.model.MoneySource.MPESA
 )
 
 data class NamedCounterpartyRow(

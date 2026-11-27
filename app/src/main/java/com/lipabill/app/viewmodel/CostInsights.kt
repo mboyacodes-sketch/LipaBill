@@ -57,7 +57,7 @@ fun isOwnMoneyMove(type: TransactionType, counterpartyName: String?): Boolean = 
 }
 
 fun isOwnMoneyMove(tx: MpesaTransaction): Boolean =
-    isOwnMoneyMove(tx.type, tx.counterpartyName)
+    tx.ownTransfer || isOwnMoneyMove(tx.type, tx.counterpartyName)
 
 /**
  * Wallet outflow that Insights quiet days / calendars and Habits quiet weeks share:
@@ -308,7 +308,7 @@ fun detectRegulars(
     minPayments: Int = 3
 ): List<RegularPayee> {
     val byPayee = txs
-        .filter { it.type in REGULAR_TYPES && (it.amount ?: 0.0) > 0.0 }
+        .filter { it.type in REGULAR_TYPES && !it.ownTransfer && (it.amount ?: 0.0) > 0.0 }
         .groupBy { payeeKey(it) }
     val regulars = mutableListOf<RegularPayee>()
     for ((key, payments) in byPayee) {

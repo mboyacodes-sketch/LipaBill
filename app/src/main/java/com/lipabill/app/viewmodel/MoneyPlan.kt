@@ -97,7 +97,7 @@ fun spendByCategory(
 ): Map<SpendCategory, Double> {
     val out = LinkedHashMap<SpendCategory, Double>()
     for (tx in txs) {
-        if (!countsAsSpend(tx.type)) continue
+        if (!countsAsSpend(tx.type) || tx.ownTransfer) continue
         val amount = tx.amount ?: continue
         val category = spendCategoryOf(tx, overrides)
         if (category == SpendCategory.INCOME) continue

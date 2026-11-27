@@ -331,7 +331,12 @@ internal fun flowByDate(
         }
         val amount = tx.amount ?: continue
         // Same rule as flowTotals / Habits quiet days (countsAsSpendOutflow).
-        if (isOwnMoneyMove(tx)) continue
+        if (isOwnMoneyMove(tx)) {
+            // Moving your own money is not spend, but the fee on it did leave the wallet.
+            val fee = tx.cost ?: 0.0
+            if (tx.type.isOutgoing() && fee > 0.0) outflow[date] = (outflow[date] ?: 0.0) + fee
+            continue
+        }
         if (countsAsSpendOutflow(tx.type, tx.counterpartyName, amount > 0.0)) {
             outflow[date] = (outflow[date] ?: 0.0) + amount + (tx.cost ?: 0.0)
         } else if (!tx.type.isOutgoing()) {
@@ -362,8 +367,12 @@ internal fun flowTotals(
     var expense = 0.0
     for (tx in txs) {
         val amount = tx.amount ?: continue
-        // Savings in and out, and Fuliza draws, are the user's own money moving.
-        if (isOwnMoneyMove(tx)) continue
+        // Savings in and out, Fuliza draws and own-account transfers are the user's own
+        // money moving; only a fee charged on the way out counts.
+        if (isOwnMoneyMove(tx)) {
+            if (tx.type.isOutgoing()) expense += tx.cost ?: 0.0
+            continue
+        }
         // Fees left the wallet too, so they count as money out.
         if (tx.type.isOutgoing()) expense += amount + (tx.cost ?: 0.0) else income += amount
     }

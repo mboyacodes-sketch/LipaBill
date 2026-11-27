@@ -304,6 +304,8 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
 
     /** Full ledgers for Insights / challenge — only while those screens subscribe. */
     private val mpesaLedger = repo.observeWallet(fuliza = false)
+        .map { reconcileCrossRail(it) }
+        .flowOn(Dispatchers.Default)
     private val fulizaLedger = repo.observeWallet(fuliza = true)
 
 
@@ -792,6 +794,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
      */
     /** Capped, body-free ledger the plan and Wrapped share (one DB subscription). */
     private val planLedger = repo.observeWalletList(fuliza = false, limit = PLAN_WINDOW)
+        .map { reconcileCrossRail(it) }
         .shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
 
     /** Last month told as story cards; null when there is no history for it. */

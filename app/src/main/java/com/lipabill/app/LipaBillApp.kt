@@ -407,7 +407,8 @@ class LipaBillApp : Application() {
         )
         engagement = EngagementRepository(
             challenges = db.challengeDao(),
-            transactions = db.transactionDao()
+            transactions = db.transactionDao(),
+            enabledSources = { _enabledSources.value.ifEmpty { _appRegion.value.sources } }
         )
         engagementScheduler = EngagementScheduler(this)
         repository.afterInsert = {
