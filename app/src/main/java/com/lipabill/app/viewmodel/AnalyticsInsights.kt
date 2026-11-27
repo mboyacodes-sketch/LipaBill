@@ -523,7 +523,7 @@ private fun fulizaStory(
     }
     return MoneyStory(
         headline = "Here's your Fuliza for this period.",
-        detail = "What you borrowed and what it cost, from your M-Pesa messages."
+        detail = "What you borrowed and what it cost, from your M-PESA messages."
     )
 }
 

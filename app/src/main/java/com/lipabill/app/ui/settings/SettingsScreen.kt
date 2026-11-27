@@ -187,9 +187,9 @@ fun SettingsScreen(
                         state.simRegions.isNotEmpty() ->
                             "Only countries of the SIMs in this phone. Tracking money in ${state.region.label}."
                         state.region.canSendPay ->
-                            "Tracking money in ${state.region.label}. Send and Pay use M-Pesa."
+                            "Tracking money in ${state.region.label}. Send and Pay use M-PESA."
                         else ->
-                            "Tracking money in ${state.region.label}. Send and Pay work with M-Pesa in Kenya for now."
+                            "Tracking money in ${state.region.label}. Send and Pay work with M-PESA in Kenya for now."
                     }
                 ) {
                     RegionPicker(

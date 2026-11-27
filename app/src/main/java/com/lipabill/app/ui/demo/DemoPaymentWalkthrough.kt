@@ -73,7 +73,7 @@ fun DemoPaymentWalkthrough(
     amountLabel: String,
     detail: String,
     totalSteps: Int = 5,
-    walletBadge: String = "M-Pesa",
+    walletBadge: String = "M-PESA",
     onCancel: () -> Unit,
     onComplete: () -> Unit
 ) {

@@ -1022,7 +1022,7 @@ private fun WalletDeck(
         onOpenRequest = onOpenProfile,
         flipHint = when {
             !fulizaBack -> "Tilt, tap to flip"
-            flipped -> "Tilt, tap for M-Pesa"
+            flipped -> "Tilt, tap for M-PESA"
             else -> "Tilt, tap for Fuliza"
         },
         modifier = modifier
@@ -1035,7 +1035,7 @@ private fun WalletDeck(
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 2.sp
             )
-            Text(text = "Overdraft on M-Pesa", color = ink.secondary, fontSize = 12.sp)
+            Text(text = "Overdraft on M-PESA", color = ink.secondary, fontSize = 12.sp)
             Spacer(modifier = Modifier.weight(1f))
             CardLabel("OUTSTANDING", ink)
             BalanceAmountRow(

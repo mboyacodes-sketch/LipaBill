@@ -56,7 +56,7 @@ enum class WalletAccount(
 ) {
     /** Primary ledger (M-Pesa balance; other wallets/banks mix into history). */
     MPESA(
-        chipLabel = "M-Pesa",
+        chipLabel = "M-PESA",
         balanceCaption = "Available balance",
         balancePrefix = "Available",
         ledgerTitle = "Transactions",

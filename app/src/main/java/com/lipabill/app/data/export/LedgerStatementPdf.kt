@@ -76,7 +76,7 @@ fun writeLedgerStatementPdf(
     totals: StatementTotals,
     output: OutputStream,
     logo: Bitmap? = null,
-    sourceLabel: String = "M-Pesa"
+    sourceLabel: String = "M-PESA"
 ) {
     val doc = PdfDocument()
     try {
@@ -273,7 +273,7 @@ private fun drawPage(
         rule
     )
     canvas.drawText(
-        "Built from your confirmation SMS on this device. Not an official M-Pesa statement.",
+        "Built from your confirmation SMS on this device. Not an official M-PESA statement.",
         MARGIN_LEFT.toFloat(),
         footerY,
         small

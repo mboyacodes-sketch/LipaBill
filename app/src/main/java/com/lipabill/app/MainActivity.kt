@@ -1614,7 +1614,7 @@ private fun AuthenticatedApp(
                     navigateHome()
                 }
                 val walletBadge = PendingPaymentReceipt.peek(auditId)?.wallet?.badge
-                    ?: "M-Pesa"
+                    ?: "M-PESA"
                 DemoPaymentWalkthrough(
                     amountLabel = amountLabel,
                     detail = detail,

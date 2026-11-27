@@ -28,7 +28,7 @@
     <string name="update_install_failed">Could not open the installer. Allow installs from LipaBill in Settings, then try again.</string>
     <string name="update_allow_installs">Allow LipaBill to install updates, then tap Check for updates again.</string>
     <string name="update_untrusted_apk">This update is not signed by LipaBill. It was not installed.</string>
-    <string name="pay_blocked_other_accessibility">Turn off every accessibility service except LipaBill before paying. Other services can read the M-Pesa PIN field.</string>
+    <string name="pay_blocked_other_accessibility">Turn off every accessibility service except LipaBill before paying. Other services can read the M-PESA PIN field.</string>
     <string name="pay_link_confirm_title">Open payment link?</string>
     <string name="pay_link_confirm_continue">Continue</string>
     <string name="pay_link_confirm_cancel">Cancel</string>
@@ -102,7 +102,7 @@
     <string name="habits_catchup_bill_stat">bill due</string>
     <string name="habits_catchup_safe">Your streak is safe: one missed week is forgiven.</string>
     <string name="habits_noticed_private">Learned on this phone only</string>
-    <string name="habits_noticed_read">Read from %1$d M-Pesa payments over recent months. Each check-in and each “Not me” makes the next guess sharper.</string>
+    <string name="habits_noticed_read">Read from %1$d M-PESA payments over recent months. Each check-in and each “Not me” makes the next guess sharper.</string>
     <string name="habits_noticed_empty">Nothing stands out yet. Patterns show once a few weeks of payments are in.</string>
     <string name="habits_learning_label">How well LipaBill knows your week</string>
     <string name="habits_learning_good">Good</string>

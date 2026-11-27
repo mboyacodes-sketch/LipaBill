@@ -332,7 +332,7 @@ class PaymentWalletTest {
             PaymentDialResolver.missingPaySimMessage(AppRegion.UGANDA)
         )
         assertEquals(
-            "Turn on M-Pesa or Airtel Money in Settings → Wallets and banks to Send and Pay.",
+            "Turn on M-PESA or Airtel Money in Settings → Wallets and banks to Send and Pay.",
             PaymentDialResolver.payUnavailableMessage(
                 AppRegion.KENYA,
                 setOf(com.lipabill.app.data.model.MoneySource.KCB)

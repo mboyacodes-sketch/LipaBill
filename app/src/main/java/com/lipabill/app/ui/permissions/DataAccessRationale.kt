@@ -50,7 +50,7 @@ object DataAccessRationale {
 
     val PHONE = DataAccessCopy(
         title = "Phone starts a payment you confirm",
-        body = "LipaBill places the M-Pesa call and checks which SIM is Safaricom after you confirm a payment. " +
+        body = "LipaBill places the M-PESA call and checks which SIM is Safaricom after you confirm a payment. " +
             "It does not read call history."
     )
 
