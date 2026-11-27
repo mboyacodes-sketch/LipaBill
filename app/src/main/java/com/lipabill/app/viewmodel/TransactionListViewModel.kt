@@ -365,24 +365,29 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     private val homePage = MutableStateFlow(HOME_PAGE_SIZE)
 
     /**
-     * Home window, read from the database for the picked sources only (or the one source chip
-     * in focus), so every row for that wallet or bank can be reached. Search uses [homeSearch].
+     * Home window across every enabled rail, then cross-rail reconciled so a bank copy of an
+     * M-PESA (or other wallet) payment does not sit next to the wallet receipt. The History
+     * source chip still filters in [walletBaseOf] after pairing. Search uses [homeSearch].
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     private val mpesaHome = combine(
-        app.appRegion,
-        app.enabledSources,
-        sourceFilter,
-        homePage
-    ) { region, enabled, filter, page ->
-        val catalog = enabled.ifEmpty { region.sources }
-        HomeWindow(
-            sources = if (filter != null) setOf(filter) else catalog,
-            limit = page
-        )
+        combine(
+            app.appRegion,
+            app.enabledSources,
+            homePage
+        ) { region, enabled, page ->
+            HomeWindow(
+                sources = enabled.ifEmpty { region.sources },
+                limit = page
+            )
+        }
+            .distinctUntilChanged()
+            .flatMapLatest { repo.observeLedgerWindow(it.sources, it.limit) },
+        reversedCodes
+    ) { rows, undone ->
+        reconcileCrossRail(withoutReversedOriginals(rows, undone))
     }
-        .distinctUntilChanged()
-        .flatMapLatest { repo.observeLedgerWindow(it.sources, it.limit) }
+        .flowOn(Dispatchers.Default)
         .shareIn(viewModelScope, SharingStarted.Eagerly, replay = 1)
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -400,15 +405,21 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         typeFilter,
         sourceFilter,
         walletAccount,
-        combine(app.appRegion, app.enabledSources) { region, enabled -> region to enabled }
-    ) { query, type, filter, account, regionEnabled ->
-        val (region, enabled) = regionEnabled
+        combine(app.appRegion, app.enabledSources, reversedCodes) { region, enabled, undone ->
+            Triple(region, enabled, undone)
+        }
+    ) { query, type, filter, account, regionEnabledUndone ->
+        val (region, enabled, undone) = regionEnabledUndone
         val catalog = enabled.ifEmpty { region.sources }
         SearchWindow(
             query = query.trim(),
             type = type,
-            sources = if (filter != null) setOf(filter) else catalog,
-            fuliza = account == WalletAccount.FULIZA
+            // Search every enabled rail so a bank twin can pair with the wallet hit, then
+            // [walletBaseOf] / list filtering still honour the History chip.
+            sources = catalog,
+            fuliza = account == WalletAccount.FULIZA,
+            undone = undone,
+            chip = filter
         )
     }
         .distinctUntilChanged()
@@ -416,13 +427,16 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             if (window.query.length < SEARCH_MIN_CHARS) {
                 emptyList()
             } else {
-                repo.searchHome(
+                val hits = repo.searchHome(
                     query = window.query,
                     sources = window.sources,
                     type = window.type.takeUnless { window.fuliza },
                     fuliza = window.fuliza,
                     limit = SEARCH_RESULT_LIMIT
                 )
+                val reconciled = reconcileCrossRail(withoutReversedOriginals(hits, window.undone))
+                val chip = window.chip
+                if (chip == null) reconciled else reconciled.filter { it.source == chip }
             }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -1060,7 +1074,9 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         val query: String,
         val type: TransactionType?,
         val sources: Set<MoneySource>,
-        val fuliza: Boolean
+        val fuliza: Boolean,
+        val undone: Set<String> = emptySet(),
+        val chip: MoneySource? = null
     )
 
     private data class RailState(
