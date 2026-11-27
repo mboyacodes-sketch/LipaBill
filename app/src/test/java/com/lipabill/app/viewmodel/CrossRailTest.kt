@@ -124,14 +124,21 @@ class CrossRailTest {
     }
 
     @Test
-    fun homeSourceChipAfterReconcileHidesBankTwin() {
-        // Home loads all rails, reconciles, then the History chip filters — same as Insights.
+    fun homeAllDropsBankTwinButBankChipKeepsStatements() {
         val mpesa = tx(MoneySource.MPESA, PAYBILL, 2_500.0, "EQUITY PAYBILL", cost = 23.0)
         val twin = tx(MoneySource.EQUITY, BUY_GOODS, 2_500.0, "JAVA HOUSE", second = 20)
         val equityOnly = tx(MoneySource.EQUITY, SENT, 400.0, "FRIEND", minute = 3)
-        val home = reconcileCrossRail(listOf(mpesa, twin, equityOnly))
-        assertEquals(listOf(equityOnly), home.filter { it.source == MoneySource.EQUITY })
-        assertEquals(listOf(mpesa), home.filter { it.source == MoneySource.MPESA })
+        val allRails = listOf(mpesa, twin, equityOnly)
+        // All: one row per payment — bank advisory of the M-PESA paybill is gone.
+        assertEquals(
+            listOf(mpesa, equityOnly),
+            homeHistoryLedger(allRails, emptySet(), chip = null)
+        )
+        // Equity chip: every Equity statement, including the twin of the wallet paybill.
+        assertEquals(
+            listOf(twin, equityOnly),
+            homeHistoryLedger(listOf(twin, equityOnly), emptySet(), chip = MoneySource.EQUITY)
+        )
     }
 
     @Test

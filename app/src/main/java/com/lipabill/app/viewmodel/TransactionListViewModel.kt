@@ -365,28 +365,30 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     private val homePage = MutableStateFlow(HOME_PAGE_SIZE)
 
     /**
-     * Home window across every enabled rail, then cross-rail reconciled so a bank copy of an
-     * M-PESA (or other wallet) payment does not sit next to the wallet receipt. The History
-     * source chip still filters in [walletBaseOf] after pairing. Search uses [homeSearch].
+     * Home window for the History chip in focus (or every enabled rail on All). Twins are
+     * dropped only on All — a bank chip must still show that bank's statements. Search uses
+     * [homeSearch].
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     private val mpesaHome = combine(
-        combine(
-            app.appRegion,
-            app.enabledSources,
-            homePage
-        ) { region, enabled, page ->
-            HomeWindow(
-                sources = enabled.ifEmpty { region.sources },
-                limit = page
-            )
-        }
-            .distinctUntilChanged()
-            .flatMapLatest { repo.observeLedgerWindow(it.sources, it.limit) },
-        reversedCodes
-    ) { rows, undone ->
-        reconcileCrossRail(withoutReversedOriginals(rows, undone))
+        app.appRegion,
+        app.enabledSources,
+        sourceFilter,
+        homePage
+    ) { region, enabled, filter, page ->
+        val catalog = enabled.ifEmpty { region.sources }
+        HomeWindow(
+            sources = if (filter != null) setOf(filter) else catalog,
+            limit = page,
+            chip = filter
+        )
     }
+        .distinctUntilChanged()
+        .flatMapLatest { window ->
+            combine(repo.observeLedgerWindow(window.sources, window.limit), reversedCodes) { rows, undone ->
+                homeHistoryLedger(rows, undone, window.chip)
+            }
+        }
         .flowOn(Dispatchers.Default)
         .shareIn(viewModelScope, SharingStarted.Eagerly, replay = 1)
 
@@ -414,9 +416,8 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         SearchWindow(
             query = query.trim(),
             type = type,
-            // Search every enabled rail so a bank twin can pair with the wallet hit, then
-            // [walletBaseOf] / list filtering still honour the History chip.
-            sources = catalog,
+            // Chip in focus: search that rail only. All: every enabled rail, then drop twins.
+            sources = if (filter != null) setOf(filter) else catalog,
             fuliza = account == WalletAccount.FULIZA,
             undone = undone,
             chip = filter
@@ -434,9 +435,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                     fuliza = window.fuliza,
                     limit = SEARCH_RESULT_LIMIT
                 )
-                val reconciled = reconcileCrossRail(withoutReversedOriginals(hits, window.undone))
-                val chip = window.chip
-                if (chip == null) reconciled else reconciled.filter { it.source == chip }
+                homeHistoryLedger(hits, window.undone, window.chip)
             }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -1068,7 +1067,11 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
             DateTimeFormatter.ofPattern("EEE, d MMM yyyy")
     }
 
-    private data class HomeWindow(val sources: Set<MoneySource>, val limit: Int)
+    private data class HomeWindow(
+        val sources: Set<MoneySource>,
+        val limit: Int,
+        val chip: MoneySource? = null
+    )
 
     private data class SearchWindow(
         val query: String,
