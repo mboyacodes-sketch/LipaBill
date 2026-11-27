@@ -33,19 +33,27 @@ class WrappedReadyTest {
     @Test
     fun monthToDateCountsOnlyThisMonth() {
         val zone = ZoneOffset.UTC
-        fun tx(date: String, amount: Double, type: TransactionType, cost: Double? = null) = testTransaction(
-            code = "M$date$amount", type = type, amount = amount, cost = cost,
+        fun tx(
+            date: String,
+            amount: Double,
+            type: TransactionType,
+            cost: Double? = null,
+            balance: Double? = null
+        ) = testTransaction(
+            code = "M$date$amount", type = type, amount = amount, cost = cost, balance = balance,
             timestampMillis = LocalDate.parse(date).atTime(12, 0).toInstant(zone).toEpochMilli()
         )
         val ledger = listOf(
-            tx("2026-10-30", 9_000.0, TransactionType.RECEIVED),
-            tx("2026-11-02", 40_000.0, TransactionType.RECEIVED),
-            tx("2026-11-10", 1_000.0, TransactionType.SENT, cost = 13.0),
+            tx("2026-10-30", 9_000.0, TransactionType.RECEIVED, balance = 12_450.0),
+            tx("2026-11-02", 40_000.0, TransactionType.RECEIVED, balance = 52_450.0),
+            tx("2026-11-10", 1_000.0, TransactionType.SENT, cost = 13.0, balance = 51_437.0),
             tx("2026-11-12", 500.0, TransactionType.FULIZA)
         )
         val flow = monthToDateFlow(ledger, LocalDate.parse("2026-11-27"), zone)!!
+        assertEquals(12_450.0, flow.broughtForward, 0.01)
         assertEquals(40_000.0, flow.moneyIn, 0.01)
         assertEquals(1_013.0, flow.moneyOut, 0.01)
+        assertEquals(12_450.0 + 40_000.0 - 1_013.0, flow.net, 0.01)
         assertNull(monthToDateFlow(ledger, LocalDate.parse("2026-12-03"), zone))
     }
 }

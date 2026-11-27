@@ -36,6 +36,17 @@ data class OutgoingPayeeSplit(
 }
 
 /** Same-length window immediately before [from]–[to], or the prior calendar year. */
+/**
+ * True when [from]–[to] is one whole calendar month (1st through that month's last day).
+ * Past months opened from the Insights calendar use CUSTOM with these bounds.
+ */
+fun isWholeCalendarMonth(from: LocalDate, to: LocalDate): Boolean {
+    val month = YearMonth.from(from)
+    return from.dayOfMonth == 1 &&
+        YearMonth.from(to) == month &&
+        to == month.atEndOfMonth()
+}
+
 fun previousAnalyticsBounds(
     range: AnalyticsRange,
     from: LocalDate,
@@ -43,16 +54,29 @@ fun previousAnalyticsBounds(
 ): Pair<LocalDate, LocalDate>? = when (range) {
     AnalyticsRange.ALL -> null
     AnalyticsRange.THIS_MONTH -> {
+        // Current month is 1st → today; compare to the previous full calendar month.
         val prevMonth = YearMonth.from(from).minusMonths(1)
         prevMonth.atDay(1) to prevMonth.atEndOfMonth()
     }
     AnalyticsRange.THIS_YEAR,
     AnalyticsRange.YEAR -> from.minusYears(1) to to.minusYears(1)
-    else -> {
-        val span = ChronoUnit.DAYS.between(from, to)
-        val prevTo = from.minusDays(1)
-        prevTo.minusDays(span) to prevTo
+    AnalyticsRange.CUSTOM -> if (isWholeCalendarMonth(from, to)) {
+        // Swiping to October must compare to September 1–30, not a 31-day roll-back.
+        val prevMonth = YearMonth.from(from).minusMonths(1)
+        prevMonth.atDay(1) to prevMonth.atEndOfMonth()
+    } else {
+        rollingPriorBounds(from, to)
     }
+    // Explicit rolling pills (7 / 30 / 90 days) keep a same-length window before.
+    AnalyticsRange.DAYS_7,
+    AnalyticsRange.DAYS_30,
+    AnalyticsRange.DAYS_90 -> rollingPriorBounds(from, to)
+}
+
+private fun rollingPriorBounds(from: LocalDate, to: LocalDate): Pair<LocalDate, LocalDate> {
+    val span = ChronoUnit.DAYS.between(from, to)
+    val prevTo = from.minusDays(1)
+    return prevTo.minusDays(span) to prevTo
 }
 
 fun percentChange(current: Double, previous: Double): Int? {
@@ -77,7 +101,10 @@ fun dailyAverage(total: Double, dayCount: Long): Double {
     return total / dayCount
 }
 
-/** Outflow as a share of inflow. Null when there is no income to compare. */
+/**
+ * Outflow as a share of [income] (receipts, or brought-forward + receipts when the caller
+ * passes that as available). Null when there is nothing to compare.
+ */
 fun spendShareOfIncome(expense: Double, income: Double): Double? {
     if (income <= 0.0) return null
     return expense / income

@@ -17,7 +17,11 @@ fun wrapShareText(
     append("${cards.txnCount} transaction${if (cards.txnCount == 1) "" else "s"}")
     append(" on ${cards.activeDays} of ${cards.coveredDays} days.")
     if (showAmounts) {
-        append("\nIn ${formatKsh(cards.moneyIn)} · Out ${formatKsh(cards.moneyOut)}")
+        append("\n")
+        if (cards.broughtForward >= 1.0) {
+            append("Brought ${formatKsh(cards.broughtForward)} · ")
+        }
+        append("In ${formatKsh(cards.moneyIn)} · Out ${formatKsh(cards.moneyOut)}")
         if (cards.fees > 0.0) append(" · Fees ${formatKsh(cards.fees)}")
         append(".")
     }

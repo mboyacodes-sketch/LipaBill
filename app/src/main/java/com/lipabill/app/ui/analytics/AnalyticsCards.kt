@@ -192,7 +192,15 @@ internal fun HeroCard(
             )
         }
         if (showFigures) {
+            val showBrought = mpesa && stats.broughtForward >= 1.0
             Row(modifier = Modifier.fillMaxWidth()) {
+                if (showBrought) {
+                    HeroFigure(
+                        label = "Brought forward",
+                        amount = stats.broughtForward,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
                 HeroFigure(
                     label = if (mpesa) "Came in" else account.inflowLabel,
                     amount = stats.incomeTotal,
@@ -204,7 +212,13 @@ internal fun HeroCard(
                     modifier = Modifier.weight(1f)
                 )
             }
-            val share = if (mpesa) spendShareOfIncome(stats.expenseTotal, stats.incomeTotal) else null
+            // With an opening balance, “what you had” = brought + receipts.
+            val available = if (showBrought) {
+                stats.broughtForward + stats.incomeTotal
+            } else {
+                stats.incomeTotal
+            }
+            val share = if (mpesa) spendShareOfIncome(stats.expenseTotal, available) else null
             if (share != null) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Box(
@@ -223,8 +237,13 @@ internal fun HeroCard(
                         )
                     }
                     Text(
-                        text = "${(share * 100).roundToInt()}% of what came in has gone out " +
-                            "(fees included, reversed payments left out)",
+                        text = if (showBrought) {
+                            "${(share * 100).roundToInt()}% of what you had has gone out " +
+                                "(brought forward + money in, fees included)"
+                        } else {
+                            "${(share * 100).roundToInt()}% of what came in has gone out " +
+                                "(fees included, reversed payments left out)"
+                        },
                         style = HomeType.caption,
                         color = soft
                     )
