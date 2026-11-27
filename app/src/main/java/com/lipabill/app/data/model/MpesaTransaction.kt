@@ -24,5 +24,10 @@ data class MpesaTransaction(
      * Must not be logged or uploaded by app code.
      */
     val rawBody: String,
-    val source: MoneySource = MoneySource.MPESA
+    val source: MoneySource = MoneySource.MPESA,
+    /**
+     * Read-time only (never stored): one leg of a transfer between the user's own accounts,
+     * e.g. bank → M-PESA. Money pictures count it as neither spend nor income.
+     */
+    val ownTransfer: Boolean = false
 )

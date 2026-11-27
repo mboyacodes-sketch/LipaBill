@@ -186,7 +186,7 @@ fun buildWrapCards(
     val biggest = byCategory.maxByOrNull { it.value }
 
     val spendRows = inWindow.filter {
-        countsAsSpendOutflow(it.type, it.counterpartyName, (it.amount ?: 0.0) > 0.0)
+        !it.ownTransfer && countsAsSpendOutflow(it.type, it.counterpartyName, (it.amount ?: 0.0) > 0.0)
     }
     val biggestPayment = spendRows.maxByOrNull { it.amount ?: 0.0 }?.let {
         WrapCards.BiggestPayment(payeeName(it), it.amount ?: 0.0, it.date(zone))

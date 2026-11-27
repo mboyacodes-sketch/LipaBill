@@ -303,7 +303,12 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
     private val customEnd = MutableStateFlow<LocalDate?>(null)
 
     /** Full ledgers for Insights / challenge — only while those screens subscribe. */
-    private val mpesaLedger = repo.observeWallet(fuliza = false)
+    /** Payments a stored reversal undid; list rows have no SMS text to tell. */
+    private val reversedCodes = repo.observeReversedCodes()
+
+    private val mpesaLedger = combine(repo.observeWallet(fuliza = false), reversedCodes) { rows, undone ->
+        reconcileCrossRail(withoutReversedOriginals(rows, undone))
+    }.flowOn(Dispatchers.Default)
     private val fulizaLedger = repo.observeWallet(fuliza = true)
 
 
@@ -791,7 +796,10 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
      * the ledger without SMS bodies (months of history, enough for bills and payday).
      */
     /** Capped, body-free ledger the plan and Wrapped share (one DB subscription). */
-    private val planLedger = repo.observeWalletList(fuliza = false, limit = PLAN_WINDOW)
+    private val planLedger = combine(
+        repo.observeWalletList(fuliza = false, limit = PLAN_WINDOW),
+        reversedCodes
+    ) { rows, undone -> reconcileCrossRail(withoutReversedOriginals(rows, undone)) }
         .shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
 
     /** Last month told as story cards; null when there is no history for it. */
