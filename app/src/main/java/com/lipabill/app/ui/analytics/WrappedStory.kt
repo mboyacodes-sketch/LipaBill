@@ -108,7 +108,7 @@ private fun WrapCards.periodLong(): String =
     if (isWholeMonth()) "${periodName()} ${from.year}" else periodName()
 
 private fun WrapCards.priorName(): String =
-    if (isWholeMonth()) from.minusMonths(1).month.getDisplayName(TextStyle.FULL, Locale.UK) else "the stretch before"
+    if (isWholeMonth()) from.minusMonths(1).month.getDisplayName(TextStyle.FULL, Locale.UK) else "the period before"
 
 // ---------------------------------------------------------------------------------------------
 // Money wording
