@@ -271,4 +271,16 @@
     <string name="widget_safe_label">Safe to spend</string>
     <string name="widget_reveal">Show amounts</string>
     <string name="widget_hide">Hide amounts</string>
+
+    <!-- Wrapped story: money personality (WrapPersonality ids). Rail-agnostic copy. -->
+    <string name="wrap_personality_fuliza_frequent">Fuliza Frequent Flyer</string>
+    <string name="wrap_personality_fuliza_frequent_body">You leaned on Fuliza %1$d times. End of month knows your name.</string>
+    <string name="wrap_personality_family_anchor">The Family Anchor</string>
+    <string name="wrap_personality_family_anchor_body">One person got the biggest share of what you sent. Everyone knows who to call.</string>
+    <string name="wrap_personality_fee_heavy">The Fee Donor</string>
+    <string name="wrap_personality_fee_heavy_body">Charges quietly took more than 1 shilling in every 100 that left. Bigger, fewer moves would keep more.</string>
+    <string name="wrap_personality_quiet_operator">The Quiet Operator</string>
+    <string name="wrap_personality_quiet_operator_body">Most days your money stayed put. You move when it counts.</string>
+    <string name="wrap_personality_everyday_mover">The Everyday Mover</string>
+    <string name="wrap_personality_everyday_mover_body">Money in, money out, almost every day. Your phone is your wallet.</string>
 </resources>

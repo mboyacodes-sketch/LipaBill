@@ -21,6 +21,7 @@ class EngagementScheduler(private val context: Context) {
     fun ensureScheduled() {
         scheduleCheckIn(ChallengeClock.deviceZone())
         scheduleChallengeSweep()
+        scheduleWrappedReady(context, ChallengeClock.deviceZone())
     }
 
     fun scheduleChallengeSweep() {

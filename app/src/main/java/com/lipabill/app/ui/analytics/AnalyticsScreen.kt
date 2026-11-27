@@ -102,14 +102,19 @@ fun MetricsScreen(
     onOpenCheckIn: () -> Unit = {},
     onOpenTransactions: () -> Unit = {},
     onOpenBreakPayment: (Long) -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Open last month's Wrapped as soon as it is ready (from the 1st-of-month notification). */
+    openWrapped: Boolean = false,
+    onWrappedOpened: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val stats by viewModel.analyticsSummary.collectAsStateWithLifecycle()
     val plan by viewModel.moneyPlan.collectAsStateWithLifecycle()
     val insightsRails by viewModel.insightsRails.collectAsStateWithLifecycle()
     val wrapped by viewModel.wrapped.collectAsStateWithLifecycle()
+    val yearWrap by viewModel.yearWrap.collectAsStateWithLifecycle()
     var showWrapped by remember { mutableStateOf(false) }
+    var showYearWrap by remember { mutableStateOf(false) }
     DisposableEffect(viewModel) {
         onDispose { viewModel.resetInsightsFilters() }
     }
@@ -132,6 +137,12 @@ fun MetricsScreen(
     ConsumeSnackbarMessage(challengeMessage, snackbar) { viewModel.clearChallengeMessage() }
 
     LaunchedEffect(Unit) { viewModel.refreshChallenge() }
+    LaunchedEffect(openWrapped, wrapped) {
+        if (openWrapped && wrapped != null) {
+            showWrapped = true
+            onWrappedOpened()
+        }
+    }
     val earnedNow = stats.badges.filter { it.earned }.map { it.id }.toSet()
     LaunchedEffect(earnedNow) {
         if (earnedNow.isNotEmpty()) viewModel.recordBadges(earnedNow)
@@ -367,7 +378,13 @@ fun MetricsScreen(
             }
 
             if (mpesa) {
-                wrapped?.let { story -> WrappedTeaser(story, onOpen = { showWrapped = true }) }
+                // The year leads in December and January, when "your year" is the moment.
+                val yearFirst = java.time.LocalDate.now().monthValue in setOf(12, 1)
+                val month = wrapped?.let { story -> @Composable { WrappedTeaser(story, onOpen = { showWrapped = true }) } }
+                val year = yearWrap?.let { story ->
+                    @Composable { WrappedTeaser(story, onOpen = { showYearWrap = true }, eyebrow = "YEAR WRAPPED") }
+                }
+                (if (yearFirst) listOfNotNull(year, month) else listOfNotNull(month, year)).forEach { it() }
             }
 
             if (canExportPdf) {
@@ -383,6 +400,10 @@ fun MetricsScreen(
     val story = wrapped
     if (showWrapped && story != null) {
         WrappedDialog(story, onDismiss = { showWrapped = false })
+    }
+    val yearStory = yearWrap
+    if (showYearWrap && yearStory != null) {
+        WrappedDialog(yearStory, onDismiss = { showYearWrap = false })
     }
 
     if (showDatePicker) {

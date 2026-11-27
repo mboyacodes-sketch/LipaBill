@@ -346,6 +346,8 @@ class MainActivity : AppCompatActivity(),
         const val EXTRA_OPEN_CHECK_IN = "com.lipabill.app.OPEN_CHECK_IN"
         /** Money moments open Insights, where the plan and budgets live. */
         const val EXTRA_OPEN_INSIGHTS = "com.lipabill.app.OPEN_INSIGHTS"
+        /** With [EXTRA_OPEN_INSIGHTS]: open last month's Wrapped story straight away. */
+        const val EXTRA_OPEN_WRAPPED = "com.lipabill.app.OPEN_WRAPPED"
         const val EXTRA_OPEN_TICKET_ID = "com.lipabill.app.OPEN_TICKET_ID"
     }
 }
@@ -459,6 +461,9 @@ private fun AuthenticatedApp(
     var openInsights by remember {
         mutableStateOf(activity.intent?.getBooleanExtra(MainActivity.EXTRA_OPEN_INSIGHTS, false) == true)
     }
+    var openWrapped by remember {
+        mutableStateOf(activity.intent?.getBooleanExtra(MainActivity.EXTRA_OPEN_WRAPPED, false) == true)
+    }
     var openTicketId by remember {
         mutableLongStateOf(activity.intent?.getLongExtra(MainActivity.EXTRA_OPEN_TICKET_ID, 0L) ?: 0L)
     }
@@ -481,6 +486,9 @@ private fun AuthenticatedApp(
             }
             if (intent.getBooleanExtra(MainActivity.EXTRA_OPEN_INSIGHTS, false)) {
                 openInsights = true
+            }
+            if (intent.getBooleanExtra(MainActivity.EXTRA_OPEN_WRAPPED, false)) {
+                openWrapped = true
             }
             val ticketId = intent.getLongExtra(MainActivity.EXTRA_OPEN_TICKET_ID, 0L)
             if (ticketId != 0L) openTicketId = ticketId
@@ -889,6 +897,7 @@ private fun AuthenticatedApp(
         navController.navigate(Route.Metrics.path) { launchSingleTop = true }
         openInsights = false
         activity.intent?.removeExtra(MainActivity.EXTRA_OPEN_INSIGHTS)
+        activity.intent?.removeExtra(MainActivity.EXTRA_OPEN_WRAPPED)
     }
 
     LaunchedEffect(openTicketId) {
@@ -1436,7 +1445,9 @@ private fun AuthenticatedApp(
                     onBack = { navigateHome() },
                     onOpenCheckIn = { openCheckIn = true },
                     onOpenTransactions = { navigateHome() },
-                    onOpenBreakPayment = { id -> host.openLedgerReceipt(id) }
+                    onOpenBreakPayment = { id -> host.openLedgerReceipt(id) },
+                    openWrapped = openWrapped,
+                    onWrappedOpened = { openWrapped = false }
                 )
             }
         }
