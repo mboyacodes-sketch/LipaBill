@@ -26,7 +26,12 @@ if (hasGoogleServices) {
 
 android {
     namespace = "com.lipabill.app"
-    compileSdk = 37
+    // Compose BOM 2026.11+ (foundation 1.13) requires compileSdk ≥ 37.1.
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 1
+        }
+    }
 
     defaultConfig {
         applicationId = "com.lipabill.app"
