@@ -107,7 +107,7 @@ class BalanceWidget : AppWidgetProvider() {
             views.setTextViewText(
                 R.id.widget_safe,
                 when {
-                    safe == null -> "Waiting for a balance SMS"
+                    safe == null -> "Waiting for a message with your balance"
                     revealed -> "${formatKsh(safe.perDay)} a day"
                     else -> "KSh •••• a day"
                 }

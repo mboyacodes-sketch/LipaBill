@@ -15,7 +15,7 @@ class LedgerNotificationTest {
         val (title, body) = ledgerNotificationCopy(
             sample(TransactionType.RECEIVED, "JANE WANJIKU", "0712345678")
         )
-        assertEquals("M-Pesa · Received · Ksh 500.00", title)
+        assertEquals("M-PESA · Received · Ksh 500.00", title)
         assertEquals("From JANE WANJIKU", body)
     }
 

@@ -557,7 +557,7 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
 
     private fun PayMoneyUiState.computeDetailsGuidance(detailsOk: Boolean): String? {
         if (!needsPhoneStatePermission && !hasEligiblePaySim) {
-            return missingPaySimMessage.ifBlank { "A matching SIM is required to pay." }
+            return missingPaySimMessage.ifBlank { "Insert a SIM for this wallet to pay." }
         }
         if (requiresExplicitLinePick && sessionPickedSubscriptionId == null) {
             return explicitLinePickMessage ?: "Pick which SIM pays."
@@ -589,9 +589,9 @@ class PayMoneyViewModel(application: Application) : AndroidViewModel(application
     private fun PayMoneyUiState.paybillGuidance(): String =
         savedNumberGuidance(businessNumber, "paybill") {
             if (accountNumber.isBlank()) {
-                "Enter the account / shop code for this paybill."
+                "Enter the account number for this paybill."
             } else {
-                "Add paybill number and account to continue."
+                "Add the paybill and account number to continue."
             }
         }
 

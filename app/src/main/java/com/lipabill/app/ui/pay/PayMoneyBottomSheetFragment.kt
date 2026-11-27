@@ -278,7 +278,7 @@ fun PayMoneySheetContent(
         balance = shownBalance,
         paymentBlock = paymentBlock,
         blockedDirective = paymentBlock?.let { paymentAccessDirective(sheetAccess.missing) },
-        confirmLabel = "Pay Now",
+        confirmLabel = "Pay now",
         fulizaCoversShortfall = true
     )
     val pendingAmount = chrome.pendingAmount
@@ -512,7 +512,7 @@ fun PayMoneySheetContent(
     MoneyFlowConfirmDialog(
         visible = showConfirm,
         canConfirm = state.canPay,
-        confirmLabel = "Pay Now",
+        confirmLabel = "Pay now",
         summary = payVm.confirmSummary(),
         from = state.activeWallet,
         onDismiss = { showConfirm = false },

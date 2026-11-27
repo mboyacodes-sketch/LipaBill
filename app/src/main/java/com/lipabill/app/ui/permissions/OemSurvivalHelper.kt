@@ -52,17 +52,17 @@ object OemSurvivalHelper {
 
     fun coachBody(): String = when {
         isSamsung() ->
-            "Samsung can put LipaBill to sleep and pause payment fill. " +
+            "Samsung can put LipaBill to sleep, which stops payments halfway. " +
                 "Add LipaBill to Never sleeping apps (or turn off Sleeping apps), " +
                 "and allow unrestricted battery use."
         isTranssion() ->
-            "This phone’s battery saver can pause LipaBill after sleep. " +
+            "This phone’s battery saver can stop LipaBill in the background. " +
                 "Allow Auto-start and turn off battery restriction for LipaBill."
         isXiaomiFamily() ->
             "MIUI can restrict LipaBill in the background. " +
                 "Allow Autostart and set Battery saver to No restrictions."
         else ->
-            "Some phones pause LipaBill in the background so payment fill stops. " +
+            "Some phones pause LipaBill in the background, which stops payments halfway. " +
                 "Allow unrestricted battery use, then return here."
     }
 

@@ -129,7 +129,7 @@ object MoneyMoments {
         return Moment(
             key = "priceup:$key:${YearMonth.from(today)}",
             title = "$name went up ${formatKsh(rise)}",
-            body = "You paid ${formatKsh(amount)}; it is usually ${formatKsh(usual)}."
+            body = "You paid ${formatKsh(amount)}. It’s usually ${formatKsh(usual)}."
         )
     }
 

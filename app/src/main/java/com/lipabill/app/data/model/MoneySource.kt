@@ -5,7 +5,7 @@ package com.lipabill.app.data.model
  * the ledger records every rail we can parse for the selected [AppRegion].
  */
 enum class MoneySource(val label: String, val addressLikes: List<String>) {
-    MPESA("M-Pesa", listOf("%MPESA%", "%M-PESA%")),
+    MPESA("M-PESA", listOf("%MPESA%", "%M-PESA%")),
     AIRTEL_MONEY("Airtel Money", listOf("%AIRTELMONEY%", "%AIRTEL%")),
     TKASH("T-Kash", listOf("%TKASH%", "%T-KASH%")),
     EQUITEL("Equitel", listOf("%EQUITEL%")),

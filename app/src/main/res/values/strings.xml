@@ -15,7 +15,7 @@
     <!-- Keep in sync with AccessibilityServiceDisclosure.SERVICE_LABEL. -->
     <string name="accessibility_service_label">LipaBill M-Pesa payments</string>
     <string name="settings_check_update">Check for updates</string>
-    <string name="update_latest">This install is already the latest build.</string>
+    <string name="update_latest">You’re on the latest version.</string>
     <string name="update_check_failed">The update check did not finish. Try again when you have a connection.</string>
     <string name="update_debug_unavailable">Debug installs update from the computer. Release installs update over the air.</string>
     <string name="update_available_title">Update available</string>
@@ -28,7 +28,7 @@
     <string name="update_install_failed">Could not open the installer. Allow installs from LipaBill in Settings, then try again.</string>
     <string name="update_allow_installs">Allow LipaBill to install updates, then tap Check for updates again.</string>
     <string name="update_untrusted_apk">This update is not signed by LipaBill. It was not installed.</string>
-    <string name="pay_blocked_other_accessibility">Turn off every accessibility service except LipaBill before paying. Other services can read the M-Pesa PIN field.</string>
+    <string name="pay_blocked_other_accessibility">Turn off every accessibility service except LipaBill before paying. Other services can read the M-PESA PIN field.</string>
     <string name="pay_link_confirm_title">Open payment link?</string>
     <string name="pay_link_confirm_continue">Continue</string>
     <string name="pay_link_confirm_cancel">Cancel</string>
@@ -65,11 +65,11 @@
     <string name="challenge_completed_title">You kept it</string>
     <string name="challenge_completed_body">Three days with no food delivery.</string>
     <string name="challenge_ended_title">Pause ended</string>
-    <string name="challenge_ended_body">A food delivery landed. Start again when you want.</string>
+    <string name="challenge_ended_body">You ordered food delivery. Start again whenever you like.</string>
     <string name="challenge_completed_body_payee">%1$d days without %2$s.</string>
-    <string name="challenge_ended_body_payee">A payment to %1$s landed. Start again when you want.</string>
+    <string name="challenge_ended_body_payee">You paid %1$s. Start again whenever you like.</string>
     <string name="challenge_completed_body_fuliza">%1$d days without Fuliza.</string>
-    <string name="challenge_ended_body_fuliza">A Fuliza draw landed. Start again when you want.</string>
+    <string name="challenge_ended_body_fuliza">You used Fuliza. Start again whenever you like.</string>
     <string name="challenge_points_earned">+%1$d points</string>
     <string name="habits_level_label">Level %1$d</string>
     <string name="habit_level_1">Starter</string>
@@ -102,7 +102,7 @@
     <string name="habits_catchup_bill_stat">bill due</string>
     <string name="habits_catchup_safe">Your streak is safe: one missed week is forgiven.</string>
     <string name="habits_noticed_private">Learned on this phone only</string>
-    <string name="habits_noticed_read">Read from %1$d M-Pesa payments over recent months. Each check-in and each “Not me” makes the next guess sharper.</string>
+    <string name="habits_noticed_read">Read from %1$d M-PESA payments over recent months. Each check-in and each “Not me” makes the next guess sharper.</string>
     <string name="habits_noticed_empty">Nothing stands out yet. Patterns show once a few weeks of payments are in.</string>
     <string name="habits_learning_label">How well LipaBill knows your week</string>
     <string name="habits_learning_good">Good</string>
@@ -117,10 +117,10 @@
     <string name="pattern_fuliza_cta">Try a Fuliza-free week</string>
     <string name="pattern_regular_title">Often at %1$s</string>
     <string name="pattern_regular_body">%1$d payments in 30 days, %2$s in total.</string>
-    <string name="pattern_airtime_title">Airtime drip</string>
+    <string name="pattern_airtime_title">Small airtime top-ups</string>
     <string name="pattern_airtime_body">%1$d top-ups in 30 days, about %2$s each. One bundle may cost less.</string>
     <string name="challenges_title">Challenges</string>
-    <string name="challenges_suggested">Picked from your ledger</string>
+    <string name="challenges_suggested">Picked from your payments</string>
     <string name="challenges_busy">You can run up to 3 challenges at once.</string>
     <string name="challenges_at_cap">You already have 3 challenges running. Finish or wait for one to end.</string>
     <string name="challenges_already_running">Already running.</string>
@@ -150,18 +150,18 @@
     <string name="challenge_option_fuliza_body">Any Fuliza draw ends it. Spending from your balance is fine.</string>
     <string name="challenge_option_payee_body">Any payment to them ends it. Other shops are fine.</string>
     <string name="pattern_payday_title">Payday rush</string>
-    <string name="pattern_payday_body">%1$d times, about %2$s went out in the 2 days after big money came in.</string>
+    <string name="pattern_payday_body">%1$d times, about %2$s went out within 2 days of a big payment coming in.</string>
     <string name="pattern_payday_cta">Set a 48-hour payday pause</string>
     <string name="challenge_option_quiet">%1$d days with no money out</string>
     <string name="challenge_option_quiet_body">Any payment, withdrawal or airtime ends it. Moving money to savings is fine.</string>
     <string name="challenge_option_fee">%1$d days with no transaction fees</string>
     <string name="challenge_option_fee_body">Pay tills and Pochi instead of Send Money. A charged payment or a Fuliza draw ends it.</string>
-    <string name="challenge_option_payday">%1$d days of no till spending after payday</string>
+    <string name="challenge_option_payday">%1$d days without till spending after payday</string>
     <string name="challenge_option_payday_body">Bills and sending money are fine. Buy Goods and food delivery end it.</string>
     <string name="challenge_option_tills">%1$d days with no till spending</string>
     <string name="challenge_option_diy_body">Your own challenge.</string>
     <string name="challenge_completed_body_generic">%1$d days, kept.</string>
-    <string name="challenge_ended_body_generic">A payment ended it. Start again when you want.</string>
+    <string name="challenge_ended_body_generic">A payment ended it. Start again whenever you like.</string>
     <string name="diy_title">Make your own</string>
     <string name="diy_body">Pick a payee or category, a cap and a length.</string>
     <string name="diy_food">Food delivery</string>
@@ -244,7 +244,7 @@
     <string name="complete_badge_line">%1$s · %2$d of %3$d collected</string>
     <string name="complete_lock_copy">Lock what you kept? Move the money you saved so it stays there.</string>
     <string name="complete_move_savings">Share to move savings</string>
-    <string name="complete_savings_note">Lock %1$s from keeping “%2$s”. Move it to M-Shwari or your savings till so it stays put.</string>
+    <string name="complete_savings_note">Put away the %1$s you saved with “%2$s”. Move it to M-Shwari or your savings so it stays there.</string>
     <string name="complete_share">Share, no amounts</string>
     <string name="complete_next">Next challenge</string>
     <string name="complete_done">Back to Habits</string>
@@ -255,7 +255,7 @@
     <string name="recap_personality_saver">The Weekday Saver</string>
     <string name="recap_personality_saver_body">Monday to Thursday you barely spend. Weekends do the damage, and you know it.</string>
     <string name="recap_personality_steady">The Steady Hand</string>
-    <string name="recap_personality_steady_body">You keep challenges and stack quiet days. The ledger is starting to look calm.</string>
+    <string name="recap_personality_steady_body">You keep challenges and stack quiet days. Your spending is starting to look calm.</string>
     <string name="recap_personality_starter">The Fresh Start</string>
     <string name="recap_personality_starter_body">You are just getting into the rhythm. One quiet week changes the story.</string>
     <string name="recap_quiet">quiet days</string>

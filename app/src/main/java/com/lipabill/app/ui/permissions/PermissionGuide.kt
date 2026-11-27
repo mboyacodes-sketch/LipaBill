@@ -28,9 +28,9 @@ enum class PermissionLesson(
         allowLabel = "Allow camera"
     ),
     Notifications(
-        title = "Hear when money moves",
+        title = "Get alerts when money moves",
         body = "LipaBill can notify you when a confirmation arrives so you can open the receipt " +
-            "without hunting SMS. It also alerts if a payment you started needs you. " +
+            "without digging through your messages. It also alerts you if a payment you started needs you. " +
             "You can use the app without alerts.",
         allowLabel = "Allow alerts"
     ),
@@ -42,7 +42,7 @@ enum class PermissionLesson(
     ),
     OemSurvival(
         title = "Keep payments ready",
-        body = "Some phones put LipaBill to sleep and pause payment fill. " +
+        body = "Some phones put LipaBill to sleep, which stops payments halfway. " +
             "Allow unrestricted battery use and Never sleeping apps when offered.",
         allowLabel = "Open phone settings"
     )

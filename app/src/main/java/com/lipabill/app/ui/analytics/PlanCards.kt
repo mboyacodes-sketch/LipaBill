@@ -163,7 +163,7 @@ private fun SafeToSpendBlock(safe: SafeToSpend?, ready: Boolean) {
         if (safe == null) {
             Text(
                 // Until the plan has read the ledger, say so instead of implying no balance.
-                if (!ready) "Working it out…" else "Shows once a wallet balance arrives by SMS.",
+                if (!ready) "Working it out…" else "Shows once a message with your balance arrives.",
                 style = HomeType.body,
                 color = Ink
             )
@@ -271,7 +271,7 @@ private fun GoalRow(progress: GoalProgress, onEdit: () -> Unit) {
 @Composable
 internal fun CategoryChangesCard(changes: List<CategoryChange>) {
     if (changes.isEmpty()) return
-    InsightCard(title = "Compared with last period", caption = "Spend by category against the same length of time before") {
+    InsightCard(title = "Compared with last period", caption = "Spending by category, compared with the same length of time before") {
         changes.forEach { change ->
             val up = change.now > change.before
             val percent = change.percent
@@ -447,7 +447,7 @@ internal fun WatchingCard(
     onRecurringChoice: (key: String, confirmed: Boolean) -> Unit = { _, _ -> }
 ) {
     if (changes.isEmpty() && trends.isEmpty() && potentialRecurring.isEmpty()) return
-    InsightCard(title = "Watching what repeats", caption = "Bills and usual shops that changed") {
+    InsightCard(title = "Changes to regular payments", caption = "Bills and usual shops that changed price, started, or stopped") {
         potentialRecurring.forEach { pattern ->
             Column(verticalArrangement = Arrangement.spacedBy(Space.gap)) {
                 Text(

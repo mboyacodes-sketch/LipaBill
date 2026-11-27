@@ -93,18 +93,18 @@ object FirstRunWizard {
         ),
         IntroSlide(
             "Small steps.\nBigger plans.",
-            "Set a money plan, keep passes close, and see what your money became."
+            "Plan your money, keep your tickets handy, and see where it all goes."
         )
     )
 
     /** Sits where a login link would — LipaBill has no account to sign in to. */
-    const val INTRO_FOOTER = "Encrypted on this phone, not in a LipaBill cloud."
+    const val INTRO_FOOTER = "Encrypted and kept on this phone. Nothing is stored on LipaBill servers."
 
     /** Small caps label above each setup title. Permission asks can all be skipped. */
     fun eyebrow(page: FirstRunPage): String = when (page) {
         FirstRunPage.Welcome -> ""
         FirstRunPage.Region -> "Your starting point"
-        FirstRunPage.Providers -> "Your picture"
+        FirstRunPage.Providers -> "Your accounts"
         FirstRunPage.OemSurvival -> "Stay ready"
         else -> "Optional"
     }
@@ -124,17 +124,17 @@ object FirstRunWizard {
 
     const val REGION_TITLE = "Where is this phone?"
     const val REGION_BODY =
-        "The picture is built from wallets and banks in that country. " +
+        "LipaBill tracks wallets and banks from that country. " +
             "We'll use this SIM when we can. You can change this in Settings."
 
-    const val PROVIDERS_TITLE = "Who should be in the picture?"
+    const val PROVIDERS_TITLE = "Which wallets and banks do you use?"
     const val PROVIDERS_BODY =
-        "Wallets match the SIMs in this phone. Banks anytime. Up to 5 — change in Settings."
+        "Wallets are matched to the SIMs in this phone. Add any banks you use. Pick up to 5; you can change this in Settings."
 
     const val PHONE_TITLE = "Phone for Send and Pay"
     const val PHONE_BODY =
         "LipaBill checks which SIMs are in this phone and which numbers they carry, " +
-            "then places the payment call you confirm. Call history is not read, and your PIN is not stored."
+            "then dials the payments you confirm. Call history is not read, and your PIN is not stored."
 
     val SMS_TITLE: String = SmsPermissionDisclosure.TITLE
     val ACCESSIBILITY_TITLE: String = AccessibilityServiceDisclosure.TITLE

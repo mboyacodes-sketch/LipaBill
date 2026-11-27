@@ -82,12 +82,12 @@ fun RepeatConfirmScreen(
     val guidance = when {
         tx == null -> "Transaction not found."
         !state.canPay ->
-            "This payment cannot be started automatically."
+            "This payment can't be repeated automatically."
         state.needsPhoneStatePermission ->
             "Allow phone access to use your default SIM."
         missingPaySim ->
             state.missingPaySimMessage.ifBlank {
-                "A matching SIM for ${state.region.label} is required to send."
+                "You need a ${state.region.label} SIM in this phone to send."
             }
         needsSimSetup && state.requiresExplicitLinePick ->
             state.explicitLinePickMessage ?: "Pick which SIM pays."
@@ -155,7 +155,7 @@ fun RepeatConfirmScreen(
                     )
                 }
             },
-            ctaLabel = setupAction ?: "Pay Now",
+            ctaLabel = setupAction ?: "Pay now",
             ctaEnabled = !state.dialStarted && !missingPaySim && tx != null && (
                 setupAction != null || (state.amountValid && state.plan != null && state.canPay)
                 ),
@@ -197,7 +197,7 @@ fun RepeatConfirmScreen(
         MoneyConfirmDialog(
             amountLabel = formatKesMoney(pendingAmount),
             detail = detail,
-            confirmLabel = "Pay Now",
+            confirmLabel = "Pay now",
             from = state.activeWallet,
             onDismiss = { showConfirm = false },
             onConfirm = {
