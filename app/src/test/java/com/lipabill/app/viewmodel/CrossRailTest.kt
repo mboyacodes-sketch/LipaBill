@@ -124,6 +124,17 @@ class CrossRailTest {
     }
 
     @Test
+    fun homeSourceChipAfterReconcileHidesBankTwin() {
+        // Home loads all rails, reconciles, then the History chip filters — same as Insights.
+        val mpesa = tx(MoneySource.MPESA, PAYBILL, 2_500.0, "EQUITY PAYBILL", cost = 23.0)
+        val twin = tx(MoneySource.EQUITY, BUY_GOODS, 2_500.0, "JAVA HOUSE", second = 20)
+        val equityOnly = tx(MoneySource.EQUITY, SENT, 400.0, "FRIEND", minute = 3)
+        val home = reconcileCrossRail(listOf(mpesa, twin, equityOnly))
+        assertEquals(listOf(equityOnly), home.filter { it.source == MoneySource.EQUITY })
+        assertEquals(listOf(mpesa), home.filter { it.source == MoneySource.MPESA })
+    }
+
+    @Test
     fun moneyPictureLedgerIsIdempotentAndDropsTwins() {
         val ledger = listOf(
             tx(MoneySource.MPESA, PAYBILL, 1_200.0, "SHOP", cost = 10.0),

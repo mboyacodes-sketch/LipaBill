@@ -15,7 +15,8 @@ import kotlin.math.abs
  *   The user's own money moved; neither leg is spend or income.
  *
  * Save-time rules in ConfirmationIngestion already drop the common bank mirrors. This
- * read-time pass catches what they miss, so Home, Insights, Habits and Wrapped agree.
+ * read-time pass catches what they miss, so Home (list + search), Insights, Habits and
+ * Wrapped agree on one row per payment.
  */
 data class CrossRailPair(val keep: MpesaTransaction, val other: MpesaTransaction, val kind: Kind) {
     enum class Kind { TWIN, OWN_TRANSFER }
