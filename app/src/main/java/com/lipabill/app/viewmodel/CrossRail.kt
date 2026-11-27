@@ -15,8 +15,9 @@ import kotlin.math.abs
  *   The user's own money moved; neither leg is spend or income.
  *
  * Save-time rules in ConfirmationIngestion already drop the common bank mirrors. This
- * read-time pass catches what they miss, so Home (list + search), Insights, Habits and
- * Wrapped agree on one row per payment.
+ * read-time pass catches what they miss so Insights, Habits, Wrapped, and Home **All**
+ * agree on one row per payment. A single Home History chip still shows that rail raw
+ * (see [homeHistoryLedger]) so bank statements stay visible when you filter to a bank.
  */
 data class CrossRailPair(val keep: MpesaTransaction, val other: MpesaTransaction, val kind: Kind) {
     enum class Kind { TWIN, OWN_TRANSFER }
@@ -170,3 +171,17 @@ fun reconcileCrossRail(txs: List<MpesaTransaction>): List<MpesaTransaction> {
  */
 fun moneyPictureLedger(txs: List<MpesaTransaction>): List<MpesaTransaction> =
     reconcileCrossRail(withoutReversals(txs))
+
+/**
+ * Home history rows: drop reversed originals always. Drop bank/wallet twins only when the
+ * History chip is **All** — a single bank or wallet chip must still show every statement for
+ * that rail (including advisories that twin an M-PESA receipt).
+ */
+fun homeHistoryLedger(
+    rows: List<MpesaTransaction>,
+    undone: Set<String>,
+    chip: MoneySource?
+): List<MpesaTransaction> {
+    val cleaned = withoutReversedOriginals(rows, undone)
+    return if (chip == null) reconcileCrossRail(cleaned) else cleaned
+}
