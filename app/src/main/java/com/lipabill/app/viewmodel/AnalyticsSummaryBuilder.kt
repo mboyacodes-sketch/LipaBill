@@ -316,7 +316,7 @@ private fun resolveBounds(
     AnalyticsRange.ALL -> Triple(LocalDate.of(2010, 1, 1), today, "All time")
 }
 
-private fun flowByDate(
+internal fun flowByDate(
     txs: List<MpesaTransaction>,
     zone: ZoneId,
     account: WalletAccount
@@ -345,7 +345,7 @@ private fun flowByDate(
  * Money: in vs out across the enabled wallets and banks.
  * Fuliza: amount drawn vs access fees. Outstanding stays on the balance, not in these totals.
  */
-private fun flowTotals(
+internal fun flowTotals(
     txs: Iterable<MpesaTransaction>,
     account: WalletAccount
 ): Pair<Double, Double> {
