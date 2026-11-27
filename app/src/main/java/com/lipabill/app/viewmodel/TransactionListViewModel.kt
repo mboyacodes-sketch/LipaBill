@@ -1024,17 +1024,18 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         }
     }
 
-    private companion object {
-        const val SEARCH_DEBOUNCE_MS = 400L
+    companion object {
+        private const val SEARCH_DEBOUNCE_MS = 400L
         /** Ignore single-character queries (too broad on an encrypted ledger). */
-        const val SEARCH_MIN_CHARS = 2
+        private const val SEARCH_MIN_CHARS = 2
         /** Ledger rows the money plan reads: months of history for bills and payday. */
-        const val PLAN_WINDOW = 3000
-        const val WRAP_FULIZA_WINDOW = 500
-        const val HOME_PAGE_SIZE = 80
+        internal const val PLAN_WINDOW = 3000
+        /** Fuliza rows Wrapped reads for a month (a month holds far fewer). */
+        internal const val WRAP_FULIZA_WINDOW = 500
+        private const val HOME_PAGE_SIZE = 80
         /** Max Home search hits — enough to scroll, small enough to stay snappy. */
-        const val SEARCH_RESULT_LIMIT = 80
-        val DAY_GROUP_FORMAT: DateTimeFormatter =
+        private const val SEARCH_RESULT_LIMIT = 80
+        private val DAY_GROUP_FORMAT: DateTimeFormatter =
             DateTimeFormatter.ofPattern("EEE, d MMM yyyy")
     }
 

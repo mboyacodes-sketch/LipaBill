@@ -4,6 +4,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import com.lipabill.app.ui.analytics.safeToSpendDetail
 import com.lipabill.app.ui.util.formatKsh
 import com.lipabill.app.ui.privacy.recordingPrivacyCover
+import com.lipabill.app.viewmodel.MonthFlow
 import com.lipabill.app.viewmodel.SafeToSpend
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -225,6 +226,7 @@ fun TransactionListScreen(
     val walletPick = BalanceWalletPick(
         // Always show under the cards; amount stays visible (not balance-masked).
         safe = plan.safe,
+        monthFlow = plan.monthFlow,
         onOpenPlan = onExchange,
         wallets = state.balanceWallets,
         cards = state.walletCards,
@@ -907,6 +909,8 @@ private fun HomeSourceFilter(
 private data class BalanceWalletPick(
     /** Safe to spend until payday, shown under the cards. */
     val safe: SafeToSpend? = null,
+    /** This month's money in and out, shown under safe to spend. */
+    val monthFlow: MonthFlow? = null,
     val onOpenPlan: () -> Unit = {},
     val wallets: List<MoneySource> = emptyList(),
     val cards: List<WalletCardUi> = emptyList(),
@@ -935,6 +939,7 @@ private fun BalanceSection(
         WalletDeck(balance, account, onAccountSelected, onOpenProfile, Modifier, showFuliza, fulizaDue, walletPick)
         SafeToSpendLine(
             safe = walletPick.safe,
+            monthFlow = walletPick.monthFlow,
             onClick = walletPick.onOpenPlan,
             modifier = Modifier.padding(top = 10.dp)
         )
@@ -946,7 +951,12 @@ private fun BalanceSection(
  * tap opens the plan in Insights. Placeholder when no wallet balance SMS yet.
  */
 @Composable
-private fun SafeToSpendLine(safe: SafeToSpend?, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun SafeToSpendLine(
+    safe: SafeToSpend?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    monthFlow: MonthFlow? = null
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -979,6 +989,16 @@ private fun SafeToSpendLine(safe: SafeToSpend?, onClick: () -> Unit, modifier: M
                     color = Mute,
                     maxLines = 2,
                     modifier = Modifier.recordingPrivacyCover()
+                )
+            }
+            monthFlow?.let { flow ->
+                Text(
+                    "This month · in ${formatKsh(flow.moneyIn)} · out ${formatKsh(flow.moneyOut)}",
+                    style = HomeType.caption,
+                    color = Ink,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    modifier = Modifier.padding(top = 4.dp).recordingPrivacyCover()
                 )
             }
         }

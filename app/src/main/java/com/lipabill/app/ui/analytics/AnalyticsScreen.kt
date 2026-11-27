@@ -102,7 +102,10 @@ fun MetricsScreen(
     onOpenCheckIn: () -> Unit = {},
     onOpenTransactions: () -> Unit = {},
     onOpenBreakPayment: (Long) -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Open last month's Wrapped as soon as it is ready (from the 1st-of-month notification). */
+    openWrapped: Boolean = false,
+    onWrappedOpened: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val stats by viewModel.analyticsSummary.collectAsStateWithLifecycle()
@@ -134,6 +137,12 @@ fun MetricsScreen(
     ConsumeSnackbarMessage(challengeMessage, snackbar) { viewModel.clearChallengeMessage() }
 
     LaunchedEffect(Unit) { viewModel.refreshChallenge() }
+    LaunchedEffect(openWrapped, wrapped) {
+        if (openWrapped && wrapped != null) {
+            showWrapped = true
+            onWrappedOpened()
+        }
+    }
     val earnedNow = stats.badges.filter { it.earned }.map { it.id }.toSet()
     LaunchedEffect(earnedNow) {
         if (earnedNow.isNotEmpty()) viewModel.recordBadges(earnedNow)

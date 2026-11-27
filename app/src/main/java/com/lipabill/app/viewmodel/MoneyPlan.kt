@@ -303,10 +303,24 @@ fun parseGoals(encoded: String?): List<SavingsGoal> {
 /** Everything the plan surfaces show. */
 data class MoneyPlanUi(
     val safe: SafeToSpend? = null,
+    /** Money in and out from the 1st of this month to today; null before any activity. */
+    val monthFlow: MonthFlow? = null,
     val budgets: List<BudgetStatus> = emptyList(),
     val goals: List<GoalProgress> = emptyList(),
     val isReady: Boolean = false
 )
+
+/** Month-to-date money in and out (fees count as out; savings moves and Fuliza draws do not). */
+data class MonthFlow(val moneyIn: Double, val moneyOut: Double)
+
+/** [MonthFlow] for the month [today] falls in, or null when nothing moved yet. */
+fun monthToDateFlow(txs: List<MpesaTransaction>, today: LocalDate, zone: ZoneId): MonthFlow? {
+    val first = today.withDayOfMonth(1)
+    val inMonth = txs.filter { val d = it.date(zone); !d.isBefore(first) && !d.isAfter(today) }
+    if (inMonth.isEmpty()) return null
+    val (moneyIn, moneyOut) = flowTotals(inMonth, WalletAccount.MPESA)
+    return MonthFlow(moneyIn, moneyOut)
+}
 
 /** Balance across SIM-linked wallets (or the primary one), minus what is due, plus budgets and goals. */
 internal fun buildMoneyPlan(
@@ -335,6 +349,7 @@ internal fun buildMoneyPlan(
     val balance = if (known.isEmpty()) null else known.sum()
     return MoneyPlanUi(
         safe = safeToSpend(balance, regulars, estimateNextPayday(txs, today, zone), today),
+        monthFlow = monthToDateFlow(txs, today, zone),
         budgets = budgetStatuses(budgets, txs, overrides, today, zone),
         goals = goalProgress(goals, txs, today),
         isReady = true
