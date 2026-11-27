@@ -1,17 +1,14 @@
 package com.lipabill.app.ui.permissions
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -27,13 +24,11 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -54,12 +49,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -69,22 +61,17 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lipabill.app.data.model.AppRegion
 import com.lipabill.app.data.model.MoneySource
-import com.lipabill.app.data.model.RegionGuess
 import com.lipabill.app.data.model.defaultLedgerSources
 import com.lipabill.app.data.model.detectAppRegion
 import com.lipabill.app.data.model.groupedProviderCatalog
-import com.lipabill.app.data.model.hint
 import com.lipabill.app.data.model.lockedLedgerSources
 import com.lipabill.app.data.model.providerCatalog
-import com.lipabill.app.data.model.regionsPresentOnSims
-import com.lipabill.app.data.model.selectableAppRegions
 import com.lipabill.app.data.model.simWalletNumberHints
 import com.lipabill.app.data.model.toggleLedgerSource
 import com.lipabill.app.ui.ProviderPicker
 import com.lipabill.app.ui.privacy.RecordingCapture
 import com.lipabill.app.ui.theme.Accent
 import com.lipabill.app.ui.theme.Canvas
-import com.lipabill.app.ui.theme.CardWhite
 import com.lipabill.app.ui.theme.Hairline
 import com.lipabill.app.ui.theme.Ink
 import com.lipabill.app.ui.theme.Mute
@@ -99,10 +86,11 @@ import kotlinx.coroutines.launch
 private const val PAGE_TURN_MS = 180
 
 /**
- * Consent wizard. Welcome (three-slide intro) → Region → Phone (Send/Pay) →
- * Providers → SMS → (Accessibility). Phone before Providers so wallet chips
- * match SIMs. Later visits skip Welcome; Camera / Notifications / Hibernation
- * open as one page when needed.
+ * Consent wizard. Welcome (three-slide intro) → Phone (Send/Pay) →
+ * Providers → SMS → (Accessibility). Region is taken from the SIM / phone
+ * number — no country picker. Phone before Providers so wallet chips match
+ * SIMs. Later visits skip Welcome; Camera / Notifications / Hibernation open
+ * as one page when needed.
  */
 @Composable
 fun FirstRunSetupScreen(
@@ -139,11 +127,6 @@ fun FirstRunSetupScreen(
 ) {
     val context = LocalContext.current
     val regionGuess = remember { context.detectAppRegion() }
-    val simRegions = remember { context.regionsPresentOnSims() }
-    val selectableRegions = remember(region, simRegions) {
-        selectableAppRegions(simRegions, region)
-    }
-    var userChoseRegion by remember { mutableStateOf(false) }
     // Primary + on-phone MNOs + common banks when SIM access is known.
     var selectedProviders by remember(region) {
         mutableStateOf(defaultLedgerSources(region))
@@ -165,8 +148,9 @@ fun FirstRunSetupScreen(
         }
         selectedProviders = defaultLedgerSources(region, onPhoneWallets = onPhone)
     }
+    // Country comes from SIM / network / locale — no wizard picker.
     LaunchedEffect(firstRun, regionGuess) {
-        if (!firstRun || userChoseRegion) return@LaunchedEffect
+        if (!firstRun) return@LaunchedEffect
         val guessed = regionGuess?.region ?: return@LaunchedEffect
         if (guessed != region) onRegionSelected(guessed)
     }
@@ -252,7 +236,7 @@ fun FirstRunSetupScreen(
 
     val page = pages[pager.currentPage]
     val intro = rememberPagerState(pageCount = { FirstRunWizard.INTRO_SLIDES.size })
-    val regionIndex = pages.indexOf(FirstRunPage.Region).coerceAtLeast(0)
+    val firstSetupIndex = pages.indexOfFirst { it != FirstRunPage.Welcome }.coerceAtLeast(0)
     fun back() {
         if (pager.currentPage > 0) goTo(pager.currentPage - 1) else if (!firstRun) onFinished()
     }
@@ -313,23 +297,16 @@ fun FirstRunSetupScreen(
                                 )
                             }
                         } else {
-                            goTo(regionIndex)
+                            goTo(firstSetupIndex)
                         }
                     },
-                    onSkip = { onDebugSkipToApp?.invoke() ?: goTo(regionIndex) },
+                    onSkip = { onDebugSkipToApp?.invoke() ?: goTo(firstSetupIndex) },
                     skipLabel = if (onDebugSkipToApp != null) "Skip to app" else "Skip"
                 )
             } else {
                 WizardPageBody(
                     page = pages[index],
                     region = region,
-                    regionGuess = regionGuess,
-                    selectableRegions = selectableRegions,
-                    onRegionSelected = { picked ->
-                        if (picked !in selectableRegions) return@WizardPageBody
-                        userChoseRegion = true
-                        onRegionSelected(picked)
-                    },
                     selectedProviders = selectedProviders,
                     lockedProviders = lockedProviders,
                     providerNumberHints = providerNumberHints,
@@ -363,7 +340,6 @@ fun FirstRunSetupScreen(
             ) {
                 WizardActions(
                     page = page,
-                    region = region,
                     providersPicked = selectedProviders.isNotEmpty(),
                     smsGranted = smsGranted,
                     permanentlyDenied = permanentlyDenied,
@@ -478,9 +454,6 @@ private fun questionTitle() = MaterialTheme.typography.displayLarge.let {
 private fun WizardPageBody(
     page: FirstRunPage,
     region: AppRegion = AppRegion.DEFAULT,
-    regionGuess: RegionGuess? = null,
-    selectableRegions: Set<AppRegion> = AppRegion.entries.toSet(),
-    onRegionSelected: (AppRegion) -> Unit = {},
     selectedProviders: Set<MoneySource> = emptySet(),
     lockedProviders: Map<MoneySource, String> = emptyMap(),
     providerNumberHints: Map<MoneySource, String> = emptyMap(),
@@ -498,8 +471,6 @@ private fun WizardPageBody(
     val (title, body) = when (page) {
         FirstRunPage.Welcome ->
             FirstRunWizard.WELCOME_TITLE to FirstRunWizard.WELCOME_BODY
-        FirstRunPage.Region ->
-            FirstRunWizard.REGION_TITLE to FirstRunWizard.REGION_BODY
         FirstRunPage.Providers ->
             FirstRunWizard.PROVIDERS_TITLE to FirstRunWizard.PROVIDERS_BODY
         FirstRunPage.Sms -> FirstRunWizard.SMS_TITLE to FirstRunWizard.smsBody(showRestrictedSettingsHelp)
@@ -516,11 +487,6 @@ private fun WizardPageBody(
     }
     // Granted / state lines sit in the info note under the content.
     val note: String? = when (page) {
-        FirstRunPage.Region -> when {
-            selectableRegions.size < AppRegion.entries.size ->
-                "Only countries of the SIMs in this phone."
-            else -> regionGuess?.takeIf { it.region == region }?.hint()
-        }
         FirstRunPage.Providers ->
             lockedProviders.values.distinct().joinToString("\n").ifBlank { null }
         FirstRunPage.Sms -> if (smsGranted) {
@@ -550,8 +516,8 @@ private fun WizardPageBody(
         }
         else -> null
     }
-    // Region + rails stay one viewport; other pages may scroll for long copy.
-    val fitOnePage = page == FirstRunPage.Region || page == FirstRunPage.Providers
+    // Providers stay one viewport; other pages may scroll for long copy.
+    val fitOnePage = page == FirstRunPage.Providers
     val topGap = if (fitOnePage) Space.block else Space.section
     val titleGap = if (fitOnePage) Space.block else Space.block * 2
     Column(
@@ -583,31 +549,6 @@ private fun WizardPageBody(
                     MaterialTheme.typography.bodyLarge
                 },
                 color = Mute
-            )
-        }
-        if (page == FirstRunPage.Region) {
-            Spacer(modifier = Modifier.height(Space.section))
-            OptionGrid(
-                items = AppRegion.entries,
-                selected = { it == region },
-                enabled = { it in selectableRegions },
-                onClick = onRegionSelected,
-                role = Role.RadioButton,
-                lead = { option ->
-                    Text(
-                        text = option.flagEmoji,
-                        fontFamily = FontFamily.Default,
-                        fontSize = 20.sp
-                    )
-                },
-                title = { it.label },
-                caption = { option ->
-                    when {
-                        option !in selectableRegions -> "No SIM for this country"
-                        option.canSendPay -> "History, send and pay"
-                        else -> "History and passes"
-                    }
-                }
             )
         }
         if (page == FirstRunPage.Providers) {
@@ -647,138 +588,6 @@ private fun WizardPageBody(
         }
         if (!fitOnePage) {
             Spacer(modifier = Modifier.height(Space.section))
-        }
-    }
-}
-
-/** Two-up selectable cards with a corner check, like the reference's "do first" grid. */
-@Composable
-private fun <T> OptionGrid(
-    items: List<T>,
-    selected: (T) -> Boolean,
-    onClick: (T) -> Unit,
-    role: Role,
-    lead: @Composable (T) -> Unit,
-    title: (T) -> String,
-    caption: (T) -> String?,
-    enabled: (T) -> Boolean = { true }
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(Space.block * 2)) {
-        items.chunked(2).forEach { row ->
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(Space.block * 2),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min)
-            ) {
-                row.forEach { item ->
-                    val canSelect = enabled(item)
-                    OptionCard(
-                        selected = selected(item),
-                        enabled = canSelect,
-                        onClick = { if (canSelect) onClick(item) },
-                        role = role,
-                        lead = { lead(item) },
-                        title = title(item),
-                        caption = caption(item),
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                    )
-                }
-                if (row.size == 1) Spacer(modifier = Modifier.weight(1f))
-            }
-        }
-    }
-}
-
-@Composable
-private fun OptionCard(
-    selected: Boolean,
-    onClick: () -> Unit,
-    role: Role,
-    lead: @Composable () -> Unit,
-    title: String,
-    caption: String?,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true
-) {
-    val shape = RoundedCornerShape(18.dp)
-    val edge by animateColorAsState(
-        when {
-            !enabled -> Hairline
-            selected -> Accent
-            else -> Hairline
-        },
-        label = "optionEdge"
-    )
-    val leadFill by animateColorAsState(
-        when {
-            !enabled -> SoftBlue.copy(alpha = 0.45f)
-            selected -> Accent.copy(alpha = 0.14f)
-            else -> SoftBlue
-        },
-        label = "optionLead"
-    )
-    Column(
-        modifier = modifier
-            .clip(shape)
-            .background(CardWhite)
-            .border(if (selected && enabled) 1.5.dp else 1.dp, edge, shape)
-            .then(
-                if (enabled) Modifier.selectable(selected = selected, role = role, onClick = onClick)
-                else Modifier
-            )
-            .padding(14.dp)
-            .then(if (enabled) Modifier else Modifier.alpha(0.55f))
-    ) {
-        Row(verticalAlignment = Alignment.Top) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(leadFill),
-                contentAlignment = Alignment.Center
-            ) {
-                lead()
-            }
-            Spacer(modifier = Modifier.weight(1f))
-            if (enabled) CheckDot(selected)
-        }
-        Spacer(modifier = Modifier.height(Space.section))
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = if (enabled) Ink else Mute,
-            maxLines = 1
-        )
-        if (caption != null) {
-            Text(
-                text = caption,
-                style = MaterialTheme.typography.labelMedium,
-                color = Mute
-            )
-        }
-    }
-}
-
-@Composable
-private fun CheckDot(on: Boolean) {
-    Box(
-        modifier = Modifier
-            .size(20.dp)
-            .clip(CircleShape)
-            .background(if (on) Accent else Color.Transparent)
-            .border(1.dp, if (on) Accent else Hairline, CircleShape),
-        contentAlignment = Alignment.Center
-    ) {
-        if (on) {
-            Icon(
-                Icons.Filled.Check,
-                contentDescription = null,
-                tint = OnAccent,
-                modifier = Modifier.size(13.dp)
-            )
         }
     }
 }
@@ -869,7 +678,6 @@ private fun StepFooter(step: String, onSkip: () -> Unit) {
 @Composable
 private fun WizardActions(
     page: FirstRunPage,
-    region: AppRegion = AppRegion.DEFAULT,
     providersPicked: Boolean = true,
     smsGranted: Boolean,
     permanentlyDenied: Boolean,
@@ -903,7 +711,6 @@ private fun WizardActions(
     Column(modifier = Modifier.fillMaxWidth()) {
         when (page) {
             FirstRunPage.Welcome -> WizardPrimaryButton("Next", onNext)
-            FirstRunPage.Region -> WizardPrimaryButton("Continue with ${region.label}", onNext)
             FirstRunPage.Providers ->
                 WizardPrimaryButton("Use these", onNext, enabled = providersPicked)
             FirstRunPage.Sms -> {

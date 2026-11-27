@@ -11,8 +11,7 @@ import com.lipabill.app.social.SocialLink
  *
  * Maestro appId: `com.lipabill.app` — see `.maestro/promo.yaml`
  * Home: Send, Pay, Insights, Passes, Transactions
- * Wizard: Next, Continue with Kenya, Keep these on the picture,
- * Continue without SMS, Not now, Continue without
+ * Wizard: Next, Use these, Continue without SMS, Not now, Continue without
  * Maestro may walk the DEBUG demo payment (steps → PIN → Confirmed) —
  * that path never dials USSD and never stores PIN digits.
  */
