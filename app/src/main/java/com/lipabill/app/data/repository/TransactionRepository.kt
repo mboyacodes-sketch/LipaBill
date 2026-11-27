@@ -18,6 +18,7 @@ import com.lipabill.app.data.sms.FailureLedgerMatch
 import com.lipabill.app.data.sms.FailureSms
 import com.lipabill.app.data.sms.InboxScan
 import com.lipabill.app.data.sms.LedgerNotifier
+import com.lipabill.app.data.sms.KenyanConfirmationFilter
 import com.lipabill.app.data.sms.MpesaSmsFilter
 import com.lipabill.app.data.sms.SmsInboxReader
 import com.lipabill.app.ui.util.formatKes
@@ -28,8 +29,10 @@ import com.lipabill.app.viewmodel.payeeKey
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import com.lipabill.app.viewmodel.reversedOriginalCode
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -426,6 +429,64 @@ class TransactionRepository(
         reclassifyBankDirectionsIfNeeded()
         reclassifyBankDetailsIfNeeded()
         purgeBankWalletMirrorsIfNeeded()
+        repairImportAuditIfNeeded()
+    }
+
+    /**
+     * Codes of payments a stored reversal undid. List rows carry no SMS text, so money
+     * pictures use this to drop the original alongside the reversal.
+     */
+    fun observeReversedCodes(): Flow<Set<String>> =
+        dao.observeReversalBodies().map { bodies ->
+            bodies.mapNotNullTo(HashSet()) { body ->
+                reversedOriginalCode(
+                    MpesaTransaction(code = "", type = TransactionType.REVERSED, amount = null, counterpartyName = null,
+                        counterpartyPhone = null, timestampMillis = 0L, balance = null, cost = null, rawBody = body)
+                )
+            }
+        }.flowOn(Dispatchers.Default)
+
+    /**
+     * Fixes found by re-reading a real inbox against the ledger:
+     * - "Reversal of transaction … successfully reversed" stored as Sent / Received → Reversed
+     * - Pochi la Biashara payments (a send with no phone number) stored as Sent → Pochi
+     * - Airtel "You have received 20 Airtime from …" stored as money received → removed
+     */
+    suspend fun repairImportAuditIfNeeded(): Int = withContext(Dispatchers.IO) {
+        if (securePreferences.importAuditRepairDone) return@withContext 0
+        var fixed = 0
+        val drop = ArrayList<Long>()
+        for (row in dao.getAllForClassification()) {
+            if (row.rawBody.isBlank()) continue
+            if (row.source != MoneySource.MPESA) {
+                if (KenyanConfirmationFilter.isAirtimeGift(row.rawBody)) {
+                    drop += row.id
+                    continue
+                }
+                // Bank / Airtel kinds drifted as the parser improved; only re-label within the
+                // same direction (a send that is really a till payment), never flip in/out.
+                val next = runCatching {
+                    KenyanConfirmationParser.parse(row.rawBody, row.timestampMillis, row.source)
+                }.getOrNull() ?: continue
+                if (next.type != row.type && next.type != TransactionType.UNKNOWN &&
+                    next.type.isOutgoing() == row.type.isOutgoing()
+                ) {
+                    dao.updateParty(row.id, next.type, next.counterpartyName, next.counterpartyPhone)
+                    fixed++
+                }
+                continue
+            }
+            if (!MpesaSmsFilter.isTransactionConfirmation(row.rawBody)) continue
+            val reparsed = runCatching { MpesaSmsParser.parse(row.rawBody, row.timestampMillis) }.getOrNull() ?: continue
+            val target = reparsed.type
+            if (target == row.type) continue
+            if (target != TransactionType.REVERSED && target != TransactionType.POCHI) continue
+            dao.updateParty(row.id, target, reparsed.counterpartyName, reparsed.counterpartyPhone)
+            fixed++
+        }
+        if (drop.isNotEmpty()) dao.deleteByIds(drop)
+        securePreferences.importAuditRepairDone = true
+        fixed + drop.size
     }
 
     private suspend fun importNewConfirmations(forceFullHistory: Boolean = false): Int {

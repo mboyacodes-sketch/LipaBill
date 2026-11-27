@@ -308,6 +308,10 @@ interface TransactionDao {
     @Query("SELECT id, code, rawBody, source FROM transactions")
     suspend fun getAllForPurge(): List<TransactionPurgeRow>
 
+    /** SMS text of every reversal, to find which payments they undid. */
+    @Query("SELECT rawBody FROM transactions WHERE type = 'REVERSED'")
+    fun observeReversalBodies(): Flow<List<String>>
+
     @Query("DELETE FROM transactions WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<Long>)
 

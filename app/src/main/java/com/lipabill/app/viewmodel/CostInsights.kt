@@ -21,7 +21,7 @@ import kotlin.math.roundToLong
 
 /** "original transaction QK12ABC34D in favour of ... has been reversed". */
 private val REVERSED_ORIGINAL = Regex(
-    "original\\s+transaction\\s+([A-Z0-9]{8,12})",
+    "(?:original|reversal\\s+of)\\s+transaction\\s+([A-Z0-9]{8,12})",
     RegexOption.IGNORE_CASE
 )
 
@@ -45,6 +45,11 @@ fun withoutReversals(txs: List<MpesaTransaction>): List<MpesaTransaction> {
         tx.type != TransactionType.REVERSED && tx.code.uppercase(Locale.US) !in undone
     }
 }
+
+/** Drops reversals and the payments in [undone] (codes from [reversedOriginalCode] of stored reversals). */
+fun withoutReversedOriginals(txs: List<MpesaTransaction>, undone: Set<String>): List<MpesaTransaction> =
+    if (undone.isEmpty()) txs
+    else txs.filter { it.code.uppercase(Locale.US) !in undone }
 
 /**
  * Money moving between the user's own pots: into M-Shwari / Lock Savings and back out,

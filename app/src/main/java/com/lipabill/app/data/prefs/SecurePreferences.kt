@@ -264,6 +264,11 @@ class SecurePreferences(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_SAVINGS_CLASSIFY_REPAIR_DONE, value).apply()
 
     /** When true, unknown confirmations have been re-read for a name, phone, and direction. */
+    /** One-shot: reversals, Pochi sends and Airtel airtime gifts re-read (Nov 2026 import audit). */
+    var importAuditRepairDone: Boolean
+        get() = prefs.getBoolean(KEY_IMPORT_AUDIT_REPAIR_DONE, false)
+        set(value) = prefs.edit().putBoolean(KEY_IMPORT_AUDIT_REPAIR_DONE, value).apply()
+
     var unknownPartyRepairDone: Boolean
         get() = prefs.getBoolean(KEY_UNKNOWN_PARTY_REPAIR_DONE, false)
         set(value) = prefs.edit().putBoolean(KEY_UNKNOWN_PARTY_REPAIR_DONE, value).apply()
@@ -629,6 +634,7 @@ class SecurePreferences(context: Context) {
         private const val KEY_AMOUNT_PARSE_REPAIR_DONE = "amount_parse_repair_v2"
         private const val KEY_SAVINGS_CLASSIFY_REPAIR_DONE = "savings_classify_repair_v2"
         private const val KEY_UNKNOWN_PARTY_REPAIR_DONE = "unknown_party_repair_v1"
+        private const val KEY_IMPORT_AUDIT_REPAIR_DONE = "import_audit_repair_v1"
         private const val KEY_BANK_DIRECTION_REPAIR_DONE = "bank_direction_repair_v2"
         private const val KEY_BANK_DETAIL_REPAIR_DONE = "bank_detail_repair_v1"
         private const val KEY_FULIZA_CLASSIFY_REPAIR_DONE = "fuliza_classify_repair_v1"
