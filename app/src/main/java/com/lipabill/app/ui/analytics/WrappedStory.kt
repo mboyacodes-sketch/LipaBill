@@ -177,7 +177,7 @@ internal fun WrappedTeaser(cards: WrapCards, onOpen: () -> Unit, eyebrow: String
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(eyebrow, style = HomeType.caption, color = WrapPalette.Lime, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+            Text(eyebrow, style = HomeType.caption, color = WrapPalette.Accent, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
             WrapBig("Your ${cards.periodName()}, wrapped", Color.White, 24.sp)
             Text(
                 "Money in vs out, your people, top spots and your money personality, as cards you can share.",
@@ -204,7 +204,7 @@ internal fun WrappedDialog(cards: WrapCards, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     val current = kinds.getOrNull(pager.currentPage)
     val backdrop by animateColorAsState(
-        if (current == null) WrapPalette.ForestDeep else baseOf(current),
+        if (current == null) WrapPalette.Midnight else baseOf(current),
         label = "wrapBackdrop"
     )
     fun go(delta: Int) {
@@ -422,7 +422,7 @@ private fun WrapSwitch(label: String, checked: Boolean, onChange: (Boolean) -> U
             onCheckedChange = onChange,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
-                checkedTrackColor = WrapPalette.Lime.copy(alpha = 0.85f),
+                checkedTrackColor = WrapPalette.Accent.copy(alpha = 0.85f),
                 uncheckedThumbColor = Color.White,
                 uncheckedTrackColor = Color.Black.copy(alpha = 0.35f),
                 uncheckedBorderColor = Color.Transparent
