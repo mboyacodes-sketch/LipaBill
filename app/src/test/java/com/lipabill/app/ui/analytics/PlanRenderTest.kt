@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -78,8 +80,15 @@ class PlanRenderTest {
                 )
                 val wrap = sampleWrap()
                 WrappedTeaser(wrap) {}
+                Box(Modifier.fillMaxWidth().height(720.dp).background(Color(0xFF070A08)).padding(12.dp)) {
+                    ShareHub(wrapKinds(wrap), wrap, showAmounts = false, hideNames = true)
+                }
                 wrapKinds(wrap).sortedByDescending { it == WrapCardKind.PERSONALITY }.forEach { kind ->
-                    WrapCard(kind, wrap, showAmounts = kind.ordinal % 2 == 0, modifier = Modifier.fillMaxWidth().aspectRatio(9f / 14f))
+                    WrapCard(
+                        kind, wrap, showAmounts = kind.ordinal % 2 == 0,
+                        modifier = Modifier.fillMaxWidth().aspectRatio(9f / 14f),
+                        hideNames = kind == WrapCardKind.SPOTS
+                    )
                 }
             }
         }

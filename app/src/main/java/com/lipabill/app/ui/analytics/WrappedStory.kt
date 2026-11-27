@@ -1,11 +1,21 @@
 package com.lipabill.app.ui.analytics
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -15,8 +25,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -50,6 +63,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
@@ -73,6 +87,7 @@ import com.lipabill.app.ui.util.formatKsh
 import com.lipabill.app.viewmodel.CounterpartySpend
 import com.lipabill.app.viewmodel.WrapCards
 import com.lipabill.app.viewmodel.WrapPersonality
+import com.lipabill.app.viewmodel.wrapShareText
 import java.io.File
 import java.time.DayOfWeek
 import java.time.YearMonth
@@ -300,15 +315,21 @@ internal fun WrappedTeaser(cards: WrapCards, onOpen: () -> Unit) {
 // ---------------------------------------------------------------------------------------------
 // Dialog
 
-/** Full-screen story cards with a share button for the card on screen. */
+/**
+ * Story cards, then a share screen. Amounts and names start hidden so nothing private
+ * leaves the phone by accident.
+ */
 @Composable
 internal fun WrappedDialog(cards: WrapCards, onDismiss: () -> Unit) {
     var showAmounts by remember { mutableStateOf(false) }
+    var hideNames by remember { mutableStateOf(true) }
     val kinds = remember(cards) { wrapKinds(cards) }
-    val pager = rememberPagerState(pageCount = { kinds.size })
+    val hubPage = kinds.size
+    val pager = rememberPagerState(pageCount = { kinds.size + 1 })
     val layers = remember { mutableStateMapOf<Int, GraphicsLayer>() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val onHub = pager.currentPage == hubPage
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
             modifier = Modifier
@@ -319,7 +340,7 @@ internal fun WrappedDialog(cards: WrapCards, onDismiss: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                kinds.indices.forEach { i ->
+                (0..hubPage).forEach { i ->
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -330,54 +351,187 @@ internal fun WrappedDialog(cards: WrapCards, onDismiss: () -> Unit) {
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(kinds[pager.currentPage].title, color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+                Text(
+                    if (onHub) "Share" else kinds[pager.currentPage].title,
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 13.sp
+                )
                 Spacer(modifier = Modifier.weight(1f))
                 IconButton(onClick = onDismiss) {
                     Icon(Icons.Outlined.Close, contentDescription = "Close", tint = Color.White)
                 }
             }
             HorizontalPager(state = pager, modifier = Modifier.weight(1f), pageSpacing = 16.dp) { index ->
-                val layer = rememberGraphicsLayer()
-                layers[index] = layer
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    WrapCard(
-                        kind = kinds[index],
-                        cards = cards,
-                        showAmounts = showAmounts,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(9f / 14f)
-                            .drawWithContent {
-                                layer.record { this@drawWithContent.drawContent() }
-                                drawLayer(layer)
-                            }
-                    )
+                if (index == hubPage) {
+                    ShareHub(kinds, cards, showAmounts, hideNames)
+                } else {
+                    val layer = rememberGraphicsLayer()
+                    layers[index] = layer
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        WrapCard(
+                            kind = kinds[index],
+                            cards = cards,
+                            showAmounts = showAmounts,
+                            hideNames = hideNames,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(9f / 14f)
+                                .drawWithContent {
+                                    layer.record { this@drawWithContent.drawContent() }
+                                    drawLayer(layer)
+                                }
+                        )
+                    }
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 LipaChoiceChip(
                     label = if (showAmounts) "Amounts shown" else "Amounts hidden",
                     selected = showAmounts,
                     onClick = { showAmounts = !showAmounts }
                 )
+                LipaChoiceChip(
+                    label = if (hideNames) "Names hidden" else "Names shown",
+                    selected = !hideNames,
+                    onClick = { hideNames = !hideNames }
+                )
                 Spacer(modifier = Modifier.weight(1f))
-                IconButton(onClick = {
-                    val layer = layers[pager.currentPage] ?: return@IconButton
-                    scope.launch {
-                        val bitmap = layer.toImageBitmap().asAndroidBitmap()
-                        val file = withContext(Dispatchers.IO) {
-                            File(context.cacheDir, "wrapped").apply { mkdirs() }
-                                .resolve("lipabill-wrapped.png")
-                                .also { out -> out.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) } }
-                        }
-                        shareImage(context, file)
+                if (!onHub) {
+                    IconButton(onClick = {
+                        val layer = layers[pager.currentPage] ?: return@IconButton
+                        scope.launch { shareCard(context, layer) }
+                    }) {
+                        Icon(Icons.Outlined.Share, contentDescription = "Share this card", tint = Color.White)
                     }
-                }) {
-                    Icon(Icons.Outlined.Share, contentDescription = "Share this card", tint = Color.White)
                 }
             }
         }
     }
+}
+
+/** Full-size layout of a story card; previews scale this down so shared PNGs stay sharp. */
+private val CardWidth = 360.dp
+private val CardHeight = 560.dp
+
+/** Last story page: every card in a carousel, with share, save and copy. */
+@Composable
+internal fun ShareHub(kinds: List<WrapCardKind>, cards: WrapCards, showAmounts: Boolean, hideNames: Boolean) {
+    val carousel = rememberPagerState(pageCount = { kinds.size })
+    val layers = remember { mutableStateMapOf<Int, GraphicsLayer>() }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val personality = personalityText(cards).first
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Your wrap · swipe for more cards", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            val cardHeight = minOf(maxHeight, maxWidth * 0.72f * 14f / 9f)
+            val cardWidth = cardHeight * 9f / 14f
+            val scale = cardWidth / CardWidth
+            HorizontalPager(
+                state = carousel,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = ((maxWidth - cardWidth) / 2).coerceAtLeast(0.dp)),
+                pageSpacing = 12.dp
+            ) { i ->
+                val layer = rememberGraphicsLayer()
+                layers[i] = layer
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(modifier = Modifier.size(cardWidth, cardHeight)) {
+                        WrapCard(
+                            kind = kinds[i],
+                            cards = cards,
+                            showAmounts = showAmounts,
+                            hideNames = hideNames,
+                            modifier = Modifier
+                                .requiredSize(CardWidth, CardHeight)
+                                .graphicsLayer {
+                                    scaleX = scale
+                                    scaleY = scale
+                                }
+                                .drawWithContent {
+                                    layer.record { this@drawWithContent.drawContent() }
+                                    drawLayer(layer)
+                                }
+                        )
+                    }
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                kinds.indices.forEach { i ->
+                    Box(
+                        modifier = Modifier
+                            .size(width = if (i == carousel.currentPage) 14.dp else 6.dp, height = 6.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = if (i == carousel.currentPage) 1f else 0.35f))
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                "${carousel.currentPage + 1} of ${kinds.size} · ${kinds[carousel.currentPage].title}",
+                color = Color.White.copy(alpha = 0.75f),
+                fontSize = 13.sp
+            )
+        }
+        Text(
+            "Share the card you're on, or save it and post it to your status.",
+            color = Color.White.copy(alpha = 0.85f),
+            fontSize = 14.sp
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LipaPillButton(
+                label = "Share card",
+                onClick = { layers[carousel.currentPage]?.let { scope.launch { shareCard(context, it) } } },
+                modifier = Modifier.weight(1f),
+                maxLines = 1
+            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                LipaPillButton(
+                    label = "Save card",
+                    onClick = {
+                        layers[carousel.currentPage]?.let { layer ->
+                            scope.launch {
+                                val bitmap = layer.toImageBitmap().asAndroidBitmap()
+                                val saved = withContext(Dispatchers.IO) { saveToGallery(context, bitmap) }
+                                Toast.makeText(
+                                    context,
+                                    if (saved) "Saved to Pictures/LipaBill" else "Couldn't save the card",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    },
+                    filled = false,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1
+                )
+            }
+        }
+        LipaPillButton(
+            label = "Copy text",
+            onClick = {
+                val text = wrapShareText(cards, cards.periodLong(), personality, showAmounts, hideNames)
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("LipaBill Wrapped", text))
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                }
+            },
+            filled = false
+        )
+    }
+}
+
+private suspend fun shareCard(context: Context, layer: GraphicsLayer) {
+    val bitmap = layer.toImageBitmap().asAndroidBitmap()
+    val file = withContext(Dispatchers.IO) {
+        File(context.cacheDir, "wrapped").apply { mkdirs() }
+            .resolve("lipabill-wrapped.png")
+            .also { out -> out.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+    }
+    shareImage(context, file)
 }
 
 private fun shareImage(context: Context, file: File) {
@@ -389,12 +543,43 @@ private fun shareImage(context: Context, file: File) {
     context.startActivity(Intent.createChooser(send, "Share your Wrapped card").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }
 
+/** Writes [bitmap] to Pictures/LipaBill. No storage permission needed on Android 10+. */
+@RequiresApi(Build.VERSION_CODES.Q)
+private fun saveToGallery(context: Context, bitmap: Bitmap): Boolean {
+    val resolver = context.contentResolver
+    val values = ContentValues().apply {
+        put(MediaStore.Images.Media.DISPLAY_NAME, "lipabill-wrapped-${System.currentTimeMillis()}.png")
+        put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+        put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/LipaBill")
+        put(MediaStore.Images.Media.IS_PENDING, 1)
+    }
+    val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
+    return try {
+        val written = resolver.openOutputStream(uri)?.use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } ?: false
+        if (!written) error("PNG not written")
+        values.clear()
+        values.put(MediaStore.Images.Media.IS_PENDING, 0)
+        resolver.update(uri, values, null, null)
+        true
+    } catch (_: Exception) {
+        resolver.delete(uri, null, null)
+        false
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Cards
 
 /** One story card. Also used by render tests. */
 @Composable
-internal fun WrapCard(kind: WrapCardKind, cards: WrapCards, showAmounts: Boolean, modifier: Modifier = Modifier) {
+internal fun WrapCard(
+    kind: WrapCardKind,
+    cards: WrapCards,
+    showAmounts: Boolean,
+    modifier: Modifier = Modifier,
+    /** Swap payee names for "Person 1", "Shop 1" so the card can be posted. */
+    hideNames: Boolean = false
+) {
     val style = styleOf(kind)
     val money = Money(showAmounts)
     Box(
@@ -423,12 +608,12 @@ internal fun WrapCard(kind: WrapCardKind, cards: WrapCards, showAmounts: Boolean
                 WrapCardKind.FEES -> FeesBody(cards, style, money)
                 WrapCardKind.FULIZA -> FulizaBody(cards, style, money)
                 WrapCardKind.PEOPLE -> RankedBody(
-                    "Most of your send money went to", cards.topPeople, "transfer", style, money
+                    "Most of your send money went to", cards.topPeople, "transfer", style, money, if (hideNames) "Person" else null
                 )
                 WrapCardKind.SPOTS -> RankedBody(
-                    "Where you paid most", cards.topSpots, "payment", style, money
+                    "Where you paid most", cards.topSpots, "payment", style, money, if (hideNames) "Shop" else null
                 )
-                WrapCardKind.RHYTHM -> RhythmBody(cards, style, money)
+                WrapCardKind.RHYTHM -> RhythmBody(cards, style, money, hideNames)
                 WrapCardKind.PERSONALITY -> PersonalityBody(cards, style)
             }
             Text("LipaBill", color = style.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -572,11 +757,14 @@ private fun ColumnScope.RankedBody(
     rows: List<CounterpartySpend>,
     countWord: String,
     s: WrapStyle,
-    money: Money
+    money: Money,
+    /** When set, names become "<placeholder> 1", "<placeholder> 2". */
+    placeholder: String?
 ) {
     val top = rows.firstOrNull() ?: return
+    fun nameOf(i: Int, row: CounterpartySpend) = if (placeholder != null) "$placeholder ${i + 1}" else row.name
     Text(lead, color = s.muted, fontSize = 15.sp)
-    Big(top.name, s.accent, 34.sp, Modifier.recordingPrivacyCover(true))
+    Big(nameOf(0, top), s.accent, 34.sp, Modifier.recordingPrivacyCover(placeholder == null))
     Text("${top.count} $countWord${if (top.count == 1) "" else "s"} · ${money.full(top.total)}", color = s.muted, fontSize = 14.sp)
     Spacer(modifier = Modifier.weight(1f))
     val max = rows.maxOf { it.total }.coerceAtLeast(1.0)
@@ -585,13 +773,13 @@ private fun ColumnScope.RankedBody(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("${i + 1}", color = s.muted, fontSize = 13.sp, modifier = Modifier.width(22.dp))
                 Text(
-                    row.name,
+                    nameOf(i, row),
                     color = s.ink,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f).recordingPrivacyCover(true)
+                    modifier = Modifier.weight(1f).recordingPrivacyCover(placeholder == null)
                 )
                 Text(money.short(row.total), color = s.ink, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
@@ -618,7 +806,7 @@ private fun ColumnScope.RankedBody(
 private fun weekdayPlural(d: DayOfWeek) = d.getDisplayName(TextStyle.FULL, Locale.UK) + "s"
 
 @Composable
-private fun ColumnScope.RhythmBody(c: WrapCards, s: WrapStyle, money: Money) {
+private fun ColumnScope.RhythmBody(c: WrapCards, s: WrapStyle, money: Money, hideNames: Boolean) {
     val peak = c.bars.getOrNull(c.peakBar)
     val peakName = peak?.label?.let { if (it.startsWith("W")) "Week ${it.drop(1)}" else it }
     Big(if (peakName != null) "$peakName hit hardest." else "Your rhythm", s.ink, 32.sp)
@@ -640,7 +828,8 @@ private fun ColumnScope.RhythmBody(c: WrapCards, s: WrapStyle, money: Money) {
         else Tile("${c.quietDays}", "days nothing went out", Modifier.weight(1f))
     }
     c.biggestPayment?.let {
-        Tile(money.full(it.amount), "biggest single payment · ${it.name}", Modifier.fillMaxWidth(), namesPayee = true)
+        if (hideNames) Tile(money.full(it.amount), "biggest single payment", Modifier.fillMaxWidth())
+        else Tile(money.full(it.amount), "biggest single payment · ${it.name}", Modifier.fillMaxWidth(), namesPayee = true)
     }
     Spacer(modifier = Modifier.weight(1f))
     Box(modifier = Modifier.fillMaxWidth().height(110.dp)) {
@@ -674,7 +863,16 @@ private fun ColumnScope.RhythmBody(c: WrapCards, s: WrapStyle, money: Money) {
 @Composable
 private fun ColumnScope.PersonalityBody(c: WrapCards, s: WrapStyle) {
     Spacer(modifier = Modifier.weight(1f))
-    val (title, body) = when (c.personality) {
+    val (title, body) = personalityText(c)
+    Text("Your money personality", color = s.muted, fontSize = 14.sp)
+    Big(title, s.ink, 44.sp)
+    Text(body, color = s.muted, fontSize = 15.sp)
+}
+
+/** Title and one-liner for the card's money personality. */
+@Composable
+private fun personalityText(c: WrapCards): Pair<String, String> =
+    when (c.personality) {
         WrapPersonality.FULIZA_FREQUENT ->
             stringResource(R.string.wrap_personality_fuliza_frequent) to
                 stringResource(R.string.wrap_personality_fuliza_frequent_body, c.fuliza?.count ?: 0)
@@ -687,10 +885,6 @@ private fun ColumnScope.PersonalityBody(c: WrapCards, s: WrapStyle) {
         WrapPersonality.EVERYDAY_MOVER ->
             stringResource(R.string.wrap_personality_everyday_mover) to stringResource(R.string.wrap_personality_everyday_mover_body)
     }
-    Text("Your money personality", color = s.muted, fontSize = 14.sp)
-    Big(title, s.ink, 44.sp)
-    Text(body, color = s.muted, fontSize = 15.sp)
-}
 
 /**
  * Own subclass so the manifest merger keeps this provider apart from the internal build's

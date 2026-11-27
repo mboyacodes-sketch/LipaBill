@@ -207,4 +207,30 @@ class WrapCardsTest {
     fun wrappedLooksAtLastMonth() {
         assertEquals(java.time.YearMonth.of(2026, 10), wrappedMonth(LocalDate.parse("2026-11-18")))
     }
+
+    @Test
+    fun shareTextRespectsBothToggles() {
+        val c = buildWrapCards(oct1, oct31, october(), emptyMap(), zone)!!
+        fun text(amounts: Boolean, names: Boolean) = wrapShareText(c, "October 2026", "The Family Anchor", amounts, names)
+
+        val open = text(amounts = true, names = false)
+        assertTrue(open.contains("KSh"))
+        assertTrue(open.contains("NAIVAS WESTLANDS"))
+        assertTrue(open.contains("Mama Wanjiru"))
+        assertTrue(open.contains("The Family Anchor"))
+
+        val noAmounts = text(amounts = false, names = false)
+        assertFalse(noAmounts.contains("KSh"))
+        assertTrue(noAmounts.contains("Mama Wanjiru"))
+
+        val noNames = text(amounts = true, names = true)
+        assertTrue(noNames.contains("KSh"))
+        assertFalse(noNames.contains("NAIVAS"))
+        assertFalse(noNames.contains("Mama Wanjiru"))
+
+        val locked = text(amounts = false, names = true)
+        assertFalse(locked.contains("KSh"))
+        assertFalse(locked.contains("Mama Wanjiru"))
+        assertTrue(locked.startsWith("My October 2026 on LipaBill: 6 transactions on 5 of 31 days."))
+    }
 }
