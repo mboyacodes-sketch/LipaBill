@@ -67,7 +67,7 @@ class PlanRenderTest {
         val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
         activity.setContent {
             Column(
-                Modifier.background(Color(0xFFF6F7F9)).padding(16.dp).width(380.dp),
+                Modifier.background(Color(0xFFF6F7F9)).padding(16.dp).width(1140.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 WatchingCard(
@@ -80,22 +80,26 @@ class PlanRenderTest {
                 )
                 val wrap = sampleWrap()
                 WrappedTeaser(wrap, onOpen = {})
-                Box(Modifier.fillMaxWidth().height(720.dp).background(Color(0xFF070A08)).padding(12.dp)) {
-                    ShareHub(wrapKinds(wrap), wrap, showAmounts = false, hideNames = true)
+                val all = listOf<@androidx.compose.runtime.Composable () -> Unit>(
+                    { ShareHub(shareKinds(wrap), wrap, showAmounts = true, hideNames = true) }
+                ) + (listOf(WrapCardKind.SUMMARY) + wrapKinds(wrap)).map { kind ->
+                    @androidx.compose.runtime.Composable {
+                        WrapCard(kind, wrap, showAmounts = true, modifier = Modifier.width(360.dp).height(640.dp), hideNames = kind == WrapCardKind.SPOTS)
+                    }
                 }
-                wrapKinds(wrap).sortedByDescending { it == WrapCardKind.PERSONALITY }.forEach { kind ->
-                    WrapCard(
-                        kind, wrap, showAmounts = kind.ordinal % 2 == 0,
-                        modifier = Modifier.fillMaxWidth().aspectRatio(9f / 14f),
-                        hideNames = kind == WrapCardKind.SPOTS
-                    )
+                all.chunked(3).forEach { row ->
+                    androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        row.forEach { card ->
+                            Box(Modifier.width(360.dp).height(640.dp).background(Color(0xFF070A08))) { card() }
+                        }
+                    }
                 }
             }
         }
         shadowOf(Looper.getMainLooper()).idle()
         val root: View = activity.window.decorView
         root.measure(
-            View.MeasureSpec.makeMeasureSpec(1260, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(3520, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(20000, View.MeasureSpec.AT_MOST)
         )
         root.layout(0, 0, root.measuredWidth, root.measuredHeight)
