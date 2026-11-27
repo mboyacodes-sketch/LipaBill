@@ -8,7 +8,6 @@ import com.lipabill.app.data.model.AppRegion
  */
 enum class FirstRunPage {
     Welcome,
-    Region,
     Providers,
     Sms,
     Phone,
@@ -24,12 +23,12 @@ data class IntroSlide(val title: String, val body: String)
 
 object FirstRunWizard {
     /**
-     * First run: region, then SIM access (when Send/Pay exists) so Providers can match
-     * wallets to the MNOs in the phone, then SMS and Accessibility.
+     * First run: region comes from the SIM / phone number (no picker). Then SIM access
+     * (when Send/Pay exists) so Providers can match wallets to the MNOs in the phone,
+     * then SMS and Accessibility.
      */
     fun firstRunPages(region: AppRegion = AppRegion.DEFAULT): List<FirstRunPage> = buildList {
         add(FirstRunPage.Welcome)
-        add(FirstRunPage.Region)
         if (region.canSendPay) {
             add(FirstRunPage.Phone)
         }
@@ -43,11 +42,10 @@ object FirstRunWizard {
     val PAGES: List<FirstRunPage>
         get() = firstRunPages()
 
-    /** Later visits skip Welcome and Region. Payment access stays a cluster. */
+    /** Later visits skip Welcome. Payment access stays a cluster. */
     val LATER_PAGES: List<FirstRunPage> =
         FirstRunPage.entries.filter {
             it != FirstRunPage.Welcome &&
-                it != FirstRunPage.Region &&
                 it != FirstRunPage.Providers &&
                 it != FirstRunPage.OemSurvival
         }
@@ -60,7 +58,6 @@ object FirstRunWizard {
 
     fun laterPages(start: FirstRunPage): List<FirstRunPage> = when (start) {
         FirstRunPage.Welcome,
-        FirstRunPage.Region,
         FirstRunPage.Providers,
         FirstRunPage.Sms,
         FirstRunPage.Phone,
@@ -103,7 +100,6 @@ object FirstRunWizard {
     /** Small caps label above each setup title. Permission asks can all be skipped. */
     fun eyebrow(page: FirstRunPage): String = when (page) {
         FirstRunPage.Welcome -> ""
-        FirstRunPage.Region -> "Your starting point"
         FirstRunPage.Providers -> "Your accounts"
         FirstRunPage.OemSurvival -> "Stay ready"
         else -> "Optional"
@@ -121,11 +117,6 @@ object FirstRunWizard {
         if (steps.isEmpty()) return 0f
         return (steps.indexOf(page) + 1).toFloat() / steps.size
     }
-
-    const val REGION_TITLE = "Where is this phone?"
-    const val REGION_BODY =
-        "LipaBill tracks wallets and banks from that country. " +
-            "We'll use this SIM when we can. You can change this in Settings."
 
     const val PROVIDERS_TITLE = "Which wallets and banks do you use?"
     const val PROVIDERS_BODY =

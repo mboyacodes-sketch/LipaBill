@@ -120,7 +120,9 @@ fun estimateNextPayday(
     zone: ZoneId = ZoneId.systemDefault()
 ): LocalDate? {
     val inflows = ledger.filter {
-        (it.type == TransactionType.RECEIVED || it.type == TransactionType.DEPOSIT) && (it.amount ?: 0.0) > 0.0
+        !isOwnMoneyMove(it) &&
+            (it.type == TransactionType.RECEIVED || it.type == TransactionType.DEPOSIT) &&
+            (it.amount ?: 0.0) > 0.0
     }
     if (inflows.size < 3) return null
     val months = (1L..3L).map { YearMonth.from(today).minusMonths(it) }
@@ -310,8 +312,18 @@ data class MoneyPlanUi(
     val isReady: Boolean = false
 )
 
-/** Month-to-date money in and out (fees count as out; savings moves and Fuliza draws do not). */
-data class MonthFlow(val moneyIn: Double, val moneyOut: Double)
+/**
+ * Month-to-date money picture: opening balance before the 1st, receipts in, spends out
+ * (fees count as out; savings moves and Fuliza draws do not).
+ */
+data class MonthFlow(
+    val moneyIn: Double,
+    val moneyOut: Double,
+    /** Last known balances before this month started; 0 when none. */
+    val broughtForward: Double = 0.0
+) {
+    val net: Double get() = broughtForward + moneyIn - moneyOut
+}
 
 /** [MonthFlow] for the month [today] falls in, or null when nothing moved yet. */
 fun monthToDateFlow(txs: List<MpesaTransaction>, today: LocalDate, zone: ZoneId): MonthFlow? {
@@ -319,7 +331,11 @@ fun monthToDateFlow(txs: List<MpesaTransaction>, today: LocalDate, zone: ZoneId)
     val inMonth = txs.filter { val d = it.date(zone); !d.isBefore(first) && !d.isAfter(today) }
     if (inMonth.isEmpty()) return null
     val (moneyIn, moneyOut) = flowTotals(inMonth, WalletAccount.MPESA)
-    return MonthFlow(moneyIn, moneyOut)
+    return MonthFlow(
+        moneyIn = moneyIn,
+        moneyOut = moneyOut,
+        broughtForward = openingBalanceBefore(txs, first, zone)
+    )
 }
 
 /** Balance across SIM-linked wallets (or the primary one), minus what is due, plus budgets and goals. */
@@ -335,7 +351,7 @@ internal fun buildMoneyPlan(
     today: LocalDate = LocalDate.now(),
     zone: ZoneId = ZoneId.systemDefault()
 ): MoneyPlanUi {
-    val txs = withoutReversals(ledger)
+    val txs = moneyPictureLedger(ledger)
     // Separate ledger window from Insights summary — own detectRegulars pass is intentional.
     val confirmed = marks.recurringChoices
         .filterValues { it == RecurringChoice.Confirmed }

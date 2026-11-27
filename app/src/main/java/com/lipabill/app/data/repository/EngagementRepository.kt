@@ -23,7 +23,6 @@ import com.lipabill.app.engage.WeeklySummaryBuilder
 import com.lipabill.app.data.model.MpesaTransaction
 import com.lipabill.app.engage.kesToCents
 import com.lipabill.app.metrics.AppMetrics
-import com.lipabill.app.viewmodel.withoutReversals
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -40,9 +39,14 @@ class EngagementRepository(
      */
     private suspend fun window(start: Long, end: Long): List<MpesaTransaction> {
         val scope = enabledSources()
-        val rows = transactions.listBetween(start, end).map { it.toMpesa() }
-            .filter { scope.isEmpty() || it.source in scope }
-        return com.lipabill.app.viewmodel.reconcileCrossRail(withoutReversals(rows)).filterNot { it.ownTransfer }
+        // Pair across every rail first so a disabled bank still drops its twin of an
+        // enabled wallet payment; then keep the rails the user has turned on.
+        val pictured = com.lipabill.app.viewmodel.moneyPictureLedger(
+            transactions.listBetween(start, end).map { it.toMpesa() }
+        )
+        return pictured.filter { tx ->
+            (scope.isEmpty() || tx.source in scope) && !tx.ownTransfer
+        }
     }
 
     fun observeLatest() = challenges.observeLatest()

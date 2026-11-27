@@ -27,8 +27,9 @@ internal fun buildAnalyticsSummary(
     val zone = ZoneId.systemDefault()
     val today = LocalDate.now(zone)
     val mpesa = account == WalletAccount.MPESA
-    // A reversed payment and its reversal cancel out: neither is spend nor income.
-    val txs = if (mpesa) withoutReversals(ledger) else ledger
+    // Reversals netted and cross-rail twins / own transfers reconciled so money in/out
+    // never double-count a bank copy of a wallet payment.
+    val txs = if (mpesa) moneyPictureLedger(ledger) else ledger
     val availableYears = txs
         .map { Instant.ofEpochMilli(it.timestampMillis).atZone(zone).year }
         .distinct()
@@ -55,6 +56,7 @@ internal fun buildAnalyticsSummary(
     }
 
     val (income, expense) = flowTotals(filtered, account)
+    val broughtForward = if (mpesa) openingBalanceBefore(txs, from, zone) else 0.0
     val prior = previousAnalyticsBounds(rangeState.range, from, to)
     val previousTxs = if (prior == null) {
         emptyList()
@@ -74,6 +76,11 @@ internal fun buildAnalyticsSummary(
         0.0 to 0.0
     } else {
         flowTotals(previousTxs, account)
+    }
+    val prevBrought = if (mpesa && prior != null) {
+        openingBalanceBefore(txs, prior.first, zone)
+    } else {
+        0.0
     }
 
     val byType = filtered
@@ -161,8 +168,8 @@ internal fun buildAnalyticsSummary(
     }
     val kept = if (mpesa) {
         keptHeadline(
-            net = income - expense,
-            previousNet = prevIncome - prevExpense,
+            net = broughtForward + income - expense,
+            previousNet = prevBrought + prevIncome - prevExpense,
             hasPrior = comparable
         )
     } else {
@@ -193,6 +200,7 @@ internal fun buildAnalyticsSummary(
     return AnalyticsSummary(
         incomeTotal = income,
         expenseTotal = expense,
+        broughtForward = broughtForward,
         dayCount = dayCount,
         byType = byType,
         topCounterparties = counterparties,
@@ -316,6 +324,23 @@ private fun resolveBounds(
     AnalyticsRange.ALL -> Triple(LocalDate.of(2010, 1, 1), today, "All time")
 }
 
+/**
+ * One row's contribution to money in / money out. Own-account moves contribute only an
+ * outgoing fee; spends include amount+fee; income is the amount received. Null = skip.
+ */
+internal fun flowContribution(tx: MpesaTransaction): Pair<Double, Double>? {
+    val amount = tx.amount ?: 0.0
+    val fee = (tx.cost ?: 0.0).coerceAtLeast(0.0)
+    if (isOwnMoneyMove(tx)) {
+        return if (tx.type.isOutgoing() && fee > 0.0) 0.0 to fee else null
+    }
+    if (tx.type.isOutgoing()) {
+        val out = amount.coerceAtLeast(0.0) + fee
+        return if (out > 0.0) 0.0 to out else null
+    }
+    return if (amount > 0.0) amount to 0.0 else null
+}
+
 internal fun flowByDate(
     txs: List<MpesaTransaction>,
     zone: ZoneId,
@@ -329,19 +354,9 @@ internal fun flowByDate(
             outflow[date] = (outflow[date] ?: 0.0) + (tx.amount ?: 0.0)
             continue
         }
-        val amount = tx.amount ?: continue
-        // Same rule as flowTotals / Habits quiet days (countsAsSpendOutflow).
-        if (isOwnMoneyMove(tx)) {
-            // Moving your own money is not spend, but the fee on it did leave the wallet.
-            val fee = tx.cost ?: 0.0
-            if (tx.type.isOutgoing() && fee > 0.0) outflow[date] = (outflow[date] ?: 0.0) + fee
-            continue
-        }
-        if (countsAsSpendOutflow(tx.type, tx.counterpartyName, amount > 0.0)) {
-            outflow[date] = (outflow[date] ?: 0.0) + amount + (tx.cost ?: 0.0)
-        } else if (!tx.type.isOutgoing()) {
-            inflow[date] = (inflow[date] ?: 0.0) + amount
-        }
+        val (inn, out) = flowContribution(tx) ?: continue
+        if (inn > 0.0) inflow[date] = (inflow[date] ?: 0.0) + inn
+        if (out > 0.0) outflow[date] = (outflow[date] ?: 0.0) + out
     }
     return inflow to outflow
 }
@@ -366,15 +381,9 @@ internal fun flowTotals(
     var income = 0.0
     var expense = 0.0
     for (tx in txs) {
-        val amount = tx.amount ?: continue
-        // Savings in and out, Fuliza draws and own-account transfers are the user's own
-        // money moving; only a fee charged on the way out counts.
-        if (isOwnMoneyMove(tx)) {
-            if (tx.type.isOutgoing()) expense += tx.cost ?: 0.0
-            continue
-        }
-        // Fees left the wallet too, so they count as money out.
-        if (tx.type.isOutgoing()) expense += amount + (tx.cost ?: 0.0) else income += amount
+        val (inn, out) = flowContribution(tx) ?: continue
+        income += inn
+        expense += out
     }
     return income to expense
 }

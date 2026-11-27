@@ -993,7 +993,13 @@ private fun SafeToSpendLine(
             }
             monthFlow?.let { flow ->
                 Text(
-                    "This month · in ${formatKsh(flow.moneyIn)} · out ${formatKsh(flow.moneyOut)}",
+                    buildString {
+                        append("This month · ")
+                        if (flow.broughtForward >= 1.0) {
+                            append("brought ${formatKsh(flow.broughtForward)} · ")
+                        }
+                        append("in ${formatKsh(flow.moneyIn)} · out ${formatKsh(flow.moneyOut)}")
+                    },
                     style = HomeType.caption,
                     color = Ink,
                     fontWeight = FontWeight.SemiBold,

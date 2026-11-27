@@ -9,11 +9,10 @@ import org.junit.Test
 class FirstRunWizardTest {
 
     @Test
-    fun first_run_is_welcome_region_phone_providers_sms_accessibility() {
+    fun first_run_is_welcome_phone_providers_sms_accessibility() {
         assertEquals(
             listOf(
                 FirstRunPage.Welcome,
-                FirstRunPage.Region,
                 FirstRunPage.Phone,
                 FirstRunPage.Providers,
                 FirstRunPage.Sms,
@@ -21,11 +20,9 @@ class FirstRunWizardTest {
             ),
             FirstRunWizard.PAGES
         )
-        assertTrue(FirstRunWizard.PAGES.contains(FirstRunPage.Region))
         assertEquals(
             listOf(
                 FirstRunPage.Welcome,
-                FirstRunPage.Region,
                 FirstRunPage.Providers,
                 FirstRunPage.Sms
             ),
@@ -51,7 +48,6 @@ class FirstRunWizardTest {
             ),
             FirstRunWizard.LATER_PAGES
         )
-        assertFalse(FirstRunWizard.LATER_PAGES.contains(FirstRunPage.Region))
         assertFalse(FirstRunWizard.LATER_PAGES.contains(FirstRunPage.Providers))
         assertFalse(FirstRunWizard.LATER_PAGES.contains(FirstRunPage.OemSurvival))
     }
@@ -86,10 +82,9 @@ class FirstRunWizardTest {
     }
 
     @Test
-    fun region_page_lets_the_user_confirm_the_country() {
-        assertEquals("Where is this phone?", FirstRunWizard.REGION_TITLE)
-        assertTrue(FirstRunWizard.REGION_BODY.contains("SIM", ignoreCase = true))
-        assertTrue(FirstRunWizard.REGION_BODY.contains("Settings"))
+    fun first_run_has_no_country_picker_page() {
+        // Region is inferred from SIM / network / locale, then confirmed in Settings.
+        assertEquals(4, FirstRunWizard.PAGES.count { it != FirstRunPage.Welcome })
         assertEquals("🇰🇪", AppRegion.KENYA.flagEmoji)
         assertEquals("🇺🇬", AppRegion.UGANDA.flagEmoji)
     }
@@ -129,8 +124,8 @@ class FirstRunWizardTest {
     @Test
     fun setup_steps_count_pages_after_welcome() {
         val pages = FirstRunWizard.PAGES
-        assertEquals("01 / 05", FirstRunWizard.stepLabel(pages, FirstRunPage.Region))
-        assertEquals("05 / 05", FirstRunWizard.stepLabel(pages, FirstRunPage.Accessibility))
+        assertEquals("01 / 04", FirstRunWizard.stepLabel(pages, FirstRunPage.Phone))
+        assertEquals("04 / 04", FirstRunWizard.stepLabel(pages, FirstRunPage.Accessibility))
         assertEquals(1f, FirstRunWizard.stepProgress(pages, FirstRunPage.Accessibility), 0.0001f)
         val later = FirstRunWizard.laterPages(FirstRunPage.Phone)
         assertEquals("02 / 03", FirstRunWizard.stepLabel(later, FirstRunPage.Phone))

@@ -46,6 +46,16 @@ class CrossRailTest {
     }
 
     @Test
+    fun bankAmountThatIncludesWalletFeeStillPairs() {
+        // Bank advisory often quotes what left the bank (principal + M-PESA fee).
+        val mpesa = tx(MoneySource.MPESA, PAYBILL, 2_500.0, "NAIVAS", cost = 23.0)
+        val equity = tx(MoneySource.EQUITY, BUY_GOODS, 2_523.0, "NAIVAS TILL", second = 25)
+        val out = reconcileCrossRail(listOf(mpesa, equity))
+        assertEquals(listOf(mpesa), out)
+        assertEquals(2_523.0, flowTotals(out, WalletAccount.MPESA).second, 0.01)
+    }
+
+    @Test
     fun bothRailsSayingReceivedIsOneArrival() {
         val mpesa = tx(MoneySource.MPESA, RECEIVED, 10_000.0, "KCB MONEY TRANSFER")
         val kcb = tx(MoneySource.KCB, RECEIVED, 10_000.0, "EMPLOYER LTD", second = 30)
@@ -70,6 +80,15 @@ class CrossRailTest {
     }
 
     @Test
+    fun namedOwnTransferStillPairsAfterHalfAnHour() {
+        val kcb = tx(MoneySource.KCB, SENT, 8_000.0, "M-PESA")
+        val mpesa = tx(MoneySource.MPESA, RECEIVED, 8_000.0, "KCB", minute = 45)
+        val out = reconcileCrossRail(listOf(kcb, mpesa))
+        assertEquals(2, out.size)
+        assertTrue(out.all { it.ownTransfer })
+    }
+
+    @Test
     fun guardsAgainstCoincidences() {
         // Same rail never pairs.
         assertTrue(findCrossRailPairs(listOf(
@@ -78,6 +97,11 @@ class CrossRailTest {
         // Different amounts never pair.
         assertTrue(findCrossRailPairs(listOf(
             tx(MoneySource.MPESA, PAYBILL, 500.0, "SHOP"), tx(MoneySource.KCB, SENT, 520.0, "SHOP", second = 5)
+        )).isEmpty())
+        // Opposite direction without naming the other rail: two real payments, not a transfer.
+        assertTrue(findCrossRailPairs(listOf(
+            tx(MoneySource.MPESA, RECEIVED, 5_000.0, "JANE DOE"),
+            tx(MoneySource.KCB, SENT, 5_000.0, "LANDLORD", second = 30)
         )).isEmpty())
         // Five minutes apart with nothing naming the other rail: likely two real payments.
         assertTrue(findCrossRailPairs(listOf(
@@ -100,6 +124,28 @@ class CrossRailTest {
     }
 
     @Test
+    fun homeSourceChipAfterReconcileHidesBankTwin() {
+        // Home loads all rails, reconciles, then the History chip filters — same as Insights.
+        val mpesa = tx(MoneySource.MPESA, PAYBILL, 2_500.0, "EQUITY PAYBILL", cost = 23.0)
+        val twin = tx(MoneySource.EQUITY, BUY_GOODS, 2_500.0, "JAVA HOUSE", second = 20)
+        val equityOnly = tx(MoneySource.EQUITY, SENT, 400.0, "FRIEND", minute = 3)
+        val home = reconcileCrossRail(listOf(mpesa, twin, equityOnly))
+        assertEquals(listOf(equityOnly), home.filter { it.source == MoneySource.EQUITY })
+        assertEquals(listOf(mpesa), home.filter { it.source == MoneySource.MPESA })
+    }
+
+    @Test
+    fun moneyPictureLedgerIsIdempotentAndDropsTwins() {
+        val ledger = listOf(
+            tx(MoneySource.MPESA, PAYBILL, 1_200.0, "SHOP", cost = 10.0),
+            tx(MoneySource.EQUITY, BUY_GOODS, 1_200.0, "SHOP", second = 12)
+        )
+        val once = moneyPictureLedger(ledger)
+        assertEquals(once, moneyPictureLedger(once))
+        assertEquals(1_210.0, flowTotals(once, WalletAccount.MPESA).second, 0.01)
+    }
+
+    @Test
     fun wrapCountsEachPaymentOnceAndLeavesOwnTransfersOut() {
         val ledger = listOf(
             tx(MoneySource.MPESA, RECEIVED, 50_000.0, "EMPLOYER", day = "2026-10-01"),
@@ -113,9 +159,10 @@ class CrossRailTest {
             tx(MoneySource.MPESA, PAYBILL, 1_000.0, "AIRTEL MONEY", cost = 15.0, day = "2026-10-09"),
             tx(MoneySource.AIRTEL_MONEY, RECEIVED, 1_000.0, "M-PESA", second = 10, day = "2026-10-09")
         )
+        // buildWrapCards now reconciles itself; calling with raw ledger must still be correct.
         val c = buildWrapCards(
             LocalDate.parse("2026-10-01"), LocalDate.parse("2026-10-31"),
-            reconcileCrossRail(ledger), emptyMap(), zone
+            ledger, emptyMap(), zone
         )!!
         assertEquals(6, c.txnCount) // 7 messages, one bank copy dropped
         assertEquals(50_000.0, c.moneyIn, 0.01) // top-ups are not income
@@ -123,5 +170,28 @@ class CrossRailTest {
         assertFalse(c.topSpots.any { it.name == "AIRTEL MONEY" })
         assertFalse(c.topPeople.any { it.name == "KCB" || it.name == "M-PESA" })
         assertEquals(2_000.0, c.biggestPayment!!.amount, 0.01)
+    }
+
+    @Test
+    fun flowTotalsAndFlowByDateAgreeOnFeesAndOwnTransfers() {
+        val day = LocalDate.parse("2026-10-10")
+        val ledger = moneyPictureLedger(listOf(
+            tx(MoneySource.MPESA, RECEIVED, 10_000.0, "BOSS"),
+            tx(MoneySource.MPESA, PAYBILL, 1_000.0, "SHOP", cost = 15.0, minute = 1),
+            // Fee-only row (amount already zeroed elsewhere): still money out.
+            tx(MoneySource.MPESA, SENT, 0.0, "X", cost = 7.0, minute = 2).let {
+                // eligible() requires amount > 0 for pairing; for flow, amount 0 + fee counts.
+                it
+            },
+            tx(MoneySource.KCB, SENT, 2_000.0, "M-PESA", minute = 3),
+            tx(MoneySource.MPESA, RECEIVED, 2_000.0, "KCB", minute = 3, second = 20)
+        ))
+        val (inn, out) = flowTotals(ledger, WalletAccount.MPESA)
+        val (byIn, byOut) = flowByDate(ledger, zone, WalletAccount.MPESA)
+        assertEquals(inn, byIn.values.sum(), 0.01)
+        assertEquals(out, byOut.values.sum(), 0.01)
+        assertEquals(10_000.0, inn, 0.01)
+        assertEquals(1_015.0 + 7.0, out, 0.01)
+        assertEquals(day, byOut.keys.single())
     }
 }
