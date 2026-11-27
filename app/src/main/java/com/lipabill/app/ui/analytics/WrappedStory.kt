@@ -112,10 +112,17 @@ private fun WrapCards.isWholeMonth(): Boolean =
 private fun WrapCards.isWholeYear(): Boolean =
     from.dayOfYear == 1 && to.year == from.year && to.monthValue == 12 && to.dayOfMonth == 31
 
-/** "October", "2026" or "1 Nov 2025 – 31 Oct 2026". */
+/** Twelve whole months that are not one calendar year. */
+private fun WrapCards.isTrailingYear(): Boolean =
+    from.dayOfMonth == 1 && to == YearMonth.from(to).atEndOfMonth() &&
+        YearMonth.from(from).plusMonths(11) == YearMonth.from(to) && !isWholeYear()
+
+/** "October", "2026", "last 12 months", "2026 so far" or "1 Nov – 31 Oct 2026". */
 internal fun WrapCards.periodName(): String = when {
     isWholeMonth() -> from.month.getDisplayName(TextStyle.FULL, Locale.UK)
     isWholeYear() -> from.year.toString()
+    isTrailingYear() -> "last 12 months"
+    from.dayOfYear == 1 && to.year == from.year -> "${from.year} so far"
     else -> "${from.format(DayMonth)} – ${to.format(DayMonthYear)}"
 }
 
@@ -292,7 +299,7 @@ private fun DrawScope.spray() {
 
 /** Insights teaser: opens the story cards. */
 @Composable
-internal fun WrappedTeaser(cards: WrapCards, onOpen: () -> Unit) {
+internal fun WrappedTeaser(cards: WrapCards, onOpen: () -> Unit, eyebrow: String = "WRAPPED") {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -301,7 +308,7 @@ internal fun WrappedTeaser(cards: WrapCards, onOpen: () -> Unit) {
             .padding(horizontal = 18.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text("WRAPPED", style = HomeType.caption, color = Lime, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+        Text(eyebrow, style = HomeType.caption, color = Lime, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
         Text("Your ${cards.periodName()}, wrapped", style = HomeType.section, color = Color.White, fontWeight = FontWeight.Bold)
         Text(
             "Money in vs out, your people, top spots and your money personality, as cards you can share.",
@@ -628,7 +635,8 @@ private fun Big(text: String, color: Color, size: TextUnit = 52.sp, modifier: Mo
 @Composable
 private fun ColumnScope.IntroBody(c: WrapCards, s: WrapStyle) {
     Spacer(modifier = Modifier.weight(1f))
-    Big("This was your ${c.periodName()} with money.", s.ink, 40.sp)
+    val name = c.periodName()
+    Big(if (name.endsWith("so far")) "Here's your $name." else "This was your $name with money.", s.ink, 40.sp)
     Text(
         if (c.partial) "Counting from ${c.to.minusDays(c.coveredDays - 1L).format(DayMonth)}, when LipaBill's records start. Swipe through."
         else "Swipe through to see how it went.",
@@ -808,7 +816,7 @@ private fun weekdayPlural(d: DayOfWeek) = d.getDisplayName(TextStyle.FULL, Local
 @Composable
 private fun ColumnScope.RhythmBody(c: WrapCards, s: WrapStyle, money: Money, hideNames: Boolean) {
     val peak = c.bars.getOrNull(c.peakBar)
-    val peakName = peak?.label?.let { if (it.startsWith("W")) "Week ${it.drop(1)}" else it }
+    val peakName = peak?.label?.let { if (it.startsWith("W")) "Week ${it.drop(1)}" else it.substringBefore(' ') }
     Big(if (peakName != null) "$peakName hit hardest." else "Your rhythm", s.ink, 32.sp)
     @Composable
     fun Tile(value: String, label: String, modifier: Modifier, namesPayee: Boolean = false) {

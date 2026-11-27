@@ -233,4 +233,26 @@ class WrapCardsTest {
         assertFalse(locked.contains("Mama Wanjiru"))
         assertTrue(locked.startsWith("My October 2026 on LipaBill: 6 transactions on 5 of 31 days."))
     }
+
+    @Test
+    fun yearWindowFollowsTheCalendar() {
+        fun d(s: String) = LocalDate.parse(s)
+        assertEquals(d("2026-01-01") to d("2026-12-14"), yearWrapWindow(d("2026-12-15")))
+        assertEquals(d("2025-01-01") to d("2025-12-31"), yearWrapWindow(d("2026-01-20")))
+        assertEquals(d("2025-11-01") to d("2026-10-31"), yearWrapWindow(d("2026-11-27")))
+        assertEquals(d("2025-03-01") to d("2026-02-28"), yearWrapWindow(d("2026-03-01")))
+    }
+
+    @Test
+    fun yearWrapNeedsNinetyDays() {
+        val today = LocalDate.parse("2026-11-27")
+        val short = listOf(tx("2026-09-01", 500.0, "JAVA HOUSE"), tx("2026-10-20", 500.0, "JAVA HOUSE"))
+        assertNull(buildYearWrap(today, short, emptyMap(), zone)) // 1 Sep .. 31 Oct = 61 days
+        val longer = short + tx("2026-05-01", 900.0, "NAIVAS")
+        val c = buildYearWrap(today, longer, emptyMap(), zone)!!
+        assertTrue(c.partial)
+        assertEquals(184, c.coveredDays) // 1 May .. 31 Oct
+        assertEquals(12, c.bars.size)
+        assertEquals(3, c.txnCount)
+    }
 }

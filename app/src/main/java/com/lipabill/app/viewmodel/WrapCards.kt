@@ -112,6 +112,35 @@ fun buildMonthWrap(
     )
 }
 
+/** Fewest covered days for a year story; less than this is not a year. */
+internal const val YEAR_WRAP_MIN_DAYS = 90
+
+/**
+ * The stretch a year Wrapped looks back on from [today]:
+ * December → this year so far; January → last calendar year;
+ * otherwise the last 12 complete months (a calendar year would be stale by mid-year).
+ */
+fun yearWrapWindow(today: LocalDate): Pair<LocalDate, LocalDate> = when (today.monthValue) {
+    12 -> LocalDate.of(today.year, 1, 1) to today.minusDays(1)
+    1 -> LocalDate.of(today.year - 1, 1, 1) to LocalDate.of(today.year - 1, 12, 31)
+    else -> {
+        val last = YearMonth.from(today).minusMonths(1)
+        last.minusMonths(11).atDay(1) to last.atEndOfMonth()
+    }
+}
+
+/** Cards for the year window; null when the ledger covers fewer than [YEAR_WRAP_MIN_DAYS] of it. */
+fun buildYearWrap(
+    today: LocalDate,
+    ledger: List<MpesaTransaction>,
+    overrides: Map<String, String>,
+    zone: ZoneId = ZoneId.systemDefault()
+): WrapCards? {
+    val (from, to) = yearWrapWindow(today)
+    return buildWrapCards(from, to, ledger, overrides, zone)
+        ?.takeIf { it.coveredDays >= YEAR_WRAP_MIN_DAYS }
+}
+
 /** Hours counted as "after midnight": 00:00 to 04:59. */
 internal val AFTER_MIDNIGHT_HOURS = 0 until 5
 

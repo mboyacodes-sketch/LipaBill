@@ -79,7 +79,7 @@ class PlanRenderTest {
                     listOf(com.lipabill.app.viewmodel.PriceTrend("NAIVAS WESTLANDS", 2200.0, 2000.0, java.time.YearMonth.of(2026, 5)))
                 )
                 val wrap = sampleWrap()
-                WrappedTeaser(wrap) {}
+                WrappedTeaser(wrap, onOpen = {})
                 Box(Modifier.fillMaxWidth().height(720.dp).background(Color(0xFF070A08)).padding(12.dp)) {
                     ShareHub(wrapKinds(wrap), wrap, showAmounts = false, hideNames = true)
                 }

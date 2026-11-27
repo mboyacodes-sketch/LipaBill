@@ -109,7 +109,9 @@ fun MetricsScreen(
     val plan by viewModel.moneyPlan.collectAsStateWithLifecycle()
     val insightsRails by viewModel.insightsRails.collectAsStateWithLifecycle()
     val wrapped by viewModel.wrapped.collectAsStateWithLifecycle()
+    val yearWrap by viewModel.yearWrap.collectAsStateWithLifecycle()
     var showWrapped by remember { mutableStateOf(false) }
+    var showYearWrap by remember { mutableStateOf(false) }
     DisposableEffect(viewModel) {
         onDispose { viewModel.resetInsightsFilters() }
     }
@@ -367,7 +369,13 @@ fun MetricsScreen(
             }
 
             if (mpesa) {
-                wrapped?.let { story -> WrappedTeaser(story, onOpen = { showWrapped = true }) }
+                // The year leads in December and January, when "your year" is the moment.
+                val yearFirst = java.time.LocalDate.now().monthValue in setOf(12, 1)
+                val month = wrapped?.let { story -> @Composable { WrappedTeaser(story, onOpen = { showWrapped = true }) } }
+                val year = yearWrap?.let { story ->
+                    @Composable { WrappedTeaser(story, onOpen = { showYearWrap = true }, eyebrow = "YEAR WRAPPED") }
+                }
+                (if (yearFirst) listOfNotNull(year, month) else listOfNotNull(month, year)).forEach { it() }
             }
 
             if (canExportPdf) {
@@ -383,6 +391,10 @@ fun MetricsScreen(
     val story = wrapped
     if (showWrapped && story != null) {
         WrappedDialog(story, onDismiss = { showWrapped = false })
+    }
+    val yearStory = yearWrap
+    if (showYearWrap && yearStory != null) {
+        WrappedDialog(yearStory, onDismiss = { showYearWrap = false })
     }
 
     if (showDatePicker) {

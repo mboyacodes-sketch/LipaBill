@@ -820,6 +820,22 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /**
+     * The year as story cards (see [yearWrapWindow]). Reads the full ledgers, not the
+     * capped plan window, so heavy years are not cut short. Same rail scope as [wrapped].
+     */
+    val yearWrap: StateFlow<WrapCards?> = combine(
+        mpesaLedger,
+        fulizaLedger,
+        combine(rails, insightsRailsFlow) { r, picked -> picked.ifEmpty { r.sources } },
+        app.spendCategoryOverrides
+    ) { ledger, fuliza, scope, overrides ->
+        val withFuliza = if (MoneySource.MPESA in scope) ledger + fuliza else ledger
+        buildYearWrap(java.time.LocalDate.now(), withFuliza.filter { it.source in scope }, overrides)
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     val moneyPlan: StateFlow<MoneyPlanUi> = combine(
         planLedgerForRails,
         combine(walletBalances, rails, insightsRailsFlow) { balances, r, picked ->
