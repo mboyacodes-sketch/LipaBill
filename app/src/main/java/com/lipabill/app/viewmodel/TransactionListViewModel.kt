@@ -800,8 +800,22 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         if (rails.isEmpty()) ledger else ledger.filter { it.source in rails }
     }
 
-    val wrapped: StateFlow<MonthlyWrapped?> = combine(planLedgerForRails, app.spendCategoryOverrides) { ledger, overrides ->
-        buildWrapped(wrappedMonth(java.time.LocalDate.now()), ledger, overrides)
+    /** Fuliza draws for the Wrapped Fuliza card (a month holds far fewer than this). */
+    private val wrapFuliza = repo.observeWalletList(fuliza = true, limit = WRAP_FULIZA_WINDOW)
+
+    /**
+     * Last month as story cards; null when there is no history for it. Limited to the
+     * Settings-enabled rails (or the one picked in Insights), with Fuliza draws mixed in
+     * only when M-Pesa is in scope.
+     */
+    val wrapped: StateFlow<WrapCards?> = combine(
+        planLedger,
+        wrapFuliza,
+        combine(rails, insightsRailsFlow) { r, picked -> picked.ifEmpty { r.sources } },
+        app.spendCategoryOverrides
+    ) { ledger, fuliza, scope, overrides ->
+        val withFuliza = if (MoneySource.MPESA in scope) ledger + fuliza else ledger
+        buildMonthWrap(wrappedMonth(java.time.LocalDate.now()), withFuliza.filter { it.source in scope }, overrides)
     }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -1000,6 +1014,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         const val SEARCH_MIN_CHARS = 2
         /** Ledger rows the money plan reads: months of history for bills and payday. */
         const val PLAN_WINDOW = 3000
+        const val WRAP_FULIZA_WINDOW = 500
         const val HOME_PAGE_SIZE = 80
         /** Max Home search hits — enough to scroll, small enough to stay snappy. */
         const val SEARCH_RESULT_LIMIT = 80

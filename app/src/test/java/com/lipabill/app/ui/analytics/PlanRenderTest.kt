@@ -27,6 +27,7 @@ import java.io.File
 import java.time.LocalDate
 import org.junit.Assume.assumeTrue
 import org.junit.Test
+import com.lipabill.app.data.model.TransactionType as T
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
@@ -75,22 +76,18 @@ class PlanRenderTest {
                     ),
                     listOf(com.lipabill.app.viewmodel.PriceTrend("NAIVAS WESTLANDS", 2200.0, 2000.0, java.time.YearMonth.of(2026, 5)))
                 )
-                WrappedTeaser(
-                    com.lipabill.app.viewmodel.MonthlyWrapped(
-                        java.time.YearMonth.of(2026, 10), 5000.0, 6000.0, null, null, 0, null, 0.0, 27, 10.0, 30.0
-                    )
-                ) {}
-                StoryCardPreview(
-                    "YOUR TOP SPOT", "NAIVAS WESTLANDS", "3 visits", "KSh •••• over the month",
-                    Modifier.fillMaxWidth().aspectRatio(9f / 14f)
-                )
+                val wrap = sampleWrap()
+                WrappedTeaser(wrap) {}
+                wrapKinds(wrap).sortedByDescending { it == WrapCardKind.PERSONALITY }.forEach { kind ->
+                    WrapCard(kind, wrap, showAmounts = kind.ordinal % 2 == 0, modifier = Modifier.fillMaxWidth().aspectRatio(9f / 14f))
+                }
             }
         }
         shadowOf(Looper.getMainLooper()).idle()
         val root: View = activity.window.decorView
         root.measure(
             View.MeasureSpec.makeMeasureSpec(1260, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(5000, View.MeasureSpec.AT_MOST)
+            View.MeasureSpec.makeMeasureSpec(20000, View.MeasureSpec.AT_MOST)
         )
         root.layout(0, 0, root.measuredWidth, root.measuredHeight)
         val bmp = Bitmap.createBitmap(root.measuredWidth, root.measuredHeight, Bitmap.Config.ARGB_8888)
@@ -114,5 +111,27 @@ class PlanRenderTest {
         File(System.getProperty("user.dir"), "build/widget.png").outputStream().use {
             wb.compress(Bitmap.CompressFormat.PNG, 100, it)
         }
+    }
+
+    private fun sampleWrap(): com.lipabill.app.viewmodel.WrapCards {
+        val zone = java.time.ZoneOffset.UTC
+        var n = 0
+        fun tx(day: Int, amount: Double, name: String, type: T, phone: String? = null, cost: Double = 0.0, hour: Int = 12) =
+            com.lipabill.app.testTransaction(
+                code = "R${n++}", type = type, amount = amount, counterpartyName = name, counterpartyPhone = phone, cost = cost,
+                timestampMillis = LocalDate.of(2026, 10, day).atTime(hour, 0).toInstant(zone).toEpochMilli()
+            )
+        val ledger = buildList {
+            add(tx(1, 85_000.0, "ACME LTD", T.RECEIVED))
+            listOf("Mama Wanjiru" to 9000.0, "Faith Achieng" to 7000.0, "Brian Otieno" to 4000.0).forEachIndexed { i, (who, amt) ->
+                add(tx(3 + i, amt, who, T.SENT, phone = "07120000${10 + i}", cost = 50.0, hour = if (i == 0) 1 else 14))
+            }
+            listOf("JAVA HOUSE", "KIBANDASKI CORNER", "NAIVAS", "SHELL KILIMANI", "QUICKMART").forEachIndexed { i, shop ->
+                repeat(5 - i) { r -> add(tx(6 + r * 4 + i, 900.0 + 100 * i, shop, T.BUY_GOODS)) }
+            }
+            add(tx(20, 2500.0, "KPLC PREPAID", T.PAYBILL, cost = 23.0))
+            repeat(6) { add(tx(10 + it * 3, 400.0, "Fuliza", T.FULIZA)) }
+        }
+        return com.lipabill.app.viewmodel.buildMonthWrap(java.time.YearMonth.of(2026, 10), ledger, emptyMap(), zone)!!
     }
 }

@@ -175,4 +175,36 @@ class WrapCardsTest {
         assertEquals(30_000.0, c.moneyIn, 0.01)
         assertTrue(c.personality != WrapPersonality.FULIZA_FREQUENT)
     }
+
+    @Test
+    fun monthWrapComparesWithMonthBefore() {
+        val ledger = listOf(
+            tx("2026-09-01", 4000.0, "NAIVAS WESTLANDS", cost = 0.0),
+            tx("2026-09-20", 2000.0, "GLOVO", cost = 30.0),
+            tx("2026-10-02", 1500.0, "NAIVAS WESTLANDS"),
+            tx("2026-10-09", 1500.0, "NAIVAS WESTLANDS"),
+            tx("2026-10-16", 1000.0, "NAIVAS WESTLANDS"),
+            tx("2026-10-29", 1000.0, "JAVA HOUSE", cost = 10.0)
+        )
+        val c = buildMonthWrap(java.time.YearMonth.of(2026, 10), ledger, emptyMap(), zone)!!
+        assertEquals(5010.0, c.moneyOut, 0.01)
+        assertEquals(6030.0, c.moneyOutBefore!!, 0.01)
+        assertEquals(-16, c.outChange)
+        assertEquals(30.0, c.feesBefore!!, 0.01)
+        assertEquals(27, c.quietDays)
+        assertEquals(com.lipabill.app.engage.SpendCategory.ESSENTIALS, c.biggestCategory)
+        assertEquals(80, c.biggestCategoryShare)
+    }
+
+    @Test
+    fun noComparisonWhenLedgerStartsLater() {
+        val c = buildMonthWrap(java.time.YearMonth.of(2026, 10), october().drop(1), emptyMap(), zone)!!
+        assertNull(c.moneyOutBefore)
+        assertNull(c.outChange)
+    }
+
+    @Test
+    fun wrappedLooksAtLastMonth() {
+        assertEquals(java.time.YearMonth.of(2026, 10), wrappedMonth(LocalDate.parse("2026-11-18")))
+    }
 }

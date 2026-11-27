@@ -6,6 +6,7 @@ import com.lipabill.app.engage.SpendCategory
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import java.time.temporal.TemporalAdjusters
@@ -48,6 +49,11 @@ data class WrapCards(
     /** Payments made between midnight and 5 am. */
     val afterMidnight: Int,
     val biggestPayment: BiggestPayment?,
+    /** Covered days with no money going out. */
+    val quietDays: Int,
+    // Same-length stretch just before, when the ledger covers it (for "vs last month").
+    val moneyOutBefore: Double?,
+    val feesBefore: Double?,
     // Personality
     val personality: WrapPersonality
 ) {
@@ -58,6 +64,9 @@ data class WrapCards(
     data class BiggestPayment(val name: String, val amount: Double, val date: LocalDate)
 
     val net: Double get() = moneyIn - moneyOut
+
+    /** Percent change in money out against the stretch before; null without one. */
+    val outChange: Int? get() = moneyOutBefore?.takeIf { it >= 1.0 }?.let { (((moneyOut - it) / it) * 100).toInt() }
 
     val perDay: Double get() = if (coveredDays > 0) txnCount.toDouble() / coveredDays else 0.0
 
@@ -86,6 +95,23 @@ private fun MpesaTransaction.date(zone: ZoneId): LocalDate =
 private fun MpesaTransaction.hour(zone: ZoneId): Int =
     Instant.ofEpochMilli(timestampMillis).atZone(zone).hour
 
+/** The month a monthly Wrapped looks back on: last month (the current one is not over yet). */
+fun wrappedMonth(today: LocalDate): YearMonth = YearMonth.from(today).minusMonths(1)
+
+/** Cards for [month], compared with the month before it. */
+fun buildMonthWrap(
+    month: YearMonth,
+    ledger: List<MpesaTransaction>,
+    overrides: Map<String, String>,
+    zone: ZoneId = ZoneId.systemDefault()
+): WrapCards? {
+    val before = month.minusMonths(1)
+    return buildWrapCards(
+        month.atDay(1), month.atEndOfMonth(), ledger, overrides, zone,
+        previous = before.atDay(1) to before.atEndOfMonth()
+    )
+}
+
 /** Hours counted as "after midnight": 00:00 to 04:59. */
 internal val AFTER_MIDNIGHT_HOURS = 0 until 5
 
@@ -99,7 +125,9 @@ fun buildWrapCards(
     to: LocalDate,
     ledger: List<MpesaTransaction>,
     overrides: Map<String, String>,
-    zone: ZoneId = ZoneId.systemDefault()
+    zone: ZoneId = ZoneId.systemDefault(),
+    /** The stretch to compare against (e.g. the month before), used only when fully covered. */
+    previous: Pair<LocalDate, LocalDate>? = null
 ): WrapCards? {
     val txs = withoutReversals(ledger)
     val inWindow = txs.filter { val d = it.date(zone); !d.isBefore(from) && !d.isAfter(to) }
@@ -135,6 +163,13 @@ fun buildWrapCards(
         WrapCards.BiggestPayment(payeeName(it), it.amount ?: 0.0, it.date(zone))
     }
 
+    val prior = previous?.takeIf { !ledgerStart.isAfter(it.first) }?.let { (pFrom, pTo) ->
+        txs.filter { val d = it.date(zone); !d.isBefore(pFrom) && !d.isAfter(pTo) }
+    }
+    val quietDays = generateSequence(coveredFrom) { it.plusDays(1) }
+        .takeWhile { !it.isAfter(to) }
+        .count { (outflowByDate[it] ?: 0.0) < 1.0 }
+
     val cards = WrapCards(
         from = from,
         to = to,
@@ -158,6 +193,9 @@ fun buildWrapCards(
         busiestWeekday = inWindow.groupingBy { it.date(zone).dayOfWeek }.eachCount().maxByOrNull { it.value }?.key,
         afterMidnight = spendRows.count { it.hour(zone) in AFTER_MIDNIGHT_HOURS },
         biggestPayment = biggestPayment,
+        quietDays = quietDays,
+        moneyOutBefore = prior?.let { flowTotals(it, WalletAccount.MPESA).second },
+        feesBefore = prior?.let { feeSummary(it).total },
         personality = WrapPersonality.EVERYDAY_MOVER
     )
     return cards.copy(personality = wrapPersonality(cards))
