@@ -191,7 +191,7 @@ fun SendMoneySheetContent(
         balance = shownBalance,
         paymentBlock = paymentBlock,
         blockedDirective = paymentBlock?.let { paymentAccessDirective(sheetAccess.missing) },
-        confirmLabel = "Send Now",
+        confirmLabel = "Send now",
         fulizaCoversShortfall = true
     )
     val pendingAmount = chrome.pendingAmount
@@ -369,7 +369,7 @@ fun SendMoneySheetContent(
     MoneyFlowConfirmDialog(
         visible = showConfirm,
         canConfirm = state.canSend,
-        confirmLabel = "Send Now",
+        confirmLabel = "Send now",
         summary = sendVm.confirmSummary(),
         from = state.activeWallet,
         onDismiss = { showConfirm = false },

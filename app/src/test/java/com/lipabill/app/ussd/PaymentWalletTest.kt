@@ -228,7 +228,7 @@ class PaymentWalletTest {
         assertEquals(PaymentWallet.SAFARICOM_MPESA, groups.single().wallet)
         assertEquals(listOf(1, 2), groups.single().lines.map { it.subscriptionId })
         assertEquals(
-            "Two Safaricom lines — pick which pays.",
+            "You have two Safaricom lines. Pick the one to pay from.",
             PaymentDialResolver.explicitLinePickMessage(PaymentWallet.SAFARICOM_MPESA)
         )
         val sibling = PaymentDialResolver.unusedSibling(
@@ -332,7 +332,7 @@ class PaymentWalletTest {
             PaymentDialResolver.missingPaySimMessage(AppRegion.UGANDA)
         )
         assertEquals(
-            "Turn on M-Pesa or Airtel Money in Ledger to Send and Pay.",
+            "Turn on M-Pesa or Airtel Money in Settings → Wallets and banks to Send and Pay.",
             PaymentDialResolver.payUnavailableMessage(
                 AppRegion.KENYA,
                 setOf(com.lipabill.app.data.model.MoneySource.KCB)

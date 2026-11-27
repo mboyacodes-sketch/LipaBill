@@ -39,7 +39,7 @@ fun openMpesaReverseSms(context: android.content.Context, tx: MpesaTransaction) 
     if (body.isEmpty()) {
         Toast.makeText(
             context,
-            "No original SMS on this receipt to send to 456",
+            "This receipt has no original message to forward to 456",
             Toast.LENGTH_LONG
         ).show()
         return

@@ -891,9 +891,9 @@ private fun HomeSourceFilter(
         if (hasBankRail) {
             Text(
                 text = if (selected != null && !selected.isWallet) {
-                    "${selected.label} filters history only."
+                    "${selected.label} only filters your history."
                 } else {
-                    "Bank chips filter history only."
+                    "Bank filters only change your history."
                 },
                 style = HomeType.caption,
                 color = Mute,
@@ -960,7 +960,7 @@ private fun SafeToSpendLine(safe: SafeToSpend?, onClick: () -> Unit, modifier: M
             Text("Safe to spend", style = HomeType.caption, color = Mute)
             if (safe == null) {
                 Text(
-                    "Shows once a wallet balance arrives by SMS.",
+                    "Shows once a message with your balance arrives.",
                     style = HomeType.label,
                     fontWeight = FontWeight.Bold,
                     color = Ink
@@ -1048,7 +1048,7 @@ private fun WalletDeck(
             Text(
                 text = if (fulizaDue != null && (balance ?: 0.0) > 0.0) {
                     fulizaDueCopy(fulizaDue, LocalDate.now()).replaceFirstChar { it.uppercase() } +
-                        " · daily charges since are not included"
+                        " · daily charges since then aren't included"
                 } else {
                     "Nothing owed on Fuliza"
                 },
@@ -1083,7 +1083,7 @@ private fun WalletDeck(
                     card.source == walletPick.dialWallet ->
                         "Send & Pay use this wallet"
                     card.lineLabel == null ->
-                        "Balance only — allow phone access to dial this line"
+                        "Balance only. Allow phone access to pay from this line"
                     else ->
                         "Balance only — Send & Pay still on ${walletPick.dialWallet?.label ?: "another line"}"
                 },
@@ -1171,7 +1171,7 @@ private fun LedgerMovesRow(
         LedgerMoveCard(
             icon = Icons.Outlined.ConfirmationNumber,
             label = "Passes",
-            caption = "What it became",
+            caption = "Your tickets",
             face = ActionTickets,
             onClick = onPasses,
             modifier = Modifier.weight(1f)

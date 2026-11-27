@@ -42,9 +42,9 @@ object DataAccessRationale {
     )
 
     val SMS = DataAccessCopy(
-        title = "SMS shows where it went",
+        title = "SMS shows where your money went",
         body = "LipaBill reads money confirmation SMS from wallets and banks you enable " +
-            "to keep your ledger, available balance, and spending overview on this phone. " +
+            "to keep your transaction history, available balance, and spending overview on this phone. " +
             "It does not send SMS or read OTPs."
     )
 

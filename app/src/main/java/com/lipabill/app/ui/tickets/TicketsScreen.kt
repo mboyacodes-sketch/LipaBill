@@ -476,7 +476,7 @@ fun TicketsScreen(
                         if (t is CancellationException) throw t
                         AppMetrics.ticketImportFailure("paste", t)
                         error = t.message?.takeIf { it.isNotBlank() }
-                            ?: "Couldn’t parse that confirmation."
+                            ?: "Couldn’t read that message."
                     }
                 }
             }
@@ -487,7 +487,7 @@ fun TicketsScreen(
                 scope.launch {
                     val id = viewModel.addFromPaste(title, code, venue, startsAt)
                     if (id == null) {
-                        error = "Couldn’t save — empty code or already added."
+                        error = "Couldn’t save. The code is empty or already added."
                     } else {
                         addMode = null
                         onOpenTicket(id)
@@ -607,7 +607,7 @@ private fun EmptyTickets(
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Nothing here yet. A pass is what the money already became — show it at the gate even without data.",
+            text = "Nothing here yet. Add your tickets and show them at the gate, even without data.",
             style = HomeType.body,
             color = Mute,
             textAlign = TextAlign.Center,
@@ -636,7 +636,7 @@ private fun EmptyTickets(
         PassPathCard(
             icon = Icons.Outlined.ConfirmationNumber,
             title = "Event ticket",
-            body = "The night out is already paid. Import a PDF, photo, or pass.",
+            body = "Add a ticket from a PDF, photo, or pass file.",
             onClick = onEventTicket
         )
         Spacer(modifier = Modifier.height(10.dp))
@@ -1186,7 +1186,7 @@ private fun TodayPassHero(
     val seat = ticket.seatOrTier?.takeIf { it.isNotBlank() }
     val subtitle = when (stage) {
         TodayStage.LIVE -> listOfNotNull(schedule.time?.let { "Started $it" }, venue).joinToString(" · ")
-        TodayStage.FINISHED -> "Did you go? Mark it used to tidy Passes."
+        TodayStage.FINISHED -> "Did you go? Mark it as used to clear it from Passes."
         TodayStage.NEEDS_BOARDING_PASS -> "Booking saved. Add the boarding pass before you reach the gate."
         TodayStage.CODE_PENDING -> "Saved from the SMS. Add the entry code when it arrives."
         else -> venue.orEmpty()
@@ -1281,7 +1281,7 @@ private fun TodayPassHero(
                 TodayStage.NEEDS_BOARDING_PASS, TodayStage.CODE_PENDING -> {
                     // Detail screen owns attach / scan; Today only opens the pass.
                     HeroButton(
-                        if (stage == TodayStage.NEEDS_BOARDING_PASS) "Open to add boarding" else "Open to add code",
+                        if (stage == TodayStage.NEEDS_BOARDING_PASS) "Open to add boarding pass" else "Open to add code",
                         onOpen, PassTone.warnInk, PassTone.onWarnButton,
                         modifier = Modifier.weight(1f)
                     )
@@ -1578,7 +1578,7 @@ private fun PasteConfirmationDialog(
             Column(verticalArrangement = Arrangement.spacedBy(Space.gap)) {
                 Text(
                     "Paste the SMS your ticket came in. SGR: Ref No, train, date, seat. Event: match, gate, seat, ticket no. " +
-                        "The SMS has no QR, so add the ticket screenshot or PDF next: it joins this same pass.",
+                        "SMS tickets have no QR code, so add the screenshot or PDF next. It will join this pass.",
                     style = HomeType.body,
                     color = Mute
                 )
@@ -1650,7 +1650,7 @@ private fun ManualTicketDialog(
                 OutlinedTextField(
                     value = code,
                     onValueChange = { code = it },
-                    label = { Text("Ticket code / QR payload") },
+                    label = { Text("Ticket code") },
                     singleLine = false,
                     minLines = 2,
                     modifier = Modifier

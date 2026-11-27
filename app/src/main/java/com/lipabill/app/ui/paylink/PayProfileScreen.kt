@@ -480,7 +480,7 @@ fun PayProfileScreen(
                     return
                 }
                 if (account == null) {
-                    fieldError = "Enter the account / shop code."
+                    fieldError = "Enter the account number."
                     return
                 }
                 prefs.setPayBillBusiness(requestSource, business)
@@ -704,7 +704,7 @@ fun PayProfileScreen(
                                     )
                                     if (paymentSlides.size > 1) {
                                         Text(
-                                            text = "Swipe for your other destinations",
+                                            text = "Swipe to see your other payment details",
                                             style = HomeType.caption,
                                             color = Mute,
                                             modifier = Modifier.padding(top = 8.dp)
@@ -823,7 +823,7 @@ fun PayProfileScreen(
                                     )
                                     Text(
                                         text = if (payQrFixed) {
-                                            "Won’t change daily."
+                                            "Stays the same every day."
                                         } else {
                                             "Refreshes each day."
                                         },
@@ -963,7 +963,7 @@ fun PayProfileScreen(
                                                 draftAccount = next
                                                 fieldError = null
                                             },
-                                            placeholder = "Account / shop code",
+                                            placeholder = "Account number",
                                             sanitize = ::sanitizePayAccount,
                                             onFocused = { accountFocused = it },
                                             modifier = Modifier.fillMaxWidth()
@@ -984,7 +984,7 @@ fun PayProfileScreen(
                                 )
                                 Spacer(modifier = Modifier.height(Space.block))
                                 AccentWideButton(onClick = ::saveDestination) {
-                                    Text("Save destination", style = HomeType.rowTitle)
+                                    Text("Save", style = HomeType.rowTitle)
                                 }
                                 if (paymentSlides.isNotEmpty()) {
                                     Text(
@@ -1009,7 +1009,7 @@ fun PayProfileScreen(
                                         )
                                     },
                                     title = "Get paid with a QR",
-                                    body = "Add a $walletLabel phone, till, or paybill. It stays on this wallet — other MNOs keep their own codes.",
+                                    body = "Add a $walletLabel phone, till, or paybill. Each wallet has its own code.",
                                     cta = "Add payment details",
                                     onCta = ::startAddPayment
                                 )

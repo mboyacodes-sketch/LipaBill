@@ -421,14 +421,14 @@ fun topHabit(
         .filter { it.visits >= minVisits }
         .maxWithOrNull(compareBy<SpendingHabit> { it.visits }.thenBy { it.total })
 
-/** "You kept KES X more than the stretch before." Null when there is nothing to compare. */
+/** "You kept KES X more than the period before." Null when there is nothing to compare. */
 fun keptHeadline(net: Double, previousNet: Double, hasPrior: Boolean): String? {
     if (!hasPrior) return null
     val diff = net - previousNet
     return when {
-        abs(diff) < 1.0 -> "You kept about the same as the stretch before."
-        diff > 0 -> "You kept ${formatKsh(diff)} more than the stretch before."
-        else -> "You kept ${formatKsh(-diff)} less than the stretch before."
+        abs(diff) < 1.0 -> "You kept about the same as the period before."
+        diff > 0 -> "You kept ${formatKsh(diff)} more than the period before."
+        else -> "You kept ${formatKsh(-diff)} less than the period before."
     }
 }
 

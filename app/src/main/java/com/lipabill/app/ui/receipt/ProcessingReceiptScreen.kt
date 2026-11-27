@@ -245,14 +245,14 @@ fun ProcessingReceiptScreen(
         ReceiptTag.DONE ->
             "Confirmation received"
         ReceiptTag.FAILED ->
-            "Confirmation SMS said this payment did not go through"
+            "The confirmation message says this payment didn’t go through"
         ReceiptTag.INTERRUPTED ->
             when {
                 attempt?.detail?.contains("insufficient", ignoreCase = true) == true ||
                     attempt?.detail == "insufficient_funds" ->
                     "Not enough on this line — try the other SIM if you have one"
                 else ->
-                    "Automation stopped — check the payment on your phone"
+                    "LipaBill stopped filling in this payment. Check your phone to see where it got to"
             }
         ReceiptTag.CANCELLED ->
             "This payment was cancelled"
@@ -260,7 +260,7 @@ fun ProcessingReceiptScreen(
             RepeatOutcome.COMPLETED_TO_PIN ->
                 "PIN submitted — waiting for confirmation SMS"
             else ->
-                "Enter your PIN; updates when SMS arrives"
+                "Enter your PIN. This updates when the confirmation arrives"
         }
     }
 
@@ -649,7 +649,7 @@ private fun PaymentStub(
             Text(
                 text = when (tag) {
                     ReceiptTag.DONE -> "Payment complete"
-                    ReceiptTag.PROCESSING -> "Awaiting SMS"
+                    ReceiptTag.PROCESSING -> "Waiting for confirmation"
                     ReceiptTag.FAILED -> "Payment failed"
                     ReceiptTag.INTERRUPTED -> "Not completed"
                     ReceiptTag.CANCELLED -> "Cancelled"
@@ -669,9 +669,9 @@ private fun PaymentStub(
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = when {
-                    tag == ReceiptTag.FAILED -> "No money left your wallet for this try"
+                    tag == ReceiptTag.FAILED -> "No money left your wallet"
                     !confirmCode.isNullOrBlank() -> "Ref $confirmCode"
-                    waitingOnSms -> "Heading home if the SMS is slow"
+                    waitingOnSms -> "Taking you home. The confirmation is taking a while"
                     tag == ReceiptTag.PROCESSING -> "Updates when the SMS arrives"
                     else -> "Return home when ready"
                 },

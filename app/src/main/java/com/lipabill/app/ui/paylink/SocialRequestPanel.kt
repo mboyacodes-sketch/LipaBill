@@ -427,7 +427,7 @@ fun SocialRequestPanel(
                 }
             }
             Text(
-                text = "Tap for the code · right to edit · left to remove",
+                text = "Tap to show the code. Swipe right to edit, left to remove.",
                 style = HomeType.caption,
                 color = Mute,
                 modifier = Modifier.padding(top = 14.dp)
@@ -1018,7 +1018,7 @@ private fun SocialEmptyOrbit(
                 textAlign = TextAlign.Center
             )
             Text(
-                text = "Tap + and pick a network. Friends scan the code and land on your page — app if they have it, web if they don’t.",
+                text = "Tap + and pick a network. Friends scan the code to open your profile, in the app if they have it or on the web if not.",
                 style = HomeType.body,
                 color = Mute,
                 textAlign = TextAlign.Center,

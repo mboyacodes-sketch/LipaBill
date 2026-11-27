@@ -17,7 +17,7 @@ class PaymentManualDetailsTest {
         assertTrue(text.contains("Dial ${UssdMenuBuilder.USSD_CODE}"))
         assertTrue(text.contains("Ada 0712345678"))
         assertTrue(text.contains("KES 100"))
-        assertTrue(text.contains("complete the mobile money menus yourself", ignoreCase = true))
+        assertTrue(text.contains("go through the mobile money menus yourself", ignoreCase = true))
         assertTrue(text.contains("automatic repeat", ignoreCase = true))
         assertTrue(text.contains("PIN is entered in mobile money", ignoreCase = true))
         assertTrue(text.contains("does not store", ignoreCase = true))

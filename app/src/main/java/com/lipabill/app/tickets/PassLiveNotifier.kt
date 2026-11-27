@@ -52,7 +52,7 @@ class PassLiveNotifier(private val context: Context) {
         context.postLipaBill(
             channelId = CHANNEL_ID,
             channelName = "Pass today",
-            channelDescription = "A quiet status while a pass is on for today. Tap to open it.",
+            channelDescription = "A silent notification on days you have a pass. Tap it to open the pass.",
             importance = NotificationManager.IMPORTANCE_LOW,
             notifyId = NOTIFY_ID,
             title = title,

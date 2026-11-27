@@ -42,9 +42,9 @@ class AnalyticsInsightsTest {
 
     @Test
     fun vs_prior_copy_rounds_percent_and_marks_new_activity() {
-        assertEquals("+18% vs prior", vsPriorCopy(118.0, 100.0, comparable = true))
-        assertEquals("-25% vs prior", vsPriorCopy(75.0, 100.0, comparable = true))
-        assertEquals("New vs prior", vsPriorCopy(40.0, 0.0, comparable = true))
+        assertEquals("+18% vs last time", vsPriorCopy(118.0, 100.0, comparable = true))
+        assertEquals("-25% vs last time", vsPriorCopy(75.0, 100.0, comparable = true))
+        assertEquals("New since last time", vsPriorCopy(40.0, 0.0, comparable = true))
         assertNull(vsPriorCopy(40.0, 10.0, comparable = false))
     }
 
@@ -335,7 +335,7 @@ class AnalyticsInsightsTest {
             endsToday = true
         )
         assertEquals("5 quiet days in a row.", story.headline)
-        assertEquals("No money out through today.", story.detail)
+        assertEquals("Nothing went out up to today.", story.detail)
     }
 
     @Test
@@ -355,7 +355,7 @@ class AnalyticsInsightsTest {
             busiestLabel = "12 Oct",
             endsToday = true
         )
-        assertEquals("KPLC shaped this stretch.", story.headline)
+        assertEquals("KPLC got the most.", story.headline)
     }
 
     @Test
@@ -375,7 +375,7 @@ class AnalyticsInsightsTest {
             busiestLabel = null,
             endsToday = true
         )
-        assertEquals("The picture fills from your texts.", story.headline)
+        assertEquals("Your summary builds from your payment messages.", story.headline)
     }
 
     @Test
@@ -395,8 +395,8 @@ class AnalyticsInsightsTest {
             busiestLabel = "12 Oct",
             endsToday = false
         )
-        assertEquals("4 days without a Fuliza draw.", story.headline)
-        assertEquals("Quiet through the end of this stretch.", story.detail)
+        assertEquals("4 days without Fuliza.", story.headline)
+        assertEquals("Nothing borrowed up to the end of this period.", story.detail)
     }
 
     @Test

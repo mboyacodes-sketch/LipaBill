@@ -185,11 +185,11 @@ fun SettingsScreen(
                     title = "Country",
                     hint = when {
                         state.simRegions.isNotEmpty() ->
-                            "Only countries on this phone’s SIMs. Ledger for ${state.region.label}."
+                            "Only countries of the SIMs in this phone. Tracking money in ${state.region.label}."
                         state.region.canSendPay ->
-                            "Ledger for ${state.region.label}. Send and Pay stay on M-Pesa."
+                            "Tracking money in ${state.region.label}. Send and Pay use M-Pesa."
                         else ->
-                            "Ledger for ${state.region.label}. Send and Pay are Kenya M-Pesa for now."
+                            "Tracking money in ${state.region.label}. Send and Pay work with M-Pesa in Kenya for now."
                     }
                 ) {
                     RegionPicker(
@@ -201,11 +201,11 @@ fun SettingsScreen(
                 }
                 SettingsDivider()
                 SettingsChoiceBlock(
-                    title = "Ledger",
+                    title = "Wallets and banks",
                     hint = if (state.needsPhoneStatePermission) {
-                        "Allow phone access to match wallets to the SIMs in this phone. Banks anytime. Up to 5."
+                        "Allow phone access so LipaBill can match wallets to your SIMs. Add banks any time. Pick up to 5."
                     } else {
-                        "Wallets match SIMs in this phone (numbers when available). Banks anytime. Up to 5."
+                        "Wallets are matched to the SIMs in this phone. Add banks any time. Pick up to 5."
                     }
                 ) {
                     ProviderPicker(
@@ -252,14 +252,14 @@ fun SettingsScreen(
                     SettingsDivider()
                     SettingsNavRow(
                         title = "Keep payments ready",
-                        subtitle = "Battery and Never sleeping apps — stops this phone from pausing payment fill.",
+                        subtitle = "Allow unrestricted battery use and add LipaBill to Never sleeping apps, so payments don't stop halfway.",
                         action = "Open",
                         onClick = onRequestOemSurvival
                     )
                     SettingsDivider()
                     SettingsSwitchRow(
                         title = "Automatic repeat",
-                        subtitle = "Fills a past payment. Off copies the details.",
+                        subtitle = "Repeats a past payment for you. When off, LipaBill copies the details so you can pay yourself.",
                         checked = state.repeatEnabled,
                         onCheckedChange = viewModel::setRepeatEnabled
                     )
@@ -289,7 +289,7 @@ fun SettingsScreen(
             SettingsSection("Home", Icons.Outlined.Home) {
                 SettingsSwitchRow(
                     title = "Dark mode",
-                    subtitle = "Navy screens at night. Passes stay paper white.",
+                    subtitle = "Dark screens for night use. Passes stay white so they scan.",
                     checked = state.darkMode,
                     onCheckedChange = viewModel::setDarkMode
                 )
@@ -318,7 +318,7 @@ fun SettingsScreen(
                 val leads = state.passReminderLeadTimes
                 SettingsChoiceBlock(
                     title = "Evening before",
-                    hint = "Day before the pass."
+                    hint = "A reminder the day before."
                 ) {
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(Space.gap),
@@ -341,7 +341,7 @@ fun SettingsScreen(
                 SettingsDivider()
                 SettingsChoiceBlock(
                     title = "Ahead of time",
-                    hint = "Hours before the start."
+                    hint = "A reminder a few hours before it starts."
                 ) {
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(Space.gap),
@@ -364,7 +364,7 @@ fun SettingsScreen(
                 SettingsDivider()
                 SettingsChoiceBlock(
                     title = "Morning of",
-                    hint = "Early events use two hours earlier."
+                    hint = "For events starting by 9 am, this comes two hours earlier."
                 ) {
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(Space.gap),
@@ -389,7 +389,7 @@ fun SettingsScreen(
             SettingsSection("Security", Icons.Outlined.Shield) {
                 SettingsChoiceBlock(
                     title = "Lock after",
-                    hint = "Unlock again after you leave the app."
+                    hint = "Ask to unlock again after you've been away this long."
                 ) {
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(Space.gap),
@@ -465,7 +465,7 @@ fun SettingsScreen(
                     SettingsDivider()
                     SettingsNavRow(
                         title = "Replay setup wizard",
-                        subtitle = "Opens the first-run flow again. Ledger and settings stay as they are.",
+                        subtitle = "Opens the first-run flow again. Your history and settings stay as they are.",
                         showChevron = true,
                         onClick = onReplayFirstRun
                     )

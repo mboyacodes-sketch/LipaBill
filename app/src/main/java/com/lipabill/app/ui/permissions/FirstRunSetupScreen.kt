@@ -518,18 +518,18 @@ private fun WizardPageBody(
     val note: String? = when (page) {
         FirstRunPage.Region -> when {
             selectableRegions.size < AppRegion.entries.size ->
-                "Only countries on this phone’s SIMs."
+                "Only countries of the SIMs in this phone."
             else -> regionGuess?.takeIf { it.region == region }?.hint()
         }
         FirstRunPage.Providers ->
             lockedProviders.values.distinct().joinToString("\n").ifBlank { null }
         FirstRunPage.Sms -> if (smsGranted) {
-            "SMS is allowed. Where it went can now fill on this phone."
+            "SMS access is on. Your money history can now load on this phone."
         } else {
             null
         }
         FirstRunPage.Phone -> if (phoneReady) {
-            "Phone and SIM are allowed. Send and Pay can place the call you confirm."
+            "Phone access is on. Send and Pay can dial the payments you confirm."
         } else {
             null
         }
@@ -905,7 +905,7 @@ private fun WizardActions(
             FirstRunPage.Welcome -> WizardPrimaryButton("Next", onNext)
             FirstRunPage.Region -> WizardPrimaryButton("Continue with ${region.label}", onNext)
             FirstRunPage.Providers ->
-                WizardPrimaryButton("Keep these on the picture", onNext, enabled = providersPicked)
+                WizardPrimaryButton("Use these", onNext, enabled = providersPicked)
             FirstRunPage.Sms -> {
                 if (smsGranted) {
                     WizardPrimaryButton("Next", onNext)

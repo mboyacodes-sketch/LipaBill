@@ -266,7 +266,7 @@ private fun DemoConfirmPage(
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Same as ${walletBadge}’s last step — Yes continues, No cancels",
+            text = "This is ${walletBadge}’s last step. Yes pays, No cancels",
             style = HomeType.caption,
             color = Mute,
             textAlign = TextAlign.Center

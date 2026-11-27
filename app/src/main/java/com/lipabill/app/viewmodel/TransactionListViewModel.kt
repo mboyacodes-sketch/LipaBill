@@ -63,8 +63,8 @@ enum class WalletAccount(
         metricsTitle = "Insights",
         inflowLabel = "Income",
         outflowLabel = "Expenses",
-        emptyHistoryTitle = "Nothing in the picture yet",
-        emptyHistoryDetail = "Pull down to import confirmation SMS from the wallets and banks you picked."
+        emptyHistoryTitle = "Nothing here yet",
+        emptyHistoryDetail = "Pull down to load payment messages from the wallets and banks you chose."
     ),
     FULIZA(
         chipLabel = "Fuliza",
@@ -93,7 +93,7 @@ enum class WalletAccount(
 
     /** Why Send and Pay are off when neither balance has arrived yet. */
     fun unfundedPaymentMessage(mpesaBalance: Double?, fulizaOutstanding: Double?): String =
-        "Send and Pay need an M-PESA balance from your messages. There isn’t one yet."
+        "Send and Pay need your M-PESA balance, and none of your messages show it yet."
 }
 
 enum class AnalyticsRange {
@@ -652,7 +652,7 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
         pillWallet.value = source
         if (!app.setActiveWallet(source)) {
             scanMessage.value =
-                "Showing ${source.label} balance — insert or allow that SIM to dial Send & Pay."
+                "Showing your ${source.label} balance. To Send and Pay from it, insert that SIM or allow phone access."
         }
     }
 
@@ -759,23 +759,23 @@ class TransactionListViewModel(application: Application) : AndroidViewModel(appl
                 if (!hasSmsPermission.value) {
                     AppMetrics.setupBlocked(SetupBlocker.NoSms)
                     AppMetrics.ledgerRefreshFailed()
-                    scanMessage.value = "SMS permission required to scan inbox"
+                    scanMessage.value = "Allow SMS access so LipaBill can check your messages"
                     return@launch
                 }
                 // Full history: newly enabled rails sit behind the high-water mark.
                 val inserted = repo.rescanInbox(forceFullHistory = true)
                 AppMetrics.ledgerRefresh(inserted, includeUnchanged = true)
                 scanMessage.value = if (inserted == 0) {
-                    "Inbox scanned — no new confirmation messages"
+                    "Messages checked. Nothing new."
                 } else {
                     "Added $inserted new transaction${if (inserted == 1) "" else "s"}"
                 }
             } catch (error: SecurityException) {
                 AppMetrics.ledgerRefreshFailed(error)
-                scanMessage.value = "SMS permission required to scan inbox"
+                scanMessage.value = "Allow SMS access so LipaBill can check your messages"
             } catch (e: Exception) {
                 AppMetrics.ledgerRefreshFailed(e)
-                scanMessage.value = "Scan failed: ${e.message ?: "unknown error"}"
+                scanMessage.value = "Couldn't check your messages: ${e.message ?: "unknown error"}"
             } finally {
                 isScanning.value = false
             }

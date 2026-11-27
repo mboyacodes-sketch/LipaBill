@@ -455,7 +455,7 @@ internal fun EmptyState(
                 filterLabel != null && searching -> "Nothing in $filterLabel"
                 searching -> "No matches"
                 hasPermission -> account.emptyHistoryTitle
-                else -> "Where it went shows up here"
+                else -> "Your transactions will show up here"
             },
             style = HomeType.rowTitle
         )
@@ -482,7 +482,7 @@ internal fun EmptyState(
         } else if (!hasPermission && !searching) {
             Spacer(modifier = Modifier.height(Space.block))
             Button(onClick = onAllowSms) {
-                Text("Allow SMS to see where it went")
+                Text("Allow SMS to see your transactions")
             }
         }
     }
@@ -499,13 +499,13 @@ internal fun SmsAccessPrompt(
         horizontalAlignment = Alignment.Start
     ) {
             Text(
-                text = "Confirmation SMS stay out of the picture until SMS is allowed. " +
-                    "They are read on this phone only, encrypted, and never sent. OTPs are not read.",
+                text = "Your transactions stay hidden until you allow SMS. " +
+                    "Messages are read only on this phone, kept encrypted, and never sent anywhere. One-time codes (OTPs) are never read.",
                 style = HomeType.body,
                 color = Mute
             )
         TextButton(onClick = onAllow) {
-            Text("Allow SMS to see where it went")
+            Text("Allow SMS to see your transactions")
         }
     }
 }

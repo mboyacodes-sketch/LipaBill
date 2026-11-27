@@ -148,7 +148,7 @@ private fun layoutStatementPages(
             listOf(
                 StatementRow(
                     date = formatPeriodSpan(periodFrom, periodTo),
-                    detail = "No payments in this stretch",
+                    detail = "No payments in this period",
                     inflow = "",
                     outflow = ""
                 )

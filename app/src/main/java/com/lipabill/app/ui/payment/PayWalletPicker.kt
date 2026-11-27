@@ -117,7 +117,7 @@ fun PayWalletPicker(
     var menuWidth by remember { mutableStateOf(0.dp) }
     val subtitle = when {
         awaitingPick ->
-            explicitPickMessage ?: "Two lines — pick which pays."
+            explicitPickMessage ?: "You have two lines. Pick the one to pay from."
         else ->
             availableLine(region, wallet?.ledgerSource, balances) ?: line.label
     }
