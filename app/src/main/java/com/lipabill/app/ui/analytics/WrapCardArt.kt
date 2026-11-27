@@ -1,7 +1,5 @@
 package com.lipabill.app.ui.analytics
 
-import android.os.Build
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,21 +19,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathMeasure
-import androidx.compose.ui.graphics.PointMode
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -53,45 +38,30 @@ import com.lipabill.app.viewmodel.WrapPersonality
 import java.time.DayOfWeek
 import java.time.format.TextStyle
 import java.util.Locale
-import kotlin.math.cos
-import kotlin.math.sin
-import kotlin.random.Random
 
 // ---------------------------------------------------------------------------------------------
 // Type and palette
 //
-// Backgrounds follow the M-PESA Wrap reference (grain, blur, plaster, dry brush, linen, torn
-// paper, crumpled paper, leaf line-art, spray). Colours are LipaBill's own: brand navy and
-// cream, with marigold as the signal colour and rose for warmth.
+// Card layouts follow the M-PESA Wrap reference. Backgrounds are solid colours from the
+// app's own palette: brand navy, ink, and the pastel tiles used across Home and Insights.
 
 /** Heavy grotesque for headlines and figures. SIL OFL, see third_party/archivo_black. */
 internal val WrapDisplay = FontFamily(Font(R.font.archivo_black))
 
 internal object WrapPalette {
-    val Midnight = Color(0xFF0C1838)
-    val Navy = Color(0xFF1B3B6E)
-    val Cobalt = Color(0xFF3567C9)
-    val CobaltDeep = Color(0xFF1C3778)
-    val Haze = Color(0xFFBFD6F5)
-    val Indigo = Color(0xFF111A3F)
-    val IndigoLine = Color(0xFF2A3A7E)
-    val Marigold = Color(0xFFFFB23F)
-    val MarigoldDeep = Color(0xFFF29A1F)
-    val InkNavy = Color(0xFF0A1026)
-    val Cream = Color(0xFFF4E6C4)
-    val CreamDeep = Color(0xFFE9D3A2)
-    val Rose = Color(0xFFE9577E)
-    val Sky = Color(0xFF9DC0EE)
-    val SkyDeep = Color(0xFF86AEE6)
-    val Dusk = Color(0xFF0B0F2E)
-    val DuskDeep = Color(0xFF060820)
-    /** Text on light cards (cream, sky, marigold). */
-    val Ink = Color(0xFF0E1A3A)
+    val Navy = Color(0xFF2F4A6E)
+    val NavyDeep = Color(0xFF1B3B6E)
+    val Blue = Color(0xFFDCE8F5)
+    val Mint = Color(0xFFDCF5E8)
+    val Lavender = Color(0xFFE8DCF5)
+    val Rose = Color(0xFFF5DCDC)
+    val Cream = Color(0xFFF3E9C8)
+    val LabelBlue = Color(0xFF9BB0C9)
+    /** Text on pastel cards (the app's ink). */
+    val Ink = Color(0xFF111827)
 
-    // Roles used by layouts.
-    val Accent = Marigold
-    val SpotName = Marigold
-    val BarInk = Ink
+    /** Highlight on navy: money out, top spot names, switches. */
+    val Accent = Cream
 }
 
 internal enum class WrapCardKind(val title: String) {
@@ -129,422 +99,36 @@ internal fun shareKinds(c: WrapCards): List<WrapCardKind> = buildList {
     add(WrapCardKind.PERSONALITY)
 }
 
-/** Text colour for a card: white on dark art, ink navy on cream / sky. */
-internal fun inkOf(kind: WrapCardKind): Color = when (kind) {
-    WrapCardKind.FULIZA, WrapCardKind.RHYTHM -> WrapPalette.Ink
-    else -> Color.White
+/** Solid background for each card. */
+internal fun backgroundOf(kind: WrapCardKind): Color = when (kind) {
+    WrapCardKind.SUMMARY, WrapCardKind.INTRO, WrapCardKind.SPOTS -> WrapPalette.Navy
+    WrapCardKind.FLOW, WrapCardKind.PERSONALITY -> WrapPalette.NavyDeep
+    WrapCardKind.NUMBERS -> WrapPalette.Blue
+    WrapCardKind.FEES -> WrapPalette.Rose
+    WrapCardKind.FULIZA -> WrapPalette.Cream
+    WrapCardKind.PEOPLE -> WrapPalette.Mint
+    WrapCardKind.RHYTHM -> WrapPalette.Lavender
 }
+
+/** True for the navy cards (white text); pastel cards use ink. */
+internal fun isDark(kind: WrapCardKind): Boolean = when (backgroundOf(kind)) {
+    WrapPalette.Navy, WrapPalette.NavyDeep -> true
+    else -> false
+}
+
+/** Text colour for a card. */
+internal fun inkOf(kind: WrapCardKind): Color = if (isDark(kind)) Color.White else WrapPalette.Ink
 
 /** Main colour, used to tint the screen behind the card. */
-internal fun baseOf(kind: WrapCardKind): Color = when (kind) {
-    WrapCardKind.SUMMARY, WrapCardKind.INTRO -> WrapPalette.Midnight
-    WrapCardKind.NUMBERS, WrapCardKind.PEOPLE -> WrapPalette.CobaltDeep
-    WrapCardKind.FLOW -> Color(0xFF5A3A08)
-    WrapCardKind.FEES -> WrapPalette.InkNavy
-    WrapCardKind.FULIZA -> Color(0xFF5C4C2C)
-    WrapCardKind.SPOTS -> WrapPalette.Indigo
-    WrapCardKind.RHYTHM -> Color(0xFF2A4A78)
-    WrapCardKind.PERSONALITY -> WrapPalette.DuskDeep
-}
-
-// ---------------------------------------------------------------------------------------------
-// Textures — vector only and seeded, so a shared PNG matches the screen.
-
-/** Coarse film grain: light and dark specks over the whole card, as in the reference. */
-internal fun Modifier.grain(strength: Float = 1f, seed: Int = 7): Modifier =
-    drawWithCache {
-        val rnd = Random(seed)
-        val count = (size.width * size.height / 34f).toInt().coerceAtMost(110_000)
-        val light = ArrayList<Offset>(count / 2)
-        val dark = ArrayList<Offset>(count / 2)
-        repeat(count) {
-            val p = Offset(rnd.nextFloat() * size.width, rnd.nextFloat() * size.height)
-            if (rnd.nextBoolean()) light += p else dark += p
-        }
-        onDrawWithContent {
-            drawContent()
-            drawPoints(light, PointMode.Points, Color.White.copy(alpha = 0.09f * strength), strokeWidth = 2.2f)
-            drawPoints(dark, PointMode.Points, Color.Black.copy(alpha = 0.13f * strength), strokeWidth = 2.2f)
-        }
-    }
-
-/** Gaussian-ish offset, for spray and splatter. */
-private fun Random.spread(r: Float): Float = (nextFloat() + nextFloat() + nextFloat() - 1.5f) / 1.5f * r
-
-/** Rough plaster: dense fine specks in two tones. */
-private fun DrawScope.plaster(area: Size, base: Color, seed: Int) {
-    val rnd = Random(seed)
-    val n = (area.width * area.height / 9f).toInt().coerceAtMost(140_000)
-    val hi = ArrayList<Offset>(n / 2)
-    val lo = ArrayList<Offset>(n / 2)
-    repeat(n) {
-        val p = Offset(rnd.nextFloat() * area.width, rnd.nextFloat() * area.height)
-        if (rnd.nextBoolean()) hi += p else lo += p
-    }
-    drawPoints(hi, PointMode.Points, Color.White.copy(alpha = 0.10f), strokeWidth = 1.6f)
-    drawPoints(lo, PointMode.Points, base.copy(alpha = 0.22f), strokeWidth = 1.6f)
-}
-
-/** Linen weave: fine jittered warp and weft threads. */
-private fun DrawScope.linen(seed: Int) {
-    val rnd = Random(seed)
-    var y = 0f
-    while (y < size.height) {
-        drawLine(Color.Black.copy(alpha = 0.035f + rnd.nextFloat() * 0.03f), Offset(0f, y), Offset(size.width, y + rnd.spread(2f)), 1.2f)
-        y += 3.2f
-    }
-    var x = 0f
-    while (x < size.width) {
-        drawLine(Color.White.copy(alpha = 0.05f + rnd.nextFloat() * 0.04f), Offset(x, 0f), Offset(x + rnd.spread(2f), size.height), 1.2f)
-        x += 3.2f
-    }
-}
-
-/** Crumpled paper: long creases, each a light ridge with a shadow beside it. */
-private fun DrawScope.creases(seed: Int) {
-    val rnd = Random(seed)
-    repeat(22) {
-        val a = Offset(rnd.nextFloat() * size.width, rnd.nextFloat() * size.height)
-        var p = a
-        val path = Path().apply { moveTo(a.x, a.y) }
-        val dir = rnd.nextFloat() * 6.283f
-        repeat(4) {
-            val step = size.minDimension * (0.08f + rnd.nextFloat() * 0.14f)
-            val turn = dir + rnd.spread(0.6f)
-            p += Offset(cos(turn) * step, sin(turn) * step)
-            path.lineTo(p.x, p.y)
-        }
-        drawPath(path, Color.White.copy(alpha = 0.30f), style = Stroke(2f))
-        translateBy(2f) { drawPath(path, Color.Black.copy(alpha = 0.16f), style = Stroke(2f)) }
-    }
-    // Soft facets between the creases.
-    repeat(12) {
-        val f = Path().apply {
-            moveTo(rnd.nextFloat() * size.width, rnd.nextFloat() * size.height)
-            repeat(2) { lineTo(rnd.nextFloat() * size.width, rnd.nextFloat() * size.height) }
-            close()
-        }
-        drawPath(f, (if (it % 2 == 0) Color.White else Color.Black).copy(alpha = 0.03f))
-    }
-}
-
-private inline fun DrawScope.translateBy(d: Float, block: DrawScope.() -> Unit) {
-    drawContext.transform.translate(d, d)
-    block()
-    drawContext.transform.translate(-d, -d)
-}
-
-// ---------------------------------------------------------------------------------------------
-// Motifs
-
-/** Soft shapes that get blurred (asterisk, glows). Drawn as gradients so they stay soft
- * where RenderEffect blur is unavailable (Android 11 and older). */
-private fun DrawScope.softShapes(kind: WrapCardKind) {
-    val w = size.width
-    val h = size.height
-    fun asterisk(center: Offset, length: Float, color: Color) {
-        val thick = length * 0.26f
-        listOf(12f, 72f, 132f).forEach { angle ->
-            rotate(angle, center) {
-                drawRoundRect(
-                    brush = Brush.radialGradient(listOf(color, color.copy(alpha = color.alpha * 0.55f)), center, length * 0.6f),
-                    topLeft = Offset(center.x - length / 2, center.y - thick / 2),
-                    size = Size(length, thick),
-                    cornerRadius = CornerRadius(thick / 2)
-                )
-            }
-        }
-    }
-    fun glow(center: Offset, radius: Float, color: Color) =
-        drawCircle(Brush.radialGradient(listOf(color, Color.Transparent), center, radius), radius, center)
-    when (kind) {
-        WrapCardKind.INTRO -> {
-            asterisk(Offset(w * 0.32f, h * 0.27f), w * 0.95f, WrapPalette.Marigold.copy(alpha = 0.85f))
-            asterisk(Offset(w * 0.88f, h * 0.73f), w * 0.26f, WrapPalette.Marigold.copy(alpha = 0.7f))
-        }
-        WrapCardKind.SUMMARY -> glow(Offset(w * 0.2f, h * 0.1f), w * 0.9f, WrapPalette.Cobalt.copy(alpha = 0.55f))
-        WrapCardKind.NUMBERS -> {
-            glow(Offset(w * 0.95f, h * 0.02f), w * 0.85f, WrapPalette.Haze.copy(alpha = 0.95f))
-            glow(Offset(w * 0.25f, h * 0.55f), w * 0.7f, WrapPalette.Midnight.copy(alpha = 0.8f))
-            asterisk(Offset(w * 0.30f, h * 0.70f), w * 0.48f, WrapPalette.Marigold.copy(alpha = 0.35f))
-        }
-        WrapCardKind.PEOPLE -> {
-            glow(Offset(w * 0.1f, h * 0.05f), w * 0.9f, WrapPalette.Haze.copy(alpha = 0.55f))
-            glow(Offset(w * 0.9f, h * 0.9f), w * 0.9f, WrapPalette.Midnight.copy(alpha = 0.6f))
-        }
-        else -> Unit
-    }
-}
-
-/** Marigold plaster over an ink dry-brush stroke, with bristle streaks and splatter. */
-private fun DrawScope.dryBrushFlow() {
-    val w = size.width
-    val h = size.height
-    drawRect(WrapPalette.Marigold, size = Size(w, h * 0.72f))
-    plaster(Size(w, h * 0.72f), WrapPalette.MarigoldDeep, 3)
-    val rnd = Random(11)
-    val edgeAt = { x: Float -> h * (0.66f - 0.16f * (x / w)) }
-    val body = Path().apply {
-        moveTo(0f, edgeAt(0f) + h * 0.04f)
-        var x = 0f
-        while (x <= w) {
-            lineTo(x, edgeAt(x) + rnd.spread(h * 0.025f))
-            x += w * 0.02f
-        }
-        lineTo(w, h)
-        lineTo(0f, h)
-        close()
-    }
-    drawPath(body, WrapPalette.InkNavy)
-    // Bristle streaks dragged up-right out of the stroke.
-    repeat(260) {
-        val x0 = rnd.nextFloat() * w
-        val y0 = edgeAt(x0) + h * 0.03f
-        val len = h * (0.02f + rnd.nextFloat() * rnd.nextFloat() * 0.16f)
-        val dx = len * (0.45f + rnd.nextFloat() * 0.25f)
-        drawLine(
-            WrapPalette.InkNavy.copy(alpha = 0.55f + rnd.nextFloat() * 0.45f),
-            Offset(x0, y0), Offset(x0 + dx, y0 - len),
-            strokeWidth = 1.2f + rnd.nextFloat() * 4.5f,
-            cap = StrokeCap.Round
-        )
-    }
-    // Splatter both ways across the edge.
-    repeat(1400) {
-        val x = rnd.nextFloat() * w
-        val y = edgeAt(x) + rnd.spread(h * 0.10f)
-        val onInk = y > edgeAt(x)
-        drawCircle(
-            (if (onInk) WrapPalette.Marigold else WrapPalette.InkNavy).copy(alpha = 0.35f + rnd.nextFloat() * 0.55f),
-            0.6f + rnd.nextFloat() * 1.8f, Offset(x, y)
-        )
-    }
-    plaster(Size(w, h), Color.Black, 9)
-}
-
-private fun DrawScope.quietCostArt() {
-    val w = size.width
-    val h = size.height
-    val rnd = Random(23)
-    // Starry static.
-    repeat(1300) {
-        drawCircle(Color.White.copy(alpha = rnd.nextFloat() * 0.6f), 0.5f + rnd.nextFloat() * 1.6f, Offset(rnd.nextFloat() * w, rnd.nextFloat() * h * 0.9f))
-    }
-    // Clusters of vertical scratch lines.
-    repeat(9) {
-        val cx = rnd.nextFloat() * w
-        val top = rnd.nextFloat() * h * 0.7f
-        repeat(4 + rnd.nextInt(6)) { k ->
-            val x = cx + k * (3f + rnd.nextFloat() * 6f)
-            val y = top + rnd.spread(h * 0.03f)
-            drawLine(Color.White.copy(alpha = 0.35f + rnd.nextFloat() * 0.5f), Offset(x, y), Offset(x, y + h * (0.02f + rnd.nextFloat() * 0.10f)), 1.2f + rnd.nextFloat() * 1.4f)
-        }
-    }
-    // Hand-drawn marigold loop, top left.
-    val loop = Path().apply {
-        moveTo(-w * 0.05f, h * 0.17f)
-        cubicTo(w * 0.20f, h * 0.05f, w * 0.52f, h * 0.06f, w * 0.62f, h * 0.20f)
-        cubicTo(w * 0.42f, h * 0.15f, w * 0.20f, h * 0.17f, w * 0.06f, h * 0.24f)
-        cubicTo(w * 0.24f, h * 0.20f, w * 0.40f, h * 0.18f, w * 0.48f, h * 0.20f)
-    }
-    drawPath(loop, WrapPalette.Marigold, style = Stroke(width = 4.5f, cap = StrokeCap.Round))
-    // Striped ribbon coin stack, top right.
-    val cx = w * 0.84f
-    val cy = h * 0.15f
-    val r = w * 0.09f
-    repeat(7) { i ->
-        val o = Offset(cx + i * r * 0.08f, cy + i * r * 0.20f)
-        val tl = o - Offset(r, r * 0.42f)
-        val sz = Size(r * 2, r * 0.84f)
-        drawOval(Brush.linearGradient(listOf(Color.White, Color(0xFF9AA4B8), Color.White), tl, tl + Offset(sz.width, sz.height)), tl, sz)
-        drawOval(Color(0xFF1A2340), tl, sz, style = Stroke(2.2f))
-    }
-}
-
-private fun DrawScope.fulizaArt() {
-    val w = size.width
-    val h = size.height
-    linen(5)
-    // Torn navy paper across the top, with the pale fibre edge of a real tear.
-    val rnd = Random(5)
-    val edge = mutableListOf<Offset>()
-    var x = w
-    while (x > -10f) {
-        edge += Offset(x, h * (0.10f + rnd.nextFloat() * 0.035f) + (w - x) / w * h * 0.03f)
-        x -= w * (0.015f + rnd.nextFloat() * 0.03f)
-    }
-    val torn = Path().apply {
-        moveTo(0f, 0f)
-        lineTo(w, 0f)
-        edge.forEach { lineTo(it.x, it.y) }
-        close()
-    }
-    val fibre = Path().apply {
-        moveTo(edge.first().x, edge.first().y)
-        edge.forEach { lineTo(it.x, it.y + 3f) }
-    }
-    drawPath(fibre, WrapPalette.Cream.copy(alpha = 0.95f), style = Stroke(6f))
-    drawPath(torn, WrapPalette.Navy)
-    plaster(Size(w, h * 0.14f), WrapPalette.Midnight, 21)
-    // Big rose heart, left.
-    val c = Offset(w * 0.20f, h * 0.30f)
-    val s = w * 0.30f
-    val heart = Path().apply {
-        moveTo(c.x - s * 0.6f, c.y + s * 0.15f)
-        cubicTo(c.x - s * 0.4f, c.y - s * 1.1f, c.x + s * 1.0f, c.y - s * 0.8f, c.x + s * 0.55f, c.y + s * 0.05f)
-        cubicTo(c.x + s * 1.05f, c.y + s * 0.6f, c.x + s * 0.2f, c.y + s * 1.4f, c.x - s * 0.6f, c.y + s * 0.15f)
-        close()
-    }
-    drawPath(heart, WrapPalette.Rose)
-    // Small cobalt flower, right.
-    val f = Offset(w * 0.84f, h * 0.52f)
-    val pr = w * 0.06f
-    repeat(8) { i ->
-        val a = Math.toRadians(i * 45.0)
-        drawCircle(WrapPalette.Cobalt, pr, f + Offset((cos(a) * pr).toFloat(), (sin(a) * pr).toFloat()))
-    }
-    drawCircle(WrapPalette.Cobalt, pr, f)
-}
-
-/** Ornamental leaf line-art (batik-style) on deep indigo. */
-private fun DrawScope.leafLineArt() {
-    val w = size.width
-    val h = size.height
-    val rnd = Random(31)
-    val line = WrapPalette.IndigoLine
-    repeat(22) {
-        val c = Offset(rnd.nextFloat() * w * 1.2f - w * 0.1f, rnd.nextFloat() * h * 1.1f - h * 0.05f)
-        val len = w * (0.30f + rnd.nextFloat() * 0.30f)
-        rotate(rnd.nextFloat() * 360f, c) {
-            val leaf = Path().apply {
-                moveTo(c.x - len / 2, c.y)
-                quadraticTo(c.x, c.y - len * 0.40f, c.x + len / 2, c.y)
-                quadraticTo(c.x, c.y + len * 0.40f, c.x - len / 2, c.y)
-                close()
-            }
-            drawPath(leaf, line.copy(alpha = 0.35f))
-            drawPath(leaf, line, style = Stroke(5f))
-            drawLine(line, Offset(c.x - len / 2, c.y), Offset(c.x + len / 2, c.y), 4f)
-            repeat(6) { k ->
-                val vx = c.x - len * 0.38f + k * len * 0.14f
-                drawLine(line, Offset(vx, c.y), Offset(vx + len * 0.09f, c.y - len * 0.15f), 3f, StrokeCap.Round)
-                drawLine(line, Offset(vx, c.y), Offset(vx + len * 0.09f, c.y + len * 0.15f), 3f, StrokeCap.Round)
-            }
-        }
-    }
-    // Small ornaments between the leaves.
-    repeat(14) {
-        val o = Offset(rnd.nextFloat() * w, rnd.nextFloat() * h)
-        drawCircle(line, w * 0.02f, o, style = Stroke(3f))
-        drawCircle(line, w * 0.006f, o)
-    }
-}
-
-/** Stippled spray paint along [path]: specks only, dense in the middle, fading out. */
-private fun DrawScope.spray(path: Path, width: Float, color: Color, seed: Int) {
-    val measure = PathMeasure().apply { setPath(path, false) }
-    val rnd = Random(seed)
-    val n = (measure.length * 22f).toInt().coerceAtMost(120_000)
-    val pts = ArrayList<Offset>(n)
-    val faint = ArrayList<Offset>(n / 2)
-    repeat(n) {
-        val p = measure.getPosition(rnd.nextFloat() * measure.length)
-        val ang = rnd.nextFloat() * 6.283f
-        val r = rnd.spread(width)
-        val q = p + Offset(cos(ang) * r, sin(ang) * r)
-        if (kotlin.math.abs(r) < width * 0.45f) pts += q else faint += q
-    }
-    drawPath(path, color.copy(alpha = 0.06f), style = Stroke(width * 1.6f, cap = StrokeCap.Butt))
-    drawPoints(pts, PointMode.Points, color.copy(alpha = 0.9f), strokeWidth = 2.6f)
-    drawPoints(faint, PointMode.Points, color.copy(alpha = 0.5f), strokeWidth = 2.0f)
-}
-
-private fun DrawScope.personalitySpray() {
-    val w = size.width
-    val h = size.height
-    val stroke = w * 0.24f
-    val c = WrapPalette.Rose
-    spray(Path().apply { moveTo(w * 0.28f, -h * 0.02f); quadraticTo(w * 0.40f, h * 0.30f, w * 0.52f, h * 0.45f) }, stroke, c, 1)
-    spray(Path().apply { moveTo(w * 0.98f, h * 0.05f); quadraticTo(w * 0.72f, h * 0.30f, w * 0.52f, h * 0.45f) }, stroke, c, 2)
-    spray(Path().apply { moveTo(w * 0.52f, h * 0.45f); quadraticTo(w * 0.62f, h * 0.70f, w * 0.80f, h * 1.05f) }, stroke, c, 3)
-}
-
-/** Light rays behind the share screen. */
-internal fun DrawScope.shareRays() {
-    drawRect(Brush.verticalGradient(listOf(WrapPalette.Navy, WrapPalette.Midnight)))
-    val origin = Offset(size.width * 0.55f, size.height * 0.72f)
-    val rnd = Random(17)
-    repeat(10) { i ->
-        val a = Math.toRadians((i * 36 + rnd.nextInt(16)).toDouble())
-        val reach = size.maxDimension * 1.2f
-        val tip = origin + Offset((cos(a) * reach).toFloat(), (sin(a) * reach).toFloat())
-        val p = Path().apply {
-            moveTo(origin.x, origin.y)
-            lineTo(tip.x - 50f, tip.y)
-            lineTo(tip.x + 50f, tip.y)
-            close()
-        }
-        drawPath(p, Brush.radialGradient(listOf(WrapPalette.Marigold.copy(alpha = 0.45f), Color.Transparent), origin, reach * 0.6f))
-    }
-}
-
-private fun backgroundOf(kind: WrapCardKind): Brush = when (kind) {
-    WrapCardKind.SUMMARY, WrapCardKind.INTRO -> Brush.linearGradient(listOf(WrapPalette.Navy, WrapPalette.Midnight))
-    WrapCardKind.NUMBERS -> Brush.verticalGradient(listOf(WrapPalette.Cobalt, WrapPalette.CobaltDeep, WrapPalette.Midnight))
-    WrapCardKind.FLOW -> Brush.verticalGradient(listOf(WrapPalette.Marigold, WrapPalette.InkNavy))
-    WrapCardKind.FEES -> Brush.verticalGradient(listOf(WrapPalette.InkNavy, Color(0xFF060A1A)))
-    WrapCardKind.FULIZA -> Brush.verticalGradient(listOf(WrapPalette.Cream, WrapPalette.CreamDeep))
-    WrapCardKind.PEOPLE -> Brush.verticalGradient(listOf(Color(0xFF5B86D6), WrapPalette.Cobalt, WrapPalette.CobaltDeep))
-    WrapCardKind.SPOTS -> Brush.verticalGradient(listOf(WrapPalette.Indigo, Color(0xFF0A1030)))
-    WrapCardKind.RHYTHM -> Brush.verticalGradient(listOf(WrapPalette.Sky, WrapPalette.SkyDeep))
-    WrapCardKind.PERSONALITY -> Brush.verticalGradient(listOf(WrapPalette.Dusk, WrapPalette.DuskDeep))
-}
-
-private fun DrawScope.sharpMotif(kind: WrapCardKind) {
-    val w = size.width
-    val h = size.height
-    when (kind) {
-        WrapCardKind.SUMMARY -> {
-            val c = Offset(w * 0.95f, h * 0.20f)
-            val lobe = w * 0.075f
-            listOf(Offset(-0.7f, 0f), Offset(0.7f, 0f), Offset(0f, -0.7f), Offset(0f, 0.7f)).forEach { d ->
-                drawCircle(WrapPalette.Rose, lobe, c + Offset(d.x * lobe, d.y * lobe))
-            }
-            val f = Offset(w * 0.90f, h * 0.035f)
-            repeat(6) { i ->
-                val a = Math.toRadians(i * 60.0)
-                drawCircle(WrapPalette.Marigold, w * 0.035f, f + Offset((cos(a) * w * 0.035f).toFloat(), (sin(a) * w * 0.035f).toFloat()))
-            }
-        }
-        WrapCardKind.FLOW -> dryBrushFlow()
-        WrapCardKind.FEES -> quietCostArt()
-        WrapCardKind.FULIZA -> fulizaArt()
-        WrapCardKind.SPOTS -> leafLineArt()
-        WrapCardKind.RHYTHM -> creases(41)
-        WrapCardKind.PERSONALITY -> personalitySpray()
-        else -> Unit
-    }
-}
-
-private fun hasSoftShapes(kind: WrapCardKind) =
-    kind == WrapCardKind.INTRO || kind == WrapCardKind.SUMMARY || kind == WrapCardKind.NUMBERS || kind == WrapCardKind.PEOPLE
+internal fun baseOf(kind: WrapCardKind): Color = backgroundOf(kind)
 
 // ---------------------------------------------------------------------------------------------
 // Card layouts
 
-/** Card art only (background, blur, motif, grain). Words sit on top. */
+/** Card background: one solid colour. */
 @Composable
 internal fun WrapCardArt(kind: WrapCardKind, modifier: Modifier = Modifier) {
-    Box(modifier = modifier.background(backgroundOf(kind))) {
-        if (hasSoftShapes(kind)) {
-            Canvas(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Modifier.blur(36.dp) else Modifier)
-            ) { softShapes(kind) }
-        }
-        Canvas(modifier = Modifier.fillMaxSize().grain(if (kind == WrapCardKind.FEES) 0.5f else 1f)) { sharpMotif(kind) }
-    }
+    Spacer(modifier = modifier.background(backgroundOf(kind)))
 }
 
 @Composable
@@ -591,12 +175,7 @@ internal fun WrapCardContent(
             WrapCardKind.INTRO, WrapCardKind.SUMMARY -> "LipaBill Wrap · $periodLong"
             else -> kind.title
         }
-        val eyebrowInk = when (kind) {
-            WrapCardKind.FLOW -> WrapPalette.Ink
-            WrapCardKind.FULIZA -> WrapPalette.Cream // sits on the torn navy paper
-            else -> ink
-        }
-        WrapEyebrow(eyebrow, eyebrowInk)
+        WrapEyebrow(eyebrow, ink)
         when (kind) {
             WrapCardKind.SUMMARY -> SummaryBody(cards, money, hideNames, personality.first)
             WrapCardKind.INTRO -> {
@@ -631,7 +210,7 @@ internal fun WrapCardContent(
                 if (f != null) Body("borrowing ${money.full(f.total)} in total. Average top-up: ${money.full(f.average)}.", ink)
             }
             WrapCardKind.PEOPLE -> RankedBody("Most of your send money went to", cards.topPeople, "transfer", ink, ink, money, if (hideNames) "Person" else null)
-            WrapCardKind.SPOTS -> RankedBody("Where you paid most", cards.topSpots, "payment", ink, WrapPalette.SpotName, money, if (hideNames) "Shop" else null)
+            WrapCardKind.SPOTS -> RankedBody("Where you paid most", cards.topSpots, "payment", ink, WrapPalette.Accent, money, if (hideNames) "Shop" else null)
             WrapCardKind.RHYTHM -> RhythmBody(cards, money, hideNames)
             WrapCardKind.PERSONALITY -> {
                 Spacer(Modifier.weight(1f))
@@ -702,7 +281,7 @@ private fun ColumnScope.NumbersBody(c: WrapCards, ink: Color, muted: Color) {
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color.White.copy(alpha = 0.14f))
+                        .background(ink.copy(alpha = 0.08f))
                         .padding(horizontal = 12.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -794,7 +373,7 @@ private fun ColumnScope.RhythmBody(c: WrapCards, money: WrapMoney, hideNames: Bo
     @Composable
     fun Tile(value: String, label: String, modifier: Modifier, cover: Boolean = false) {
         Column(
-            modifier.clip(RoundedCornerShape(10.dp)).background(Color.White.copy(alpha = 0.28f)).padding(10.dp)
+            modifier.clip(RoundedCornerShape(10.dp)).background(Color.White.copy(alpha = 0.55f)).padding(10.dp)
         ) {
             Text(value, color = ink, fontSize = 17.sp, fontFamily = WrapDisplay)
             Body(label, ink.copy(alpha = 0.75f), 11.sp, modifier = Modifier.recordingPrivacyCover(cover))
@@ -826,7 +405,7 @@ private fun ColumnScope.RhythmBody(c: WrapCards, money: WrapMoney, hideNames: Bo
                     Modifier.fillMaxWidth()
                         .height((96.dp * (bar.outflow / max).toFloat()).coerceAtLeast(4.dp))
                         .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
-                        .background(if (i == c.peakBar) Color.White else WrapPalette.BarInk)
+                        .background(if (i == c.peakBar) WrapPalette.Navy else WrapPalette.LabelBlue)
                 )
                 Text(
                     if (bar.label.startsWith("W")) bar.label else bar.label.take(1),

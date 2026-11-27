@@ -12,7 +12,6 @@ import android.provider.MediaStore
 import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -43,11 +42,11 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -204,7 +203,7 @@ internal fun WrappedDialog(cards: WrapCards, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     val current = kinds.getOrNull(pager.currentPage)
     val backdrop by animateColorAsState(
-        if (current == null) WrapPalette.Midnight else baseOf(current),
+        if (current == null) WrapPalette.Navy else baseOf(current),
         label = "wrapBackdrop"
     )
     fun go(delta: Int) {
@@ -282,7 +281,7 @@ private fun StoryFrame(
                 repeat(total) { i ->
                     Box(
                         Modifier.weight(1f).height(3.dp).clip(CircleShape)
-                            .background(Color.White.copy(alpha = if (i <= pager.currentPage) 0.95f else 0.35f))
+                            .background(footerInk.copy(alpha = if (i <= pager.currentPage) 0.9f else 0.25f))
                     )
                 }
             }
@@ -330,9 +329,9 @@ internal fun ShareHub(
     val scope = rememberCoroutineScope()
     val personality = personalityText(cards).first
     Box(modifier = Modifier.fillMaxSize()) {
-        Canvas(Modifier.matchParentSize()) { shareRays() }
+        Spacer(Modifier.matchParentSize().background(WrapPalette.Navy))
         Column(
-            modifier = Modifier.fillMaxSize().grain(0.06f).padding(top = topInset, start = 18.dp, end = 18.dp, bottom = 18.dp),
+            modifier = Modifier.fillMaxSize().padding(top = topInset, start = 18.dp, end = 18.dp, bottom = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("Your wrap · swipe for more cards", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
