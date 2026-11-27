@@ -26,7 +26,12 @@ if (hasGoogleServices) {
 
 android {
     namespace = "com.lipabill.app"
-    compileSdk = 37
+    // Compose BOM 2026.11+ (foundation 1.13) requires compileSdk ≥ 37.1.
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 1
+        }
+    }
 
     defaultConfig {
         applicationId = "com.lipabill.app"
@@ -349,7 +354,7 @@ ksp {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
+    val composeBom = platform("androidx.compose:compose-bom:2026.11.01")
     implementation(composeBom)
 
     implementation("androidx.core:core-ktx:1.19.1")
@@ -383,7 +388,7 @@ dependencies {
     // Unbundled ML Kit: Play Services delivers barcode + Latin OCR models after install
     // instead of shipping ~17MB of native libs in the AAB.
     implementation("com.google.zxing:core:3.5.4")
-    val camera = "1.4.2"
+    val camera = "1.7.0"
     implementation("androidx.camera:camera-camera2:$camera")
     implementation("androidx.camera:camera-lifecycle:$camera")
     implementation("androidx.camera:camera-view:$camera")
