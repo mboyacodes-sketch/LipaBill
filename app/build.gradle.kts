@@ -45,6 +45,14 @@ android {
         }
         buildConfigField("boolean", "FIREBASE_ANALYTICS", if (hasGoogleServices) "true" else "false")
         buildConfigField("boolean", "FIREBASE_CRASHLYTICS", if (hasGoogleServices) "true" else "false")
+        // Pay link v4: new links carry the destination encrypted to the server key.
+        // Every release can OPEN v4 (via lipabill.app). Flip EMIT to true only after
+        // (1) lipabill.app has PAYLINK_V4_KEYS deployed and (2) most installs can open v4.
+        // Key + public hex: `node scripts/paylink/v4-tool.mjs keygen 1` in lipabill_web.
+        buildConfigField("boolean", "PAYLINK_V4_EMIT", "false")
+        buildConfigField("int", "PAYLINK_V4_KID", "1")
+        buildConfigField("String", "PAYLINK_V4_PUBLIC_KEY", "\"\"")
+        buildConfigField("String", "PAYLINK_RESOLVE_URL", "\"https://lipabill.app/api/paylink/resolve\"")
     }
 
     /**
