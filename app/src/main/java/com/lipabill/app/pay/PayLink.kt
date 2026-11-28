@@ -10,6 +10,8 @@ import java.math.BigInteger
  * landing page when LipaBill is not installed; App Links open this app when it is.
  * Legacy `lipabill://p/{code}` still parses.
  *
+ * Version 4 encrypts the v3 fields to the server key ([PayLinkV4]) — made
+ * offline, opened via the website or `/api/paylink/resolve`.
  * Version 3 packs phone, till, or paybill (one kind only).
  * Version 2 phone codes rotate each UTC day unless fixed.
  * Version 1 phone codes still decode with no day check.
@@ -98,14 +100,16 @@ object PayLink {
         phoneRaw: String,
         amountShillings: Long? = null,
         rotateDaily: Boolean = true,
-        nowMillis: Long = System.currentTimeMillis()
+        nowMillis: Long = System.currentTimeMillis(),
+        v4Key: PayLinkV4.ServerKey? = PayLinkV4.defaultKey()
     ): Target? = encode(
         kind = Kind.PHONE,
         identifier = phoneRaw,
         account = null,
         amountShillings = amountShillings,
         rotateDaily = rotateDaily,
-        nowMillis = nowMillis
+        nowMillis = nowMillis,
+        v4Key = v4Key
     )
 
     fun encode(
@@ -114,7 +118,9 @@ object PayLink {
         account: String? = null,
         amountShillings: Long? = null,
         rotateDaily: Boolean = true,
-        nowMillis: Long = System.currentTimeMillis()
+        nowMillis: Long = System.currentTimeMillis(),
+        /** Seal as v4 when set; null keeps the readable v3 format. */
+        v4Key: PayLinkV4.ServerKey? = PayLinkV4.defaultKey()
     ): Target? {
         val amount = amountShillings ?: 0L
         if (amount !in 0..MAX_AMOUNT) return null
@@ -134,7 +140,8 @@ object PayLink {
                     day = day,
                     phone = phone,
                     tillOrBusiness = null,
-                    accountOut = null
+                    accountOut = null,
+                    v4Key = v4Key
                 )
             }
             Kind.TILL -> {
@@ -148,7 +155,8 @@ object PayLink {
                     day = day,
                     phone = null,
                     tillOrBusiness = idDigits,
-                    accountOut = null
+                    accountOut = null,
+                    v4Key = v4Key
                 )
             }
             Kind.PAYBILL -> {
@@ -162,7 +170,8 @@ object PayLink {
                     day = day,
                     phone = null,
                     tillOrBusiness = idDigits,
-                    accountOut = accountPacked
+                    accountOut = accountPacked,
+                    v4Key = v4Key
                 )
             }
         }
@@ -176,6 +185,57 @@ object PayLink {
         return null
     }
 
+    /** Clean token from a link or bare code (any version), or null. */
+    fun tokenOf(raw: String?): String? = tokenFrom(raw)
+
+    /** A well-formed v4 link: only the server can open it. */
+    fun isSealed(raw: String?): Boolean {
+        val token = tokenFrom(raw) ?: return false
+        return PayLinkV4.looksLike(bytesOf(token))
+    }
+
+    /** Any LipaBill pay link this app should handle (readable now or via the server). */
+    fun isPayLink(raw: String?): Boolean = parse(raw) != null || isSealed(raw)
+
+    /**
+     * Target from the server's answer for a sealed link. Re-validates every field
+     * with the same rules as local decoding so a bad response can't slip through.
+     */
+    fun fromResolved(
+        kind: String,
+        identifier: String,
+        account: String?,
+        amountShillings: Long?,
+        token: String
+    ): Target? {
+        val amount = amountShillings?.takeIf { it in 1..MAX_AMOUNT }
+        if (amountShillings != null && amount == null) return null
+        return when (kind) {
+            "PHONE" -> canonicalPhone(identifier)?.let { Target(Kind.PHONE, it, null, amount, token) }
+            "TILL" -> canonicalMerchantId(identifier)
+                ?.takeIf { it.length in 5..12 }
+                ?.let { Target(Kind.TILL, it, null, amount, token) }
+            "PAYBILL" -> {
+                val business = canonicalMerchantId(identifier)?.takeIf { it.length in 5..12 }
+                val acc = canonicalAccount(account)
+                if (business != null && acc != null) Target(Kind.PAYBILL, business, acc, amount, token) else null
+            }
+            else -> null
+        }
+    }
+
+    private fun bytesOf(token: String): ByteArray? {
+        var value = BigInteger.ZERO
+        val base = BigInteger.valueOf(62)
+        for (ch in token) {
+            val idx = alphabet.indexOf(ch)
+            if (idx < 0) return null
+            value = value.multiply(base).add(BigInteger.valueOf(idx.toLong()))
+        }
+        val raw = value.toByteArray()
+        return if (raw.size > 1 && raw[0] == 0.toByte()) raw.copyOfRange(1, raw.size) else raw
+    }
+
     private fun packV3(
         kind: Int,
         idDigits: String,
@@ -184,7 +244,8 @@ object PayLink {
         day: Int,
         phone: String?,
         tillOrBusiness: String?,
-        accountOut: String?
+        accountOut: String?,
+        v4Key: PayLinkV4.ServerKey?
     ): Target? {
         if (idDigits.length != 12 || idDigits.any { !it.isDigit() }) return null
         val packed = ByteArray(WIDTH_V3)
@@ -202,7 +263,12 @@ object PayLink {
             packed[14 + i] = accountBytes.getOrElse(i) { 0 }
         }
         packed[26] = checksum(packed, until = 26)
-        val token = encodeBytes(mix(packed))
+        val token = if (v4Key != null) {
+            // v4 body is the v3 fields without version/checksum/padding.
+            encodeBytes(PayLinkV4.seal(packed.copyOfRange(1, 14 + account.length), v4Key))
+        } else {
+            encodeBytes(mix(packed))
+        }
         val resolvedKind = when (kind) {
             KIND_TILL -> Kind.TILL
             KIND_PAYBILL -> Kind.PAYBILL
@@ -227,7 +293,8 @@ object PayLink {
             .substringBefore('#')
             .trim('/')
             .substringBefore('/')
-        if (clean.length !in 8..40) return null
+        // v1–v3 are ≤ 40 chars; sealed v4 links are ~86–103.
+        if (clean.length !in 8..120) return null
         if (clean.any { alphabet.indexOf(it) < 0 }) return null
         return clean
     }

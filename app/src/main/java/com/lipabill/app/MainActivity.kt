@@ -59,6 +59,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -116,6 +117,7 @@ import com.lipabill.app.metrics.AppMetrics
 import com.lipabill.app.metrics.SetupBlocker
 import com.lipabill.app.ui.device.UnsupportedDeviceScreen
 import com.lipabill.app.pay.PayLink
+import com.lipabill.app.pay.PayLinkResolver
 import com.lipabill.app.ui.paylink.PayProfileScreen
 import com.lipabill.app.ussd.AccessibilityHelper
 import com.lipabill.app.ussd.PendingPaymentReceipt
@@ -167,7 +169,7 @@ class MainActivity : AppCompatActivity(),
         hideOtherAppOverlays()
         // Cold-start App Links must replay like onNewIntent — don't keep a prior
         // "already shown" token that would swallow the URI after unlock.
-        if (PayLink.parse(intent?.dataString) != null) {
+        if (PayLink.isPayLink(intent?.dataString)) {
             deliveredPayToken = null
         }
         acceptReceiptIntent(intent)
@@ -264,15 +266,49 @@ class MainActivity : AppCompatActivity(),
 
     fun stripPayIntentData() {
         val current = intent ?: return
-        if (PayLink.parse(current.dataString) != null) {
+        if (PayLink.isPayLink(current.dataString)) {
             current.data = null
         }
     }
 
+    /** Sealed (v4) token being opened via lipabill.app, so resumes don't double-fetch. */
+    private var resolvingPayToken: String? = null
+
     private fun acceptPayIntent(intent: Intent?) {
-        val target = PayLink.parse(intent?.dataString) ?: return
-        if (target.token == deliveredPayToken) return
-        _pendingPay.value = target
+        val data = intent?.dataString
+        PayLink.parse(data)?.let { target ->
+            if (target.token == deliveredPayToken) return
+            _pendingPay.value = target
+            return
+        }
+        // v4 links are encrypted to the server key — only lipabill.app can open them.
+        if (!PayLink.isSealed(data)) return
+        val token = PayLink.tokenOf(data) ?: return
+        if (token == deliveredPayToken || token == resolvingPayToken) return
+        resolvingPayToken = token
+        lifecycleScope.launch {
+            val result = PayLinkResolver.resolve(token)
+            resolvingPayToken = null
+            when (result) {
+                is PayLinkResolver.Result.Resolved ->
+                    if (token != deliveredPayToken) _pendingPay.value = result.target
+                PayLinkResolver.Result.Invalid -> {
+                    deliveredPayToken = token
+                    stripPayIntentData()
+                    Toast.makeText(
+                        this@MainActivity,
+                        R.string.pay_link_sealed_invalid,
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                // Keep the intent: the next resume (back online) tries again.
+                PayLinkResolver.Result.Unreachable -> Toast.makeText(
+                    this@MainActivity,
+                    R.string.pay_link_sealed_offline,
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
     }
 
     fun clearPendingReceipt() {
