@@ -32,8 +32,10 @@
     <string name="pay_link_confirm_title">Open payment link?</string>
     <string name="pay_link_confirm_continue">Continue</string>
     <string name="pay_link_confirm_cancel">Cancel</string>
-    <string name="pay_link_confirm_body_amount">Pay %1$s to %2$s. This link was opened from another app.</string>
-    <string name="pay_link_confirm_body">Open a payment to %1$s. This link was opened from another app.</string>
+    <string name="pay_link_confirm_body_amount">Pay %1$s to %2$s?\n\nAnyone can make a payment link, and LipaBill can’t check who will get this money. Only continue if you know who sent it.</string>
+    <string name="pay_link_confirm_body">Open a payment to %1$s?\n\nAnyone can make a payment link, and LipaBill can’t check who will get this money. Only continue if you know who sent it.</string>
+    <string name="pay_link_sealed_offline">Connect to the internet to open this payment link.</string>
+    <string name="pay_link_sealed_invalid">This payment link isn’t valid anymore. Ask the sender for a fresh one.</string>
     <string name="habits_title">Habits</string>
     <string name="habits_subtitle">A short pause, and a look at the week.</string>
     <string name="habits_teaser_checkin">Check-in ready</string>
